@@ -127,7 +127,17 @@ export function LogsScreen({
             if (!open) onDismissError?.();
           }}
           open
-          primaryAction={{ label: "OK", onSelect: () => onDismissError?.() }}
+          primaryAction={
+            lastError.code === "pairing_rejected"
+              ? {
+                  label: "Run setup again",
+                  onSelect: () => {
+                    onDismissError?.();
+                    onRunSetupAgain?.();
+                  },
+                }
+              : { label: "OK", onSelect: () => onDismissError?.() }
+          }
           title={supportText(lastError.message)}
         />
       ) : null}

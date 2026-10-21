@@ -209,6 +209,7 @@ export function SettingsScreen({
   const displayMode = providerPicker.display?.mode ?? "automatic";
   const providerError =
     providerPicker.preferencesError || providerPicker.displayError;
+  const dialogError = actionError ?? errorForHost(providerError, windowsHost);
   const rotation = displayPreferences.find(
     (item) => item.id === "vibetv.display.rotateSeconds",
   );
@@ -216,8 +217,10 @@ export function SettingsScreen({
   return (
     <div className="mx-auto w-full max-w-[1040px] py-10">
       <SetupStepFailedDialog
-        error={actionError ?? errorForHost(providerError, windowsHost)}
+        error={dialogError}
         onOpenChange={(open) => !open && onDismissError()}
+        onRetry={dialogError?.code === "pairing_rejected" ? onResetSetup : undefined}
+        retryLabel="Run setup again"
       />
       <SettingsSection title="Connection">
         <div

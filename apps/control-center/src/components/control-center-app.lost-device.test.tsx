@@ -5,7 +5,7 @@
 // cable. /v1/status reported the cable VibeTV as connected and ready, and the
 // window still showed "Not connected" under the lost-VibeTV dialog for the
 // WiFi one until it was reloaded. The Companion's connected VibeTV wins.
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -196,7 +196,7 @@ it("keeps a closed connect error closed across status polls", async () => {
   await window.wait(1);
   expect(window.text()).toContain("VibeTV could not connect.");
 
-  fireEvent.click(screen.getByRole("button", { name: "OK" }));
+  fireEvent.keyDown(document, { key: "Escape" });
   await window.wait(1);
   expect(window.text()).not.toContain("VibeTV could not connect.");
 
@@ -222,7 +222,7 @@ it("keeps a connect error closed on Settings and shows a new one", async () => {
   await window.wait(1);
   expect(window.text()).toContain("VibeTV could not connect.");
 
-  fireEvent.click(screen.getByRole("button", { name: "OK" }));
+  fireEvent.keyDown(document, { key: "Escape" });
   await window.wait(15);
   expect(window.companion.requests.filter((request) => request.endsWith("/v1/status")).length).toBeGreaterThan(2);
   expect(window.text()).not.toContain("VibeTV could not connect.");
@@ -233,4 +233,31 @@ it("keeps a connect error closed on Settings and shows a new one", async () => {
   window.companion.device = rejected;
   await window.wait(6);
   expect(window.text()).toContain("VibeTV could not connect.");
+});
+
+// The running app's connect dialog offers one way forward: Run setup again.
+// No OK and no "Press Connect again" (#782).
+it.each(["Settings", "Support"])("offers Run setup again alone on %s", async (tab) => {
+  const window = startWindow();
+  await window.wait(10);
+  window.companion.device = {
+    ...wifi,
+    connected: false,
+    ready: false,
+    stream: { errorCode: "pairing_token_rejected" },
+  } as typeof wifi;
+  await window.wait(6);
+  fireEvent.click(screen.getByRole("button", { name: tab }));
+  await window.wait(1);
+  const dialog = screen.getByRole("dialog", { name: "VibeTV could not connect." });
+  expect(dialog.textContent).toContain(
+    "VibeTV no longer accepts this computer. Run setup again to connect it.",
+  );
+  expect(dialog.textContent).not.toContain("Press Connect again");
+  expect(within(dialog).queryByRole("button", { name: "OK" })).toBeNull();
+
+  fireEvent.click(within(dialog).getByRole("button", { name: "Run setup again" }));
+  await window.wait(1);
+  expect(screen.getByRole("dialog", { name: "Run setup again?" })).toBeTruthy();
+  expect(screen.queryByRole("dialog", { name: "VibeTV could not connect." })).toBeNull();
 });
