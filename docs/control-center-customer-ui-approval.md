@@ -18129,3 +18129,24 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; Settings shows the same Used / Remaining state as before.
 - Scope: control-center-app.tsx only (usage poll result, moved derivations); pull request branch #877 only.
 - What's new: none — lint fix, no customer-visible change
+
+## 2026-10-21 — #781: fence key-status reports from superseded Theme Studio dialogs (#896)
+
+- User approval: no visible change – UI approval not needed (bug fix: a closed key dialog's late status read no longer overwrites the newer dialog's result)
+- Approved customer-visible result: #781 as in its own entries; the Settings AI row keeps the state of the newest key dialog when an older one answers late, nothing else changes.
+- Scope: the Settings AI row's reports from its key dialog, plus a regression test. Pull request branch #781 only, not merged, not released.
+- What's new: none — bug fix that drops a stale write, no new text or layout
+
+## 2026-10-21 — #781: send reason on hover and a steady Send button
+
+- User approval: pending — Theme Studio: disabled Send shows its reason on hover; toolbar no longer shifts while sending
+- Approved customer-visible result: #781 as in its own entries; a disabled "Send to VibeTV" shows its reason on hover, and the toolbar no longer moves when the button reads "Sending…"; nothing else changes.
+- Scope: the Theme Studio header's Send button (fixed minimum width) and its send-reason tests. Pull request branch #781 only, not merged, not released.
+- What's new: none — tooltip and fixed-width fix, no new text or control to announce
+
+## 2026-10-21 — #781: Theme Studio export notice on Windows says where the pack went
+
+- User approval: pending — Theme Studio on Windows: after `Export theme pack` the notice reads `Saved in your Downloads folder. Nothing was sent.`
+- Approved customer-visible result: #781 as in its own entries; on Windows only, the green export notice names the Downloads folder instead of `Theme pack exported. No device was contacted.`; the Mac notice and the file name stay as they are.
+- Scope: the Theme Studio export notice for the Windows app (one ternary) and its regression test. Pull request branch #781 only, not merged, not released.
+- What's new: none — the Windows export notice changes its sentence only, the sentence Support already shows, no new control

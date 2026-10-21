@@ -452,6 +452,17 @@ describe("Theme Studio send reason", () => {
     expect(tooltipOf(screen.getByRole("button", { name: "Sending…" }))?.hasAttribute("title")).toBe(false);
   });
 
+  it("keeps the send button width while it sends, so the toolbar does not move (#579)", async () => {
+    const send = deferred<boolean>();
+    render(<AIThemeStudioScreen onInstallTheme={() => send.promise} />);
+    fireEvent.click(screen.getByRole("button", { name: "Add manually" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Text/ }));
+    expect(sendButton().className).toContain("min-w-36");
+
+    fireEvent.click(sendButton());
+    expect(screen.getByRole("button", { name: "Sending…" }).className).toContain("min-w-36");
+  });
+
   it("gives no reason when a valid design can be sent", async () => {
     render(<AIThemeStudioScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Add manually" }));
@@ -514,5 +525,16 @@ describe("Theme Studio key state against late capability answers (#847)", () => 
     await sendIdea();
     await waitFor(() => expect(planAIThemeLayout).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("Theme Studio export notice", () => {
+  it("says on Windows where the theme pack went, without naming the file", async () => {
+    const text = { ...createDesignElement("text", 1), text: "Hello" };
+    render(<AIThemeStudioScreen windowsHost initialTheme={{ packName: "Palette", source: "custom", spec: { ...createBlankThemeSpec(), primitives: [text] } }} />);
+    const header = document.querySelector("header") as HTMLElement;
+    fireEvent.click(within(header).getByRole("button", { name: "File" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Export theme pack" }));
+    expect(await screen.findByText("Saved in your Downloads folder. Nothing was sent.")).toBeTruthy();
   });
 });

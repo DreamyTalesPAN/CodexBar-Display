@@ -641,7 +641,7 @@ export function AIThemeStudioScreen({
       if (isNativeControlCenterApp() && !windowsHost) {
         setStatus("");
         setExporting(pack.fileName);
-      } else setStatus("Theme pack exported. No device was contacted.");
+      } else setStatus(windowsHost ? "Saved in your Downloads folder. Nothing was sent." : "Theme pack exported. No device was contacted.");
     } catch {
       setError(
         "This scene cannot be exported yet. Check its elements and assets.",
@@ -1167,7 +1167,7 @@ export function AIThemeStudioScreen({
             </Button>
             {/* A disabled button takes no pointer events, so the tooltip sits on this wrapper. */}
             <span title={sendBlockedReason || undefined} className="inline-flex">
-              <Button className="h-9 px-3.5 text-[13px]" disabled={locked || sendNeedsFix} aria-describedby={sendBlockedReason ? "send-blocked-reason" : undefined} onClick={() => void send()}>
+              <Button className="h-9 min-w-36 px-3.5 text-[13px]" disabled={locked || sendNeedsFix} aria-describedby={sendBlockedReason ? "send-blocked-reason" : undefined} onClick={() => void send()}>
                 {sending ? <Spinner /> : null}
                 {sending ? "Sending…" : transferJob ? "Check transfer" : "Send to VibeTV"}
               </Button>

@@ -226,6 +226,29 @@ describe("Theme Studio AI row in Settings", () => {
     expect(screen.getByRole("button", { name: "Change key" })).toBeTruthy();
   });
 
+  it("does not let a closed dialog's late read overwrite a key a newer dialog saved (#896)", async () => {
+    let answerOld!: (value: ReturnType<typeof capabilities>) => void;
+    vi.mocked(fetchAIThemeCapabilities)
+      .mockResolvedValueOnce(capabilities(false)) // the row's mount read
+      .mockReturnValueOnce(new Promise((resolve) => { answerOld = resolve; })) // the first dialog's read, held
+      .mockResolvedValueOnce(capabilities(false)) // the second dialog's read
+      .mockResolvedValue(capabilities(true));
+    vi.mocked(saveAIThemeCredential).mockResolvedValue(undefined as never);
+    vi.mocked(verifyAIThemeCredential).mockResolvedValue(true);
+    render(<ThemeStudioKeyRow />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add key" }));
+    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add key" }));
+    fireEvent.change(await screen.findByLabelText("OpenAI key", { selector: "input" }), { target: { value: "sk-test-key" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Save key" }));
+    await screen.findByText("Connected");
+    answerOld(capabilities(false)); // the first dialog's read answers after the newer dialog saved and verified
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getByText("Connected")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Change key" })).toBeTruthy();
+  });
+
   it("has no close X in the key dialog", async () => {
     vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(capabilities(false));
     render(<ThemeStudioKeyRow />);
