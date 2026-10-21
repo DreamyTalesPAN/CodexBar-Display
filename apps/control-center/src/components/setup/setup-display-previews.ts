@@ -21,6 +21,7 @@ export function displayPreviewFor(
   }
   // An error frame carries no reading: the same no-usage state as the theme tile.
   const unavailable = frame.usageUnavailable === true || Boolean(frame.error);
+  const windows = frame.usageWindows?.length ? frame.usageWindows : frame.usageSlots;
   return {
     providerLabel: frame.label || frame.provider || "",
     frame,
@@ -34,8 +35,8 @@ export function displayPreviewFor(
             now,
           ),
         ),
-    windows: frame.usageWindows?.length
-      ? frame.usageWindows.map((window) => ({
+    windows: windows?.length
+      ? windows.map((window) => ({
           label: window.label ?? "",
           percent: unavailable ? null : window.percent ?? null,
         }))

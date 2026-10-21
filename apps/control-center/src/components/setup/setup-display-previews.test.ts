@@ -40,6 +40,25 @@ describe("displayPreviewFor", () => {
     });
   });
 
+  it.each([42, 0])("preserves the companion's legacy named window at %s percent", (percent) => {
+    const frame: DisplayFrame = {
+      v: 1, session: percent, weeklyUnavailable: true,
+      usageWindows: [], usageSlots: [{ id: "monthly", label: "Monthly", percent }],
+    };
+    expect(displayPreviewFor(frame)?.windows).toEqual([{ label: "Monthly", percent }]);
+    expect(displayPreviewFor({ ...frame, usageUnavailable: true })?.windows)
+      .toEqual([{ label: "Monthly", percent: null }]);
+    expect(displayPreviewFor({ ...frame, error: "no usage yet" })?.windows)
+      .toEqual([{ label: "Monthly", percent: null }]);
+  });
+
+  it("prefers named v2 windows to legacy slots when both are present", () => {
+    expect(displayPreviewFor({
+      usageWindows: [{ id: "daily", label: "Daily", percent: 12 }],
+      usageSlots: [{ id: "monthly", label: "Monthly", percent: 42 }],
+    })?.windows).toEqual([{ label: "Daily", percent: 12 }]);
+  });
+
   it("keeps unread legacy values unavailable, and a measured zero readable", () => {
     const preview = displayPreviewFor(
       { session: 0, weekly: 26, weeklyUnavailable: true },

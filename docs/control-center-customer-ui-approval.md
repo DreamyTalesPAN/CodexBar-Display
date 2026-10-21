@@ -9087,3 +9087,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: retained offline usage stays visible in both setup tiles after collection fails, matching the device; no new copy or layout.
 - Scope: merge the base update, preserve all approval blocks and the Companion-backed helpers, adapt the retained-value theme-tile test; the existing Go last-good tests remain authoritative.
 - What's new: none — retain existing offline readings through the central frame path.
+
+## 2026-10-21 — #858: preserve legacy frame window labels in plain previews
+
+- User approval: no visible change – UI approval not needed (#858 review fix: render the actual Companion usageSlots labels and count when usageWindows is absent, matching the existing device frame and theme renderer)
+- Approved customer-visible result: the plain preview preserves the supplied window names, values and unavailable state; no new copy, controls or layout beyond matching the real device frame.
+- Scope: setup-display-previews.ts and red-first regression tests for named legacy windows, measured zero, unavailable values and v2 precedence; no hardware or installed-app changes.
+- What's new: none — correct existing preview parity with the device frame.
