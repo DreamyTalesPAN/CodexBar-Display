@@ -84,8 +84,8 @@ asking (#555):
 
 ## Display adapter
 
-Display preferences are owned by VibeTV (`owner: "vibetv"`,
-`writeStrategy: "vibetv_override"`). They are stored in the Mac App's runtime
+The rotation preference is owned by VibeTV (`owner: "vibetv"`,
+`writeStrategy: "vibetv_override"`). It is stored in the Mac App's runtime
 configuration, and a write re-renders the VibeTV frame from the usage already
 collected. No provider is asked again and nothing in CodexBar is changed.
 
@@ -95,7 +95,14 @@ collected. No provider is asked again and nothing in CodexBar is changed.
 
 Whether percentages count what is used or what remains is CodexBar's own
 setting (`usageBarsShowUsed`). VibeTV keeps no second copy of it, as the
-CodexBar Integration Boundary in `AGENTS.md` requires.
+CodexBar Integration Boundary in `AGENTS.md` requires. On macOS, the display
+section also exposes `codexbar.usageBarsShowUsed` (`owner: "codexbar"`,
+`writeStrategy: "codexbar_command"`). Settings renders it as **Show** with
+**Used** (`"true"`) and **Remaining** (`"false"`) in both display modes.
+A PATCH writes `defaults write com.steipete.codexbar usageBarsShowUsed -bool
+<true|false>`; the next usage request and display cycle read that same setting.
+The descriptor is read-only when `CODEXBAR_DISPLAY_USAGE_MODE` is non-empty.
+Windows does not list the setting because Win-CodexBar has no equivalent (#874).
 
 `vibetv.display.rotateSeconds` decides when the Automatic display mode moves
 to another provider. Settings shows it under the Automatic card as
@@ -163,7 +170,8 @@ settings and are not part of this section.
   `value` and `effectiveValue` stay `null`.
 - Do not put provider state in browser storage, VibeTV runtime configuration,
   Theme Studio drafts, ThemeSpec, or theme packs.
-- Display preferences live in the runtime configuration only. They never
+- VibeTV-owned display preferences live in the runtime configuration only;
+  CodexBar-owned ones stay in CodexBar. They never
   change theme drafts, ThemeSpec, theme packs, or Theme Studio dirty state.
 - Credential entry, OAuth, and provider-specific integrations are outside this
   registry slice.

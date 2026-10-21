@@ -8150,3 +8150,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #856 as in its own entries plus the entries merged with 61f79061; nothing else changes.
 - Scope: the merge of 61f79061 and this approval record. Pull request branch #856 only, not merged, not released.
 - What's new: none — merge of 61f79061, no customer-visible change of its own
+
+## 2026-10-21 — Settings: Used / Remaining switch (writes CodexBar's own setting, Mac)
+
+- User approval: pending — Paul (21.10.): Settings gets a switch Used / Remaining (Mac; it is CodexBar's own setting, Usage and VibeTV follow it); not on Windows until Win-CodexBar has the setting (#874); Paul sees it in build 7203
+- Approved customer-visible result: Settings → Display mode has a Show row with Used and Remaining, using the existing preference control; it follows CodexBar's saved choice and is disabled when the usage-mode environment override is set.
+- Scope: CodexBar preference read/write adapter, display preference registration, Settings row, and focused tests; no VibeTV copy, usage conversion, or Windows setting.
+- What's new: none — customer notice waits for Paul's review of build 7203.
