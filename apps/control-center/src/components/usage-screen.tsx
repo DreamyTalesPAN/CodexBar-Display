@@ -1051,7 +1051,7 @@ function formatDayLabel(day: string): string {
   if (Number.isNaN(date.getTime())) {
     return day;
   }
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
   }).format(date);

@@ -8136,3 +8136,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #837 as in its own entries plus the entries merged with f314106c; nothing else changes.
 - Scope: the merge of f314106c and this approval record. Pull request branch #837 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
+
+## 2026-10-21 — #614: time and day labels follow the computer's own format
+
+- User approval: pending — Recent activity times use the computer's own time format instead of the German one
+- Approved customer-visible result: Recent activity times use the computer's own time format instead of the German one; the day labels of the usage chart follow the computer's own language and format as well.
+- Scope: `formatTime` in event-log.ts (Recent activity and update/job times) and `formatDayLabel` in usage-screen.tsx. The live VibeTV preview is not changed, because it shows what the device draws.
+- What's new: none — a formatting switch only; no "What's new" entry is added before the approval.
