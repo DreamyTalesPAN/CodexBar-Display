@@ -9023,3 +9023,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Missing days stay empty until that provider's token history settles; reported values and settled zero-filling remain unchanged.
 - Scope: buildProviderTokenChart and its regression tests; pull request branch only.
 - What's new: none — correction of provisional chart values, no new feature
+
+## 2026-10-21 — #783: Preserve the token-history notice dismissal
+
+- User approval: no visible change – UI approval not needed (bug fix: the dismissed token-history notice stays closed through a temporary incomplete answer)
+- Approved customer-visible result: A dismissed notice stays closed through missing or unready answers; a ready result with history clears the dismissal so a later new incident can be shown.
+- Scope: ControlCenterApp notice state and polling regression tests; pull request branch only.
+- What's new: none — fixes a repeated notice, no new feature

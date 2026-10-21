@@ -5323,19 +5323,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       companionStatus === "online" &&
       !setupOwnsScreen &&
       activeShellTab !== "settings");
-  const tokenHistoryNoticeShown = usageTokenHistoryNotice(
-    usage,
-    hiddenUsageProviderIds,
-  );
-  // The reset happens while rendering, when the notice changes from shown to
-  // cleared (React's own pattern for state that follows a prop), not in an effect.
-  const [tokenHistoryNoticeWasShown, setTokenHistoryNoticeWasShown] =
-    useState(tokenHistoryNoticeShown);
-  if (tokenHistoryNoticeWasShown !== tokenHistoryNoticeShown) {
-    setTokenHistoryNoticeWasShown(tokenHistoryNoticeShown);
-    if (!tokenHistoryNoticeShown) {
-      setUsageHistoryDismissed(false);
-    }
+  // An incomplete answer cannot resolve the missing-history cause. Reset only
+  // after a ready result clears it, without keeping a second copy of its state.
+  if (
+    usageHistoryDismissed &&
+    usage?.tokenUsageReady === true &&
+    !usageTokenHistoryNotice(usage, hiddenUsageProviderIds)
+  ) {
+    setUsageHistoryDismissed(false);
   }
   // The same reset for the usage error: it comes back after it has cleared, or
   // when a different error takes its place.

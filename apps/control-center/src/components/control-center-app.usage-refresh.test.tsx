@@ -10,6 +10,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { markWhatsNewSeen } from "@/lib/whats-new";
 import { ControlCenterApp } from "./control-center-app";
+import type { UsageSnapshot } from "./control-center-types";
 
 const themeSpec = { active: true, path: "/themes/codex/spec-v7.json", hash: "hash-v7", renderOk: true };
 const device = {
@@ -35,6 +36,79 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+it.each(["unavailable", "pending"])("keeps the history notice dismissed through a temporary %s answer", async (interruption) => {
+  const missingHistory: UsageSnapshot = {
+    ok: true,
+    tokenUsageReady: true,
+    currentProvider: "codex",
+    providers: [{ id: "codex", label: "Codex", session: 12, weekly: 34, usageMode: "used" }],
+  };
+  let snapshot: UsageSnapshot | null = missingHistory;
+  let usageReads = 0;
+  markWhatsNewSeen();
+  vi.useFakeTimers();
+  vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/v1/status")) {
+      return jsonResponse({ ok: true, companion: { version: "9.9.9", installationMode: "dmg" }, device });
+    }
+    if (url.endsWith("/v1/display-frame/latest")) {
+      return jsonResponse({ ok: true, deviceId: device.deviceId,
+        frame: { v: 2, provider: "codex", label: "Codex", usageSlots: [{ id: "weekly", label: "Weekly", percent: 29 }] } });
+    }
+    if (url.includes("/api/theme-pack/")) {
+      return jsonResponse({ themeId: "codex", spec: { p: [] }, specPath: themeSpec.path, specHash: themeSpec.hash, assets: {} });
+    }
+    if (url.includes("/v1/preferences")) return jsonResponse({ ok: true, items: [] });
+    if (url.endsWith("/v1/provider-display")) {
+      return jsonResponse({ ok: true, selection: { mode: "automatic", providerIds: [], configured: true, valid: true } });
+    }
+    if (url.includes("/v1/usage")) {
+      usageReads += 1;
+      return snapshot ? jsonResponse(snapshot)
+        : jsonResponse({ ok: false, error: { code: "usage_unavailable", message: "Usage is unavailable." } }, 503);
+    }
+    return jsonResponse({ ok: false, error: { code: "HTTP_404" } }, 404);
+  }));
+  render(createElement(TooltipProvider, null,
+    createElement(ControlCenterApp, { catalog: { themes: [] } as never })));
+  const poll = async () => {
+    const previousReads = usageReads;
+    for (let second = 0; second < 31; second += 1) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    }
+    expect(usageReads).toBeGreaterThan(previousReads);
+  };
+  const notice = () => screen.queryByRole("dialog", { name: "Token history is unavailable" });
+
+  await poll();
+  fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+  fireEvent.click(within(notice()!).getByRole("button", { name: "OK" }));
+  expect(notice()).toBeNull();
+
+  snapshot = interruption === "unavailable" ? null : { ...missingHistory, tokenUsageReady: false };
+  await poll();
+  expect(notice()).toBeNull();
+  expect(screen.getByText(interruption === "unavailable" ? "Loading usage" : "Token history is loading")).toBeTruthy();
+
+  snapshot = missingHistory;
+  await poll();
+  expect(notice()).toBeNull();
+
+  // A real history resolves the cause; losing it afterwards is a new incident.
+  snapshot = { ...missingHistory, providers: missingHistory.providers.map((provider) => ({
+    ...provider, cost: { daily: [] },
+  })) };
+  await poll();
+  expect(notice()).toBeNull();
+  snapshot = missingHistory;
+  await poll();
+  expect(notice()).not.toBeNull();
 });
 
 it("ends the Refreshing mark within seconds of the new values", async () => {
