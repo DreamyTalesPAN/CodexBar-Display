@@ -462,6 +462,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/provider-display", s.handleProviderDisplay)
 	mux.HandleFunc("/v1/provider-display/next", s.handleProviderDisplayNext)
 	mux.HandleFunc("/v1/display-frame/latest", s.handleDisplayFrameLatest)
+	mux.HandleFunc("/v1/display/preview-frames", s.handleDisplayPreviewFrames)
 	mux.HandleFunc("/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/v1/providers/retry", s.handleProviderRetry)
 	mux.HandleFunc("/v1/providers/sign-in", s.handleProviderSignIn)
