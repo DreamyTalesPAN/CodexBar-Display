@@ -18157,3 +18157,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none yet. Proposed text under an invalid color field (Theme Studio editor, ColorField): "Use a 6-digit hex color, like #FFAA00." The field is linked to this text via aria-describedby; the text disappears when the draft is valid or the field is reverted on blur.
 - Scope: `editor-fields.tsx` and its new regression test `editor-fields.test.tsx`; issue #887 item 3 only, not merged, not released.
 - What's new: none — the error text is not approved yet, so it is not announced
+
+## 2026-10-21 — #800: Pace bar table tests
+
+- User approval: no visible change – UI approval not needed (test-only: pace bar segment table in firmware and preview)
+- Approved customer-visible result: none; the pace bar drawing is unchanged.
+- Scope: Table-driven pace bar tests at 0, 1, 50, 99 and 100 percent used, for reserve, deficit and on pace, in used and remaining mode, with the plan clamped past 0 or 100; in the native firmware suite and the Control Center preview suite.
+- What's new: none — tests only.

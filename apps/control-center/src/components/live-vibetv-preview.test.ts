@@ -1562,3 +1562,76 @@ describe("footer wording table", () => {
     }
   }
 });
+
+// The pace bar table, row for row the same as paceBarRows in
+// firmware_esp8266/test/test_native_theme_spec/test_theme_spec_renderer.cpp.
+// The plan is clamped to 0..100, so a deficit larger than the use plans 0.
+const paceBarRows: Array<{
+  mode: "used" | "remaining";
+  percent: number;
+  delta: number;
+  state: "reserve" | "on pace" | "deficit";
+  fill: number;
+  piece: number;
+  plan: number;
+  hatched: boolean;
+}> = [
+  { mode: "used", percent: 0, delta: -6, state: "reserve", fill: 0, piece: 6, plan: 6, hatched: false },
+  { mode: "used", percent: 1, delta: -6, state: "reserve", fill: 1, piece: 7, plan: 7, hatched: false },
+  { mode: "used", percent: 50, delta: -6, state: "reserve", fill: 50, piece: 56, plan: 56, hatched: false },
+  { mode: "used", percent: 99, delta: -6, state: "reserve", fill: 99, piece: 100, plan: 100, hatched: false },
+  { mode: "used", percent: 100, delta: -6, state: "reserve", fill: 100, piece: 100, plan: 100, hatched: false },
+  { mode: "used", percent: 0, delta: 14, state: "deficit", fill: 0, piece: 0, plan: 0, hatched: true },
+  { mode: "used", percent: 1, delta: 14, state: "deficit", fill: 0, piece: 1, plan: 0, hatched: true },
+  { mode: "used", percent: 50, delta: 14, state: "deficit", fill: 36, piece: 50, plan: 36, hatched: true },
+  { mode: "used", percent: 99, delta: 14, state: "deficit", fill: 85, piece: 99, plan: 85, hatched: true },
+  { mode: "used", percent: 100, delta: 14, state: "deficit", fill: 86, piece: 100, plan: 86, hatched: true },
+  { mode: "used", percent: 0, delta: -1, state: "on pace", fill: 0, piece: 0, plan: 1, hatched: false },
+  { mode: "used", percent: 1, delta: -1, state: "on pace", fill: 1, piece: 1, plan: 2, hatched: false },
+  { mode: "used", percent: 50, delta: -1, state: "on pace", fill: 50, piece: 50, plan: 51, hatched: false },
+  { mode: "used", percent: 99, delta: -1, state: "on pace", fill: 99, piece: 99, plan: 100, hatched: false },
+  { mode: "used", percent: 100, delta: -1, state: "on pace", fill: 100, piece: 100, plan: 100, hatched: false },
+  { mode: "remaining", percent: 100, delta: -6, state: "reserve", fill: 94, piece: 100, plan: 94, hatched: false },
+  { mode: "remaining", percent: 99, delta: -6, state: "reserve", fill: 93, piece: 99, plan: 93, hatched: false },
+  { mode: "remaining", percent: 50, delta: -6, state: "reserve", fill: 44, piece: 50, plan: 44, hatched: false },
+  { mode: "remaining", percent: 1, delta: -6, state: "reserve", fill: 0, piece: 1, plan: 0, hatched: false },
+  { mode: "remaining", percent: 0, delta: -6, state: "reserve", fill: 0, piece: 0, plan: 0, hatched: false },
+  { mode: "remaining", percent: 100, delta: 14, state: "deficit", fill: 100, piece: 100, plan: 100, hatched: true },
+  { mode: "remaining", percent: 99, delta: 14, state: "deficit", fill: 99, piece: 100, plan: 100, hatched: true },
+  { mode: "remaining", percent: 50, delta: 14, state: "deficit", fill: 50, piece: 64, plan: 64, hatched: true },
+  { mode: "remaining", percent: 1, delta: 14, state: "deficit", fill: 1, piece: 15, plan: 15, hatched: true },
+  { mode: "remaining", percent: 0, delta: 14, state: "deficit", fill: 0, piece: 14, plan: 14, hatched: true },
+  { mode: "remaining", percent: 100, delta: -1, state: "on pace", fill: 100, piece: 100, plan: 99, hatched: false },
+  { mode: "remaining", percent: 99, delta: -1, state: "on pace", fill: 99, piece: 99, plan: 98, hatched: false },
+  { mode: "remaining", percent: 50, delta: -1, state: "on pace", fill: 50, piece: 50, plan: 49, hatched: false },
+  { mode: "remaining", percent: 1, delta: -1, state: "on pace", fill: 1, piece: 1, plan: 0, hatched: false },
+  { mode: "remaining", percent: 0, delta: -1, state: "on pace", fill: 0, piece: 0, plan: 0, hatched: false },
+];
+
+describe("pace bar table", () => {
+  const clock = new Date("2026-10-19T12:00:00Z");
+  const bar: ThemePrimitive = { t: "p", x: 0, y: 0, w: 100, h: 10, b: "usageSlot1Pace" };
+  for (const row of paceBarRows) {
+    it(`${row.mode} ${row.percent}% with ${row.state} ${row.delta}`, () => {
+      const frame = buildFrameData(clock.toISOString(), {
+        provider: "claude",
+        usageMode: row.mode,
+        usageSlots: [
+          {
+            id: "session",
+            label: "Session",
+            percent: row.percent,
+            resetSecs: 12000,
+            pace: { delta: row.delta, state: row.state, lasts: true },
+          },
+        ],
+      }, clock);
+      expect(paceBarMarks(bar, frame, row.percent)).toEqual({
+        fillTo: row.fill,
+        pieceTo: row.piece,
+        planAt: row.plan,
+        hatched: row.hatched,
+      });
+    });
+  }
+});
