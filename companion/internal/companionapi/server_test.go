@@ -2384,16 +2384,13 @@ func TestDeviceRepairForcePairCableKeepsKnownWiFiTarget(t *testing.T) {
 	}
 }
 
-func TestDeviceDiscoverAcceptsCableTarget(t *testing.T) {
+// Discover never reports a Cable device as active: the Cable is chosen through
+// /v1/device/select, so a Cable target gets the same 400 as any other invalid target.
+func TestDeviceDiscoverRejectsCableTarget(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a"})
 	server.resolveCablePort = func(_, expected string) (string, error) {
-		if expected != "cable-a" {
-			t.Fatalf("wrong device: %s", expected)
-		}
-		return "/dev/mock-cable", nil
-	}
-	server.readCableHello = func(string) (protocol.DeviceHello, error) {
-		return cableHelloForTest("cable-a"), nil
+		t.Fatalf("cable discover probed the Cable for %s", expected)
+		return "", nil
 	}
 
 	rec := httptest.NewRecorder()
@@ -2401,11 +2398,7 @@ func TestDeviceDiscoverAcceptsCableTarget(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	server.Handler().ServeHTTP(rec, req)
 
-	var got deviceActionResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	if rec.Code != http.StatusOK || !got.OK || got.Device.Target != cableDeviceTarget || got.Device.DeviceID != "cable-a" {
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_device_target") {
 		t.Fatalf("cable discover status=%d body=%s", rec.Code, rec.Body.String())
 	}
 	cfg, err := server.config()

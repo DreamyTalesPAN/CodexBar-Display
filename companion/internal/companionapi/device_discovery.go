@@ -86,11 +86,6 @@ func (s *Server) handleDeviceDiscover(w http.ResponseWriter, r *http.Request) {
 	if !decodeOptionalJSON(w, r, &req) {
 		return
 	}
-	if isCableTarget(strings.TrimSpace(req.Target)) {
-		// Read-only, like search: the Cable is not a WiFi target to persist.
-		s.discoverCableDevice(w, r)
-		return
-	}
 	s.repairMu.Lock()
 	defer s.repairMu.Unlock()
 	cfg, err := s.config()
