@@ -9353,3 +9353,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #816 as in its own entries plus the entries merged with 52397ff8; nothing else changes.
 - Scope: the merge of 52397ff8 and this approval record. Pull request branch #816 only, not merged, not released.
 - What's new: none — merge of 52397ff8, no customer-visible change of its own
+
+## 2026-10-21 — #816: scope Not now to the device and reset after recovered selection
+
+- User approval: no visible change – UI approval not needed (#816 P3 fixes reuse the device-change reset and clear dismissal after status-verified selection; wording and layout unchanged)
+- Approved customer-visible result: the existing not-found notice is no longer suppressed for another VibeTV or after a successfully recovered selection.
+- Scope: two dismissal resets and regression tests in Control Center; no wording or layout changes.
+- What's new: none — fixes incorrect suppression of the existing notice

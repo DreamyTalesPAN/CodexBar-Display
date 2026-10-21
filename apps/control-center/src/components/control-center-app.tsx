@@ -741,6 +741,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     // (Codex review of #645, issue #663).
     const deviceId = next.deviceId?.trim();
     if (deviceId && deviceId !== settingsDeviceIdRef.current) {
+      setVibetvNotFoundDismissed(false);
       if (settingsDeviceIdRef.current) {
         settingsReadRef.current = null;
         resetDeviceSettings();
@@ -1915,6 +1916,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             pendingPairingCandidate.current = null;
             setDeviceSearchState("idle");
             setLastError(null);
+            setVibetvNotFoundDismissed(false);
             addEvent({
               label: "VibeTV selected",
               detail:
