@@ -15620,3 +15620,38 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
 - Scope: Merge claude/setup11-live-theme-tiles into claude/paultest-build9 and retain all source approval blocks.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — #782: approval marker after merging main at 3dc0a15b
+
+- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #782; the own entries of #782 keep their approvals)
+- Approved customer-visible result: #782 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
+- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #782 only, not merged, not released.
+- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
+
+## 2026-10-21 — #782: closed connect dialog on Settings stays closed
+
+- User approval: no visible change – UI approval not needed (bug fix: the closed connect dialog on Settings stays closed like on Logs)
+- Approved customer-visible result: the connect dialog closed with OK on Settings no longer reappears after about 5 seconds; a new error still shows.
+- Scope: Settings and Logs share one dismiss handler in control-center-app.tsx; the lost-device test pins Settings. Pull request branch #782 only, not merged, not released.
+- What's new: none — the dialog text and buttons are unchanged; only the closed state is kept.
+
+## 2026-10-21 — #782: connect dialog offers "Run setup again" (Paul)
+
+- User approval: pending — Paul (21.10. 17:15): "Knopf „Run setup again“ im Dialog": the connect dialog in the running app says "VibeTV no longer accepts this computer. Run setup again to connect it." and has one button "Run setup again"; Paul sees it in the next build
+- Approved customer-visible result: the connect dialog ("VibeTV could not connect.") on Settings and Support/Logs shows "VibeTV no longer accepts this computer. Run setup again to connect it." with one button "Run setup again" that starts setup; no OK and no "Press Connect again" sentence. The setup wizard's own connect-step dialog is unchanged.
+- Scope: the running app's pairing-rejection dialog only (pairingRejectionForDevice, code pairing_rejected, and the Settings and Logs dialog buttons). Pull request branch #782 only, not merged, not released.
+- What's new: none — no notice entry until Paul approves the dialog above
+
+## 2026-10-21 — #782: connect dialog starts setup without a second question
+
+- User approval: pending — the connect dialog's "Run setup again" starts setup directly (no second question), as Paul asked ("startet Setup direkt"); Paul sees it in the next build
+- Approved customer-visible result: the pairing-rejection dialog on Settings and Support/Logs starts setup directly when "Run setup again" is clicked; the Settings and Support page actions keep their confirmation.
+- Scope: route the running app's connect-dialog button to the existing setup start handler and cover both dialog entry points and the Settings row with tests. Pull request branch #782 only, not merged, not released.
+- What's new: none — no notice entry until Paul approves the direct setup action above
+
+## 2026-10-21 — paultest-build9: refresh claude/group-small-fixes (#782)
+
+- User approval: pending — build9 integration of claude/group-small-fixes at f3ffb1bd32fb for Paul’s Mac test build 7204.
+- Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
+- Scope: Merge claude/group-small-fixes into claude/paultest-build9 and retain all source approval blocks.
+- What's new: none — integration of existing feature entries only.

@@ -495,6 +495,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // surface shows it again (Support and Settings alike).
   const [dismissedError, setDismissedError] = useState<ApiError | null>(null);
   const shownError = lastError && lastError !== dismissedError ? lastError : null;
+  const dismissError = () => setDismissedError(lastError);
   const supportError = useMemo(
     () => errorForHost(shownError, windowsHost),
     [shownError, windowsHost],
@@ -660,7 +661,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Its start time keys the incident; null while there is none.
   const [systemBusySince, setSystemBusySince] = useState<string | null>(null);
   const [systemBusyDismissed, dismissSystemBusy] = useSystemBusyDismissal(systemBusySince);
-  // "Run setup again" asks first, from Settings and from the not-found dialog alike.
+  // Page actions ask first; the connect dialog already confirms setup.
   const [setupAgainRequested, setSetupAgainRequested] = useState(false);
   const [vibetvNotFoundDismissed, setVibetvNotFoundDismissed] = useState(false);
   // The "What's new" entries this customer has seen, null while nothing is
@@ -6018,8 +6019,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               lostDevicePickerOpen ? null : errorForHost(shownError, windowsHost)
             }
             onDismissError={() => {
-              setDismissedError(lastError);
-              setLastError(null);
+              dismissError();
               setProviderDisplayError(null);
               setProviderPreferencesError(null);
             }}
@@ -6050,6 +6050,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               }).catch(() => { /* The connection action already displays its error. */ });
             }}
             onResetSetup={() => setSetupAgainRequested(true)}
+            onStartSetup={resetSetup}
             onEraseDevice={eraseDevice}
             windowsHost={windowsHost}
             onDisplayPreferenceChange={updateDisplayPreference}
@@ -6139,10 +6140,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             events={logs}
             lastError={centredDialogOpen ? null : supportError}
             onCreateSupportReport={createSupportReport}
-            onDismissError={() => setDismissedError(lastError)}
+            onDismissError={dismissError}
             onLoadDiagnostics={runSupportDiagnostics}
             onRefresh={checkCompanion}
             onRepairUsageEngine={retryUsageService}
+            onRunSetupAgain={() => setSetupAgainRequested(true)}
+            onStartSetup={resetSetup}
             repairingUsageEngine={busyAction === "usage-service-repair"}
             supportReportBusy={supportReportBusy}
             windowsHost={windowsHost}

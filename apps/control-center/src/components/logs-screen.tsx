@@ -33,6 +33,8 @@ export type LogsScreenProps = {
   onLoadDiagnostics?: () => void;
   onCreateSupportReport?: () => void;
   onRefresh?: () => void;
+  onRunSetupAgain?: () => void;
+  onStartSetup?: () => void;
   onRepairUsageEngine?: () => void;
   repairingUsageEngine?: boolean;
   busyAction?: string | null;
@@ -51,6 +53,8 @@ export function LogsScreen({
   onLoadDiagnostics,
   onCreateSupportReport,
   onRefresh,
+  onRunSetupAgain,
+  onStartSetup,
   onRepairUsageEngine,
   repairingUsageEngine = false,
   busyAction,
@@ -75,7 +79,17 @@ export function LogsScreen({
             if (!open) onDismissError?.();
           }}
           open
-          primaryAction={{ label: "OK", onSelect: () => onDismissError?.() }}
+          primaryAction={
+            lastError.code === "pairing_rejected"
+              ? {
+                  label: "Run setup again",
+                  onSelect: () => {
+                    onDismissError?.();
+                    onStartSetup?.();
+                  },
+                }
+              : { label: "OK", onSelect: () => onDismissError?.() }
+          }
           title={supportText(lastError.message)}
         />
       ) : null}
