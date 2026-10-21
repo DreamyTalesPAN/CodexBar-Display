@@ -8514,3 +8514,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: setup step 11 as in #858; the frames now arrive inside the /v1/usage response, so a collector cycle between two requests cannot make usage and frames disagree.
 - Scope: GET /v1/usage?previewFrames=1 replaces the separate /v1/display/preview-frames route; the usage refresh in control-center-app.tsx, its test, the customer-flow mock. Pull request branch only, not merged, not released.
 - What's new: none — the tiles show what the stream sends
+
+## 2026-10-21 — #858: fallback preview tile reads the companion frame
+
+- User approval: no visible change – UI approval not needed (the fallback preview tile shows the companion's frame values instead of its own calculation; same layout and texts)
+- Approved customer-visible result: the plain Automatic and Manual previews show the companion's reset seconds, bounded window labels and percentages; unavailable values stay unavailable.
+- Scope: setup-display-previews.ts, its callers and tests; remove usage-derived preview calculations and keep provider eligibility unchanged. Pull request branch only, not merged, not released.
+- What's new: none — the fallback tiles use the same companion frames as the theme tiles

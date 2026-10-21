@@ -1,4 +1,4 @@
-import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
+import type { UsageSnapshot } from "../control-center-types";
 import { remainingResetSecs, secondsSince } from "@/lib/reset-countdown";
 import { formatReset } from "../usage-screen";
 import type { DisplayFrame } from "../live-vibetv-preview";
@@ -10,87 +10,37 @@ export type PreviewFrames = {
   providers?: { id: string; automatic?: DisplayFrame; pinned?: DisplayFrame }[];
 };
 
-function providerWindowSlots(provider: UsageProviderInfo) {
-  return (provider.windows ?? []).map((window) => ({
-    id: window.id,
-    label: window.label,
-    percent: window.usedPercent,
-    resetSecs: window.resetSecs,
-  }));
-}
-
-function windowSlotsOf(provider: UsageProviderInfo) {
-  return provider.windows?.length
-    ? providerWindowSlots(provider)
-    : [
-        provider.sessionUnavailable
-          ? null
-          : { id: "session", label: "Session", percent: provider.session, resetSecs: provider.resetSecs },
-        provider.weeklyUnavailable
-          ? null
-          : { id: "weekly", label: "Weekly", percent: provider.weekly, resetSecs: undefined },
-      ].filter((slot): slot is NonNullable<typeof slot> => slot !== null);
-}
-
-/**
- * The frame's root resetSecs as Frame.Normalize sets it
- * (applyLegacyUsageProjection): the first window with a deadline, not the first
- * window. A legacy provider's single session slot carries provider.resetSecs.
- */
-function rootResetSecs(slots: { resetSecs?: number }[]): number {
-  return slots.find((slot) => (slot.resetSecs ?? 0) > 0)?.resetSecs ?? 0;
-}
-
-/**
- * The root countdown of a provider's frame. A legacy provider (no windows)
- * carries its only reset in provider.resetSecs, independent of whether its
- * session percentage is readable: a session the collector could not read still
- * leaves the authoritative root deadline in the frame sent to VibeTV, so the
- * tile keeps it too instead of showing "Reset unavailable" (Codex on #821).
- */
-function providerRootResetSecs(
-  provider: UsageProviderInfo,
-  slots: { resetSecs?: number }[],
-): number {
-  return provider.windows?.length
-    ? rootResetSecs(slots)
-    : Math.max(0, provider.resetSecs ?? 0);
-}
-
-/**
- * Turns a provider's usage into what the display-mode panel draws.
- *
- * A reading the collector could not take stays null all the way through, so the
- * panel says it is unavailable rather than showing a zero that looks like a
- * measurement.
- */
+/** Formats the companion's frame for the plain tile; normalization stays in Go. */
 export function displayPreviewFor(
-  provider: UsageProviderInfo | undefined,
+  frame: DisplayFrame | undefined,
+  frameAt?: string,
   now = new Date(),
 ): SetupDisplayModePreview | null {
-  if (!provider) {
+  if (!frame) {
     return null;
   }
-  const unavailable = provider.stale === true || provider.usageUnavailable === true;
+  const unavailable = frame.resetTrust === "stale" || frame.usageUnavailable === true;
   return {
-    providerLabel: provider.label,
+    providerLabel: frame.label || frame.provider || "",
+    frame,
+    frameAt,
     resetLabel: unavailable
       ? null
       : formatReset(
           remainingResetSecs(
-            providerRootResetSecs(provider, windowSlotsOf(provider)),
-            provider.collectedAt,
+            frame.resetSecs,
+            frameAt,
             now,
           ),
         ),
-    windows: provider.windows?.length
-      ? provider.windows.map((window) => ({
-          label: window.label,
-          percent: unavailable ? null : window.usedPercent,
+    windows: frame.usageWindows?.length
+      ? frame.usageWindows.map((window) => ({
+          label: window.label ?? "",
+          percent: unavailable ? null : window.percent ?? null,
         }))
       : [
-          { label: "Session", percent: unavailable || provider.sessionUnavailable ? null : provider.session },
-          { label: "Weekly", percent: unavailable || provider.weeklyUnavailable ? null : provider.weekly },
+          { label: "Session", percent: unavailable || frame.sessionUnavailable ? null : frame.session ?? null },
+          { label: "Weekly", percent: unavailable || frame.weeklyUnavailable ? null : frame.weekly ?? null },
         ],
   };
 }
@@ -109,27 +59,25 @@ export function displayPreviewsFor(
   providers: { id: string; label: string }[],
   previewFrames: PreviewFrames | null = null,
 ): SetupDisplayModePreview[] {
-  const reported = new Map(
-    (usage?.providers || []).map((provider) => [provider.id, provider]),
-  );
   // The frames come from the usage they were read with: without usage they
   // are gone too, so a provider whose reading disappeared cannot keep old values.
   const framed = new Map(
     (usage ? previewFrames?.providers || [] : []).map((entry) => [entry.id, entry]),
   );
   return providers.map((provider) => {
-    const preview = displayPreviewFor(reported.get(provider.id)) ?? {
+    const entry = framed.get(provider.id);
+    const preview = displayPreviewFor(entry?.automatic, previewFrames?.generatedAt) ?? {
       providerLabel: provider.label,
       resetLabel: null,
       windows: [],
     };
-    const entry = framed.get(provider.id);
     // The frames are the companion's, as the host would send them; a provider
     // it built none for stays a placeholder. No Automatic frame means the
     // stream does not rotate to it (rotatingPreviews).
     return entry
       ? {
           ...preview,
+          providerLabel: provider.label,
           frame: entry.automatic,
           pinnedFrame: entry.pinned,
           frameAt: previewFrames?.generatedAt,
@@ -149,7 +97,12 @@ export function rotatingPreviews(previews: SetupDisplayModePreview[]): SetupDisp
 
 /** The Manual tile's preview: the frame the host builds with only this provider pinned. */
 export function pinnedPreview(preview: SetupDisplayModePreview): SetupDisplayModePreview {
-  return { ...preview, frame: preview.pinnedFrame };
+  return {
+    ...preview,
+    ...(displayPreviewFor(preview.pinnedFrame, preview.frameAt) ?? { resetLabel: null, windows: [] }),
+    providerLabel: preview.providerLabel,
+    frame: preview.pinnedFrame,
+  };
 }
 
 /**

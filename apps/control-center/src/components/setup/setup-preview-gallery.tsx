@@ -201,8 +201,7 @@ const SAMPLE_EVENTS: SetupEventsLog = {
 };
 const loadSampleEvents = async () => SAMPLE_EVENTS;
 
-// Fixture previews: usage-shaped readings for the plain tile, plus the frame the
-// companion would deliver for the theme tile.
+// Fixture frames serve both the plain tile and the theme tile.
 const GALLERY_COLLECTED_AT = new Date().toISOString();
 const galleryPreview = (
   id: string,
@@ -211,19 +210,6 @@ const galleryPreview = (
   weekly: number,
   resetSecs: number,
 ) => {
-  const preview = displayPreviewFor({
-    id,
-    label,
-    session,
-    weekly,
-    resetSecs,
-    usageMode: "used",
-    collectedAt: GALLERY_COLLECTED_AT,
-    windows: [
-      { id: "session", label: "Session", usedPercent: session, resetSecs },
-      { id: "weekly", label: "Weekly", usedPercent: weekly, resetSecs: resetSecs * 24 },
-    ],
-  })!;
   const frame: DisplayFrame = {
     v: 2,
     provider: id,
@@ -240,7 +226,7 @@ const galleryPreview = (
     resetTrustSecs: 5 * 3600,
     resetSource: id,
   };
-  return { ...preview, frame, pinnedFrame: frame, frameAt: GALLERY_COLLECTED_AT };
+  return { ...displayPreviewFor(frame, GALLERY_COLLECTED_AT)!, pinnedFrame: frame };
 };
 const AUTOMATIC_PREVIEWS = [
   galleryPreview("codex", "Codex", 42, 26, 3 * 3600),

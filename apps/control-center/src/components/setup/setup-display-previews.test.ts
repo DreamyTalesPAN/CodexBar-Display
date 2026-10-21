@@ -10,9 +10,7 @@ import {
   withSentActivity,
 } from "./setup-display-previews";
 
-// The readings below are stamped 2026-10-20T08:00Z; a frame older than the 5 h
-// trust horizon is stale, so the clock must stay near them or these tests fail
-// a few hours after they were written.
+// Keep elapsed countdowns deterministic for the stamped companion frames.
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-10-20T08:30:00Z"));
@@ -34,46 +32,36 @@ function provider(fields: Partial<UsageProviderInfo>): UsageProviderInfo {
 }
 
 describe("displayPreviewFor", () => {
-  it("carries the provider's own reading", () => {
-    expect(displayPreviewFor(provider({}))).toMatchObject({
+  it("formats the companion's legacy frame without deriving its reset from windows", () => {
+    expect(displayPreviewFor({ label: "Codex", session: 42, weekly: 26, resetSecs: 10800 })).toMatchObject({
       providerLabel: "Codex",
       resetLabel: "Reset in 3h 0m",
       windows: [{ label: "Session", percent: 42 }, { label: "Weekly", percent: 26 }],
     });
   });
 
-  it("leaves a window the collector could not read unavailable", () => {
+  it("keeps unread legacy values unavailable, and a measured zero readable", () => {
     const preview = displayPreviewFor(
-      provider({ weeklyUnavailable: true }),
+      { session: 0, weekly: 26, weeklyUnavailable: true },
     );
 
-    expect(preview?.windows[0].percent).toBe(42);
+    expect(preview?.windows[0].percent).toBe(0);
     expect(preview?.windows[1].percent).toBeNull();
   });
 
-  it("shows nothing measured when the provider itself has no usage", () => {
-    const preview = displayPreviewFor(provider({ usageUnavailable: true }));
-
-    expect(preview?.windows[0].percent).toBeNull();
-    expect(preview?.windows[1].percent).toBeNull();
+  it.each([{ usageUnavailable: true }, { resetTrust: "stale" }])("keeps an unavailable frame unavailable: %j", (flags) => {
+    const preview = displayPreviewFor({
+      ...flags, resetSecs: 10800,
+      usageWindows: [{ id: "weekly", label: "Weekly", percent: 42 }],
+    });
+    expect(preview?.windows).toEqual([{ label: "Weekly", percent: null }]);
     expect(preview?.resetLabel).toBeNull();
   });
 
-  it("never turns a missing reading into a zero", () => {
-    const preview = displayPreviewFor(
-      provider({ session: 0, sessionUnavailable: true }),
-    );
-
-    expect(preview?.windows[0].percent).not.toBe(0);
-    expect(preview?.windows[0].percent).toBeNull();
-  });
-
-  it("preserves the collector's window labels when the primary window is absent", () => {
-    expect(displayPreviewFor(provider({
-      session: 28,
-      weekly: 0,
-      windows: [{ id: "weekly", label: "Weekly", usedPercent: 28 }, { id: "codex-spark", label: "Codex Spark 5-hour", usedPercent: 0 }],
-    }))?.windows).toEqual([{ label: "Weekly", percent: 28 }, { label: "Codex Spark 5-hour", percent: 0 }]);
+  it("never turns an absent frame percentage into zero", () => {
+    expect(displayPreviewFor({ usageWindows: [{ id: "weekly", label: "Weekly" }] })?.windows)
+      .toEqual([{ label: "Weekly", percent: null }]);
+    expect(displayPreviewFor({})?.windows.every((window) => window.percent === null)).toBe(true);
   });
 
   it("has nothing to draw without a provider", () => {
@@ -185,7 +173,9 @@ describe("the frames come from the companion", () => {
   });
 
   it("draws no frame before the companion has answered", () => {
-    expect(displayPreviewsFor(usage, enabled)[0].frame).toBeUndefined();
+    expect(displayPreviewsFor(usage, enabled)[0]).toEqual({
+      providerLabel: "Codex", resetLabel: null, windows: [],
+    });
   });
 
   it("puts the activity of the frame last sent to VibeTV on that provider's preview only", () => {
