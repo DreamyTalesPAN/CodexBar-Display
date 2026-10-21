@@ -231,7 +231,8 @@ export function UpdatesScreen({
   // The same holds for a required migration that has nothing verified to
   // download (the release says "available" but the download is "missing_asset"
   // or "disabled"): the Update button stays closed, and the page must not claim
-  // "Everything is up to date" next to it.
+  // "Everything is up to date" next to it. "available" without an installed
+  // version does not establish that the app is current either.
   const macAppMigrationBlocked = Boolean(
     requiresMacAppMigration && !verifiedDmgDownloadUrl,
   );
@@ -239,7 +240,9 @@ export function UpdatesScreen({
     macAppRunning &&
       companionRelease &&
       !macAppCheckFailed &&
-      (companionRelease.status !== "available" || macAppMigrationBlocked),
+      (companionRelease.status !== "available" ||
+        !companionRelease.installedVersion ||
+        macAppMigrationBlocked),
   );
   const pageStatusHeading =
     installingUpdate

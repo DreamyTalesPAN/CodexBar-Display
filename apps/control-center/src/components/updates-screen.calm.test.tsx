@@ -217,6 +217,19 @@ describe("calm Updates screen", () => {
     expect(screen.getAllByText("Up to date")).toHaveLength(1);
   });
 
+  // Codex P2 (#798): "available" without an installed version does not show the
+  // Mac App is current; the unknown state stays.
+  it("a Mac App check without an installed version is not 'up to date'", () => {
+    render(
+      <UpdatesScreen
+        {...upToDate}
+        companionRelease={{ ...upToDate.companionRelease!, installedVersion: undefined }}
+      />,
+    );
+    expect(screen.queryByRole("heading", { level: 2, name: "Everything is up to date" })).toBeNull();
+    expect(screen.getByRole("heading", { level: 2, name: "No update available" })).toBeTruthy();
+  });
+
   it("installing: the step is a process-steps line inside the card, no Update button", () => {
     render(
       <UpdatesScreen

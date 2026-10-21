@@ -9342,3 +9342,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #798 as in its own entries plus the entries merged with 260c4843; nothing else changes.
 - Scope: the merge of 260c4843 and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of 260c4843, no customer-visible change of its own
+
+## 2026-10-21 — #798: Mac App not 'up to date' without an installed version
+
+- User approval: no visible change – UI approval not needed (bug fix: a Mac App check that answers "available" without an installed version no longer shows the Mac App as up to date; the existing unknown state stays)
+- Approved customer-visible result: without a known installed version the Updates screen shows the unknown state ("No update available") instead of "Everything is up to date"; with a known version nothing changes.
+- Scope: `apps/control-center/src/components/updates-screen.tsx` and its test `updates-screen.calm.test.tsx`, plus this approval record. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
