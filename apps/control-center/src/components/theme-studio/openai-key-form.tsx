@@ -231,6 +231,19 @@ export function ThemeStudioKeyRow() {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [configured, setConfigured] = useState<boolean | "pending">(false);
+  // Every opening of the dialog gets a number. A closed dialog's read can still answer later, so its reports are fenced to the newest opening (#896).
+  const [opening, setOpening] = useState(0);
+  const newestOpening = useRef(0);
+  function openDialog() {
+    newestOpening.current = opening + 1;
+    setOpening(newestOpening.current);
+    setOpen(true);
+  }
+  function reportConfigured(from: number, value: boolean | "pending") {
+    if (from !== newestOpening.current) return;
+    generation.current += 1;
+    setConfigured(value);
+  }
   // Same rule as the dialog: every change starts a fresh read, and a read that a later change overtakes is ignored.
   const generation = useRef(0);
   function readConfigured() {
@@ -251,7 +264,7 @@ export function ThemeStudioKeyRow() {
           <i aria-hidden className={`size-2 shrink-0 rounded-full ${configured === true ? "bg-[oklch(0.72_0.15_150)]" : "bg-muted-foreground/40"}`} />
           {configured === true ? "Connected" : "Not connected"}
         </span>
-        <Button variant="outline" size="sm" className="px-3.5 text-[13px]" onClick={() => setOpen(true)}>
+        <Button variant="outline" size="sm" className="px-3.5 text-[13px]" onClick={openDialog}>
           {hasStoredKey(configured) ? "Change key" : "Add key"}
         </Button>
       </div>
@@ -266,10 +279,7 @@ export function ThemeStudioKeyRow() {
         <OpenAIKeyForm
           inSetup={false}
           initialConfigured={configured}
-          onConfiguredChange={(value) => {
-            generation.current += 1;
-            setConfigured(value);
-          }}
+          onConfiguredChange={(value) => reportConfigured(opening, value)}
           onConnectingChange={setBusy}
           onConnected={() => setOpen(false)}
           onDisconnected={readConfigured}

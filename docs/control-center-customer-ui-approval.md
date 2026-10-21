@@ -8809,3 +8809,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: unchanged; the existing pending-key retry leaves the Settings row connected after the dialog closes.
 - Scope: openai-key-form.test.tsx regression coverage only; no product code changes.
 - What's new: none — test-only review evidence
+
+## 2026-10-21 — #781: fence key-status reports from superseded Theme Studio dialogs (#896)
+
+- User approval: no visible change – UI approval not needed (bug fix: a closed key dialog's late status read no longer overwrites the newer dialog's result)
+- Approved customer-visible result: #781 as in its own entries; the Settings AI row keeps the state of the newest key dialog when an older one answers late, nothing else changes.
+- Scope: the Settings AI row's reports from its key dialog, plus a regression test. Pull request branch #781 only, not merged, not released.
+- What's new: none — bug fix that drops a stale write, no new text or layout
