@@ -9054,3 +9054,16 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #858 as in its own entries plus the entries merged with 50b61fab; nothing else changes.
 - Scope: the merge of 50b61fab and this approval record. Pull request branch #858 only, not merged, not released.
 - What's new: none — merge of 50b61fab, no customer-visible change of its own
+## 2026-10-21 — #821: match capped preview fields to the host frame
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 capped legacy lanes, fixed-provider reset rows and plain fallback readings now match the existing host send order; coordinator-authorized three-thread review follow-up)
+- Approved customer-visible result: setup previews show only retained usage windows and their legacy fields, while Manual keeps its own provider row built before the window cap; no new copy, controls or layout.
+- Scope: setup-display-previews.ts, its regression tests and the SetupDisplayModePreview data type; red-first regression checks and scoped local validation only, with no hardware or installed-app changes.
+- What's new: none — correct preview parity with the existing device frame.
+
+## 2026-10-21 — #858: integrate #821 capability fixes with Companion-owned previews
+
+- User approval: no visible change – UI approval not needed (#858 merge of #821 at 9d808cd7: retain Companion frame construction and its device window cap instead of restoring deleted client synthesis)
+- Approved customer-visible result: preview values, pinned rows and window limits continue to follow the existing device send path; no copy or layout changes.
+- Scope: merge claude/setup11-live-theme-tiles, preserve the Companion-backed preview helpers and tests, retain all approval blocks; device cap and pinned selection remain owned by the Companion.
+- What's new: none — preserve the existing single frame construction path.
