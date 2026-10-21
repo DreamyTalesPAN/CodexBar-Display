@@ -50,6 +50,7 @@ function show(previews: SetupDisplayModePreview[], mode: "automatic" | "fixed" =
     <Choice
       automaticPreview={previews[0] ?? null}
       automaticPreviews={previews}
+      calm
       manualPreview={previews[0] ?? null}
       mode={mode}
       onSelectMode={vi.fn()}
@@ -136,23 +137,70 @@ describe("Automatic shows one theme tile that changes provider (#821 single tile
     expect(shown()?.dataset.provider).toBe("Claude");
   });
 
+  it("uses the same native-size device frame in every card, with a half-size narrow fallback", async () => {
+    show(three());
+    await settle();
+    const previews = document.querySelectorAll('[data-slot="display-mode-preview"]');
+    expect(previews).toHaveLength(2);
+    for (const preview of previews) {
+      expect(preview.className).toContain("@container");
+      const sizing = preview.firstElementChild as HTMLElement;
+      expect(sizing.className).toContain("size-[120px]");
+      expect(sizing.className).toContain("@min-[240px]:size-[240px]");
+      expect(sizing.style.width).toBe("");
+      for (const canvas of preview.querySelectorAll("svg")) {
+        expect(canvas.getAttribute("viewBox")).toBe("0 0 240 240");
+        expect(canvas.getAttribute("class")).toContain("[image-rendering:pixelated]");
+      }
+    }
+    const grid = previews[0].closest("button")?.parentElement;
+    expect(grid?.className).toContain("grid-cols-[repeat(auto-fit,minmax(min(100%,256px),1fr))]");
+  });
+
+  it("keeps exactly one fully visible Automatic frame at rest before and after each fade", async () => {
+    show(three());
+    await settle();
+    for (const provider of ["Claude", "Codex", "Cursor", "Claude"]) {
+      const visible = tiles(0).filter((tile) => tile.classList.contains("opacity-100"));
+      expect(visible).toHaveLength(1);
+      expect(visible[0].dataset.provider).toBe(provider);
+      for (const hidden of tiles(0).filter((tile) => tile !== visible[0])) {
+        expect(hidden.classList.contains("opacity-0")).toBe(true);
+        expect(hidden.getAttribute("aria-hidden")).toBe("true");
+      }
+      // Past the fade, well inside the next provider's hold.
+      act(() => { vi.advanceTimersByTime(ROTATION_HOLD_MS + 200); });
+    }
+  });
+
+  it("uses the same size while the theme is loading", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+    show(three());
+    for (const tile of [...tiles(0), ...tiles(1)]) {
+      expect(tile.className).toContain("size-[120px]");
+      expect(tile.className).toContain("@min-[240px]:size-[240px]");
+      expect(tile.parentElement?.className).toContain("@container");
+    }
+  });
+
   it("crossfades calmly: opacity only, no movement or size change", async () => {
     show(three());
     await settle();
     for (const tile of tiles(0)) {
       expect(tile.className).toContain("transition-opacity");
-      expect(tile.className).toContain("duration-500");
+      expect(tile.className).toContain("duration-[180ms]");
       expect(tile.style.transform).toBe("");
     }
   });
 
-  it("keeps a provider without values as a grey placeholder on its turn", async () => {
+  it("shows the existing unavailable preview on a provider's turn without values", async () => {
     show([live("Claude", 64), { providerLabel: "Cursor", resetLabel: null, windows: [] }]);
     await settle();
     act(() => { vi.advanceTimersByTime(ROTATION_HOLD_MS); });
-    const shown = tiles(0).find((tile) => tile.dataset.visible === "true");
-    expect(shown?.dataset.provider).toBe("Cursor");
-    expect(shown?.dataset.state).toBe("skeleton");
+    const preview = document.querySelector('[data-slot="display-mode-preview"]');
+    expect(preview?.textContent).toContain("Cursor");
+    expect(preview?.textContent).toContain("Usage unavailable");
+    expect(preview?.querySelector('[data-state="skeleton"]')).toBeNull();
   });
 
   it("does not rotate Manual", async () => {

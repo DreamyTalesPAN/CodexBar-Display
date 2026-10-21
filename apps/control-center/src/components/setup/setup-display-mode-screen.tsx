@@ -262,7 +262,10 @@ export function DisplayModeChoice({
 
   return (
     <div className={cn("flex w-full flex-col", calm ? "gap-6" : "gap-4", className)}>
-      <div className="grid w-full grid-cols-2 items-stretch gap-4">
+      <div className={cn(
+        "grid w-full items-stretch gap-4",
+        calm ? "grid-cols-[repeat(auto-fit,minmax(min(100%,256px),1fr))]" : "grid-cols-2",
+      )}>
         <ModeCard
           calm={calm}
           description={automaticDescription}

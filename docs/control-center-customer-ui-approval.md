@@ -8899,3 +8899,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the same bounded theme loading and retry behavior works on the app's supported macOS 14.0 WebKit.
 - Scope: shared render-pack request signal forwarding and one missing-AbortSignal.any regression test; coordinator-approved follow-up commit for PR #821.
 - What's new: none — preserve the existing minimum macOS support.
+
+## 2026-10-21 — #821: enlarge setup display-mode previews
+
+- User approval: pending — Paul (21.10. 7203): "hier sind die previews viel zu klein": the device previews in the setup Display mode cards are larger (240px, same in every card); Paul sees it in the next build.
+- Approved customer-visible result: Automatic and Manual share a native-size 240 × 240 pixelated theme preview, including the loading placeholder; the setup grid stacks cards when two 256px cards do not fit, with a 120px half-scale preview only in exceptionally narrow cards; Automatic crossfades for 180ms of each two-second rotation and shows exactly one provider at rest.
+- Scope: setup-display-mode-screen.tsx (calm setup grid only), setup-display-theme-tiles.tsx (shared preview size and fade duration), setup-display-theme-carousel.test.tsx and this approval record; unit and type checks only, with the real Mac/Windows screen left to the coordinator's next build.
+- What's new: none — refine the pending setup preview layout; no persistent stacking found in the component or regression checks.
