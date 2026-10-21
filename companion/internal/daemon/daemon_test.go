@@ -5021,6 +5021,53 @@ func TestProviderCollectorTokenHistoryRelabelsPersistedRawIDPlaceholder(t *testi
 	t.Fatal("token history did not keep the claude snapshot")
 }
 
+// The released build stored the readable name for the id as its placeholder
+// label ("Copilot"), not the raw id. The upgrade must still take the inventory
+// name ("GitHub Copilot") from the next token pass.
+func TestProviderCollectorTokenHistoryRelabelsPersistedHumanizedPlaceholder(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	now := time.Date(2026, 10, 17, 9, 0, 0, 0, time.UTC)
+	collector := &providerCollector{
+		now:             func() time.Time { return now },
+		logf:            func(string, ...any) {},
+		snapshotMaxAge:  10 * time.Minute,
+		persistInterval: time.Minute,
+		providers: map[string]providerSnapshot{
+			"copilot": {
+				Provider: "copilot",
+				Frame:    protocol.Frame{Provider: "copilot", Label: "Copilot", UsageUnavailable: true},
+			},
+		},
+		fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+			return []codexbar.ParsedFrame{testParsedFrame("codex", 12, 34, 3600)}, nil
+		},
+		fetchInventory: func(context.Context) ([]codexbar.ProviderSetting, error) {
+			return []codexbar.ProviderSetting{
+				{ID: "codex", Label: "Codex", Enabled: true},
+				{ID: "copilot", Label: "GitHub Copilot", Enabled: true},
+			}, nil
+		},
+		fetchTokenStats: func(context.Context) (map[string]codexbar.ProviderTokenStats, bool) {
+			return map[string]codexbar.ProviderTokenStats{
+				"copilot": {SessionTokens: 10, WeekTokens: 20, TotalTokens: 30, UpdatedAt: now},
+			}, true
+		},
+	}
+	collector.collectOnce(context.Background())
+	collector.collectTokenStatsOnce(context.Background())
+	for _, frame := range collector.providerFrames(now) {
+		if frame.Provider != "copilot" {
+			continue
+		}
+		if frame.Frame.Label != "GitHub Copilot" {
+			t.Fatalf("persisted humanized placeholder label = %q, want the inventory name %q", frame.Frame.Label, "GitHub Copilot")
+		}
+		return
+	}
+	t.Fatal("token history did not keep the copilot snapshot")
+}
+
 func TestProviderCollectorDoesNotPruneWhenInventoryRefreshFails(t *testing.T) {
 	prepareFastTestEnv(t)
 

@@ -8830,6 +8830,20 @@ issue scope, or release permission never implies UI permission.
 - Scope: #783 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #783 approval record only
 
+## 2026-10-21 — #783: a different usage error shows again after OK
+
+- User approval: no visible change – UI approval not needed (#783 Codex fix: a different usage error shows again after an earlier one was dismissed; no new wording or layout)
+- Approved customer-visible result: #783 as in its entries above; only a different usage error that replaces a dismissed one now shows again. The same error stays closed, no new text or layout.
+- Scope: #783 Codex fix in the Usage page error dialog state. Pull request branch only, not merged, not released.
+- What's new: none — the dismissal resets on a different error, no new text or layout
+
+## 2026-10-21 — #783: approval marker after merging main at 41bf10cf
+
+- User approval: no visible change – UI approval not needed (merge of main (41bf10cf) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with 41bf10cf; nothing else changes.
+- Scope: the merge of 41bf10cf and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of 41bf10cf, no customer-visible change of its own
+
 ## 2026-10-19 — Pace on Usage (#789, stacked on #783)
 
 - User approval: pending — Paul reviews (pace on Usage per the approved master + 19.10. decisions)
