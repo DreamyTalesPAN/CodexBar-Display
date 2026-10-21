@@ -159,6 +159,24 @@ func TestROMLoaderReportsTheChipIdentityBeforeTheErase(t *testing.T) {
 	}
 }
 
+// Codex on #840: a cancel during the chip check must not let FLASH_BEGIN go out.
+func TestROMLoaderDoesNotEraseAfterACancelDuringTheChipCheck(t *testing.T) {
+	rom := newFakeROM()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	loader := &romLoader{port: rom, sleep: func(time.Duration) {}, onChipIdentified: func(string) error {
+		cancel()
+		return nil
+	}}
+	err := loader.flash(ctx, testAppImage(2*romFlashBlockSize))
+	if !errors.Is(err, ErrBeforeErase) {
+		t.Fatalf("flash error = %v, want ErrBeforeErase after the cancel", err)
+	}
+	if rom.begin != nil {
+		t.Fatal("FLASH_BEGIN went out after the cancel")
+	}
+}
+
 func TestROMLoaderStopsWhenTheChipIdentityIsRefused(t *testing.T) {
 	rom := newFakeROM()
 	loader := &romLoader{port: rom, sleep: func(time.Duration) {}, onChipIdentified: func(string) error {

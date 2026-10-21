@@ -203,6 +203,12 @@ func (l *romLoader) flash(ctx context.Context, image []byte) error {
 	if err := l.checkChip(); err != nil {
 		return err
 	}
+	// A cancel that arrived while the chip identity was being read must stop
+	// the write here: after FLASH_BEGIN an intact VibeTV would be erased with
+	// nothing written back (Codex on #840).
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: %v", ErrBeforeErase, err)
+	}
 	blocks := (len(image) + romFlashBlockSize - 1) / romFlashBlockSize
 	eraseTimeout := max(romCommandTimeout, romEraseTimeoutPerMB*time.Duration(len(image))/(1<<20))
 	begin := romWords(romEraseSize(0, len(image)), uint32(blocks), romFlashBlockSize, 0)
