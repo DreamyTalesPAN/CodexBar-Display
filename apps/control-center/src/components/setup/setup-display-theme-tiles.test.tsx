@@ -1,11 +1,20 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, render, screen } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DisplayModeChoice,
   type SetupDisplayModePreview,
 } from "./setup-display-mode-screen";
+import { useThemeRenderPack } from "./setup-display-theme-tiles";
+
+/** The step loads the theme pack and hands it to the choice, as the wizard does. */
+function Choice(
+  props: Omit<ComponentProps<typeof DisplayModeChoice>, "themePack">,
+) {
+  return <DisplayModeChoice {...props} themePack={useThemeRenderPack(THEME)} />;
+}
 
 const THEME = { id: "claude-creature", specPath: "/themes/u/claude--9-5c74ca.json" };
 
@@ -47,7 +56,7 @@ function show(
   manual: SetupDisplayModePreview | null = previews[0] ?? null,
 ) {
   render(
-    <DisplayModeChoice
+    <Choice
       automaticPreview={previews[0] ?? null}
       automaticPreviews={previews}
       manualPreview={manual}
@@ -59,7 +68,6 @@ function show(
         label: preview.providerLabel,
       }))}
       selectedProviderId={previews[0]?.providerLabel.toLowerCase() ?? null}
-      theme={THEME}
     />,
   );
 }

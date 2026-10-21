@@ -13127,3 +13127,70 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the incoming feature together with the existing Build 6 customer flows in the local integration candidate.
 - Scope: Merge claude/group-setup-b into claude/paultest-build7; retain all source approval entries.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — #780: approval marker after merging main at f314106c
+
+- User approval: no visible change – UI approval not needed (merge of main (f314106c) into #780; the own entries of #780 keep their approvals)
+- Approved customer-visible result: #780 as in its own entries plus the entries merged with f314106c; nothing else changes.
+- Scope: the merge of f314106c and this approval record. Pull request branch #780 only, not merged, not released.
+- What's new: none — merge of f314106c, no customer-visible change of its own
+
+<<<<<<<<< Temporary merge branch 1
+
+## 2026-10-21 — #821: Codex fixes for the setup display preview
+
+- User approval: no visible change – UI approval not needed (#821 Codex fixes: setup preview no longer invents usage windows and the Manual tile shows only the pinned provider, as the VibeTV does)
+- Approved customer-visible result: #821 as in its own entries; nothing new is visible, the setup preview only matches what VibeTV already shows.
+- Scope: setup display previews (setup-display-previews.ts, the Manual tile in setup-display-mode-screen.tsx) and their tests. Pull request branch #821 only, not merged, not released.
+- What's new: none — preview corrections that match the device
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at 9702a6ef
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (9702a6ef) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with 9702a6ef; nothing else changes.
+- Scope: the merge of 9702a6ef and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of 9702a6ef, no customer-visible change of its own
+=========
+
+## 2026-10-21 — #780: approval marker after merging main at 467fd7fb
+
+- User approval: no visible change – UI approval not needed (merge of main (467fd7fb) into #780; the own entries of #780 keep their approvals)
+- Approved customer-visible result: #780 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
+- Scope: the merge of 467fd7fb and this approval record. Pull request branch #780 only, not merged, not released.
+- What's new: none — merge of 467fd7fb, no customer-visible change of its own
+>>>>>>>>> Temporary merge branch 2
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at 2073aaec
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (2073aaec) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with 2073aaec; nothing else changes.
+- Scope: the merge of 2073aaec and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of 2073aaec, no customer-visible change of its own
+
+## 2026-10-21 — #821: Display mode Continue waits for real usage
+
+- User approval: pending — #821 setup step Display mode: Continue becomes active only when the tiles show real usage, not during the loading skeletons (Paul 21.10. 7201 feedback)
+- Approved customer-visible result: on the Display mode step Continue stays inactive while a tile still shows its skeleton, and becomes active once the tiles show usage or an unavailable reading.
+- Scope: setup-display-mode-screen.tsx (Continue gate) and its test. Pull request branch #821 only, not merged, not released.
+- What's new: none — the Continue fix on the Display mode step is pending Paul's approval; not in a release
+
+## 2026-10-21 — #821: Display mode Continue waits while a tile is a skeleton (Codex fix)
+
+- User approval: no visible change – UI approval not needed (#821 Codex fix: Continue also waits while the theme preview itself is still loading; same rule as the pending 7201 fix)
+- Approved customer-visible result: none new; Continue stays inactive exactly while a Display mode card draws its skeleton (theme pack loading, or no provider frames yet), as the pending 7201 entry describes.
+- Scope: setup-display-mode-screen.tsx (Continue gate shares one helper with the tiles; the pack is loaded by the step), its tests, and the two theme tile tests that now pass the pack in. Pull request branch #821 only, not merged, not released.
+- What's new: none — the Continue gate now matches the skeleton rule; no customer-visible change of its own
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at e55eaf93
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (e55eaf93) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with e55eaf93; nothing else changes.
+- Scope: the merge of e55eaf93 and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of e55eaf93, no customer-visible change of its own
+
+## 2026-10-21 — #821: Build 7 integration of claude/setup11-live-theme-tiles
+
+- User approval: pending — build7 integration of claude/setup11-live-theme-tiles at e3156d6b0332 for the requested Pace + Two at once Mac test.
+- Approved customer-visible result: Preserve the incoming feature together with the existing Build 6 customer flows in the local integration candidate.
+- Scope: Merge claude/setup11-live-theme-tiles into claude/paultest-build7; retain all source approval entries.
+- What's new: none — integration of existing feature entries only.
