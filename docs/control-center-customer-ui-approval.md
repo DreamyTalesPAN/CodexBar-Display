@@ -9360,3 +9360,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: both branches retain their existing behavior and approval blocks; this merge adds no customer-visible behavior.
 - Scope: base merge into #822, setup-dialog.tsx conflict resolution and this approval record; PR branch only.
 - What's new: none — merge-only compatibility resolution
+
+## 2026-10-21 — #822: wait for an empty completed scan before the WiFi update offer
+
+- User approval: no visible change – UI approval not needed (bug fix: #822 WiFi update offer no longer claims a failed search while scanning or after finding a device)
+- Approved customer-visible result: the existing update offer appears only after the whole scan finishes without a VibeTV; cable and manual-IP help remain reachable otherwise.
+- Scope: setup-wizard.tsx and its late-release regression tests; shared existing search state gates both update-offer paths.
+- What's new: none — correct an existing update-offer condition
