@@ -44,7 +44,7 @@ func TestRescueMarkerIgnoresStaleAndBrokenFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, ok := LoadRescueMarker(home, now); ok {
-		t.Fatal("a marker older than a day must not authorize a flash")
+		t.Fatal("a marker older than RescueMarkerMaxAge must not authorize a flash")
 	}
 	if err := SaveRescueMarker(home, RescueMarker{TargetFirmware: "1.0.9", ImagePath: "/x", WriteStartedAt: now}); err != nil {
 		t.Fatal(err)
@@ -82,5 +82,20 @@ func TestRescueMarkerFailedSaveLeavesThePreviousMarkerIntact(t *testing.T) {
 	got, ok := LoadRescueMarker(home, now)
 	if !ok || got.Port != "COM4" || got.TargetFirmware != "1.0.9" {
 		t.Fatalf("a failed save must keep the previous marker: %+v ok=%v", got, ok)
+	}
+}
+
+// ChipDeviceID must give the deviceId the firmware reports (ESP.getChipId), the
+// same as esptool's chip_id: (MAC0 >> 24) | ((MAC1 & 0xFFFFFF) << 8).
+func TestChipDeviceIDMatchesTheFirmwaresChipID(t *testing.T) {
+	// MAC1 0x0000f729, MAC0 0xda123456 -> 0xda | 0xf729<<8 = 0xf729da = 16198106,
+	// the deviceId of the Mac bench VibeTV.
+	if got, ok := ChipDeviceID("0000f729da123456"); !ok || got != "16198106" {
+		t.Fatalf("ChipDeviceID = %q, %v; want 16198106", got, ok)
+	}
+	for _, bad := range []string{"", "f729da", "zzzzzzzzzzzzzzzz"} {
+		if _, ok := ChipDeviceID(bad); ok {
+			t.Fatalf("ChipDeviceID(%q) must not be ok", bad)
+		}
 	}
 }

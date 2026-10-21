@@ -8053,6 +8053,27 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 392e4e18 and this approval record. Pull request branch #838 only, not merged, not released.
 - What's new: none — merge of 392e4e18, no customer-visible change of its own
 
+## 2026-10-20 — #840: approval marker after rebasing onto main at 5f09bf54
+
+- User approval: no visible change – UI approval not needed (#840 base switched from claude/818-rom-rescue-retry to main after #819 was merged as 5f09bf54; merged the final #819 branch and main, which carry the same tree; the own entries of #840 keep their approvals)
+- Approved customer-visible result: #840 as in its own entries plus the entries merged with #819 and main; nothing else changes.
+- Scope: the merge of the final #819 branch and main and this approval record. Pull request branch #840 only, not merged, not released.
+- What's new: none — merge only, no customer-visible change of its own
+
+## 2026-10-20 — #840: approval marker after merging main at 392e4e18
+
+- User approval: no visible change – UI approval not needed (merge of main (392e4e18) into #840; the own entries of #840 keep their approvals)
+- Approved customer-visible result: #840 as in its own entries plus the entries merged with 392e4e18; nothing else changes.
+- Scope: the merge of 392e4e18 and this approval record. Pull request branch #840 only, not merged, not released.
+- What's new: none — merge of 392e4e18, no customer-visible change of its own
+
+## 2026-10-21 — #840: approval marker after merging main at e3503bda
+
+- User approval: no visible change – UI approval not needed (merge of main (e3503bda) into #840; the own entries of #840 keep their approvals)
+- Approved customer-visible result: #840 as in its own entries plus the entries merged with e3503bda; nothing else changes.
+- Scope: the merge of e3503bda and this approval record. Pull request branch #840 only, not merged, not released.
+- What's new: none — merge of e3503bda, no customer-visible change of its own
+
 ## 2026-10-17 — Calm redesign of the Setup Wizard, steps 1–8 (variant B, #713)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:30: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: Calm redesign of the Setup Wizard, steps 1–8 (variant B, #713)
@@ -8317,6 +8338,13 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #780 as in its own entries plus the entries merged with 41bf10cf; nothing else changes.
 - Scope: the merge of 41bf10cf and this approval record. Pull request branch #780 only, not merged, not released.
 - What's new: none — merge of 41bf10cf, no customer-visible change of its own
+
+## 2026-10-21 — #780: approval marker after merging main at f314106c
+
+- User approval: no visible change – UI approval not needed (merge of main (f314106c) into #780; the own entries of #780 keep their approvals)
+- Approved customer-visible result: #780 as in its own entries plus the entries merged with f314106c; nothing else changes.
+- Scope: the merge of f314106c and this approval record. Pull request branch #780 only, not merged, not released.
+- What's new: none — merge of f314106c, no customer-visible change of its own
 
 ## 2026-10-20 — Setup step 11: display mode tiles show the active theme with live values
 
