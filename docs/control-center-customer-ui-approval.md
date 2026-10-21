@@ -9018,3 +9018,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Automatic and Manual retain the larger theme preview and grey unavailable placeholder, while companion frames remain authoritative for values, errors, Busy state, wire limits and root countdowns; initial loading gates and bounded theme requests stay intact.
 - Scope: merge #821 into #858, keep the companion-frame helpers and all approval blocks, retain the setup grid and placeholder changes, and cover device window caps before root countdown projection in the Go preview tests; no hardware or running-app check.
 - What's new: none — combine the existing pending setup layout and preview parity fixes without another feature.
+
+## 2026-10-21 — #858: ignore superseded usage responses and failures
+
+- User approval: no visible change – UI approval not needed (#858 coordinator-authorized review fix for discussion_r4338741973: obsolete usage requests no longer overwrite newer values, status, errors or refresh state)
+- Approved customer-visible result: the newest usage request owns its values, preview frames, errors and status; late older successes or failures do not replace that result, and the newest settled poll can finish the usage spinner without clearing another action.
+- Scope: extend the existing refreshUsage generation guard in control-center-app.tsx; regressions in control-center-app.usage-refresh.test.tsx cover stale unavailable, read failure, unreachable and access-blocked replies, stale success after a newer failure, and spinner completion; no hardware or running-app change.
+- What's new: none — correct the existing usage refresh race without changing copy or layout.

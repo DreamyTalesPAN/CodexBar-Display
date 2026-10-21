@@ -3442,10 +3442,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             undefined,
             { preserveLastError: quiet },
           );
-          if (generation === usageGenerationRef.current) {
-            setUsage(payload);
-            setPreviewFrames(frames ?? null);
+          if (generation !== usageGenerationRef.current) {
+            return;
           }
+          setUsage(payload);
+          setPreviewFrames(frames ?? null);
           setUsageError(null);
           setCompanionStatus("online");
           if (!quiet) {
@@ -3457,6 +3458,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             });
           }
         } catch (error) {
+          if (generation !== usageGenerationRef.current) {
+            return;
+          }
           const normalized = normalizeUsageError(
             normalizeCaughtError(error, "Usage needs attention."),
           );
@@ -3480,8 +3484,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             });
           }
         } finally {
-          if (!quiet) {
-            setBusyAction(null);
+          if (generation === usageGenerationRef.current) {
+            setBusyAction((current) => (current === "usage" ? null : current));
           }
         }
       })();

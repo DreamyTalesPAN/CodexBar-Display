@@ -210,3 +210,73 @@ it("keeps the newest usage when an older read resolves last", async () => {
   expect(text()).toContain("77%");
   expect(text()).not.toContain("11%");
 });
+
+it.each([
+  "usage_unavailable",
+  "usage_read_failed",
+  "COMPANION_UNREACHABLE",
+  "LOCAL_NETWORK_ACCESS_REQUIRED",
+])("ignores a superseded usage failure (%s) after a newer successful poll", async (code) => {
+  let releaseOlder: (response: Response) => void = () => {};
+  const { text, wait } = mountApp((url) =>
+    url.includes("refresh=1")
+      ? new Promise<Response>((resolve) => { releaseOlder = resolve; })
+      : jsonResponse(usageBody(12, 77)),
+  );
+  await wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+  await wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
+  await wait(35);
+  expect(text()).toContain("77%");
+  await act(async () => {
+    releaseOlder(jsonResponse({ ok: false, error: { code, message: "Obsolete usage failure", nextAction: "Obsolete recovery" } }, 503));
+  });
+  expect(text()).toContain("77%");
+  expect(text()).not.toContain("Obsolete usage failure");
+  expect(screen.getByRole("button", { name: "Refresh token usage" }).getAttribute("aria-busy")).toBe("false");
+});
+
+it("keeps a newer usage error when a superseded refresh succeeds", async () => {
+  let releaseOlder: (response: Response) => void = () => {};
+  let pollFails = false;
+  const { text, wait } = mountApp((url) => {
+    if (url.includes("refresh=1")) {
+      return new Promise<Response>((resolve) => { releaseOlder = resolve; });
+    }
+    return pollFails
+      ? jsonResponse({ ok: false, error: { code: "usage_read_failed", message: "Current usage failure", nextAction: "Current recovery" } }, 503)
+      : jsonResponse(usageBody(12, 77));
+  });
+  await wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+  await wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
+  pollFails = true;
+  await wait(35);
+  expect(text()).toContain("Current usage failure");
+  await act(async () => { releaseOlder(jsonResponse(usageBody(12, 11))); });
+  expect(text()).toContain("Current usage failure");
+  expect(text()).not.toContain("11%");
+});
+
+it("lets only the newest usage request finish refreshing", async () => {
+  const manualReads: ((response: Response) => void)[] = [];
+  const { wait } = mountApp((url) =>
+    url.includes("refresh=1")
+      ? new Promise<Response>((resolve) => { manualReads.push(resolve); })
+      : jsonResponse(usageBody(12, 77)),
+  );
+  await wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+  await wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
+  await wait(35);
+  expect(screen.getByRole("button", { name: "Refresh token usage" }).getAttribute("aria-busy")).toBe("false");
+  fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
+  expect(manualReads).toHaveLength(2);
+  await act(async () => { manualReads[0](jsonResponse(usageBody(12, 11))); });
+  expect(screen.getByRole("button", { name: "Refresh token usage" }).getAttribute("aria-busy")).toBe("true");
+  await act(async () => { manualReads[1](jsonResponse(usageBody(12, 88))); });
+  expect(screen.getByRole("button", { name: "Refresh token usage" }).getAttribute("aria-busy")).toBe("false");
+});
