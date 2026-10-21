@@ -8795,3 +8795,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
 - Scope: the merge of 3dc0a15b and this approval record. Pull request branch #781 only, not merged, not released.
 - What's new: none — merge of 3dc0a15b, no customer-visible change of its own
+
+## 2026-10-21 — #781: closing the key dialog no longer hides a verified key
+
+- User approval: no visible change – UI approval not needed (bug fix: closing the key dialog no longer hides a verified key)
+- Approved customer-visible result: #781 as in its own entries; opening and closing the Theme Studio key dialog before its status read answers no longer shows "Not connected" for a verified key, nothing else changes.
+- Scope: the Theme Studio key form's reports of the stored-key state to its opener. Pull request branch #781 only, not merged, not released.
+- What's new: none — bug fix that removes a wrong state write, no new text or layout

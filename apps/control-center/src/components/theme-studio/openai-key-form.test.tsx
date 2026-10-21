@@ -192,6 +192,22 @@ describe("Theme Studio AI row in Settings", () => {
     await waitFor(() => expect((screen.getByRole("button", { name: "Save key" }) as HTMLButtonElement).disabled).toBe(false));
   });
 
+  it("keeps a verified key when the dialog is opened and closed before the reads answer (#847)", async () => {
+    let answerRow!: (value: ReturnType<typeof capabilities>) => void;
+    let answerForm!: (value: ReturnType<typeof capabilities>) => void;
+    vi.mocked(fetchAIThemeCapabilities)
+      .mockReturnValueOnce(new Promise((resolve) => { answerRow = resolve; })) // the row's mount read
+      .mockReturnValueOnce(new Promise((resolve) => { answerForm = resolve; })); // the form's mount read
+    render(<ThemeStudioKeyRow />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add key" }));
+    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+    answerRow(capabilities(true));
+    answerForm(capabilities(true));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getByText("Connected")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Change key" })).toBeTruthy();
+  });
+
   it("has no close X in the key dialog", async () => {
     vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(capabilities(false));
     render(<ThemeStudioKeyRow />);

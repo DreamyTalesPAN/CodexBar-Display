@@ -69,6 +69,7 @@ export function OpenAIKeyForm({
   function changeConfigured(value: boolean | "pending") {
     generation.current += 1;
     setConfigured(value);
+    onConfiguredChange?.(value);
   }
   /** The one capability read. A failed read keeps the last known state; only the mount-time read reports the helper as unavailable. */
   function readState(onFail?: () => void) {
@@ -79,6 +80,8 @@ export function OpenAIKeyForm({
         const state = openAIState(capabilities);
         setEnabled(state.enabled);
         setConfigured(state.configured);
+        // Reported even after the dialog closed: the opener keeps the answer it could not get from this form.
+        onConfiguredChange?.(state.configured);
       },
       () => {
         if (current === generation.current) onFail?.();
@@ -86,7 +89,6 @@ export function OpenAIKeyForm({
     );
   }
 
-  useEffect(() => onConfiguredChange?.(configured), [configured]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => readState(() => setEnabled(false)), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function setBusy(value: boolean) {
