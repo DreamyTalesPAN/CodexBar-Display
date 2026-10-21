@@ -37,7 +37,8 @@ func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protoco
 	theme := configuredTheme(cliTheme)
 	var update *protocol.UpdateState
 	if cached := updates.snapshot(caps); cached != nil {
-		update = &cached.update
+		cachedUpdate := cached.update
+		update = &cachedUpdate
 	}
 	providers := make([]codexbar.ParsedFrame, 0, len(usage.Providers))
 	for _, snapshot := range usage.Providers {

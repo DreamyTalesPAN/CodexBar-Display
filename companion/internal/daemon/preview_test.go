@@ -512,3 +512,23 @@ func TestPreviewFramesCapLegacyFieldsAfterSelectingPinnedRows(t *testing.T) {
 		t.Fatalf("unexpected Automatic rows: %+v", rows)
 	}
 }
+
+func TestPreviewFramesDoNotNormalizeTheSharedUpdateCache(t *testing.T) {
+	isolatePreviewHome(t)
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	caps := previewTestCaps(2048)
+	caps.Board, caps.Firmware = "esp8266-smalltv-st7789", "1.0.56"
+	original := protocol.UpdateState{Status: " current ", LatestVersion: " 1.0.56 ", Message: " release ", FirmwareURL: " https://example.test/firmware.bin "}
+	cache := &FirmwareUpdateCache{}
+	cache.current.Store(&firmwareUpdateSnapshot{update: original, checkedAt: now, board: caps.Board, firmware: caps.Firmware})
+	usage := PersistedUsage{Providers: []ProviderUsageSnapshot{previewSnapshot("codex", now)}}
+	preview := PreviewFrames(usage, true, false, caps, now, cache, "", nil)[0]
+	for mode, frame := range map[string]*protocol.Frame{"automatic": preview.Automatic, "pinned": &preview.Pinned} {
+		if frame == nil || frame.Update == nil || frame.Update.Status != "current" || frame.Update.LatestVersion != "1.0.56" {
+			t.Fatalf("%s frame was not normalized: %+v", mode, frame)
+		}
+	}
+	if got := cache.snapshot(caps).update; got != original {
+		t.Fatalf("preview mutated the atomically shared update snapshot: got %+v, want %+v", got, original)
+	}
+}
