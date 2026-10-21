@@ -10,6 +10,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { availableMacAppDmgDownloadUrl } from "@/lib/companion-release";
+import { compareSemVerStrings } from "@/lib/semver";
 import {
   forgetCompletedSetups,
   rememberCompletedSetup,
@@ -4592,8 +4593,17 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         : hostedCompanionRelease || runtimeRelease || null;
   // The Mac App's launch check can find the update after the start went on
   // (#892). The page offers that version too, when the release check failed.
-  const [lateMacAppUpdateVersion, setLateMacAppUpdateVersion] = useState("");
-  useEffect(() => onNativeMacAppUpdateFound(setLateMacAppUpdateVersion), []);
+  // The offer ends once the Companion's own check says up to date, or the
+  // running Mac App has reached that version.
+  const [lateMacAppUpdate, setLateMacAppUpdate] = useState("");
+  useEffect(() => onNativeMacAppUpdateFound(setLateMacAppUpdate), []);
+  const runningMacAppVersion = companionInfo?.app?.version || companionInfo?.version || "";
+  const lateMacAppUpdateVersion =
+    (companionInfo?.update?.status === "available" &&
+      !companionInfo.update.updateAvailable) ||
+    (compareSemVerStrings(runningMacAppVersion, lateMacAppUpdate) ?? -1) >= 0
+      ? ""
+      : lateMacAppUpdate;
   const macAppUpdateAvailable = Boolean(
     companionInfo?.update?.updateAvailable ||
       companionRelease?.updateAvailable ||

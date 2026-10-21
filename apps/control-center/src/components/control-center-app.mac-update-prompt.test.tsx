@@ -80,16 +80,19 @@ async function openApp({
   setupFinished = true,
   firmwareUpdate,
   windows = false,
+  releaseCheckFailed = false,
 }: {
   userAgent?: string;
   setupFinished?: boolean;
   firmwareUpdate?: typeof installing;
   windows?: boolean;
+  releaseCheckFailed?: boolean;
 } = {}) {
   const companion = {
     device: setupFinished ? device : notSetUp,
     latestVersion: "9.9.10",
-    releaseCheckFailed: false,
+    releaseCheckFailed,
+    upToDate: false,
     hostedReleaseChecks: 0,
     firmwareUpdate: firmwareUpdate as typeof installing | undefined,
   };
@@ -134,7 +137,7 @@ async function openApp({
               status: companion.releaseCheckFailed ? "check_failed" : "available",
               latestVersion: companion.latestVersion,
               installedVersion: "9.9.9",
-              updateAvailable: !companion.releaseCheckFailed,
+              updateAvailable: !companion.releaseCheckFailed && !companion.upToDate,
               message: "A newer Mac App is available.",
             },
           },
@@ -353,4 +356,45 @@ it("offers a late launch update when the runtime release check failed (#892)", a
   app.companion.device = device;
   await app.wait(20);
   expect(openMacAppUpdatePrompt).toHaveBeenCalledTimes(1);
+});
+
+it("offers a late launch update that was reported before the page mounted (#892)", async () => {
+  // The shell reported the version before the page's listener existed; the
+  // page reads the last one on mount, and a reload reports it again.
+  window.vibetvMacAppUpdateFound = { version: "9.9.10" };
+  try {
+    await openApp({ userAgent: nativeUserAgent, setupFinished: false, releaseCheckFailed: true });
+    expect(runtime.wizardProps?.macAppUpdate).toBeDefined();
+  } finally {
+    delete window.vibetvMacAppUpdateFound;
+  }
+});
+
+it("drops a late launch update once the Companion reports up to date (#892)", async () => {
+  const app = await openApp({ userAgent: nativeUserAgent, setupFinished: false });
+  app.companion.releaseCheckFailed = true;
+  await app.wait(10);
+  await act(async () => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:mac-app-update-found", { detail: { version: "9.9.10" } }),
+    );
+  });
+  expect(runtime.wizardProps?.macAppUpdate).toBeDefined();
+
+  app.companion.releaseCheckFailed = false;
+  app.companion.upToDate = true;
+  await app.wait(10);
+  expect(runtime.wizardProps?.macAppUpdate).toBeUndefined();
+});
+
+it("drops a late launch update once the running Mac App has that version (#892)", async () => {
+  const app = await openApp({ userAgent: nativeUserAgent, setupFinished: false });
+  app.companion.releaseCheckFailed = true;
+  await app.wait(10);
+  await act(async () => {
+    window.dispatchEvent(
+      new CustomEvent("vibetv:mac-app-update-found", { detail: { version: "9.9.9" } }),
+    );
+  });
+  expect(runtime.wizardProps?.macAppUpdate).toBeUndefined();
 });

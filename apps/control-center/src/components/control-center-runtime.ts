@@ -79,16 +79,23 @@ export function onNativeDownloadFinished(
   return () => window.removeEventListener("vibetv:download-finished", handle);
 }
 
+declare global {
+  interface Window {
+    vibetvMacAppUpdateFound?: unknown;
+  }
+}
+
 /**
- * The Mac App's launch update check found an update after the start had gone
- * on (#892). The shell passes the version, so the page can offer it when the
- * Companion's own release check failed. Returns the function that stops listening.
+ * The Mac App's launch update check found an update after the start went on
+ * (#892). The shell passes the version, so the page can offer it when the
+ * Companion's own release check failed. The shell also keeps the last version
+ * on the window, so a page that mounts late or reloads still gets it. Returns
+ * the function that stops listening.
  */
 export function onNativeMacAppUpdateFound(
   listener: (version: string) => void,
 ): () => void {
-  const handle = (event: Event) => {
-    const detail: unknown = (event as CustomEvent).detail;
+  const accept = (detail: unknown) => {
     if (typeof detail !== "object" || detail === null) {
       return;
     }
@@ -97,7 +104,9 @@ export function onNativeMacAppUpdateFound(
       listener(version);
     }
   };
+  const handle = (event: Event) => accept((event as CustomEvent).detail);
   window.addEventListener("vibetv:mac-app-update-found", handle);
+  accept(window.vibetvMacAppUpdateFound);
   return () => window.removeEventListener("vibetv:mac-app-update-found", handle);
 }
 

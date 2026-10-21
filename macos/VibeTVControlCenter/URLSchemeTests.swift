@@ -78,7 +78,7 @@ func runURLSchemeTests() {
     // Issue #892: a late launch update reaches the page with its version.
     require(
         macAppUpdateFoundEventScript(version: "1.2.3")
-            == "window.dispatchEvent(new CustomEvent('vibetv:mac-app-update-found', { detail: {\"version\":\"1.2.3\"} })); true",
+            == "window.vibetvMacAppUpdateFound = {\"version\":\"1.2.3\"}; window.dispatchEvent(new CustomEvent('vibetv:mac-app-update-found', { detail: {\"version\":\"1.2.3\"} })); true",
         "a late Mac App update must be reported to the page with its version"
     )
     let fallbackEndpoint = RuntimeEndpoint(

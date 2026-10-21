@@ -309,7 +309,8 @@ func downloadFinishedEventScript(fileName: String, saved: Bool) -> String? {
 }
 
 /// The script that tells the page the Mac App's launch check found an update
-/// after the start went on (#892). The version reaches the script as JSON.
+/// after the start went on (#892). It also keeps the version on the window, so
+/// a page that mounts later or reloads reads it. The version reaches the script as JSON.
 func macAppUpdateFoundEventScript(version: String) -> String? {
     guard let detail = try? JSONSerialization.data(
         withJSONObject: ["version": version],
@@ -317,7 +318,8 @@ func macAppUpdateFoundEventScript(version: String) -> String? {
     ) else {
         return nil
     }
-    return "window.dispatchEvent(new CustomEvent('vibetv:mac-app-update-found', { detail: \(String(decoding: detail, as: UTF8.self)) })); true"
+    let json = String(decoding: detail, as: UTF8.self)
+    return "window.vibetvMacAppUpdateFound = \(json); window.dispatchEvent(new CustomEvent('vibetv:mac-app-update-found', { detail: \(json) })); true"
 }
 
 func isApprovedDMGDownloadURL(_ url: URL) -> Bool {
@@ -2053,6 +2055,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var reloadAttempts = 0
     private var webContentTerminations: [Date] = []
     private var scheduledReload: Task<Void, Never>?
+    // The version of a launch update check that finished after the start went on (#892).
+    private var lateMacAppUpdateVersion: String?
     private var pageKeepAlive: Task<Void, Never>?
     private var preparationTask: Task<Void, Never>?
     private var closePreparationInFlight = false
@@ -5552,7 +5556,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             // app in the middle of setup. The page offers the update and owns
             // when to prompt (#822); it learns the version here, because the
             // runtime's release check may have failed (#892).
-            notifyMacAppUpdateFound(item.displayVersionString)
+            lateMacAppUpdateVersion = item.displayVersionString
+            notifyMacAppUpdateFound()
             throw CocoaError(.userCancelled)
         case .installing, .done:
             break
@@ -5723,8 +5728,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     /// Tells the page that the launch check found an update after the start
     /// went on (#892).
-    private func notifyMacAppUpdateFound(_ version: String) {
-        guard let script = macAppUpdateFoundEventScript(version: version) else {
+    private func notifyMacAppUpdateFound() {
+        guard let version = lateMacAppUpdateVersion,
+              let script = macAppUpdateFoundEventScript(version: version) else {
             return
         }
         webView?.evaluateJavaScript(script) { _, error in
@@ -5828,6 +5834,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         scheduledReload = nil
         reloadAttempts = 0
         controlCenterRoute.didLoad()
+        // A reloaded page lost the window value; the shell says it again.
+        notifyMacAppUpdateFound()
     }
 
     // WebKit ends the page's process under memory pressure or when it
