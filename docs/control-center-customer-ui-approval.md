@@ -8983,6 +8983,20 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 467fd7fb and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of 467fd7fb, no customer-visible change of its own
 
+## 2026-10-21 — #784: Mac App up to date only with a known installed version
+
+- User approval: no visible change – UI approval not needed (bug fix: without a known installed version the Mac App is no longer called up to date)
+- Approved customer-visible result: #784 as before; the Mac App line says "Up to date" only when its installed version was compared, otherwise it stays as it was without a check.
+- Scope: Overview Mac App line in control-center-app.tsx and its test. Pull request branch #784 only, not merged, not released.
+- What's new: none — bug fix, no new text
+
+## 2026-10-21 — #784: approval marker after merging main at 35152cc8
+
+- User approval: no visible change – UI approval not needed (merge of main (35152cc8) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
+- Scope: the merge of 35152cc8 and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 35152cc8, no customer-visible change of its own
+
 ## 2026-10-20 — #778: an invalid field with keyboard focus shows the full ink focus ring
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" (to the picture ui/817-invalid-focus/rot-close.png, question "Passt das so?"; the final #817 look is the red focus ring on every invalid field) — entry: #778: an invalid field with keyboard focus shows the full ink focus ring — before → after: a focused invalid field showed the red, reduced invalid ring → the full ink focus ring on a focused invalid field (light and dark), the red border stays and the red ring stays when the field is not focused. Nothing else changes.
