@@ -16545,3 +16545,11 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve this feature together with the existing build9 Settings and three equal display cards.
 - Scope: Integration merge preserving both approval histories.
 - What's new: none — integration only.
+
+
+## 2026-10-21 — build9: refresh #877 for 7205
+
+- User approval: pending — integrate claude/used-remaining-switch at 4e0c061a757a into build 7205.
+- Approved customer-visible result: Preserve this feature together with the existing build9 Settings and three equal display cards.
+- Scope: Integration merge preserving both approval histories.
+- What's new: none — integration only.
