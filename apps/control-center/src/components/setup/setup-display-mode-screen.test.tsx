@@ -1,13 +1,34 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DisplayModeChoice,
   SetupDisplayModeScreen,
   type SetupDisplayModeProvider,
 } from "./setup-display-mode-screen";
+import type { ThemePackLoad } from "./setup-display-theme-tiles";
 
 const codex: SetupDisplayModeProvider = { id: "codex", label: "Codex" };
 const cursor: SetupDisplayModeProvider = { id: "cursor", label: "Cursor" };
+
+// The theme pack the step has loaded. SSR never finishes a load, so the tests
+// set it here; the strip is stubbed because a real pack is not needed to tell
+// a skeleton from readings.
+let themePack: ThemePackLoad = { pack: null, status: "loading" };
+const readyPack: ThemePackLoad = {
+  pack: {} as NonNullable<ThemePackLoad["pack"]>,
+  status: "ready",
+};
+vi.mock("./setup-display-theme-tiles", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./setup-display-theme-tiles")>()),
+  // Without a theme the hook reports no pack at all, as the real one does.
+  useThemeRenderPack: (theme: unknown) =>
+    theme ? themePack : { pack: null, status: "error" },
+  ThemeTileStrip: () => <span data-slot="theme-strip" />,
+}));
+
+beforeEach(() => {
+  themePack = { pack: null, status: "loading" };
+});
 
 function render(
   props: Partial<Parameters<typeof SetupDisplayModeScreen>[0]> = {},
@@ -176,20 +197,43 @@ describe("SetupDisplayModeScreen", () => {
   });
 
   it("opens Continue once the tiles show real usage", () => {
-    const html = render({ providers: [codex] });
+    themePack = readyPack;
+    const html = render({ providers: [codex], theme: { id: "claude-creature" } });
 
+    expect(html).toContain('data-slot="theme-strip"');
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
   });
 
+  it("keeps Continue closed while the theme pack is still loading", () => {
+    const html = render({ theme: { id: "claude-creature" } });
+
+    expect(html).toContain('data-state="skeleton"');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+  });
+
+  it("keeps Continue closed while the provider data is still loading", () => {
+    themePack = readyPack;
+    const html = render({
+      automaticPreview: null,
+      automaticPreviews: [],
+      providers: [],
+      theme: { id: "claude-creature" },
+    });
+
+    expect(html).toContain('data-state="skeleton"');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+  });
+
   it("opens Continue when the usage is unavailable, so the customer is not stuck", () => {
+    themePack = readyPack;
     const html = render({
       automaticPreview: {
         providerLabel: "Codex",
         resetLabel: null,
         windows: [{ label: "Session", percent: null }, { label: "Weekly", percent: null }],
       },
-      manualPreview: null,
       providers: [codex],
+      theme: { id: "claude-creature" },
     });
 
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);

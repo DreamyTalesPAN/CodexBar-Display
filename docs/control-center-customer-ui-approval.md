@@ -8514,3 +8514,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: on the Display mode step Continue stays inactive while a tile still shows its skeleton, and becomes active once the tiles show usage or an unavailable reading.
 - Scope: setup-display-mode-screen.tsx (Continue gate) and its test. Pull request branch #821 only, not merged, not released.
 - What's new: none — the Continue fix on the Display mode step is pending Paul's approval; not in a release
+
+## 2026-10-21 — #821: Display mode Continue waits while a tile is a skeleton (Codex fix)
+
+- User approval: no visible change – UI approval not needed (#821 Codex fix: Continue also waits while the theme preview itself is still loading; same rule as the pending 7201 fix)
+- Approved customer-visible result: none new; Continue stays inactive exactly while a Display mode card draws its skeleton (theme pack loading, or no provider frames yet), as the pending 7201 entry describes.
+- Scope: setup-display-mode-screen.tsx (Continue gate shares one helper with the tiles; the pack is loaded by the step), its tests, and the two theme tile tests that now pass the pack in. Pull request branch #821 only, not merged, not released.
+- What's new: none — the Continue gate now matches the skeleton rule; no customer-visible change of its own
