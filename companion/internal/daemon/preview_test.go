@@ -17,6 +17,7 @@ func previewSnapshot(provider string, collectedAt time.Time, windows ...protocol
 		Provider:    provider,
 		CollectedAt: collectedAt,
 		Frame: protocol.Frame{
+			V:            protocol.ProtocolVersionV2,
 			Provider:     provider,
 			Label:        provider,
 			Session:      10,
@@ -345,4 +346,32 @@ func TestPreviewFramesMatchSentTokenVisibilityAtWireBoundary(t *testing.T) {
 
 func previewTestCaps(maxBytes int) protocol.DeviceCapabilities {
 	return protocol.DeviceCapabilities{NegotiatedProtocolVersion: 2, SupportsProviderSlotsV1: true, MaxFrameBytes: maxBytes}
+}
+
+func TestPreviewFramesV1RemainingMatchesSentFrame(t *testing.T) {
+	isolatePreviewHome(t)
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	snapshot := previewSnapshot("codex", now, protocol.UsageWindow{ID: "session", Label: "Session", Percent: 30, ResetSec: 3600})
+	caps := previewTestCaps(2048)
+	caps.NegotiatedProtocolVersion = protocol.ProtocolVersionV1
+	deps := rotationTestDeps(3600, &runtimeconfig.ProviderDisplayConfig{Mode: "automatic"})
+	deps.now = func() time.Time { return now }
+	deps.usageBarsShowUsed = func() bool { return false }
+	deps.transportName = "usb"
+	var sent protocol.Frame
+	deps.sendLine = func(_ string, line []byte) error { return json.Unmarshal(line, &sent) }
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	result := selectCycleFrameFromProviders(state, []codexbar.ParsedFrame{parsedOf(snapshot)}, now, deps, nil, "select-provider", "", "", "")
+	if err := sendCycleResult(context.Background(), "test-port", caps, caps.MaxFrameBytes, state, deps, result); err != nil {
+		t.Fatal(err)
+	}
+	if sent.Session != 70 || len(sent.UsageSlots) != 1 || sent.UsageSlots[0].Percent != 70 {
+		t.Fatalf("unexpected stream fixture: %+v", sent)
+	}
+	preview := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{snapshot}}, false, false, caps, now)[0]
+	for mode, frame := range map[string]*protocol.Frame{"automatic": preview.Automatic, "pinned": &preview.Pinned} {
+		if frame == nil || !reflect.DeepEqual(*frame, sent) {
+			t.Errorf("%s: preview=%+v sent=%+v", mode, frame, sent)
+		}
+	}
 }

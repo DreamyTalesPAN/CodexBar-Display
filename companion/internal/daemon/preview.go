@@ -31,8 +31,6 @@ type ProviderPreview struct {
 func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time) []ProviderPreview {
 	providers := make([]codexbar.ParsedFrame, 0, len(usage.Providers))
 	for _, snapshot := range usage.Providers {
-		// The stream normalizes for the negotiated protocol, which carries the rows.
-		snapshot.Frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 		providers = append(providers, codexbar.ParsedFrame{
 			Frame:       snapshot.Frame,
 			Provider:    snapshot.Provider,
