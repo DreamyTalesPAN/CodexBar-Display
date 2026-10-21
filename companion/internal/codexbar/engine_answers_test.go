@@ -229,10 +229,13 @@ func TestSetProviderEnabledForgetsTheInventoryAtOnce(t *testing.T) {
 
 // The inventory was kept one minute and then read again on every poll with the
 // window open: "config providers" once a minute on Windows (#555). The answer
-// now stays for the life of the engine process while settings.json is unchanged.
-// settledEngine also points the Mac config at that file, so this holds on the Mac.
+// now stays for the life of the engine process while settings.json is unchanged
+// on Windows. The Mac reads it again after a minute (the next test).
 func TestProviderInventoryIsKeptForTheLifeOfTheEngine(t *testing.T) {
 	settledEngine(t)
+	originalMode := providerProbePerProvider
+	t.Cleanup(func() { providerProbePerProvider = originalMode })
+	providerProbePerProvider = true
 	runs := stubEngineCommands(t, func() ([]byte, error) { return inventoryWithClaude(true), nil })
 	if _, err := FetchProviderInventory(context.Background()); err != nil {
 		t.Fatal(err)
@@ -243,6 +246,36 @@ func TestProviderInventoryIsKeptForTheLifeOfTheEngine(t *testing.T) {
 	inventory, err := FetchProviderInventory(context.Background())
 	if err != nil || len(inventory) != 1 || !inventory[0].Enabled || *runs != 1 {
 		t.Fatalf("an hour-old answer for unchanged settings must be kept: inventory=%+v err=%v runs=%d", inventory, err, *runs)
+	}
+}
+
+// The Mac's inventory is not verified to come from the CodexBar config alone,
+// so an answer older than inventoryMaxAge is read again there; Windows keeps it.
+func TestProviderInventoryAgeDependsOnThePlatform(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		perProvider bool
+		wantRuns    int
+	}{
+		{name: "the Mac reads an answer older than a minute again", perProvider: false, wantRuns: 2},
+		{name: "Windows keeps the answer", perProvider: true, wantRuns: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			settledEngine(t)
+			originalMode := providerProbePerProvider
+			t.Cleanup(func() { providerProbePerProvider = originalMode })
+			providerProbePerProvider = tc.perProvider
+			runs := stubEngineCommands(t, func() ([]byte, error) { return inventoryWithClaude(true), nil })
+			if _, err := FetchProviderInventory(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			engineInventory.mu.Lock()
+			engineInventory.at = engineInventory.at.Add(-2 * time.Minute)
+			engineInventory.mu.Unlock()
+			if _, err := FetchProviderInventory(context.Background()); err != nil || *runs != tc.wantRuns {
+				t.Fatalf("err=%v runs=%d, want %d runs", err, *runs, tc.wantRuns)
+			}
+		})
 	}
 }
 

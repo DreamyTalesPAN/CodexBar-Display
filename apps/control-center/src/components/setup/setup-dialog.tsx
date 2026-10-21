@@ -25,6 +25,8 @@ type SetupDialogProps = {
   children?: ReactNode;
   /** Omit for a dialog whose title says it all; no empty description is rendered. */
   description?: ReactNode;
+  /** Stable identity for notices that yield to other dialogs. */
+  noticeKind?: "system-busy" | "theme-library";
   /** Optional header icon (Theme Studio's dialogs); the calm dialogs (A2) draw none. */
   icon?: LucideIcon;
   /** An announcement, not a page's own dialog: it waits for those (#632). */
@@ -99,6 +101,7 @@ export function SetupDialog({
   icon: Icon,
   announcement,
   tone = "error",
+  noticeKind,
   onOpenChange,
   onOpenAutoFocus,
   open,
@@ -127,6 +130,7 @@ export function SetupDialog({
         )}
       />
       <DialogContent
+        data-notice-kind={noticeKind}
         className={wide ? "sm:max-w-[480px]" : undefined}
         data-announcement={announcement ? "" : undefined}
         style={{ animation: "none" }}

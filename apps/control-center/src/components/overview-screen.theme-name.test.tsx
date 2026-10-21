@@ -1,17 +1,68 @@
 // @vitest-environment jsdom
 import { renderToStaticMarkup } from "react-dom/server";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { createBlankThemeSpec, validateThemeSpec } from "@/lib/theme-studio";
+import { loadUserThemes, USER_THEMES_STORAGE_KEY } from "@/lib/theme-studio-storage";
 import { OverviewScreen } from "./overview-screen";
 
 // The themes the customer saved in Theme Studio.
 const saved = vi.hoisted(() => ({ themes: [] as unknown[] }));
 vi.mock("@/lib/theme-studio-storage", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  loadUserThemes: () => ({ ok: true, value: { themes: saved.themes } }),
+  loadUserThemes: vi.fn(() => ({ ok: true, value: { themes: saved.themes } })),
 }));
+vi.mock("./live-vibetv-preview", () => ({ LiveVibeTVPreview: () => null }));
+vi.mock("./vibetv-3d-support", () => ({ hardwareWebGLAvailable: () => false }));
 afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
   saved.themes = [];
+});
+
+it("reads saved themes once across status polls and still follows theme changes", () => {
+  const spec = { ...createBlankThemeSpec(), themeId: "my-theme-3" };
+  saved.themes = [
+    { id: "u-1", updatedAt: "2026-10-21T00:00:00Z", document: { assets: {}, packName: "Night Shift", spec } },
+  ];
+  const view = render(<OverviewScreen companionStatus="online" device={{ connected: true, ready: true, activeTheme: "my-theme-3" }} />);
+  expect(screen.getByText("Night Shift")).toBeTruthy();
+  const reads = vi.mocked(loadUserThemes).mock.calls.length;
+
+  for (let poll = 0; poll < 5; poll += 1) {
+    view.rerender(<OverviewScreen companionStatus="online" device={{ connected: true, ready: true, activeTheme: "my-theme-3" }} />);
+  }
+  expect(vi.mocked(loadUserThemes).mock.calls.length).toBe(reads);
+  view.rerender(<OverviewScreen companionStatus="online" device={{ connected: true, ready: true, activeTheme: "other-theme" }} />);
+  expect(screen.getByText("Other Theme")).toBeTruthy();
+  expect(vi.mocked(loadUserThemes).mock.calls.length).toBe(reads);
+});
+
+it("reloads saved themes changed in another window and on returning from Theme Studio", () => {
+  const spec = { ...createBlankThemeSpec(), themeId: "my-theme-3" };
+  const theme = (name: string) => ({
+    id: "u-1", updatedAt: "2026-10-21T00:00:00Z", document: { assets: {}, packName: name, spec },
+  });
+  saved.themes = [theme("Night Shift")];
+  const props = { companionStatus: "online" as const, device: { connected: true, ready: true, activeTheme: "my-theme-3" } };
+  const view = render(<OverviewScreen {...props} />);
+  const reads = vi.mocked(loadUserThemes).mock.calls.length;
+  act(() => window.dispatchEvent(new StorageEvent("storage", { key: "unrelated" })));
+  expect(vi.mocked(loadUserThemes).mock.calls.length).toBe(reads);
+
+  saved.themes = [theme("Renamed elsewhere")];
+  act(() => window.dispatchEvent(new StorageEvent("storage", { key: USER_THEMES_STORAGE_KEY })));
+  expect(screen.getByText("Renamed elsewhere")).toBeTruthy();
+  expect(vi.mocked(loadUserThemes).mock.calls.length).toBe(reads + 1);
+
+  saved.themes = [];
+  act(() => window.dispatchEvent(new StorageEvent("storage", { key: null })));
+  expect(screen.getByText("My Theme 3")).toBeTruthy();
+
+  view.unmount();
+  saved.themes = [theme("Saved in Theme Studio")];
+  render(<OverviewScreen {...props} />);
+  expect(screen.getByText("Saved in Theme Studio")).toBeTruthy();
 });
 
 // These were Support tests while Support showed the active theme; the Overview

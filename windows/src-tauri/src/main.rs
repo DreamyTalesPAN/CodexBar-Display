@@ -91,7 +91,10 @@ struct Shell {
     window_generation: AtomicU64,
     // Where the window was when a close released it; the next window goes
     // there. Process lifetime only.
-    window_geometry: Mutex<Option<Remembered>>,
+    // Stored with the number of the event that took it; see store_if_newer.
+    window_geometry: Mutex<Option<(u64, Remembered)>>,
+    // Numbers the geometry snapshots in event order.
+    geometry_seq: AtomicU64,
     // Closes requested and not cancelled by a present. The startup load
     // compares it to tell that the customer closed the window while the
     // update check ran.
@@ -231,6 +234,7 @@ fn main() {
             windows_created: AtomicU64::new(0),
             window_generation: AtomicU64::new(0),
             window_geometry: Mutex::new(None),
+            geometry_seq: AtomicU64::new(0),
             closes: AtomicU64::new(0),
             shortcut_registered_changed: Condvar::new(),
         })
@@ -500,21 +504,30 @@ fn window_geometry(window: &tauri::WebviewWindow, previous: Option<Remembered>) 
     remembered_after(current, minimized, maximized, previous)
 }
 
+// The workers run unordered, so a snapshot of an older event must not replace
+// a newer one.
+fn store_if_newer(slot: &mut Option<(u64, Remembered)>, seq: u64, geometry: Remembered) {
+    if slot.is_some_and(|(stored, _)| seq < stored) {
+        return;
+    }
+    *slot = Some((seq, geometry));
+}
+
 // Worker threads only. Called on every move and resize, so a close while the
 // window is maximized still has the last normal place (Tauri reports only the
 // maximized bounds then).
-fn remember_window_geometry(app: &AppHandle, window: &tauri::WebviewWindow) {
+fn remember_window_geometry(app: &AppHandle, window: &tauri::WebviewWindow, seq: u64) {
     let shell = app.state::<Shell>();
-    let previous = *shell.window_geometry.lock().unwrap();
+    let previous = shell.window_geometry.lock().unwrap().map(|(_, geometry)| geometry);
     if let Some(geometry) = window_geometry(window, previous) {
-        *shell.window_geometry.lock().unwrap() = Some(geometry);
+        store_if_newer(&mut shell.window_geometry.lock().unwrap(), seq, geometry);
     }
 }
 
 // Worker threads only (it asks for the monitors). The monitors are asked
 // only after a release, so the first start never waits for the event loop.
 fn placement_for(app: &AppHandle) -> Placement {
-    let Some(remembered) = *app.state::<Shell>().window_geometry.lock().unwrap() else {
+    let Some((_, remembered)) = *app.state::<Shell>().window_geometry.lock().unwrap() else {
         return Placement::Default;
     };
     let work_areas: Vec<WindowRect> = app
@@ -596,7 +609,9 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
         WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
             let handle = handle.clone();
             let window = tracked.clone();
-            std::thread::spawn(move || remember_window_geometry(&handle, &window));
+            // Numbered here, in event order, before the worker starts.
+            let seq = handle.state::<Shell>().geometry_seq.fetch_add(1, Ordering::SeqCst) + 1;
+            std::thread::spawn(move || remember_window_geometry(&handle, &window, seq));
         }
         // A present that came between hide_after_flush's check and the
         // destroy showed the old window just before it went away: create it
@@ -850,7 +865,8 @@ fn hide_after_flush(app: &AppHandle) {
         let presented_now = shell.presentations.load(Ordering::SeqCst);
         if close_stands(presented, presented_now) {
             // Kept for the window built next; a minimized one keeps the last.
-            remember_window_geometry(&handle, &window);
+            let seq = shell.geometry_seq.fetch_add(1, Ordering::SeqCst) + 1;
+            remember_window_geometry(&handle, &window, seq);
             // Stored as count + 1, so a release before the first present
             // (count 0) is still told apart from "no release".
             shell.released_at.store(presented + 1, Ordering::SeqCst);
@@ -1612,7 +1628,7 @@ fn show_message(message: &str) {
 mod tests {
     use super::{
         centre_on_a_work_area, choose_placement, clear_loaded_theme, close_stands, label_for_generation,
-        theme_id_from_deep_link, Placement, WindowRect, remembered_after, remembered_for,
+        theme_id_from_deep_link, Placement, WindowRect, remembered_after, remembered_for, store_if_newer,
     };
     use url::Url;
 
@@ -1679,6 +1695,17 @@ mod tests {
     fn a_close_is_cancelled_by_any_present_after_the_request() {
         assert!(close_stands(3, 3));
         assert!(!close_stands(3, 4));
+    }
+
+    #[test]
+    fn older_geometry_snapshot_never_replaces_a_newer_one() {
+        let snapshot = |x| (Some(WindowRect { x, y: 0, width: 1280, height: 900 }), false);
+        let mut slot = None;
+        store_if_newer(&mut slot, 2, snapshot(20));
+        store_if_newer(&mut slot, 1, snapshot(10));
+        assert_eq!(slot, Some((2, snapshot(20))));
+        store_if_newer(&mut slot, 3, snapshot(30));
+        assert_eq!(slot, Some((3, snapshot(30))));
     }
 
     #[test]

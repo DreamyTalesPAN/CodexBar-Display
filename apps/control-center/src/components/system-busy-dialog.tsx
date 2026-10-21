@@ -78,6 +78,7 @@ export function SystemBusyDialog({ onClose }: { onClose: () => void }) {
   return (
     <SetupDialog
       announcement
+      noticeKind="system-busy"
       description={systemBusyCopy.description}
       onOpenChange={(open) => {
         if (!open) {
