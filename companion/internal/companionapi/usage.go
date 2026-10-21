@@ -171,7 +171,7 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := s.currentTime()
-	showUsed := codexbar.UsageBarsShowUsed()
+	showUsed := s.usageBarsShowUsed()
 	manualRefresh := usageRefreshRequested(r)
 	if manualRefresh {
 		s.requestUsageRefresh(now)
@@ -201,7 +201,7 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 			resp := usageResponseFromPersisted(now, enabledUsage)
 			if len(resp.Providers) > 0 {
 				if usagePreviewFramesRequested(r) {
-					resp.PreviewFrames = previewFramesFor(usage, inventory, now)
+					resp.PreviewFrames = previewFramesFor(usage, inventory, showUsed, now)
 				}
 				writeUsage(resp, enabledUsage)
 				return

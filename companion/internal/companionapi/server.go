@@ -225,6 +225,7 @@ type Server struct {
 	pairRetryGap           time.Duration
 	installationMode       string
 	loadUsage              func(time.Time) (daemon.PersistedUsage, bool)
+	usageBarsShowUsed      func() bool
 	loadCollectorCycle     func() (daemon.CollectorCycle, bool)
 	probeProviderSetup     func(context.Context, string) codexbar.ProviderSetup
 	probeExactProvider     func(context.Context, string, string) codexbar.ProviderSetup
@@ -397,6 +398,7 @@ func New(opts Options) (*Server, error) {
 		displayVerifications: make(map[string]displayVerification),
 		installationMode:     macAppInstallationMode(),
 		loadUsage:            daemon.LoadPersistedUsage,
+		usageBarsShowUsed:    codexbar.UsageBarsShowUsed,
 		loadCollectorCycle:   daemon.LoadCollectorCycle,
 		logf:                 opts.Logf,
 		probeProviderSetup:   codexbar.ProbeProviderSetup,

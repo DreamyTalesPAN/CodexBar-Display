@@ -99,6 +99,47 @@ func TestDisplayPreviewFramesAreTheDaemonsFrames(t *testing.T) {
 	}
 }
 
+func TestUsagePreviewFramesReuseCapturedUsageMode(t *testing.T) {
+	for _, mode := range []string{"used", "remaining"} {
+		t.Run(mode, func(t *testing.T) {
+			isolatePreviewHome(t)
+			server := newTestServer(t, runtimeconfig.Config{})
+			now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+			server.now = func() time.Time { return now }
+			reads := 0
+			server.usageBarsShowUsed = func() bool {
+				reads++
+				return (mode == "used") == (reads == 1)
+			}
+			server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+				return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+					Provider: "codex", CollectedAt: now,
+					Frame: protocol.Frame{Provider: "codex", Label: "Codex", UsageMode: "used",
+						UsageWindows: []protocol.UsageWindow{{ID: "weekly", Label: "Weekly", Percent: 12, ResetSec: 3600}},
+					},
+				}}}, true
+			}
+			got := getUsage(t, server, "/v1/usage?previewFrames=1")
+			want := 12
+			if mode == "remaining" {
+				want = 88
+			}
+			if got.UsageMode != mode || len(got.Providers) != 1 || got.Providers[0].Weekly != want {
+				t.Fatalf("usage mode=%s providers=%+v", got.UsageMode, got.Providers)
+			}
+			preview := got.PreviewFrames.Providers[0]
+			for _, frame := range []*protocol.Frame{preview.Automatic, &preview.Pinned} {
+				if frame == nil || frame.UsageMode != mode || frame.UsageWindows[0].Percent != want || frame.ProviderSlots[0].Percent != want {
+					t.Fatalf("preview differs from captured %s mode: %+v", mode, frame)
+				}
+			}
+			if reads != 1 {
+				t.Fatalf("usage mode read %d times for one response", reads)
+			}
+		})
+	}
+}
+
 // Every provider switched on in CodexBar is listed in its order. One without a
 // reading yet has the host's unavailable frame when pinned, and no Automatic
 // frame while another provider is current, as the stream drops it there.
