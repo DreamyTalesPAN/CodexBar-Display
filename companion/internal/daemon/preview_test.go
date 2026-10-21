@@ -37,7 +37,7 @@ func TestPreviewFramesMatchTheStreamsRowsAndResetTrust(t *testing.T) {
 			protocol.UsageWindow{ID: "weekly", Label: "Weekly", Percent: 4, ResetSec: 9000}),
 	}}
 
-	previews := PreviewFrames(usage, true, now)
+	previews := PreviewFrames(usage, true, false, now)
 	if len(previews) != 2 || previews[0].Provider != "codex" || previews[1].Provider != "claude" {
 		t.Fatalf("expected codex and claude in collector order: %+v", previews)
 	}
@@ -71,7 +71,7 @@ func TestPreviewFramesFlipRowsInRemainingMode(t *testing.T) {
 		previewSnapshot("codex", now, protocol.UsageWindow{ID: "weekly", Label: "Weekly", Percent: 30, ResetSec: 3600}),
 	}}
 
-	frame := PreviewFrames(usage, false, now)[0].Automatic
+	frame := PreviewFrames(usage, false, false, now)[0].Automatic
 	if frame.UsageMode != "remaining" || frame.UsageWindows[0].Percent != 70 || frame.ProviderSlots[0].Percent != 70 {
 		t.Fatalf("remaining mode: %+v", frame)
 	}
@@ -89,7 +89,7 @@ func TestPreviewFramesKeepUnavailableProvidersUnavailable(t *testing.T) {
 	noReading := ProviderUsageSnapshot{Provider: "gemini", NoReading: true, Frame: protocol.Frame{Provider: "gemini", Label: "Gemini", UsageUnavailable: true}}
 	live := previewSnapshot("codex", now, protocol.UsageWindow{ID: "session", Label: "Session", Percent: 10, ResetSec: 600})
 
-	previews := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale, noReading, live}}, true, now)
+	previews := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale, noReading, live}}, true, false, now)
 	if len(previews) != 3 {
 		t.Fatalf("every provider keeps its place in the rotation: %+v", previews)
 	}
@@ -137,7 +137,7 @@ func TestPreviewFramesAutomaticSkipsWhatTheStreamSkips(t *testing.T) {
 	stale := previewSnapshot("claude", now.Add(-time.Hour), protocol.UsageWindow{ID: "session", Label: "Session", Percent: 50, ResetSec: 600})
 	stale.Stale = true
 
-	previews := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale, live}}, true, now)
+	previews := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale, live}}, true, false, now)
 	if previews[0].Automatic != nil || previews[1].Automatic == nil {
 		t.Fatalf("only the current provider rotates: %+v", previews)
 	}
@@ -158,8 +158,8 @@ func TestPreviewFramesRetainedReadingIsWhatTheStreamSends(t *testing.T) {
 
 	want := streamFrameFor(t, []codexbar.ParsedFrame{parsedOf(stale)}, now, true)
 	for name, got := range map[string]protocol.Frame{
-		"automatic": *PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale}}, true, now)[0].Automatic,
-		"pinned":    PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale}}, true, now)[0].Pinned,
+		"automatic": *PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale}}, true, false, now)[0].Automatic,
+		"pinned":    PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale}}, true, false, now)[0].Pinned,
 	} {
 		if got.UsageUnavailable || len(got.UsageWindows) != 1 || got.UsageWindows[0].Percent != 50 ||
 			got.ResetTrust != want.ResetTrust || got.ResetSec != want.ResetSec {
@@ -193,7 +193,7 @@ func TestPreviewFramesAllStaleRestateTheStreamsLastGood(t *testing.T) {
 	}
 	want := applyUsageBarsPreference(state.lastGood, true).ApplyResetTrust(state.lastGoodAt, now, false)
 
-	previews := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{claude, codex}}, true, now)
+	previews := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{claude, codex}}, true, false, now)
 	if previews[0].Automatic != nil || previews[1].Automatic == nil {
 		t.Fatalf("exactly the last-good provider shows in Automatic: %+v", previews)
 	}
@@ -254,7 +254,7 @@ func TestPreviewFramesAutomaticIsTheStreamsFrameForEveryState(t *testing.T) {
 				p.Frame.V = protocol.ProtocolVersionV2
 				providers = append(providers, p)
 			}
-			for i, preview := range PreviewFrames(PersistedUsage{Providers: tc.snaps}, true, now) {
+			for i, preview := range PreviewFrames(PersistedUsage{Providers: tc.snaps}, true, false, now) {
 				state := &runtimeState{selector: codexbar.NewProviderSelector(), rotationProvider: tc.snaps[i].Provider, rotationAt: now}
 				deps := rotationTestDeps(3600, &runtimeconfig.ProviderDisplayConfig{Mode: "automatic"})
 				deps.now = func() time.Time { return now }
@@ -282,8 +282,28 @@ func TestPreviewFramesAllUnavailableWithoutLastGoodIsTheStreamsErrorFrame(t *tes
 	isolatePreviewHome(t)
 	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
 	none := ProviderUsageSnapshot{Provider: "codex", NoReading: true, Frame: protocol.Frame{Provider: "codex", Label: "Codex", UsageUnavailable: true}}
-	got := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{none}}, true, now)[0].Automatic
+	got := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{none}}, true, false, now)[0].Automatic
 	if got == nil || got.Error != protocol.ErrorFrame(runtimeErrorFrameCode(runtimeErrorNoProviders)).Error {
 		t.Fatalf("expected the no-providers error frame: %+v", got)
+	}
+}
+
+func TestPreviewFramesSystemBusyKeepsExpiredLastGood(t *testing.T) {
+	isolatePreviewHome(t)
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	savedAt := now.Add(-lastGoodMaxAge() - providerSnapshotMaxAge() - time.Hour)
+	good := previewSnapshot("codex", savedAt).Frame
+	if err := persistLastGood(good, savedAt); err != nil {
+		t.Fatal(err)
+	}
+	unavailable := ProviderUsageSnapshot{Provider: "codex", NoReading: true, Frame: protocol.Frame{Provider: "codex", UsageUnavailable: true}}
+	usage := PersistedUsage{Providers: []ProviderUsageSnapshot{unavailable}}
+	busy := PreviewFrames(usage, true, true, now)[0].Automatic
+	if busy == nil || busy.Error != "" || busy.UsageUnavailable || busy.Session != good.Session || busy.Label != SystemBusyLabel {
+		t.Fatalf("busy preview must retain expired last-good values with busy label: %+v", busy)
+	}
+	normal := PreviewFrames(usage, true, false, now)[0].Automatic
+	if normal == nil || (normal.Error == "" && !normal.UsageUnavailable) || normal.Label == SystemBusyLabel {
+		t.Fatalf("without busy verdict expired usage must remain unavailable: %+v", normal)
 	}
 }

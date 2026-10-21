@@ -85,7 +85,7 @@ func TestDisplayPreviewFramesAreTheDaemonsFrames(t *testing.T) {
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return usage, true }
 
 	got := getPreviewFrames(t, server)
-	want := daemon.PreviewFrames(usage, true, now)
+	want := daemon.PreviewFrames(usage, true, false, now)
 	if len(got.Providers) != 1 || got.Providers[0].ID != "codex" {
 		t.Fatalf("providers: %+v", got.Providers)
 	}
@@ -191,4 +191,22 @@ func isolatePreviewHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+}
+
+func TestUsagePreviewFramesUseCurrentSystemBusyVerdict(t *testing.T) {
+	isolatePreviewHome(t)
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{Providers: []daemon.ProviderUsageSnapshot{{
+			Provider: "codex", CollectedAt: now,
+			Frame: protocol.Frame{Provider: "codex", Label: "Codex", Session: 12},
+		}}}, true
+	}
+	server.systemBusy = func() *daemon.SystemBusy { return &daemon.SystemBusy{} }
+	preview := getPreviewFrames(t, server).Providers[0]
+	if preview.Automatic == nil || preview.Automatic.Label != daemon.SystemBusyLabel || preview.Pinned.Label != daemon.SystemBusyLabel {
+		t.Fatalf("preview must use the runtime's busy verdict: %+v", preview)
+	}
 }

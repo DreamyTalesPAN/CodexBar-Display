@@ -29,7 +29,7 @@ type ProviderPreview struct {
 // provider's rows, the restated last-good frame, or the error frame. The
 // device-specific steps (protocol version, clock, theme, wire budget) are left
 // out.
-func PreviewFrames(usage PersistedUsage, showUsed bool, now time.Time) []ProviderPreview {
+func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, now time.Time) []ProviderPreview {
 	providers := make([]codexbar.ParsedFrame, 0, len(usage.Providers))
 	for _, snapshot := range usage.Providers {
 		// The stream normalizes for the negotiated protocol, which carries the rows.
@@ -56,7 +56,7 @@ func PreviewFrames(usage PersistedUsage, showUsed bool, now time.Time) []Provide
 	for _, shown := range providers {
 		preview := ProviderPreview{
 			Provider: shown.Provider,
-			Pinned:   previewFrame(shown, []codexbar.ParsedFrame{shown}, showUsed, now),
+			Pinned:   applySystemBusyLabel(previewFrame(shown, []codexbar.ParsedFrame{shown}, showUsed, now), systemBusy),
 		}
 		// A fresh stream per rotation position: the timer sits on this
 		// provider, the rest is the runtime's own start.
@@ -64,6 +64,7 @@ func PreviewFrames(usage PersistedUsage, showUsed bool, now time.Time) []Provide
 		bootstrapStateFromPersistedLastGood(state, now, deps)
 		// The slice is copied: selection and restating work on it in place.
 		result := selectCycleFrameFromProviders(state, slices.Clone(providers), now, deps, nil, "select-provider", "", "", "")
+		result.systemBusy = systemBusy
 		_, frame, result := restateLastGoodWhenNotFresh(state, deps, result)
 		if frame.Error != "" || normalizeProviderKey(frame.Provider) == normalizeProviderKey(shown.Frame.Provider) {
 			frame.V = protocol.ProtocolVersionV2

@@ -79,17 +79,21 @@ func restateLastGoodWhenNotFresh(state *runtimeState, deps runtimeDeps, result c
 			frame = applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
 		}
 	}
-	return authoritativeFrame, frame, result
+	return authoritativeFrame, applySystemBusyLabel(frame, result.systemBusy), result
+}
+
+func applySystemBusyLabel(frame protocol.Frame, systemBusy bool) protocol.Frame {
+	if systemBusy {
+		// The values are old because the computer is starved (#606).
+		frame.Label = SystemBusyLabel
+	}
+	return frame
 }
 
 func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
 	publicPort := publicDeviceTarget(port)
 	authoritativeFrame, frame, result := restateLastGoodWhenNotFresh(state, deps, result)
-	if result.systemBusy {
-		// The values on screen are old because the computer is starved, and
-		// VibeTV says so where it names the provider (#606).
-		frame.Label = SystemBusyLabel
-	}
+
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 	frame = applyDeviceUsageWindowLimit(frame, caps)
 	if !caps.SupportsProviderSlotsV1 {
