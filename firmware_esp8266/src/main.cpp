@@ -772,15 +772,11 @@ bool loadDeviceAuthToken() {
 }
 
 bool saveDeviceAuthToken(const String& token) {
-  if (!validAuthToken(token) || !LittleFS.begin()) {
+  if (!validAuthToken(token) ||
+      !writeRecordFile(kDeviceAuthTokenPath, "/auth.tmp",
+                       reinterpret_cast<const uint8_t*>(token.c_str()), token.length())) {
     return false;
   }
-  File file = LittleFS.open(kDeviceAuthTokenPath, "w");
-  if (!file) {
-    return false;
-  }
-  file.print(token);
-  file.close();
   deviceAuthToken = token;
   return true;
 }

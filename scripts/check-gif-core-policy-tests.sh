@@ -43,6 +43,13 @@ mkdir -p "${ROOT_DIR}/tmp"
   "${ROOT_DIR}/firmware_esp8266/tests/pairing_token_test.cpp" -o "${ROOT_DIR}/tmp/pairing_token_test"
 "${ROOT_DIR}/tmp/pairing_token_test"
 
+# Compile the real firmware persistence functions against a fault-injecting FS.
+awk '/^bool (validAuthToken|writeRecordFile|saveDeviceAuthToken)\(/ {copy=1} copy {print} copy && /^}/ {copy=0}' \
+  "${ROOT_DIR}/firmware_esp8266/src/main.cpp" > "${ROOT_DIR}/tmp/pairing_storage_functions.inc"
+"${CXX_BIN}" -std=c++17 -Wall -Wextra -pedantic -I"${ROOT_DIR}/tmp" \
+  "${ROOT_DIR}/firmware_esp8266/tests/pairing_storage_test.cpp" -o "${ROOT_DIR}/tmp/pairing_storage_test"
+"${ROOT_DIR}/tmp/pairing_storage_test"
+
 "${CXX_BIN}" -std=c++17 -Wall -Wextra -pedantic "${TRANSFER_SRC}" -o "${TRANSFER_OUT}"
 "${TRANSFER_OUT}"
 
