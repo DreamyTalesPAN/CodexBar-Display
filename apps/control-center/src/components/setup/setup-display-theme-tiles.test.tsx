@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { UsageSnapshot } from "../control-center-types";
+
 import { act, cleanup, render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -107,6 +109,21 @@ afterEach(() => {
 });
 
 describe("Display mode tiles with the active theme", () => {
+  it("renders Companion-retained values after collection fails", async () => {
+    const sent = live("Codex", 31);
+    const retained = { ...sent.frame!, resetTrust: "offline", resetTrustSecs: 600, resetSource: "codex:primary" };
+    show(displayPreviewsFor(
+      { providers: [{ id: "codex", label: "Codex", session: 0, weekly: 0, stale: true, usageUnavailable: true }] } as UsageSnapshot,
+      [{ id: "codex", label: "Codex" }],
+      { generatedAt: sent.frameAt, providers: [{ id: "codex", automatic: retained, pinned: retained }] },
+    ));
+    await settle();
+    for (const card of [0, 1]) {
+      expect(tiles(card)[0].getAttribute("data-state")).toBe("live");
+      expect(tiles(card)[0].textContent).toContain("31");
+    }
+  });
+
   it("draws one theme tile per provider in Automatic", async () => {
     show([live("Claude", 64), live("Codex", 28), live("Cursor", 12)]);
     await settle();

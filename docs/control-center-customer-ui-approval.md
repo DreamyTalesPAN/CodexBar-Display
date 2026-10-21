@@ -9074,3 +9074,16 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: existing previews match the device frame for unavailable providers, unknown capabilities, runtime theme overrides and window limits; no new customer text or layout.
 - Scope: Companion preview selection, capability fallback and runtime theme plumbing with regression tests; setup-display-previews tests retain one error and already-capped frames from the Companion.
 - What's new: none — correct existing preview parity with the real send path.
+## 2026-10-21 — #821: preserve the verified retained device frame
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 after a transient collection failure the preview reuses the matching verified sent frame instead of hiding values still shown by VibeTV; coordinator confirmed follow-up at 16:54 UTC)
+- Approved customer-visible result: Automatic and Manual retain the actual device readings for that provider, including their original offline/stale reset state and remaining trust budget; unavailable or unverified sent frames are never presented as measurements.
+- Scope: setup preview mapping and provider identity, reset-trust preservation, unit regressions and rendered theme-tile regression; no new text, controls, layout or hardware writes.
+- What's new: none — align the failure preview with the host's existing last-good send path.
+
+## 2026-10-21 — #858: integrate retained-frame base update from #821
+
+- User approval: no visible change – UI approval not needed (#858 merge of #821 at ae362921: keep the Companion-owned last-good retention and adapt the rendered regression to Companion frames)
+- Approved customer-visible result: retained offline usage stays visible in both setup tiles after collection fails, matching the device; no new copy or layout.
+- Scope: merge the base update, preserve all approval blocks and the Companion-backed helpers, adapt the retained-value theme-tile test; the existing Go last-good tests remain authoritative.
+- What's new: none — retain existing offline readings through the central frame path.
