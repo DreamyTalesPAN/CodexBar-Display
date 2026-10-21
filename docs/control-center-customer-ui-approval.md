@@ -8905,3 +8905,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: On Windows during setup the native update dialog opens as it did before this branch. On a Mac, after "Update Mac App" in the setup wizard, the update dialog does not come a second time when setup ends. No text, screen or button changes.
 - Scope: `apps/control-center/src/components/control-center-app.tsx` (the update prompt effect and the wizard offer's `onUpdate`) and this approval record. Pull-request branch #822 only, not merged, not released. WIP: tests not yet written.
 - What's new: none — update prompt timing only, no new text
+
+## 2026-10-21 — #822: tests for the Codex fixes (one prompt per version, Windows keeps its updater during setup)
+
+- User approval: no visible change – UI approval not needed (#822 tests for the Codex fixes: one prompt per version, Windows keeps its updater during setup)
+- Approved customer-visible result: No visible change. The tests pin the update prompt timing from the previous commit: on a Mac the wizard's update check does not lead to a second update dialog, and on Windows the updater dialog still opens during setup. No text, screen or button changes.
+- Scope: `apps/control-center/src/components/control-center-app.mac-update-prompt.test.tsx` (new tests and the wizard capture in the test file) and this approval record. Pull-request branch #822 only, not merged, not released.
+- What's new: none — test-only change, no new text
