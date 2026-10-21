@@ -7540,7 +7540,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-16 — #663: Same device-switch reset as #645 for display brightness (no visible change)
 
-- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
+- User approval: none needed, no visible change. Same device-switch reset as #645 for display brightness (#663); no new wording; not seen by Paul.
 - Approved customer-visible result: unchanged; Brightness and the Settings screensaver switch stay as in the entries above. While another VibeTV's settings are still unknown, Brightness stays disabled, as the screensaver switch does.
 - Scope: `control-center-app.tsx`, its display preferences test. Pull-request branch only, not merge or release.
 - What's new: none — review fix, no customer-visible change of its own
@@ -7549,7 +7549,7 @@ issue scope, or release permission never implies UI permission.
 
 
 
-- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change))
+- User approval: Merge of the stacked base (#645) and main for the hardware run; no visible change of its own; not seen by Paul. The UI review gate cannot read a clean merge commit as approval marker, so this entry stands for that merge. No new wording.
 
 - Approved customer-visible result: as approved in the #663 entry above (no visible change); nothing else changes.
 
@@ -7559,7 +7559,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-16 — #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible change)
 
-- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
+- User approval: Codex review fix, no visible change; not seen by Paul.
 - Approved customer-visible result: none. When another VibeTV connects, a Brightness change still waiting to be sent is dropped instead of being sent to that VibeTV; the slider and all wording stay as they are.
 - Scope: `resetDeviceSettings` in `apps/control-center/src/components/control-center-app.tsx`, its test in `control-center-app.display-preferences.test.tsx`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — review fix, no customer-visible change
@@ -7573,7 +7573,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-19 — #674: Codex review fix of #645, a late settings answer for another VibeTV no longer chooses the selected theme (no visible change)
 
-- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix of #645, a late settings answer for another VibeTV no longer choose
+- User approval: Codex review finding on #645 (`1a568a04`); Marcus, via the orchestrator on 2026-10-19: fix it in #674 with a unit test, without a new device test, because this path never runs with one VibeTV.
 - Approved customer-visible result: none with one VibeTV. When another VibeTV connects while a read of the first one's settings is still on its way, that late answer no longer marks the first VibeTV's active theme as selected under Appearance › Themes; the selection follows the VibeTV connected now, as Brightness and the Settings screensaver switch already do.
 - Scope: `readSettings` in `apps/control-center/src/components/control-center-app.tsx`, its test in `control-center-app.display-preferences.test.tsx`, and this approval record. Pull-request branch only, not merge or release.
 - What's new: none — review fix, no customer-visible change
@@ -8864,6 +8864,11 @@ issue scope, or release permission never implies UI permission.
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Codex/CI fix, the outage dialogs' grey backdrop takes no clicks
 - Approved customer-visible result: none; no visible change.
 - Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.test.tsx`, the comment in `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change))
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix of #645, a late settings answer for another VibeTV no longer choose
+
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
 - User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change); occurrence 2)
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
@@ -12973,4 +12978,9 @@ issue scope, or release permission never implies UI permission.
 - User approval: no visible change – UI approval not needed (merge of main (f314106c) into #782; the own entries of #782 keep their approvals)
 - Approved customer-visible result: #782 as in its own entries plus the entries merged with f314106c; nothing else changes.
 - Scope: the merge of f314106c and this approval record. Pull request branch #782 only, not merged, not released.
+## 2026-10-21 — #783: approval marker after merging main at f314106c
+
+- User approval: no visible change – UI approval not needed (merge of main (f314106c) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with f314106c; nothing else changes.
+- Scope: the merge of f314106c and this approval record. Pull request branch #783 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
