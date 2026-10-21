@@ -30,7 +30,7 @@ func TestJobStatusRoutes(t *testing.T) {
 			idPrefix:   "firmware-update-",
 			create:     func(s *Server) string { return s.createFirmwareUpdateJob().ID },
 			advance: func(s *Server, id string) {
-				s.updateFirmwareUpdateJob(id, func(j *firmwareUpdateJob) { j.Phase = "complete"; j.Progress = 100 })
+				s.updateJobs.update(id, func(j *firmwareUpdateJob) { j.Phase = "complete"; j.Progress = 100 })
 			},
 			wantNew:  `"phase":"installing","stage":"validating_artifact","message":"Preparing VibeTV update.","progress":5`,
 			wantDone: `"phase":"complete","stage":"validating_artifact","message":"Preparing VibeTV update.","progress":100`,
@@ -42,7 +42,7 @@ func TestJobStatusRoutes(t *testing.T) {
 			idPrefix:   "theme-install-",
 			create:     func(s *Server) string { return s.createThemeInstallJob(themeInstallRequest{ThemeID: "mini"}).ID },
 			advance: func(s *Server, id string) {
-				s.updateThemeInstallJob(id, func(j *themeInstallJob) { j.Phase = "complete"; j.Progress = 100 })
+				s.installJobs.update(id, func(j *themeInstallJob) { j.Phase = "complete"; j.Progress = 100 })
 			},
 			wantNew:  `"phase":"installing","message":"Preparing theme install.","progress":5`,
 			wantDone: `"phase":"complete","message":"Preparing theme install.","progress":100`,
@@ -89,37 +89,37 @@ func TestJobStatusRoutes(t *testing.T) {
 
 func TestJobStoreLatestAndActive(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
-	if _, ok := server.latestFirmwareUpdateJob(); ok {
+	if _, ok := server.updateJobs.latest(); ok {
 		t.Fatal("empty store reported a latest update job")
 	}
-	if _, ok := server.latestThemeInstallJob(); ok {
+	if _, ok := server.installJobs.latest(); ok {
 		t.Fatal("empty store reported a latest install job")
 	}
 	first := server.createFirmwareUpdateJob()
 	time.Sleep(2 * time.Millisecond)
 	second := server.createFirmwareUpdateJob()
-	if got, ok := server.latestFirmwareUpdateJob(); !ok || got.ID != second.ID {
+	if got, ok := server.updateJobs.latest(); !ok || got.ID != second.ID {
 		t.Fatalf("latest update job = %q, want %q", got.ID, second.ID)
 	}
-	server.updateFirmwareUpdateJob(second.ID, func(j *firmwareUpdateJob) { j.Phase = "complete" })
+	server.updateJobs.update(second.ID, func(j *firmwareUpdateJob) { j.Phase = "complete" })
 	if got, ok := server.activeFirmwareUpdateJob(); !ok || got.ID != first.ID {
 		t.Fatalf("active update job = %q, want %q", got.ID, first.ID)
 	}
-	server.updateFirmwareUpdateJob(first.ID, func(j *firmwareUpdateJob) { j.Phase = "error" })
+	server.updateJobs.update(first.ID, func(j *firmwareUpdateJob) { j.Phase = "error" })
 	if _, ok := server.activeFirmwareUpdateJob(); ok {
 		t.Fatal("no job is installing, yet one is active")
 	}
 	themeFirst := server.createThemeInstallJob(themeInstallRequest{ThemeID: "a"})
 	time.Sleep(2 * time.Millisecond)
 	themeSecond := server.createThemeInstallJob(themeInstallRequest{ThemeID: "b", Slot: "screensaver"})
-	if got, ok := server.latestThemeInstallJob(); !ok || got.ID != themeSecond.ID || got.Slot != "screensaver" || themeFirst.Slot != "live" {
+	if got, ok := server.installJobs.latest(); !ok || got.ID != themeSecond.ID || got.Slot != "screensaver" || themeFirst.Slot != "live" {
 		t.Fatalf("latest install job = %+v first slot %q", got, themeFirst.Slot)
 	}
 	// A snapshot is a copy: editing it never reaches the stored job.
-	snap, _ := server.firmwareUpdateJobSnapshot(first.ID)
+	snap, _ := server.updateJobs.snapshot(first.ID)
 	snap.Logs = append(snap.Logs, "x")
 	snap.Phase = "mutated"
-	if again, _ := server.firmwareUpdateJobSnapshot(first.ID); again.Phase != "error" || len(again.Logs) != 1 {
+	if again, _ := server.updateJobs.snapshot(first.ID); again.Phase != "error" || len(again.Logs) != 1 {
 		t.Fatalf("snapshot aliases the stored job: %+v", again)
 	}
 }

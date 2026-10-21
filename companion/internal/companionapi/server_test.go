@@ -492,14 +492,14 @@ func TestStatusIncludesStandbyLiveThemePath(t *testing.T) {
 func TestStatusIncludesLatestFirmwareUpdateJob(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	startedAt := time.Now().UTC().Add(-time.Minute)
-	server.updateJobs["finished-update"] = &firmwareUpdateJob{
+	server.updateJobs.jobs["finished-update"] = &firmwareUpdateJob{
 		ID:        "finished-update",
 		Phase:     "complete",
 		Message:   "Update complete.",
 		Progress:  100,
 		StartedAt: startedAt,
 	}
-	server.updateJobs["active-update"] = &firmwareUpdateJob{
+	server.updateJobs.jobs["active-update"] = &firmwareUpdateJob{
 		ID:        "active-update",
 		Phase:     "installing",
 		Stage:     "waiting_for_device",
@@ -532,7 +532,7 @@ func TestStatusIncludesLatestFirmwareUpdateJob(t *testing.T) {
 func TestStatusIncludesLatestThemeInstallJob(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	startedAt := time.Now().UTC().Add(-time.Minute)
-	server.installJobs["finished-theme"] = &themeInstallJob{
+	server.installJobs.jobs["finished-theme"] = &themeInstallJob{
 		ID:        "finished-theme",
 		ThemeID:   "mini",
 		ThemeName: "Mini",
@@ -540,7 +540,7 @@ func TestStatusIncludesLatestThemeInstallJob(t *testing.T) {
 		Progress:  100,
 		StartedAt: startedAt,
 	}
-	server.installJobs["active-theme"] = &themeInstallJob{
+	server.installJobs.jobs["active-theme"] = &themeInstallJob{
 		ID:        "active-theme",
 		ThemeID:   "clippy",
 		ThemeName: "Clippy",
@@ -638,16 +638,16 @@ func TestRuntimeHealthReportsARunningFirmwareUpdate(t *testing.T) {
 		t.Fatal("an idle runtime must not claim an update is running")
 	}
 
-	server.updateJobsMu.Lock()
-	server.updateJobs["job-1"] = &firmwareUpdateJob{ID: "job-1", Phase: "installing"}
-	server.updateJobsMu.Unlock()
+	server.updateJobs.mu.Lock()
+	server.updateJobs.jobs["job-1"] = &firmwareUpdateJob{ID: "job-1", Phase: "installing"}
+	server.updateJobs.mu.Unlock()
 	if !readUpdateInProgress() {
 		t.Fatal("a runtime installing firmware must say so")
 	}
 
-	server.updateJobsMu.Lock()
-	server.updateJobs["job-1"].Phase = "complete"
-	server.updateJobsMu.Unlock()
+	server.updateJobs.mu.Lock()
+	server.updateJobs.jobs["job-1"].Phase = "complete"
+	server.updateJobs.mu.Unlock()
 	if readUpdateInProgress() {
 		t.Fatal("a finished update must not keep the restart blocked")
 	}
@@ -1038,7 +1038,7 @@ func TestDeviceSearchSerializesCableDiscoveryWithFirmwareUpdateStart(t *testing.
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "firmware_update_in_progress") || calls != 0 {
 		t.Fatalf("accepted firmware update must retain the serial port: status=%d calls=%d body=%s", rec.Code, calls, rec.Body.String())
 	}
-	server.updateFirmwareUpdateJob(job.ID, func(job *firmwareUpdateJob) { job.Phase = "complete" })
+	server.updateJobs.update(job.ID, func(job *firmwareUpdateJob) { job.Phase = "complete" })
 	server.localNetworkAvailable = func() bool {
 		// WiFi discovery runs alongside Cable discovery, which may still hold
 		// the start lock for a moment (#374). It must release it without
@@ -5704,7 +5704,7 @@ func TestCableReadRoutesSerializeProbesWithFirmwareUpdateStart(t *testing.T) {
 					server.createFirmwareUpdateJob()
 				}
 				if active == "theme" {
-					server.themeInstallActive = true
+					server.themeInstallActive.Store(true)
 				}
 				rec := httptest.NewRecorder()
 				server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, endpoint, nil))
@@ -10453,7 +10453,7 @@ func TestSetupResetRejectsActiveFirmwareUpdate(t *testing.T) {
 		DeviceID:     "device-a",
 	}
 	server := newTestServer(t, initial)
-	server.updateJobs["active-update"] = &firmwareUpdateJob{
+	server.updateJobs.jobs["active-update"] = &firmwareUpdateJob{
 		ID:    "active-update",
 		Phase: "installing",
 	}
@@ -10536,7 +10536,7 @@ func TestSetupConnectionModeRejectsQueuedFirmwareUpdate(t *testing.T) {
 		DeviceID:       "device-a",
 	}
 	server := newTestServer(t, initial)
-	server.updateJobs["queued-update"] = &firmwareUpdateJob{
+	server.updateJobs.jobs["queued-update"] = &firmwareUpdateJob{
 		ID:    "queued-update",
 		Phase: "installing",
 	}
@@ -10564,7 +10564,7 @@ func TestSetupWiFiRejectsQueuedFirmwareUpdate(t *testing.T) {
 		DeviceID:       "device-a",
 	}
 	server := newTestServer(t, initial)
-	server.updateJobs["queued-update"] = &firmwareUpdateJob{
+	server.updateJobs.jobs["queued-update"] = &firmwareUpdateJob{
 		ID:    "queued-update",
 		Phase: "installing",
 	}
@@ -11735,7 +11735,7 @@ func TestThemeInstallRejectsConcurrentZipBeforeReadingBody(t *testing.T) {
 	}
 	close(releaseInstall)
 	for attempt := 0; attempt < 50; attempt++ {
-		if job, ok := server.latestThemeInstallJob(); ok && job.Phase != "installing" {
+		if job, ok := server.installJobs.latest(); ok && job.Phase != "installing" {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -11868,7 +11868,7 @@ func TestScreensaverInstallProgressSaysScreensaver(t *testing.T) {
 			t.Fatalf("expected the first line to name the screensaver, got %q", started.Job.Message)
 		}
 		for attempt := 0; attempt < 100; attempt++ {
-			if job, ok := server.themeInstallJobSnapshot(started.Job.ID); ok && job.Phase != "installing" {
+			if job, ok := server.installJobs.snapshot(started.Job.ID); ok && job.Phase != "installing" {
 				return job
 			}
 			time.Sleep(10 * time.Millisecond)
@@ -12071,7 +12071,7 @@ func TestFirmwareUpdateCablePreflightPreservesAlreadyCurrentOutcome(t *testing.T
 	}
 	var job firmwareUpdateJob
 	for attempt := 0; attempt < 100; attempt++ {
-		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		job, _ = server.updateJobs.snapshot(started.Job.ID)
 		if job.Phase == "complete" {
 			break
 		}
@@ -12115,7 +12115,7 @@ func TestFirmwareUpdateRescueStartsWithoutAPairedDevice(t *testing.T) {
 	}
 	var job firmwareUpdateJob
 	for range 100 {
-		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		job, _ = server.updateJobs.snapshot(started.Job.ID)
 		if job.Phase == "complete" || job.Phase == "error" {
 			break
 		}
@@ -12183,7 +12183,7 @@ func TestFirmwareUpdateInstallReturnsAcceptedJobWithoutCableIO(t *testing.T) {
 			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 				t.Fatal(err)
 			}
-			if rec.Code != http.StatusAccepted || got.Job.ID != job.ID || server.nextUpdateJob != 1 {
+			if rec.Code != http.StatusAccepted || got.Job.ID != job.ID || server.updateJobs.next != 1 {
 				t.Fatalf("repeat request must return accepted job: status=%d body=%s", rec.Code, rec.Body.String())
 			}
 		})
@@ -12351,7 +12351,7 @@ func TestFirmwareUpdateInstallAcceptsHelloWithoutCapabilities(t *testing.T) {
 	}
 	var job firmwareUpdateJob
 	for attempt := 0; attempt < 500; attempt++ {
-		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		job, _ = server.updateJobs.snapshot(started.Job.ID)
 		if job.Phase != "installing" {
 			break
 		}
@@ -12568,7 +12568,7 @@ func TestFirmwareUpdateCableRequiresVerifiedRender(t *testing.T) {
 	}
 	var job firmwareUpdateJob
 	for attempt := 0; attempt < 100; attempt++ {
-		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		job, _ = server.updateJobs.snapshot(started.Job.ID)
 		if job.Phase != "installing" {
 			break
 		}
@@ -12659,7 +12659,7 @@ func TestFirmwareUpdateCableAcceptsUnchangedLivePicture(t *testing.T) {
 			// The updater's own events can already say "complete" while the
 			// server still checks the picture; only FinishedAt marks the end.
 			for attempt := 0; attempt < 500; attempt++ {
-				job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+				job, _ = server.updateJobs.snapshot(started.Job.ID)
 				if job.FinishedAt != nil {
 					break
 				}
@@ -12711,7 +12711,7 @@ func TestFirmwareUpdateCableDoesNotOverridePostUpdateVerificationError(t *testin
 	}
 	var job firmwareUpdateJob
 	for attempt := 0; attempt < 100; attempt++ {
-		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		job, _ = server.updateJobs.snapshot(started.Job.ID)
 		if job.Phase == "error" {
 			break
 		}
@@ -12799,7 +12799,7 @@ func TestFirmwareUpdatePausesDisplayTrafficUntilJobFinishes(t *testing.T) {
 
 	close(finishUpdate)
 	for attempt := 0; attempt < 50; attempt++ {
-		job, ok := server.firmwareUpdateJobSnapshot(started.Job.ID)
+		job, ok := server.updateJobs.snapshot(started.Job.ID)
 		if ok && job.Phase == "complete" {
 			break
 		}
@@ -12848,7 +12848,7 @@ func TestFirmwareUpdateVerifiedFirmwareOverridesTemporaryCommandError(t *testing
 	}
 	var job firmwareUpdateJob
 	for attempt := 0; attempt < 100; attempt++ {
-		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		job, _ = server.updateJobs.snapshot(started.Job.ID)
 		if job.Phase != "installing" {
 			break
 		}
@@ -12924,7 +12924,7 @@ func TestFirmwareUpdateInstallDoesNotWaitForNewerAppRelease(t *testing.T) {
 	}
 	var job firmwareUpdateJob
 	for attempt := 0; attempt < 200; attempt++ {
-		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		job, _ = server.updateJobs.snapshot(started.Job.ID)
 		if job.Phase != "installing" && job.Phase != "" {
 			break
 		}
@@ -12962,7 +12962,7 @@ func TestFirmwareUpdateCurrentFirmwareWithStreamFailureNeedsAttention(t *testing
 	}
 	var job firmwareUpdateJob
 	for attempt := 0; attempt < 100; attempt++ {
-		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		job, _ = server.updateJobs.snapshot(started.Job.ID)
 		if job.Phase != "installing" {
 			break
 		}
@@ -13020,7 +13020,7 @@ func TestFirmwareUpdateWithoutProviderCompletesWithoutRenderProof(t *testing.T) 
 	}
 	var job firmwareUpdateJob
 	for attempt := 0; attempt < 100; attempt++ {
-		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		job, _ = server.updateJobs.snapshot(started.Job.ID)
 		if job.Phase != "installing" {
 			break
 		}
@@ -13130,7 +13130,7 @@ func TestFirmwareUpdateAsyncRequiresPowerCycleAfterUnsafeUpload(t *testing.T) {
 
 	var job firmwareUpdateJob
 	for attempt := 0; attempt < 50; attempt++ {
-		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		job, _ = server.updateJobs.snapshot(started.Job.ID)
 		if job.Phase == "error" {
 			break
 		}
@@ -13172,7 +13172,7 @@ func TestFirmwareUpdateAsyncRequiresCableReconnectAfterInterruptedTransfer(t *te
 	}
 	var job firmwareUpdateJob
 	for attempt := 0; attempt < 50; attempt++ {
-		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		job, _ = server.updateJobs.snapshot(started.Job.ID)
 		if job.Phase == "error" {
 			break
 		}
@@ -14368,7 +14368,7 @@ func TestFirmwareUpdateReactivatesStoredThemeParkedOnSetupScreen(t *testing.T) {
 	}
 	var job firmwareUpdateJob
 	for attempt := 0; attempt < 300; attempt++ {
-		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		job, _ = server.updateJobs.snapshot(started.Job.ID)
 		if job.Phase != "installing" {
 			break
 		}
@@ -14454,7 +14454,7 @@ func TestFirmwareUpdatePausesDisplayStreamWhileReactivatingTheme(t *testing.T) {
 	}
 	var job firmwareUpdateJob
 	for attempt := 0; attempt < 300; attempt++ {
-		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		job, _ = server.updateJobs.snapshot(started.Job.ID)
 		if job.Phase != "installing" {
 			break
 		}
@@ -14484,7 +14484,7 @@ func TestFirmwareUpdateRescueProgressReplacesTheUpdateLine(t *testing.T) {
 	for _, line := range []string{"Checking device...", "Uploading firmware...", "Writing firmware: 10%", "Writing firmware: 60%"} {
 		writer.noteLine(line)
 	}
-	got, _ := server.firmwareUpdateJobSnapshot(job.ID)
+	got, _ := server.updateJobs.snapshot(job.ID)
 	if last := got.Logs[len(got.Logs)-1]; last != "Updating VibeTV: 60%." || got.Message != last {
 		t.Fatalf("logs=%q message=%q", got.Logs, got.Message)
 	}
@@ -14492,7 +14492,7 @@ func TestFirmwareUpdateRescueProgressReplacesTheUpdateLine(t *testing.T) {
 		t.Fatalf("progress must replace one line and advance the bar: logs=%q progress=%d", got.Logs, got.Progress)
 	}
 	writer.noteLine("Restarting VibeTV...")
-	got, _ = server.firmwareUpdateJobSnapshot(job.ID)
+	got, _ = server.updateJobs.snapshot(job.ID)
 	if got.Logs[len(got.Logs)-2] != "Updating VibeTV: 60%." || got.Logs[len(got.Logs)-1] != "Restarting VibeTV." {
 		t.Fatalf("the next step must follow the last progress line: %q", got.Logs)
 	}
@@ -14533,7 +14533,7 @@ func TestFirmwareUpdateKeepsChildDiagnosticsOnDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 	for attempt := 0; attempt < 300; attempt++ {
-		job, _ := server.firmwareUpdateJobSnapshot(started.Job.ID)
+		job, _ := server.updateJobs.snapshot(started.Job.ID)
 		if job.Phase == "error" {
 			break
 		}
@@ -15066,7 +15066,7 @@ func TestRuntimeUpdateHoldRefusedWhileAnUpdateOwnsTheRuntime(t *testing.T) {
 		DeviceToken:  "pair-token",
 		DeviceID:     "device-a",
 	})
-	server.updateJobs["active-update"] = &firmwareUpdateJob{
+	server.updateJobs.jobs["active-update"] = &firmwareUpdateJob{
 		ID:    "active-update",
 		Phase: "installing",
 	}
@@ -15103,7 +15103,7 @@ func TestRuntimeUpdateHoldRefusalIsObservable(t *testing.T) {
 		DeviceToken:  "pair-token",
 		DeviceID:     "device-a",
 	})
-	server.updateJobs["active-update"] = &firmwareUpdateJob{ID: "active-update", Phase: "installing"}
+	server.updateJobs.jobs["active-update"] = &firmwareUpdateJob{ID: "active-update", Phase: "installing"}
 
 	read, write, err := os.Pipe()
 	if err != nil {
@@ -15140,7 +15140,7 @@ func TestRuntimeUpdateHoldRefusedWhileAThemeInstallOwnsTheRuntime(t *testing.T) 
 		DeviceToken:  "pair-token",
 		DeviceID:     "device-a",
 	})
-	server.themeInstallActive = true
+	server.themeInstallActive.Store(true)
 
 	read, write, err := os.Pipe()
 	if err != nil {
@@ -15298,7 +15298,7 @@ func TestRuntimeHealthReportsRefusedUpdateHolds(t *testing.T) {
 	}
 
 	server.updateHoldUntil = time.Time{}
-	server.updateJobs["active-update"] = &firmwareUpdateJob{ID: "active-update", Phase: "installing"}
+	server.updateJobs.jobs["active-update"] = &firmwareUpdateJob{ID: "active-update", Phase: "installing"}
 	if code := claim(); code != http.StatusConflict {
 		t.Fatalf("a running update must refuse the hold, got %d", code)
 	}
@@ -15306,8 +15306,8 @@ func TestRuntimeHealthReportsRefusedUpdateHolds(t *testing.T) {
 		t.Fatalf("a refused firmware hold must be counted, got %d", got)
 	}
 
-	delete(server.updateJobs, "active-update")
-	server.themeInstallActive = true
+	delete(server.updateJobs.jobs, "active-update")
+	server.themeInstallActive.Store(true)
 	if code := claim(); code != http.StatusConflict {
 		t.Fatalf("a running theme install must refuse the hold, got %d", code)
 	}
@@ -15593,7 +15593,7 @@ func TestDeviceSearchOffersAHalfWrittenVibeTVForItsRescue(t *testing.T) {
 			}
 			if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
 				ChipMAC: "0000aabb11223344",
-				Port: "COM4", Ports: []string{"COM1", "COM4"}, Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+				Port:    "COM4", Ports: []string{"COM1", "COM4"}, Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
 				ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-tc.age),
 			}); err != nil {
 				t.Fatal(err)
@@ -15680,7 +15680,7 @@ func TestFirmwareLatestNamesTheCachedRescueTarget(t *testing.T) {
 	sum := sha256.Sum256([]byte("cable firmware"))
 	if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
 		ChipMAC: "0000aabb11223344",
-		Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+		Port:    "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
 		ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-time.Minute),
 	}); err != nil {
 		t.Fatal(err)
@@ -15729,7 +15729,7 @@ func TestFirmwareLatestNamesTheCachedRescueTarget(t *testing.T) {
 	cabled := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "other"})
 	if err := firmwareupdate.SaveRescueMarker(cabled.home, firmwareupdate.RescueMarker{
 		ChipMAC: "0000aabb11223344",
-		Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+		Port:    "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
 		ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-time.Minute),
 	}); err != nil {
 		t.Fatal(err)
@@ -15796,7 +15796,7 @@ func TestFirmwareLatestRescueCheckDoesNotProbeDuringAnUpdate(t *testing.T) {
 	sum := sha256.Sum256([]byte("cable firmware"))
 	if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
 		ChipMAC: "0000aabb11223344",
-		Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+		Port:    "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
 		ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-time.Minute),
 	}); err != nil {
 		t.Fatal(err)
