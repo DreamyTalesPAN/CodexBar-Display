@@ -948,6 +948,55 @@ describe("SetupWizard: direct connection", () => {
     expect(screen.getByRole("dialog", { name: "We couldn't find your VibeTV" })).toBeTruthy();
   });
 
+  it("keeps the Mac App offer out when a completed scan found a device on the other transport", () => {
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "multiple",
+      deviceCandidates: [{ target: "http://192.168.1.42", deviceId: "known-device", transport: "wifi" }],
+      macAppUpdate: { onUpdate: vi.fn(), version: "1.0.65" },
+    });
+    render(<SetupWizard {...props} />);
+    expect(screen.queryByRole("dialog", { name: "Update the Mac App first" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "We couldn't find your VibeTV" })).toBeTruthy();
+  });
+
+  it.each([
+    { name: "idle scan", state: "idle", candidates: [], offer: false },
+    { name: "running scan", state: "searching", candidates: [], offer: false },
+    { name: "waiting scan", state: "waiting", candidates: [], offer: false },
+    { name: "found WiFi device", state: "multiple", candidates: [{ target: "http://192.168.1.42", deviceId: "wifi-device", transport: "wifi" }], offer: false },
+    { name: "found cable device", state: "multiple", candidates: [{ target: "cable://vibetv", deviceId: "cable-device", transport: "cable" }], offer: false },
+    { name: "completed empty scan", state: "not-found", candidates: [], offer: true },
+  ] as const)("gates a late WiFi update offer on the whole scan: $name", async ({ state, candidates, offer }) => {
+    vi.useFakeTimers();
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "not-found",
+      onSelectConnectionMode: vi.fn().mockResolvedValue({ status: "waiting_for_wifi" }),
+    });
+    const view = render(<SetupWizard {...props} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Already on WiFi/ }));
+    });
+    expect(screen.getByRole("dialog", { name: "Connect the USB cable" })).toBeTruthy();
+
+    // A fresh WiFi scan starts after the transport choice.
+    view.rerender(<SetupWizard {...props} deviceSearchState="searching" />);
+
+    // The release answer arrives after WiFi was chosen, before the waiting
+    // effect has released a newly found device. Every transport counts.
+    view.rerender(<SetupWizard {...props}
+      deviceSearchState={state}
+      deviceCandidates={[...candidates]}
+      macAppUpdate={{ onUpdate: vi.fn(), version: "1.0.65" }}
+    />);
+    expect(Boolean(screen.queryByRole("dialog", { name: "Update the Mac App first" }))).toBe(offer);
+    if (!offer) {
+      expect(screen.getByRole("dialog", { name: "Connect the USB cable" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Enter IP manually" })).toBeTruthy();
+    }
+  });
+
   it("offers a newer release again after the previous one was dismissed (#822)", () => {
     const onUpdate = vi.fn();
     const props = baseProps({

@@ -15858,3 +15858,45 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
 - Scope: Merge claude/778-invalid-focus-ring into claude/paultest-build9 and retain all source approval blocks.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — #822: Mac App offer only when no device was found (Codex P2 setup-wizard)
+
+- User approval: no visible change – UI approval not needed (bug fix: the Mac App update offer no longer replaces the device-not-found dialog when a scan found a device on the other transport)
+- Approved customer-visible result: the Mac App update offer appears only when a scan finds no VibeTV at all; otherwise the existing not-found dialog as before.
+- Scope: apps/control-center setup wizard offer condition and its test. Pull request branch #822 only, not merged, not released.
+- What's new: none — bug fix, the offer no longer appears in that case
+
+## 2026-10-21 — #822: approval marker after merging claude/group-calm-redesign at 035ced04
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (035ced04) into #822; the own entries of both sides keep their approvals; the Mac App update hold during setup from #822 combined with main's rule that the Windows App never gets the native prompt; #822's Windows-setup prompt test was removed)
+- Approved customer-visible result: #822 as in its own entries plus the entries merged with 035ced04; nothing else changes.
+- Scope: the merge of 035ced04 and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — merge of 035ced04, no customer-visible change of its own
+
+## 2026-10-21 — #822: preserve update descriptions and stable notice identity through base merge
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign at 52397ff8 into #822 preserves rich update descriptions, stable notice identity, and the Windows update-prompt exclusion)
+- Approved customer-visible result: both branches retain their existing behavior and approval blocks; this merge adds no customer-visible behavior.
+- Scope: base merge into #822, setup-dialog.tsx conflict resolution and this approval record; PR branch only.
+- What's new: none — merge-only compatibility resolution
+
+## 2026-10-21 — #822: wait for an empty completed scan before the WiFi update offer
+
+- User approval: no visible change – UI approval not needed (bug fix: #822 WiFi update offer no longer claims a failed search while scanning or after finding a device)
+- Approved customer-visible result: the existing update offer appears only after the whole scan finishes without a VibeTV; cable and manual-IP help remain reachable otherwise.
+- Scope: setup-wizard.tsx and its late-release regression tests; shared existing search state gates both update-offer paths.
+- What's new: none — correct an existing update-offer condition
+
+## 2026-10-21 — #822: honor failed runtime release checks
+
+- User approval: no visible change – UI approval not needed (bug fix: #822 stops stale hosted release success from reviving an update offer after the installed runtime reports check_failed)
+- Approved customer-visible result: an unavailable current update check withdraws the existing setup offer and does not open the native prompt after setup; a successful later check can offer the update again.
+- Scope: control-center-app.tsx release precedence and its regression test; runtime release state remains authoritative in the installed app.
+- What's new: none — fix stale update availability
+
+## 2026-10-21 — paultest-build9: refresh claude/561-update-offer-calm (#822)
+
+- User approval: pending — build9 integration of claude/561-update-offer-calm at 6b2ad4396134 for Paul’s Mac test build 7204.
+- Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
+- Scope: Merge claude/561-update-offer-calm into claude/paultest-build9 and retain all source approval blocks.
+- What's new: none — integration of existing feature entries only.

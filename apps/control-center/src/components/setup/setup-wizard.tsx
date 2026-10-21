@@ -380,12 +380,16 @@ export function SetupWizard(props: SetupWizardProps) {
     );
   }, [connect.state, selectedTarget, visibleCandidates]);
 
-  const searchFailed =
+  const searchFoundNoMatch =
     connectionDecision.kind === "not-found" &&
     // A completed combined scan may find only the other transport. That is
     // still no result for the saved mode, not a search that is still running.
     (deviceSearchState === "not-found" || deviceSearchState === "multiple") &&
-    !notFoundDismissed && !wifiError;
+    !wifiError;
+  const searchFailed = searchFoundNoMatch && !notFoundDismissed;
+  const macAppUpdateAfterSearch = searchFoundNoMatch && deviceCandidates.length === 0
+    ? pendingMacAppUpdate
+    : undefined;
   // "idle" is before the first scan was started, so like "searching" it has no
   // result to report. Claiming a count there told the customer none were found
   // while the scan that would find them had not answered, or not even run.
@@ -805,7 +809,7 @@ export function SetupWizard(props: SetupWizardProps) {
           connectPhase={connect.state.phase}
           firmwarePercent={props.firmwareWrittenPercent}
           logLines={connectLogLines(connect.state, props.firmwareWrittenPercent)}
-          macAppUpdate={pendingMacAppUpdate}
+          macAppUpdate={macAppUpdateAfterSearch}
           onDismissMacAppUpdate={() => setMacAppUpdateDismissed(true)}
           onConnect={startConnect}
           onBack={onBack}
@@ -851,9 +855,9 @@ export function SetupWizard(props: SetupWizardProps) {
             showCloseButton={false}
           />
         ) : null}
-        {searchFailed && !wifiSetup && pendingMacAppUpdate ? (
+        {searchFailed && !wifiSetup && macAppUpdateAfterSearch ? (
           <SetupMacAppUpdateDialog
-            offer={pendingMacAppUpdate}
+            offer={macAppUpdateAfterSearch}
             onDismiss={() => setMacAppUpdateDismissed(true)}
             onScanAgain={() => {
               setMacAppUpdateDismissed(true);

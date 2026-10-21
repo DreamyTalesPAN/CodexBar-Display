@@ -4675,7 +4675,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : screensaverUpgrade;
   // In the installed native app the runtime's release check is authoritative:
   // it honors the release-feed override and Sparkle is always an actionable
-  // update path — the 2026-08-09 rehearsal entered the firmware-ahead mixed
+  // update path. A failed runtime check also wins over an older hosted
+  // success, so an offline check cannot keep offering a stale update.
+  // The 2026-08-09 rehearsal entered the firmware-ahead mixed
   // state because the hosted browser check shadowed the runtime's pending
   // update. Outside the native app the hosted check keeps priority: it owns
   // DMG asset verification, and an update without a verified DMG must stay
@@ -4683,7 +4685,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const runtimeRelease = companionInfo?.update;
   const companionRelease =
     runtimeRelease &&
-    runtimeRelease.status !== "check_failed" &&
     companionInfo?.app?.installedInApplications
       ? { ...(hostedCompanionRelease ?? {}), ...runtimeRelease }
       : hostedCompanionRelease?.status === "check_failed" && runtimeRelease
@@ -4806,8 +4807,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     // calm dialog and starts the visible check from its button. The native
     // Sparkle dialog must not come first. The offer returns here once setup
     // has finished.
-    // On Windows the wizard shows no offer (windowsHost), so the native prompt
-    // is not held back for it; the wizard only takes over on a Mac.
     if (
       hostedSetup ||
       windowsHost ||
