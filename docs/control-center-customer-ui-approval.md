@@ -8934,3 +8934,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: setup theme frames retain only the usage windows allowed by the device's advertised maxUsageWindows before deriving their root reset; unknown capabilities keep the host's existing uncapped behavior, and the usage snapshot remains unchanged.
 - Scope: control-center-app.tsx passes the existing device capability through setup-display-previews.ts; regressions in setup-display-previews.test.ts cover caps of one and three, retained deadlines, unknown caps and snapshot preservation; no provider-specific rules or hardware changes.
 - What's new: none — correct preview parity with the existing device wire limit.
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at 01f8694d
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (01f8694d) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with 01f8694d; nothing else changes.
+- Scope: the merge of 01f8694d and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of 01f8694d, no customer-visible change of its own
