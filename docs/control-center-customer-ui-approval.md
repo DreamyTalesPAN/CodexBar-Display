@@ -9332,3 +9332,31 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #822 as in its own entries plus the entries merged with 035ced04; nothing else changes.
 - Scope: the merge of 035ced04 and this approval record. Pull request branch #822 only, not merged, not released.
 - What's new: none — merge of 035ced04, no customer-visible change of its own
+
+## 2026-10-21 — #784: Overview 3D sway stops and pauses while hidden
+
+- User approval: pending — the Overview 3D VibeTV sways once and then stands still (as approved for setup in 7202), paused while the window is hidden
+- Approved customer-visible result: the Overview follows the one-cycle sway from #780, approved in build 7202: after 2.5 seconds without a touch it sways once and settles; a drag starts one more cycle. Hidden windows pause that cycle, and reduced motion stays still. Text and layout remain unchanged.
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and its animation regression tests; adapted from #780 commit 65352daf4412c41df5041baea327f079b92c1dff with visibility handling and event-driven rendering. Pull request #784 only, not merged, not released.
+- What's new: none — performance fix to the existing Overview preview
+
+## 2026-10-21 — #784: identify library and busy notices by data attributes
+
+- User approval: no visible change – UI approval not needed (#784 P3a replaces notice mount counters and title matching with stable dialog data attributes)
+- Approved customer-visible result: page notices still wait for other dialogs and take priority over the busy announcement; wording, layout and dismissal remain unchanged.
+- Scope: `theme-library-screen.tsx`, `system-busy-dialog.tsx`, the `SetupDialog` notice attribute, and library notice regression tests. Pull request #784 only, not merged, not released.
+- What's new: none — internal notice identification only
+
+## 2026-10-21 — #784: cache saved theme names between Overview polls
+
+- User approval: no visible change – UI approval not needed (#784 P3b reads the saved theme library once per Overview visit or storage change instead of every status poll)
+- Approved customer-visible result: Overview keeps showing the current theme name, including the customer's saved names and live theme during standby; returning from Theme Studio and changes from another window refresh those names.
+- Scope: `overview-screen.tsx` and its theme-name regression tests. Pull request #784 only, not merged, not released.
+- What's new: none — avoid repeated localStorage JSON parsing
+
+## 2026-10-21 — #822: preserve update descriptions and stable notice identity through base merge
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign at 52397ff8 into #822 preserves rich update descriptions, stable notice identity, and the Windows update-prompt exclusion)
+- Approved customer-visible result: both branches retain their existing behavior and approval blocks; this merge adds no customer-visible behavior.
+- Scope: base merge into #822, setup-dialog.tsx conflict resolution and this approval record; PR branch only.
+- What's new: none — merge-only compatibility resolution

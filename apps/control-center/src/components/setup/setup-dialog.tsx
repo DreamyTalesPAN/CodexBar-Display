@@ -23,6 +23,8 @@ export type SetupDialogAction = {
 type SetupDialogProps = {
   children?: ReactNode;
   description?: ReactNode;
+  /** Stable identity for notices that yield to other dialogs. */
+  noticeKind?: "system-busy" | "theme-library";
   onOpenChange: (open: boolean) => void;
   open: boolean;
   /** The single signal action. Rendered last, on the right. */
@@ -59,6 +61,7 @@ type SetupDialogProps = {
 export function SetupDialog({
   children,
   description,
+  noticeKind,
   onOpenChange,
   open,
   primaryAction,
@@ -86,6 +89,7 @@ export function SetupDialog({
         )}
       />
       <DialogContent
+        data-notice-kind={noticeKind}
         className={wide ? "sm:max-w-[480px]" : undefined}
         style={{ animation: "none" }}
         onInteractOutside={(event) => event.preventDefault()}
