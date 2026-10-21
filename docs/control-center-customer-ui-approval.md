@@ -9002,7 +9002,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #802: approval marker after merging claude/process-steps-component
 
-- User approval: merge of claude/process-steps-component (ProcessSteps, the Setup Wizard step-line look) into #802; no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- User approval: no visible change – UI approval not needed (merge commit into #802; no visible change of its own; entry: #802: approval marker after merging claude/process-steps-component)
 - Approved customer-visible result: #802 as in its own entries (pending, Paul reviews) plus the entries of the process-steps branch.
 - Scope: the merge of claude/process-steps-component and this approval record. Pull request branch #802 only, not merged, not released.
 - What's new: none — merge of the shared ProcessSteps component, no customer-visible change of its own
@@ -9017,7 +9017,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #802: approval marker after merging claude/group-calm-redesign again
 
-- User approval: merge of claude/group-calm-redesign into #802 (docs and setup-providers changes of the base, approval record kept from both sides); no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
+- User approval: no visible change – UI approval not needed (merge commit into #802; no visible change of its own; entry: #802: approval marker after merging claude/group-calm-redesign again)
 - Approved customer-visible result: #802 as in its own entries (pending, Paul reviews) plus the entries of the base branch.
 - Scope: the merge and this approval record. Pull request branch #802 only, not merged, not released.
 - What's new: none — merge of the base branch, no customer-visible change of its own
@@ -9031,7 +9031,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #802: a finished install with a caveat says it in the usual dialog (Codex/CI, providerless install)
 
-- User approval: pending — #802: with the notice gone from the card, the companion's sentence of a finished install that carries a caveat (e.g. "Theme installed. VibeTV shows it once AI usage is ready.") would have been lost; it is now the usual overlay dialog "Theme installed" with an OK button, and the plain success sentences stay silent (the pill says it). Before → after: the sentence was a line in the card → it is the dialog text; the card itself does not change. Paul reviews.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #802: a finished install with a caveat says it in the usual dialog (Codex/CI, providerless — Before → after: the sentence was a line in the card → it is the dialog text; the card itself does not change. Paul reviews.
 - Approved customer-visible result: #802 dialog "Theme installed" / "Screensaver installed" with the companion's sentence and OK, only for a finished install whose sentence is not the plain success sentence.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its unit test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #802: the same sentence in another place, no new content
@@ -9059,7 +9059,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #802: Active pill from the device slot, failure dialog over the page, focus after install
 
-- User approval: pending — #802 Active pill from the device slot (after a restart, and for a theme with an update offered), install failure dialog shown over the page also while search or filters hide its card, keyboard focus kept on the card after an install; Paul reviews.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #802: Active pill from the device slot, failure dialog over the page, focus after install
 - Approved customer-visible result: #802 the pill "Active" goes to the theme VibeTV reports in its slot, not to the selected catalog theme (before: after a restart an installed theme could read "Installed"; now it reads "Active"; an update offered for the active theme keeps "Active"); the install failure dialog is the same dialog, now also shown when the card is filtered out; no look change for mouse users, keyboard users land on the card's Preview button after an install.
 - Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its tests `theme-library-screen.test.tsx` and `theme-library-screen.custom.test.tsx`, and this approval record. Pull request branch #802 only, not merged, not released.
 - What's new: none — #802 pill, dialog and focus only, no new content
@@ -9073,7 +9073,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-20 — #802: catalog tags for the theme filters when pack metadata is incomplete
 
-- User approval: pending — #802 catalog tags for the theme filters (Marcus' #801 suggestion): a theme whose catalog entry has tags but incomplete pack metadata now shows the catalog's tags, so its filter options and counts can change; Paul reviews.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #802: catalog tags for the theme filters when pack metadata is incomplete
 - Approved customer-visible result: #802 the filter options and counts take the catalog's tags for such a theme; nothing else changes.
 - Scope: `apps/control-center/src/lib/themes.ts` and its unit test `themes.test.ts`, and this approval record. Pull request branch #802 only, not merged, not released.
 - What's new: none — #802 filter tags from the catalog, no new content
@@ -9091,3 +9091,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #802 unchanged; filter tags still come from the catalog first, as in its pending catalog-tags entry.
 - Scope: #802 themes.ts merge fix only. Pull request branch only, not merged, not released.
 - What's new: none — #802 merge fix only
+
+## 2026-10-21 — #802: Paul's approval of build 7200 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #802 approval record for build 7200; the #802 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 stay pending.
+- Approved customer-visible result: #802 as described in its entries above, as seen in build 7200.
+- Scope: #802 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #802 approval record only
