@@ -9206,3 +9206,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Overview keeps showing the current theme name, including the customer's saved names and live theme during standby; returning from Theme Studio and changes from another window refresh those names.
 - Scope: `overview-screen.tsx` and its theme-name regression tests. Pull request #784 only, not merged, not released.
 - What's new: none — avoid repeated localStorage JSON parsing
+
+## 2026-10-21 — #579: Usage provider cards fit their content
+
+- User approval: pending — layout spacing: on Usage, a provider card no longer stretches to the height of its taller neighbour or a 248 px minimum, so the Claude card ends right below its two bars instead of leaving empty space
+- Approved customer-visible result: each provider card is as tall as its own content; cards in one row start at the same top edge.
+- Scope: `usage-screen.tsx` grid alignment and card height only. Part of #579, not merged, not released.
+- What's new: none — layout spacing only

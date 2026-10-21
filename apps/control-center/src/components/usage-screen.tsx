@@ -192,7 +192,7 @@ export function UsageScreen({
         ) : null}
 
         {hasProviders ? (
-          <ol className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
+          <ol className="grid items-start gap-5 md:grid-cols-2 2xl:grid-cols-3">
             {providers.map((provider) => (
               <li className="min-w-0" key={provider.id}>
                 <UsageProviderTile provider={provider} />
@@ -432,7 +432,7 @@ function UsageProviderTile({
   return (
     <Card
       className={cn(
-        "h-full min-h-[248px] [--card-spacing:--spacing(5)]",
+        "[--card-spacing:--spacing(5)]",
         providerStale && "opacity-65",
       )}
     >
