@@ -178,9 +178,18 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	readings := make(map[string]json.RawMessage, len(snapshot.Providers))
 	for _, provider := range snapshot.Providers {
 		usage, usageOK := dashboardusage.UsageForProvider(usageProviders, provider.ID)
+		id := strings.ToLower(strings.TrimSpace(provider.ID))
+		normalized := dashboardusage.NormalizeProvider(provider, usage)
+		// CodexBar's pace rides in the same usage item as the windows. Serve's
+		// answer is the only source on this path, so it is read here (#210, #412).
+		var pace []ProviderPace
+		if usageOK && !normalized.Unavailable {
+			pace = parseProviderPace(usageItems[id])
+		}
 		parsed := parsedFrameFromDashboardProvider(
 			provider,
-			dashboardusage.NormalizeProvider(provider, usage),
+			normalized,
+			pace,
 			now,
 			snapshotCollectedAt,
 			usage.Error,
@@ -195,12 +204,6 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 			parsed.Frame = parsed.Frame.Normalize()
 			parsed.Meta.Windows = nil
 			parsed.Stale = true
-		}
-		id := strings.ToLower(strings.TrimSpace(provider.ID))
-		// CodexBar's pace rides in the same usage item as the windows. Serve's
-		// answer is the only source on this path, so it is read here (#210, #412).
-		if !parsed.Frame.UsageUnavailable {
-			parsed.Meta.Pace = parseProviderPace(usageItems[id])
 		}
 		parsed.Meta.Plan = strings.TrimSpace(provider.Identity.Plan)
 		if spend, ok := parseProviderSpend(usageItems[id]); ok && usageOK {
@@ -264,7 +267,7 @@ func fetchDashboardJSON(ctx context.Context, url string, token string) ([]byte, 
 	return raw, nil
 }
 
-func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider, normalized dashboardusage.ProviderWindows, now time.Time, collectedAt time.Time, usageError json.RawMessage) ParsedFrame {
+func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider, normalized dashboardusage.ProviderWindows, pace []ProviderPace, now time.Time, collectedAt time.Time, usageError json.RawMessage) ParsedFrame {
 	id := strings.TrimSpace(strings.ToLower(provider.ID))
 	label := strings.TrimSpace(provider.Name)
 	if label == "" {
@@ -275,7 +278,7 @@ func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider,
 		countdownAt = now
 	}
 	metaWindows := usageWindowsFromDashboardWindows(normalized.Windows, countdownAt)
-	windows := usageWindowsFromWindows(metaWindows)
+	windows := usageWindowsFromWindows(metaWindows, pace)
 	frame := protocol.Frame{
 		V:            protocol.ProtocolVersionV2,
 		Provider:     id,
@@ -305,7 +308,7 @@ func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider,
 		Frame:              frame.Normalize(),
 		Provider:           id,
 		Source:             "codexbar-dashboard",
-		Meta:               ProviderUsageMeta{Windows: metaWindows},
+		Meta:               ProviderUsageMeta{Windows: metaWindows, Pace: pace},
 		CollectedAt:        collectedAt.UTC(),
 		ActivityObservedAt: activityObservedAt,
 		Stale:              frame.UsageUnavailable,

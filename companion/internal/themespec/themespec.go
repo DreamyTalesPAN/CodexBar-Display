@@ -90,6 +90,10 @@ type Primitive struct {
 	ShortBg             string            `json:"bg,omitempty"`
 	BorderColor         string            `json:"borderColor,omitempty"`
 	ShortBorder         string            `json:"bc,omitempty"`
+	ReserveColor        string            `json:"reserveColor,omitempty"`
+	ShortReserve        string            `json:"rc,omitempty"`
+	DeficitColor        string            `json:"deficitColor,omitempty"`
+	ShortDeficit        string            `json:"dc,omitempty"`
 	BorderRadius        int               `json:"borderRadius,omitempty"`
 	ShortRadius         int               `json:"br,omitempty"`
 	AssetPath           string            `json:"assetPath,omitempty"`
@@ -300,6 +304,9 @@ func validateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.D
 	if specUsesProgressArc(spec) && !caps.SupportsProgressArcV1 {
 		return errors.New("device does not advertise progress-arc-v1 support")
 	}
+	if specUsesUsagePace(spec) && !caps.SupportsUsagePaceV1 {
+		return errors.New("device does not advertise usage-pace-v1 support")
+	}
 	if maxIndex := maxUsageWindowIndex(spec); maxIndex >= 0 && caps.MaxUsageWindows > 0 && maxIndex >= caps.MaxUsageWindows {
 		return fmt.Errorf("theme usage window index exceeds device limit: index=%d limit=%d", maxIndex, caps.MaxUsageWindows)
 	}
@@ -404,6 +411,26 @@ func specUsesProgressArc(spec Spec) bool {
 	return false
 }
 
+// Older firmware renders an unknown usage window key as that window's
+// percent, so a pace binding must never reach it. The firmware reads any
+// usage window key containing "Pace" as pace (usageSlot1PaceDelta,
+// us1PaceDelta, usage.1.PaceDelta), so every such key counts here too, and so
+// do usageModeShort ("Session left") and usageProviderName (the name without
+// the notice), which only pace themes use.
+func specUsesUsagePace(spec Spec) bool {
+	for _, primitive := range spec.Primitives {
+		if strings.Contains(primitive.Binding, "Pace") || primitive.Binding == "usageModeShort" ||
+			primitive.Binding == "usageProviderName" ||
+			usagePaceTextKey.MatchString(primitive.Text) || strings.Contains(primitive.Text, "{usageModeShort}") ||
+			strings.Contains(primitive.Text, "{usageProviderName}") {
+			return true
+		}
+	}
+	return false
+}
+
+var usagePaceTextKey = regexp.MustCompile(`\{[^{}]*Pace[^{}]*\}`)
+
 func specUsesProviderSlots(spec Spec) bool {
 	for _, primitive := range spec.Primitives {
 		if primitive.ProviderSlot > 0 ||
@@ -485,6 +512,8 @@ func normalizeSpec(spec Spec) Spec {
 		spec.Primitives[i].Color = strings.TrimSpace(spec.Primitives[i].Color)
 		spec.Primitives[i].BgColor = strings.TrimSpace(spec.Primitives[i].BgColor)
 		spec.Primitives[i].BorderColor = strings.TrimSpace(spec.Primitives[i].BorderColor)
+		spec.Primitives[i].ReserveColor = strings.TrimSpace(spec.Primitives[i].ReserveColor)
+		spec.Primitives[i].DeficitColor = strings.TrimSpace(spec.Primitives[i].DeficitColor)
 		spec.Primitives[i].AssetPath = strings.TrimSpace(spec.Primitives[i].AssetPath)
 		spec.Primitives[i].StateAssets = normalizeStateAssets(spec.Primitives[i].StateAssets)
 		spec.Primitives[i].ProviderAssets = normalizeProviderAssets(spec.Primitives[i].ProviderAssets)
@@ -539,6 +568,12 @@ func normalizePrimitive(p Primitive) Primitive {
 	}
 	if p.BorderColor == "" {
 		p.BorderColor = p.ShortBorder
+	}
+	if p.ReserveColor == "" {
+		p.ReserveColor = p.ShortReserve
+	}
+	if p.DeficitColor == "" {
+		p.DeficitColor = p.ShortDeficit
 	}
 	if p.BorderRadius == 0 {
 		p.BorderRadius = p.ShortRadius
@@ -805,6 +840,10 @@ func validatePrimitive(p Primitive) error {
 	if p.BorderColor != "" && !colorPattern.MatchString(p.BorderColor) {
 		return errUnsupportedColor
 	}
+	if p.ReserveColor != "" && !colorPattern.MatchString(p.ReserveColor) ||
+		p.DeficitColor != "" && !colorPattern.MatchString(p.DeficitColor) {
+		return errUnsupportedColor
+	}
 	if err := validateColorStops(p); err != nil {
 		return err
 	}
@@ -913,6 +952,10 @@ func rejectNonCanonicalInstalledValues(spec Spec) error {
 			{"bg", primitive.ShortBg},
 			{"borderColor", primitive.BorderColor},
 			{"bc", primitive.ShortBorder},
+			{"reserveColor", primitive.ReserveColor},
+			{"rc", primitive.ShortReserve},
+			{"deficitColor", primitive.DeficitColor},
+			{"dc", primitive.ShortDeficit},
 		} {
 			if err := rejectCanonicalColor(color.value, i, color.key); err != nil {
 				return err
@@ -1085,7 +1128,8 @@ func validateColorStops(p Primitive) error {
 	if len(p.ColorStops) == 0 {
 		return nil
 	}
-	if p.Type != "progress" {
+	// Text bound to a pace key takes its colour from the pace state (usage-pace-v1).
+	if p.Type != "progress" && !(p.Type == "text" && strings.Contains(p.Binding, "Pace")) {
 		return errors.New("colorStops is only supported on progress primitives")
 	}
 	if len(p.ColorStops) > 4 {

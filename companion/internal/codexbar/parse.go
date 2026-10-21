@@ -134,7 +134,7 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 	}
 
 	meta := parseProviderUsageMeta(payload)
-	usageWindows := usageWindowsFromWindows(meta.Windows)
+	usageWindows := usageWindowsFromWindows(meta.Windows, meta.Pace)
 	if len(usageWindows) > 0 {
 		session = usageWindows[0].Percent
 		resetSecs = usageWindows[0].ResetSec
@@ -164,7 +164,7 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 	}, nil
 }
 
-func usageWindowsFromWindows(windows []UsageWindow) []protocol.UsageWindow {
+func usageWindowsFromWindows(windows []UsageWindow, paces []ProviderPace) []protocol.UsageWindow {
 	if len(windows) == 0 {
 		return nil
 	}
@@ -173,12 +173,63 @@ func usageWindowsFromWindows(windows []UsageWindow) []protocol.UsageWindow {
 		if strings.TrimSpace(window.ID) == "" || strings.TrimSpace(window.Label) == "" {
 			continue
 		}
+		pace, _ := PaceForWindow(paces, window.ID)
 		out = append(out, protocol.UsageWindow{
 			ID:       window.ID,
 			Label:    window.Label,
 			Percent:  window.UsedPercent,
 			ResetSec: window.ResetSec,
+			Pace:     pace.Device(),
 		})
+	}
+	return out
+}
+
+// CodexBar keys its pace by rate window: "primary" is the session window and
+// "secondary" the weekly one. The dashboard path names the same windows
+// "session" and "weekly". This is the one lookup for the device frame and the
+// Usage API.
+func PaceForWindow(paces []ProviderPace, windowID string) (ProviderPace, bool) {
+	key := windowID
+	switch windowID {
+	case "session":
+		key = "primary"
+	case "weekly":
+		key = "secondary"
+	}
+	for _, item := range paces {
+		if item.Window == key {
+			return item, true
+		}
+	}
+	return ProviderPace{}, false
+}
+
+// paceStates is CodexBar's own grouping of its pace stages: the split its pace
+// text makes between "On pace", "N% in deficit" and "N% in reserve".
+var paceStates = map[string]string{
+	"onTrack":        protocol.PaceOnPace,
+	"slightlyAhead":  protocol.PaceDeficit,
+	"ahead":          protocol.PaceDeficit,
+	"farAhead":       protocol.PaceDeficit,
+	"slightlyBehind": protocol.PaceReserve,
+	"behind":         protocol.PaceReserve,
+	"farBehind":      protocol.PaceReserve,
+}
+
+// Device is this pace as the device frame carries it. A stage CodexBar does
+// not document, or a missing delta, leaves the pace unknown (the zero value).
+func (p ProviderPace) Device() protocol.UsagePace {
+	state := paceStates[p.Stage]
+	if state == "" || !p.HasDeltaPercent {
+		return protocol.UsagePace{}
+	}
+	out := protocol.UsagePace{Delta: p.DeltaPercent, State: state}
+	// CodexBar says "Lasts until reset", or with an ETA that the quota runs
+	// out first. Without either it projects nothing.
+	if p.WillLastToReset || p.HasETA {
+		lasts := p.WillLastToReset
+		out.Lasts = &lasts
 	}
 	return out
 }
@@ -731,14 +782,15 @@ func parseProviderPace(payload map[string]any) []ProviderPace {
 			continue
 		}
 		pace := ProviderPace{
-			Window:              strings.TrimSpace(strings.ToLower(key)),
-			Stage:               firstString(itemMap, "stage"),
-			DeltaPercent:        intAtPaths(itemMap, "deltaPercent"),
-			ExpectedUsedPercent: intAtPaths(itemMap, "expectedUsedPercent"),
-			WillLastToReset:     boolAtPaths(itemMap, "willLastToReset"),
-			ETASeconds:          int64(intAtPaths(itemMap, "etaSeconds")),
-			Summary:             firstString(itemMap, "summary"),
+			Window:          strings.TrimSpace(strings.ToLower(key)),
+			Stage:           firstString(itemMap, "stage"),
+			WillLastToReset: boolAtPaths(itemMap, "willLastToReset"),
+			Summary:         firstString(itemMap, "summary"),
 		}
+		eta, hasETA := intAtPathsWithPresence(itemMap, "etaSeconds")
+		pace.ETASeconds, pace.HasETA = int64(eta), hasETA
+		pace.DeltaPercent, pace.HasDeltaPercent = intAtPathsWithPresence(itemMap, "deltaPercent")
+		pace.ExpectedUsedPercent, pace.HasExpectedUsedPercent = intAtPathsWithPresence(itemMap, "expectedUsedPercent")
 		if pace.Stage == "" && pace.Summary == "" {
 			continue
 		}

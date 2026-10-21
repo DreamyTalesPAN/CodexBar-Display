@@ -138,6 +138,32 @@ slot-2 equivalents. Compact binding keys are supported for shipped specs, but
 the meaning must remain the same; a compact key is not permission to invent a
 provider-specific fallback.
 
+CodexBar's pace for usage windows 1 and 2 has its own bindings, ready to show:
+`{usageSlot1PaceText}` renders `6% in reserve`, `On pace` or `14% in deficit`,
+`{usageSlot1PaceShort}` the short form `6% reserve`, `on pace`, `14% deficit`,
+`{usageSlot1PaceLasts}` whether the pace lasts (`lasts until reset`, `runs out`)
+and `{usageSlot1PaceRunsOut}` only `runs out`, plus their slot-2 equivalents.
+They render empty whenever CodexBar sent no pace for the window, the window is
+unavailable, or its countdown has run out. Packs that use any of them declare
+`usage-pace-v1`: older firmware would draw the window's percent in their place.
+A `text` primitive bound to a pace text (one binding, not a template) may carry
+`colorStops`, matched against CodexBar's state: `reserve` is 100, `on pace` 50,
+`deficit` 0. Without a pace the solid `c` is used.
+
+`{usageSlot1PaceFooter}` is the line under a ring: the notice (`Update available`, `Open VibeTV Mac App`) while VibeTV shows one, else `lasts until reset - resets 3h 34m` (`resets 3h 34m` without a pace; the idle or unavailable text without a countdown). A theme that binds it shows the notice itself, so keep that line clear of everything else. `usageProviderName` is the provider's name without the notice: bind the name inside a ring to it and the notice to the footer, so the notice never runs over the ring. `{usageModeShort}` is `left` or `used`.
+
+A `progress` primitive bound to `usageSlot1Pace` is a pace bar, on a plain bar,
+a segmented bar (`ps: "segments"`) and a ring (`ps: "arc"`). `c` or `cs` is the
+fill as for any bar (colour stops on the quota) and `bg` the track. The fill
+runs to the smaller of use and plan, the piece up to the larger, and a 2 px
+white tick stands on the plan, 3 px beyond the bar or ring on each side (leave
+that room). `rc` is the colour of a reserve piece (solid) and `dc` the colour of
+a deficit piece, which is hatched with diagonal stripes of `dc` over the track
+tinted a little towards `dc`. On pace has the tick and no piece. Without a pace
+it is a plain bar with no piece and no tick (so a pace theme still reads as a
+usage theme on an engine that sends no pace). A segmented bar shows the piece
+as whole segments.
+
 Preview data is deliberately neutral example data. A preview proving that the
 provider line renders only proves the binding and geometry; it does not prove
 that a specific provider is connected or that the hardware can render the pack.

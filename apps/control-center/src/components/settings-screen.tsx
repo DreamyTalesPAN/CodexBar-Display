@@ -23,12 +23,13 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import { installedScreensaver } from "@/lib/active-theme-upgrade";
+import { activeLiveThemeId, installedScreensaver } from "@/lib/active-theme-upgrade";
 import { errorForHost } from "@/lib/customer-platform";
 import { cn } from "@/lib/utils";
 import { loadUserThemes } from "@/lib/theme-studio-storage";
 import type { ThemeProduct } from "@/lib/themes";
 import { PreferenceControl } from "./preference-control";
+import { paceSetting, PaceSetting } from "./settings-pace";
 import { ThemeStudioKeyRow } from "./theme-studio/openai-key-form";
 import { isProviderItem, type ProviderPickerProps } from "./provider-picker";
 import {
@@ -217,6 +218,12 @@ export function SettingsScreen({
       },
       manualProviderId ?? enabledProviderIds[0] ?? "",
     );
+  const pace = paceSetting(
+    displayPreferences,
+    providerPicker.usage,
+    activeLiveThemeId(themes, device),
+    themes,
+  );
 
   return (
     <div className="mx-auto w-full max-w-[1040px] pt-6 pb-10">
@@ -342,6 +349,19 @@ export function SettingsScreen({
           }
         />
       </SettingsSection>
+      {pace ? (
+        <>
+          <ItemSeparator className="my-0" />
+          <SettingsSection id="settings-pace" title="Pace">
+            <PaceSetting
+              descriptor={pace.descriptor}
+              disabled={localActionBusy}
+              note={pace.note}
+              onChange={onDisplayPreferenceChange}
+            />
+          </SettingsSection>
+        </>
+      ) : null}
 
       {standbySupport ? (
         <>

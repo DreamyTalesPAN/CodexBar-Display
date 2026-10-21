@@ -104,6 +104,13 @@ type usageWindowInfo struct {
 	// sends none. Nothing here is computed.
 	WillLastToReset *bool `json:"willLastToReset,omitempty"`
 	ETASeconds      int64 `json:"etaSeconds,omitempty"`
+	// CodexBar's own pace words for this window: its stage name, its delta
+	// (positive = ahead of plan = deficit, negative = reserve) and the used
+	// percent it expects by now. ExpectedUsedPercent follows the display mode
+	// like UsedPercent does.
+	Stage               string `json:"stage,omitempty"`
+	DeltaPercent        *int   `json:"deltaPercent,omitempty"`
+	ExpectedUsedPercent *int   `json:"expectedUsedPercent,omitempty"`
 }
 
 type usageStatusInfo struct {
@@ -470,6 +477,7 @@ func usageResponseFromPersisted(now time.Time, usage daemon.PersistedUsage) usag
 	providers := make([]usageProviderInfo, 0, len(usage.Providers))
 	for _, provider := range usage.Providers {
 		if info, ok := usageProviderFromSnapshot(provider); ok {
+			dropPaceAfterReset(info.Windows, now, provider.CollectedAt)
 			providers = append(providers, info)
 		}
 	}
@@ -572,7 +580,7 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		WeeklyRetained:        retained && !frame.WeeklyUnavailable,
 		CollectedAt:           formatOptionalTime(snapshot.CollectedAt),
 		ActivityObservedAt:    formatOptionalTime(snapshot.ActivityObservedAt),
-		Windows:               usageWindowsFromMeta(snapshot.Meta),
+		Windows:               usageWindowsFromMeta(snapshot.Meta, snapshot.Stale),
 		WindowsRetained:       retained,
 		Status:                usageStatusFromMeta(snapshot.Meta),
 		Credits:               usageCreditsFromMeta(snapshot.Meta),
@@ -608,7 +616,9 @@ func snapshotHasUsableUsage(frame protocol.Frame, meta codexbar.ProviderUsageMet
 		len(frame.UsageSlots) > 0
 }
 
-func usageWindowsFromMeta(meta codexbar.ProviderUsageMeta) []usageWindowInfo {
+// A stale reading keeps its windows and loses their pace: CodexBar paced a
+// window against its reset as it stood when the reading was fresh.
+func usageWindowsFromMeta(meta codexbar.ProviderUsageMeta, stale bool) []usageWindowInfo {
 	if len(meta.Windows) == 0 {
 		return nil
 	}
@@ -626,10 +636,19 @@ func usageWindowsFromMeta(meta codexbar.ProviderUsageMeta) []usageWindowInfo {
 			ResetSec:      window.ResetSec,
 			WindowMinutes: window.WindowMinutes,
 		}
-		if pace, ok := paceForWindow(meta.Pace, id); ok {
+		if pace, ok := codexbar.PaceForWindow(meta.Pace, id); ok && !stale && window.ResetSec > 0 {
 			willLast := pace.WillLastToReset
 			info.WillLastToReset = &willLast
 			info.ETASeconds = pace.ETASeconds
+			info.Stage = strings.TrimSpace(pace.Stage)
+			if pace.HasDeltaPercent {
+				delta := pace.DeltaPercent
+				info.DeltaPercent = &delta
+			}
+			if pace.HasExpectedUsedPercent {
+				expected := clampUsagePercent(pace.ExpectedUsedPercent)
+				info.ExpectedUsedPercent = &expected
+			}
 		}
 		out = append(out, info)
 	}
@@ -639,23 +658,19 @@ func usageWindowsFromMeta(meta codexbar.ProviderUsageMeta) []usageWindowInfo {
 	return out
 }
 
-// CodexBar keys its pace by rate window: "primary" is the session window and
-// "secondary" the weekly one. The dashboard path names the same windows
-// "session" and "weekly".
-func paceForWindow(pace []codexbar.ProviderPace, windowID string) (codexbar.ProviderPace, bool) {
-	key := windowID
-	switch windowID {
-	case "session":
-		key = "primary"
-	case "weekly":
-		key = "secondary"
+// A window whose reset has passed since CodexBar collected it loses its pace,
+// like a stale reading: the pace belonged to the window that is gone.
+func dropPaceAfterReset(windows []usageWindowInfo, now, collectedAt time.Time) {
+	if now.IsZero() || collectedAt.IsZero() || !now.After(collectedAt) {
+		return
 	}
-	for _, item := range pace {
-		if item.Window == key {
-			return item, true
+	age := int64(now.Sub(collectedAt) / time.Second)
+	for i := range windows {
+		if windows[i].ResetSec <= age {
+			windows[i].WillLastToReset, windows[i].ETASeconds = nil, 0
+			windows[i].Stage, windows[i].DeltaPercent, windows[i].ExpectedUsedPercent = "", nil, nil
 		}
 	}
-	return codexbar.ProviderPace{}, false
 }
 
 func usageStatusFromMeta(meta codexbar.ProviderUsageMeta) *usageStatusInfo {
@@ -898,6 +913,10 @@ func usageProviderForDisplayMode(provider usageProviderInfo, targetMode string) 
 		provider.Weekly = 100 - clampUsagePercent(provider.Weekly)
 		for i := range provider.Windows {
 			provider.Windows[i].UsedPercent = 100 - clampUsagePercent(provider.Windows[i].UsedPercent)
+			if expected := provider.Windows[i].ExpectedUsedPercent; expected != nil {
+				flipped := 100 - clampUsagePercent(*expected)
+				provider.Windows[i].ExpectedUsedPercent = &flipped
+			}
 		}
 	}
 	provider.UsageMode = usageModeOrDefault(targetMode)

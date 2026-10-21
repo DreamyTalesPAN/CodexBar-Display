@@ -3,20 +3,21 @@
   "schemaVersion": 1,
   "id": "pixel-battery",
   "name": "Pixel Battery",
-  "version": "1.16.0",
+  "version": "1.17.0",
   "usage": "live",
-  "minFirmware": "1.0.42",
+  "minFirmware": "1.0.50",
   "requiredCapabilities": [
     "usage-slots-v1",
     "provider-assets-v1",
     "color-stops-v1",
-    "text-valign-v1"
+    "text-valign-v1",
+    "usage-pace-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/pba-16-f46829.json",
+    "path": "/themes/u/pba-17-6714a0.json",
     "file": "theme.json",
-    "bytes": 1698,
-    "sha256": "f468293e988d6b348dcd5310d95843a61123f06b8602d5fa74cb3e34d596c8b7",
+    "bytes": 2155,
+    "sha256": "6714a0f80c829f8264c2c6c16839cff6c5e9dd90c07f9655e312b074c5cc16a8",
     "contentType": "application/json"
   },
   "assets": [
