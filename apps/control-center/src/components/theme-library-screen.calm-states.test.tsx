@@ -95,6 +95,39 @@ function deferFetches() {
 const driftRow = () =>
   screen.getAllByRole("listitem").find((row) => within(row).queryByText("Drift"))!;
 
+it("recognises the busy announcement independently of its wording", async () => {
+  stored.storageError = "Saved themes contain invalid data.";
+  const busy = document.createElement("div");
+  busy.setAttribute("role", "dialog");
+  busy.dataset.noticeKind = "system-busy";
+  busy.textContent = "A different busy announcement title";
+  document.body.appendChild(busy);
+  try {
+    renderLibrary();
+    expect(await screen.findByRole("dialog", { name: "Theme storage needs attention" })).toBeTruthy();
+  } finally {
+    busy.remove();
+  }
+});
+
+it("waits for an ordinary dialog even when its contents quote the busy title", async () => {
+  stored.storageError = "Saved themes contain invalid data.";
+  const other = document.createElement("div");
+  other.setAttribute("role", "dialog");
+  other.textContent = `Help for: ${systemBusyCopy.title}`;
+  document.body.appendChild(other);
+  try {
+    renderLibrary();
+    render(<SystemBusyDialog onClose={() => {}} />);
+    await act(async () => {});
+    expect(screen.queryAllByRole("dialog")).toEqual([other]);
+    act(() => other.remove());
+    expect(await screen.findByRole("dialog", { name: "Theme storage needs attention" })).toBeTruthy();
+  } finally {
+    other.remove();
+  }
+});
+
 it("a failed theme action opens as an overlay dialog, not as an inline alert", async () => {
   vi.stubGlobal("fetch", async () => ({ ok: false }));
   renderLibrary({ themes: [drift] });
