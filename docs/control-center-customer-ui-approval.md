@@ -8136,3 +8136,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #837 as in its own entries plus the entries merged with f314106c; nothing else changes.
 - Scope: the merge of f314106c and this approval record. Pull request branch #837 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
+
+## 2026-10-21 — #265: weak WiFi notice
+
+- User approval: pending — new overlay "VibeTV's Wi-Fi is weak" when the companion reports that a WiFi VibeTV stopped getting updates
+- Approved customer-visible result: when the Companion reports `wifi.weak` for a connected VibeTV on WiFi, a dialog "VibeTV's Wi-Fi is weak" with the text "VibeTV stopped getting updates. Move it closer to your router or check your Wi-Fi." and one "OK" button opens over the page. "OK" hides it until the signal is no longer weak. Cable VibeTVs and a signal that is not weak show nothing new.
+- Scope: `apps/control-center/src/components/weak-wifi-dialog.tsx`, its test, `control-center-app.tsx` (state, reset effect, render), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the notice is a warning on the page, not an announcement
