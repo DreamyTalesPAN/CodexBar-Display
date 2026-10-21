@@ -182,6 +182,22 @@ const DRAWING_WORDS = (animated: boolean) => [
 const FITTING_WORDS = ["Adding clock and readings…", "Fitting it to your VibeTV…", "Polishing the details…", "Taking one last look…"];
 
 // The editor's own dropdown (7197 review point 5): no native system menu.
+// The "Reading to show" choices of a progress bar. An unbound bar has no
+// "Current reading" entry: Radix Select rejects an empty item value and the
+// details panel crashed on it.
+export function progressReadingOptions(
+  binding: string | undefined,
+): ReadonlyArray<readonly [string, string]> {
+  const known = ["usageSlot1Percent", "usageSlot2Percent", "session", "weekly"];
+  return [
+    ["usageSlot1Percent", "First usage window"],
+    ["usageSlot2Percent", "Second usage window"],
+    ["session", "Session usage"],
+    ["weekly", "Weekly usage"],
+    ...(binding && !known.includes(binding) ? [[binding, "Current reading"] as const] : []),
+  ];
+}
+
 function EditorSelect({
   label,
   onChange,
@@ -1368,15 +1384,7 @@ export function AIThemeStudioScreen({
                           if (p.binding === "session" || p.binding === "usageSlot1Percent") p.slot = 1;
                           if (p.binding === "weekly" || p.binding === "usageSlot2Percent") p.slot = 2;
                         })}
-                        options={[
-                          ["usageSlot1Percent", "First usage window"],
-                          ["usageSlot2Percent", "Second usage window"],
-                          ["session", "Session usage"],
-                          ["weekly", "Weekly usage"],
-                          ...(!["usageSlot1Percent", "usageSlot2Percent", "session", "weekly"].includes(primitive.binding || "")
-                            ? [[primitive.binding || "", "Current reading"] as const]
-                            : []),
-                        ]}
+                        options={progressReadingOptions(primitive.binding)}
                         value={primitive.binding || "usageSlot1Percent"}
                       />
                     </label>

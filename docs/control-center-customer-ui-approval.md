@@ -8829,6 +8829,27 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of e3503bda and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of e3503bda, no customer-visible change of its own
 
+## 2026-10-21 — #784: Theme Studio progress bar without a binding (Codex review)
+
+- User approval: pending — #784 Theme Studio: a progress bar without a reading no longer lists an empty "Current reading" entry under "Reading to show" (the panel crashed on it); the other entries and wording stay the same
+- Approved customer-visible result: "Reading to show" offers the same four readings as before. A progress bar that has no reading yet shows no extra "Current reading" entry any more, so the details panel no longer breaks for it. Nothing else changes.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` (new exported `progressReadingOptions`), its new test `progress-reading-options.test.ts`, and this approval record. Pull-request branch #784 only, not merged, not released.
+- What's new: none — crash fix of the Theme Studio details panel, no new text
+
+## 2026-10-21 — #784: Slider thumb ring grey on hover and drag, olive only for keyboard focus (Codex review)
+
+- User approval: pending — #784 slider thumb: mouse hover/drag shows a neutral grey ring, the olive ring only for keyboard focus (Paul decided 21.10. "Maus grau, Tastatur oliv"; not yet seen in a build)
+- Approved customer-visible result: the slider thumb shows a grey ring while the mouse hovers over it or drags it; the olive ring appears only when the thumb has keyboard focus. Nothing else changes.
+- Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb ring classes), its new test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull-request branch #784 only, not merged, not released.
+- What's new: none — ring colour of the slider thumb, no new text
+
+## 2026-10-21 — #784: approval marker after merging main at 41bf10cf
+
+- User approval: no visible change – UI approval not needed (merge of main (41bf10cf) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 41bf10cf; nothing else changes.
+- Scope: the merge of 41bf10cf and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 41bf10cf, no customer-visible change of its own
+
 ## 2026-10-19 — Calm Updates screen as drawn in the approved master, plus the states derived from the calm rules (#752)
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm Updates screen as drawn in the approved master, plus the states derived from the calm
 - Approved customer-visible result: none yet; waits for Paul's yes. Before: two cards "Mac App" and "VibeTV" with Installed / Available version chips, "Last checked <date, time with seconds>" per card, an "Alert" box for the Mac-App-first rule and the update progress, a heading "Up to date" with a "What's new" link, and one full-width lime button ("Check for updates" / "Update"). After: one headline with a dot ("Everything is up to date", "Update available", "Checking for updates", "Update check failed", "Updating VibeTV", "VibeTV is restarting"); one framed card with a row "Mac App" ("App" on Windows) and a row "VibeTV firmware", each with an icon, one version number (the installed one) and "Up to date"; "Checked today, 08:44" (or "yesterday" / the date) and an outline "Check for updates" button beside the page title; a grey "What's new in <version>" note card with the newest entry's title and "Read notes" (opens the existing What's new dialog). Update available: the row that has the update shows a lime "Update" button (Mac App: Sparkle updater or verified download; firmware: starts the update) and says "Version <x> is available"; the firmware row keeps "Update Mac App first" / "Checking Mac App" inside its row while the app comes first. Installing: a thin progress bar and one "> step" line (shared process steps) inside the firmware row. Update complete / attention: title and sentence inside the firmware row. Failed check: a dialog "Could not check for updates" with "Check the internet connection, then try again.", a lime "Try again" and "Close" (no X); the failed update dialog is unchanged.
