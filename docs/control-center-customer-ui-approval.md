@@ -8346,3 +8346,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none — the customer sees the same Recent activity as before #859.
 - Scope: control-center-app.display-preferences.test.tsx only; no product code changes.
 - What's new: none — test-only change.
+
+## 2026-10-21 — #859: approval marker after merging main at 3dc0a15b
+
+- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #859; the own entries of #859 keep their approvals)
+- Approved customer-visible result: #859 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
+- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #859 only, not merged, not released.
+- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
