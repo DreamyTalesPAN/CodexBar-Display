@@ -8983,6 +8983,20 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 467fd7fb and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of 467fd7fb, no customer-visible change of its own
 
+## 2026-10-21 — #784: Mac App up to date only with a known installed version
+
+- User approval: no visible change – UI approval not needed (bug fix: without a known installed version the Mac App is no longer called up to date)
+- Approved customer-visible result: #784 as before; the Mac App line says "Up to date" only when its installed version was compared, otherwise it stays as it was without a check.
+- Scope: Overview Mac App line in control-center-app.tsx and its test. Pull request branch #784 only, not merged, not released.
+- What's new: none — bug fix, no new text
+
+## 2026-10-21 — #784: approval marker after merging main at 35152cc8
+
+- User approval: no visible change – UI approval not needed (merge of main (35152cc8) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
+- Scope: the merge of 35152cc8 and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 35152cc8, no customer-visible change of its own
+
 ## 2026-10-20 — #561 update offer: the Mac App update is offered in its own calm dialog when no VibeTV is found
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 08:55: "Ja" (to "Soll das so rein?" about the picture ui/561-update-hint/01-no-vibetv-found-newer-app.png, in the new dialog style) — entry: #561 update offer: the Mac App update is offered in its own calm dialog when no VibeTV is  — Before → after: #561 update offer: when no VibeTV was found, setup showed only the usual not-found help, even if the Mac App was older than the newest release and an old app can be the reason → #561 update offer: on a Mac, when the Mac App is older than the newest release and no VibeTV is found, the dialog "Update the Mac App first" appears first.

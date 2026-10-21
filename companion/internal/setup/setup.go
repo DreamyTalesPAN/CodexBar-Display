@@ -74,7 +74,6 @@ type deps struct {
 	executablePath      func() (string, error)
 	homeDir             func() (string, error)
 	uid                 func() int
-	listPorts           func() ([]string, error)
 	resolvePort         func(string) (string, error)
 	resolveRecoveryPort func(string) (string, error)
 	probePort           func(string) error
