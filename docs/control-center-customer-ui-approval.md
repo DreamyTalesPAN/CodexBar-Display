@@ -9226,3 +9226,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: nothing is approved yet. Display mode gains "Two at once" (with a First and Second provider choice) in setup and Settings, and Settings gains "Limits on VibeTV"; these screens are the carried #592 versions and are redesigned in a Claude Design round first.
 - Scope: Control Center only: display mode panel, provider pair choice, Limits on VibeTV section, the pair preview and the "One provider" name of the former Manual mode. Pace is not part of this entry; it comes from #800 unchanged.
 - What's new: none — the visible parts go to a Claude Design round first
+
+## 2026-10-21 — #592 on #800: Two Limits theme
+
+- User approval: pending — #592 two providers at once (Two Limits theme with the #800 pace bar and sentences); visible parts go to a Claude Design round before Paul sees them
+- Approved customer-visible result: nothing is approved yet. The theme "Two Limits" shows two limits (or two providers at once) with the pace bar, the reserve or deficit piece and the sentences of the #800 Pace themes; layout and colours are open for the Claude Design round.
+- Scope: theme pack two-limits (theme, manifest, render pack, catalog entry), its documentation and its test. Its preview image in docs/assets still shows the #592 look.
+- What's new: none — the visible parts go to a Claude Design round first
