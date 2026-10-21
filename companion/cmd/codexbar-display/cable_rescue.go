@@ -147,7 +147,9 @@ func resumableRescueMarker(home string) (firmwareupdate.RescueMarker, bool) {
 	// marker without that flag may be half-written (#819) and is kept below.
 	if marker.ChipNotRead && strings.TrimSpace(marker.ChipMAC) == "" {
 		fmt.Printf("Cable rescue: the marker for port %s was saved before its chip was read; its VibeTV is untouched, clearing it\n", marker.Port)
-		if clearErr := firmwareupdate.ClearRescueMarkerIfUnchanged(home, marker); clearErr != nil {
+		// runInstallUpdate holds the rescue lock, so no live attempt can own
+		// or replace this marker while it is inspected and cleared.
+		if clearErr := firmwareupdate.ClearRescueMarker(home); clearErr != nil {
 			fmt.Printf("warning: clearing the unused rescue marker failed: %v\n", clearErr)
 		}
 		return firmwareupdate.RescueMarker{}, false

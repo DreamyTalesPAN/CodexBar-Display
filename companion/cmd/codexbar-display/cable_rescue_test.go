@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,7 +15,9 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/firmwareupdate"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
 const rescueTestBoard = "esp8266-smalltv-st7789"
@@ -68,6 +72,84 @@ func rescueMarkerPresent(t *testing.T) bool {
 	}
 	_, ok := firmwareupdate.LoadRescueMarker(home, time.Now())
 	return ok
+}
+
+// A second updater must fail before probing or clearing the live attempt's
+// marker, throughout rescue and verification, even in another process.
+func TestRunInstallUpdateCableRescueRejectsOverlappingProcess(t *testing.T) {
+	const childHomeEnv = "VIBETV_TEST_ACTIVE_RESCUE_HOME"
+	if home := os.Getenv(childHomeEnv); home != "" {
+		testenv.Home(t, home)
+		pinNoOtherRuntimeWriter(t)
+		pinCableRescue(t)
+		probes := 0
+		findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
+			probes++
+			return usb.CableDevice{}, errors.New("no mocked legacy device")
+		}
+		err := runInstallUpdate(rescueArgs("http://127.0.0.1:1/manifest.json"))
+		if errcode.Of(err) != errcode.RuntimeWriterLocked || probes != 0 {
+			t.Fatalf("overlapping rescue: error=%v probes=%d; want writer lock error before any probe", err, probes)
+		}
+		return
+	}
+	for _, failWrite := range []bool{false, true} {
+		t.Run(fmt.Sprintf("writeFailure=%v", failWrite), func(t *testing.T) {
+			home, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+			pinCableRescue(t)
+			markerPath := firmwareupdate.RescueMarkerPath(home)
+			contend := func(stage string) {
+				t.Helper()
+				before, _ := os.ReadFile(markerPath)
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestRunInstallUpdateCableRescueRejectsOverlappingProcess$")
+				cmd.Env = append(os.Environ(), childHomeEnv+"="+home)
+				if output, err := cmd.CombinedOutput(); err != nil {
+					t.Errorf("%s: competing updater was not rejected: %v\n%s", stage, err, output)
+				}
+				after, _ := os.ReadFile(markerPath)
+				if !bytes.Equal(before, after) {
+					t.Errorf("%s: competing updater changed the active rescue marker", stage)
+				}
+			}
+			findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
+				contend("before discovery")
+				return legacyRescueDevice()
+			}
+			flashCableRescueFn = func(_ context.Context, _ string, _ []byte, opts usb.ROMFlashOptions) error {
+				contend("before chip identification")
+				if err := opts.OnChipIdentified(rescueTestChip); err != nil {
+					return err
+				}
+				contend("after chip identification")
+				opts.OnWriteStarted()
+				if failWrite {
+					return usb.ErrROMLoaderNotEntered
+				}
+				return nil
+			}
+			verified := false
+			readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+				contend("post-flash verification")
+				verified = true
+				return protocol.DeviceHello{DeviceID: rescueTestChipDeviceID, Board: rescueTestBoard, Firmware: "1.0.1"}, nil
+			}
+			err := runInstallUpdate(rescueArgs(manifestURL))
+			if (err != nil) != failWrite || verified == failWrite {
+				t.Fatalf("rescue: err=%v verified=%v writeFailure=%v", err, verified, failWrite)
+			}
+			marker, present := firmwareupdate.LoadRescueMarker(home, time.Now())
+			if present != failWrite || (present && marker.ChipMAC != rescueTestChip) {
+				t.Fatalf("rescue marker after return: %+v present=%v writeFailure=%v", marker, present, failWrite)
+			}
+			lock, err := writerlock.AcquireAt(markerPath + ".lock")
+			if err != nil {
+				t.Fatalf("rescue did not release its lock: %v", err)
+			}
+			lock.Release()
+		})
+	}
 }
 
 // Codex on #840: a first write that fails before the chip is read leaves a

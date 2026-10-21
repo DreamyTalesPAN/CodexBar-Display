@@ -12,7 +12,6 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
-	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
 // RescueMarkerMaxAge bounds how long a half-written VibeTV is assumed to still
@@ -51,6 +50,8 @@ func RescueMarkerPath(home string) string {
 	return runtimepaths.Path(home, "updates", "firmware", "cable-rescue-pending.json")
 }
 
+// SaveRescueMarker persists the marker. The updater must hold the marker's
+// sidecar lock for its entire rescue transaction, including all saves and clears.
 func SaveRescueMarker(home string, marker RescueMarker) error {
 	path := RescueMarkerPath(home)
 	if path == "" {
@@ -60,13 +61,9 @@ func SaveRescueMarker(home string, marker RescueMarker) error {
 	if err != nil {
 		return err
 	}
-	// Lock a stable sidecar, not the marker inode replaced by durableRename.
-	// Every marker mutation uses this same cross-process lock.
-	lock, err := writerlock.AcquireAtWait(path + ".lock")
-	if err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	defer lock.Release()
 	// Written next to the old marker and renamed over it, so a full disk or a
 	// crash leaves the previous marker intact instead of a truncated one.
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".cable-rescue-pending-*.json")
@@ -132,48 +129,10 @@ func ClearRescueMarker(home string) error {
 	if path == "" {
 		return nil
 	}
-	lock, err := writerlock.AcquireAtWait(path + ".lock")
-	if err != nil {
-		return err
-	}
-	defer lock.Release()
-	return clearRescueMarker(path)
-}
-
-// The caller holds the marker's sidecar lock throughout inspection and removal.
-func clearRescueMarker(path string) error {
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil
-}
-
-// ClearRescueMarkerIfUnchanged clears the flagged chipless marker inspected
-// earlier, but only while it is still that marker. An overlapping rescue may
-// have saved a newer marker with the chip since (issue #842); that one stays.
-func ClearRescueMarkerIfUnchanged(home string, inspected RescueMarker) error {
-	return clearRescueMarkerIfUnchanged(home, inspected, nil)
-}
-
-func clearRescueMarkerIfUnchanged(home string, inspected RescueMarker, beforeRemove func()) error {
-	path := RescueMarkerPath(home)
-	if path == "" {
-		return nil
-	}
-	lock, err := writerlock.AcquireAtWait(path + ".lock")
-	if err != nil {
-		return err
-	}
-	defer lock.Release()
-	current, ok := LoadRescueMarker(home, time.Now())
-	if !ok || current.Port != inspected.Port || !current.WriteStartedAt.Equal(inspected.WriteStartedAt) ||
-		current.ChipMAC != "" || !current.ChipNotRead {
-		return nil
-	}
-	if beforeRemove != nil {
-		beforeRemove()
-	}
-	return clearRescueMarker(path)
 }
 
 // MovedRescuePort finds the port a half-written VibeTV moved to after it was

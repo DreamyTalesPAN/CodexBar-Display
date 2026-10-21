@@ -23,6 +23,7 @@ import (
 	transportlayer "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/transport"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
 // otherRuntimeWriterAlive reports whether a local VibeTV runtime answers on
@@ -133,6 +134,15 @@ func runInstallUpdate(args []string) (retErr error) {
 	var marker firmwareupdate.RescueMarker
 	recovering := false
 	if rescueMode {
+		// Own the sole rescue marker before discovery or abandoned-marker
+		// cleanup, through flashing, verification and final cleanup. A second
+		// updater must fail before it can mistake this live attempt for a stale
+		// one; locking individual marker writes/removes leaves that gap open.
+		lock, err := writerlock.AcquireAt(firmwareupdate.RescueMarkerPath(home) + ".lock")
+		if err != nil {
+			return err
+		}
+		defer lock.Release()
 		// Firmware from before the Cable identity contract has neither a
 		// deviceId nor Cable transfer. The ROM loader rewrites it anyway.
 		var device usb.CableDevice
