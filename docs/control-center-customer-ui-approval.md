@@ -9568,3 +9568,11 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: unavailable checks use the existing unknown state and retained firmware checks lose their green status while the device or companion is disconnected; no new copy or layout.
 - Scope: UpdatesScreen availability checks, targeted regression tests and this approval record.
 - What's new: none — bug fix, not announced to customers
+
+
+## 2026-10-21 — #798: Retain one firmware attempt key through local errors and polls
+
+- User approval: no visible change – UI approval not needed (bug fix: a closed firmware failure does not reopen when the same server job arrives after the local handler)
+- Approved customer-visible result: the existing failure notice stays closed for the same update attempt; a new failed attempt still opens it.
+- Scope: ControlCenterApp firmware job handling using firmwareUpdateStatusFromJob, the end-to-end component regression and this approval record.
+- What's new: none — bug fix, not announced to customers

@@ -3035,9 +3035,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const shouldUpgradeActiveTheme = Boolean(
       activeThemeUpgrade.theme && activeThemeUpgrade.needed,
     );
-    // Identifies this attempt in the Updates screen (its dismissal key), so
-    // it keeps milliseconds; formatTime() would repeat within one second.
-    const startedAt = new Date().toISOString();
+    // Before a job exists, identify the local attempt with full precision.
+    // Once it exists, retain the same server key used by status polling.
+    let startedAt = new Date().toISOString();
     const initialLogs = ["Preparing VibeTV update."];
     const firmwareIsKnownCurrent = Boolean(
       firmwareUpdate?.status === "current" &&
@@ -3100,7 +3100,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return true;
     }
     const applyUpdateJob = (job: FirmwareUpdateJob) => {
-      setFirmwareUpdateStatus(firmwareUpdateStatusFromJob(job, startedAt));
+      const status = firmwareUpdateStatusFromJob(job, startedAt);
+      startedAt = status.startedAt;
+      setFirmwareUpdateStatus(status);
     };
     setBusyAction("firmware-update");
     setFirmwareUpdateStatus({

@@ -13,6 +13,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { markWhatsNewSeen } from "@/lib/whats-new";
 import { expectKeepsFocus } from "@/test/focus";
 import { ControlCenterApp } from "./control-center-app";
+import type { FirmwareUpdateJob } from "./update-jobs";
 
 const themeSpec = { active: true, path: "/themes/codex/spec-v7.json", hash: "hash-v7", renderOk: true };
 const device = {
@@ -49,13 +50,16 @@ function lastChecked(value: string): string {
 
 // The Mac App as this window sees it: its release answer only changes when a
 // status read asks for a new one.
-async function openUpdates(failedCheck?: "app" | "firmware") {
+async function openUpdates(failedCheck?: "app" | "firmware", offerFirmwareUpdate = false) {
   const companion = {
     releaseCheckedAt: firstCheck,
     statusReads: [] as string[],
     statusReadsInFlight: 0,
     statusReadMs: 0,
     firmwareChecks: 0,
+    firmwareJob: undefined as FirmwareUpdateJob | undefined,
+    reportFirmwareJob: false,
+    installCalls: 0,
   };
   // A customer who has read "What's new"; it would lie over Overview.
   markWhatsNewSeen();
@@ -102,6 +106,7 @@ async function openUpdates(failedCheck?: "app" | "firmware") {
             },
           },
           device,
+          firmwareUpdate: companion.reportFirmwareJob ? companion.firmwareJob : undefined,
         });
       }
       if (url.includes("/api/companion/latest")) {
@@ -119,10 +124,32 @@ async function openUpdates(failedCheck?: "app" | "firmware") {
         return jsonResponse({
           checkedAt: "2026-10-07T11:50:07Z",
           installedFirmware: device.firmware,
-          latestFirmware: device.firmware,
-          updateAvailable: false,
-          status: failedCheck === "firmware" ? "check_failed" : "current",
+          latestFirmware: offerFirmwareUpdate ? "9999.0.525" : device.firmware,
+          updateAvailable: offerFirmwareUpdate,
+          status: failedCheck === "firmware" ? "check_failed" : offerFirmwareUpdate ? "update_available" : "current",
         });
+      }
+      if (url.endsWith("/v1/updates/install")) {
+        companion.installCalls += 1;
+        companion.firmwareJob = {
+          id: `firmware-job-${companion.installCalls}`,
+          phase: "installing",
+          // Server time differs from the local click, including sub-millisecond precision.
+          startedAt: new Date(Date.now() + 7).toISOString().replace("Z", "345Z"),
+        };
+        return jsonResponse({ ok: true, job: companion.firmwareJob });
+      }
+      if (url.includes("/v1/updates/install/status?jobId=")) {
+        companion.firmwareJob = {
+          ...companion.firmwareJob!,
+          phase: "error",
+          error: {
+            code: "firmware_update_failed",
+            message: "VibeTV update failed.",
+            nextAction: "Keep VibeTV powered on, then try again.",
+          },
+        };
+        return jsonResponse({ ok: true, job: companion.firmwareJob });
       }
       if (url.endsWith("/v1/display-frame/latest")) {
         return jsonResponse({
@@ -246,4 +273,31 @@ it.each(["app", "firmware"] as const)("keeps a failed %s check closed after leav
   fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
   await window.wait(2);
   expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
+});
+
+it("keeps a locally handled firmware failure closed when its server job arrives", async () => {
+  const window = await openUpdates(undefined, true);
+  fireEvent.click(screen.getByRole("button", { name: "Update" }));
+  await window.wait(2);
+  expect(window.companion.installCalls).toBe(1);
+  expect(screen.getByRole("dialog", { name: "Update failed" })).toBeTruthy();
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(screen.queryByRole("dialog", { name: "Update failed" })).toBeNull();
+
+  // The same job arrives later through the app-wide status poll.
+  window.companion.reportFirmwareJob = true;
+  window.companion.statusReads.length = 0;
+  await window.wait(12);
+  expect(window.companion.statusReads.length).toBeGreaterThan(0);
+  expect(screen.queryByRole("dialog", { name: "Update failed" })).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Updates" }));
+  expect(screen.queryByRole("dialog", { name: "Update failed" })).toBeNull();
+
+  // Closing the old attempt must not hide a new failure.
+  fireEvent.click(screen.getByRole("button", { name: "Update" }));
+  await window.wait(2);
+  expect(window.companion.installCalls).toBe(2);
+  expect(screen.getByRole("dialog", { name: "Update failed" })).toBeTruthy();
 });
