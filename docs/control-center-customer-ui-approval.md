@@ -9206,3 +9206,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Overview keeps showing the current theme name, including the customer's saved names and live theme during standby; returning from Theme Studio and changes from another window refresh those names.
 - Scope: `overview-screen.tsx` and its theme-name regression tests. Pull request #784 only, not merged, not released.
 - What's new: none — avoid repeated localStorage JSON parsing
+
+## 2026-10-21 — #887: link the setup IP address to its existing error
+
+- User approval: no visible change – UI approval not needed (#887 item 2 associates the setup IP address with its existing FieldError for assistive technology)
+- Approved customer-visible result: the existing IP address error is also the input's accessible description while present; typing clears the error and its association. Text, layout and styling stay unchanged.
+- Scope: `setup-device-dialogs.tsx` and its regression tests; issue #887 item 2 only, not merged, not released.
+- What's new: none — accessibility association for an existing error
+
+## 2026-10-21 — #887: stop marking an unchecked replacement OpenAI key invalid
+
+- User approval: pending — #887 item 1 removes the wrong red invalid ring from the replacement OpenAI key input after a failed connection or disconnect, including while typing a new unchecked key
+- Approved customer-visible result: a connection or disconnect failure keeps its existing message in the existing position, but no longer marks the cleared or replacement key input invalid. No new text or layout is introduced.
+- Scope: `openai-key-form.tsx` and its regression tests; remove the operation-error-to-field-invalid mapping because no current field validation result is available and connection attempts clear the input. Issue #887 item 1 only; item 3 remains untouched, not merged, not released.
+- What's new: none — correct a misleading invalid-field indicator
