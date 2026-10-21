@@ -779,6 +779,18 @@ describe("SetupWizard: direct connection", () => {
     expect(screen.getByRole("dialog", { name: "We couldn't find your VibeTV" })).toBeTruthy();
   });
 
+  it("keeps the Mac App offer out when a completed scan found a device on the other transport", () => {
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "multiple",
+      deviceCandidates: [{ target: "http://192.168.1.42", deviceId: "known-device", transport: "wifi" }],
+      macAppUpdate: { onUpdate: vi.fn(), version: "1.0.65" },
+    });
+    render(<SetupWizard {...props} />);
+    expect(screen.queryByRole("dialog", { name: "Update the Mac App first" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "We couldn't find your VibeTV" })).toBeTruthy();
+  });
+
   it("offers a newer release again after the previous one was dismissed (#822)", () => {
     const onUpdate = vi.fn();
     const props = baseProps({

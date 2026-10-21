@@ -804,7 +804,7 @@ export function SetupWizard(props: SetupWizardProps) {
             showCloseButton={false}
           />
         ) : null}
-        {searchFailed && !wifiSetup && pendingMacAppUpdate ? (
+        {searchFailed && !wifiSetup && pendingMacAppUpdate && deviceCandidates.length === 0 ? (
           <SetupMacAppUpdateDialog
             offer={pendingMacAppUpdate}
             onDismiss={() => setMacAppUpdateDismissed(true)}

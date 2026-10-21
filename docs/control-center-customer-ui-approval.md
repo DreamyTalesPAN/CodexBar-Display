@@ -9129,3 +9129,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #822 as in its own entries plus the entries merged with 260c4843; nothing else changes.
 - Scope: the merge of 260c4843 and this approval record. Pull request branch #822 only, not merged, not released.
 - What's new: none — merge of 260c4843, no customer-visible change of its own
+
+## 2026-10-21 — #822: Mac App offer only when no device was found (Codex P2 setup-wizard)
+
+- User approval: no visible change – UI approval not needed (bug fix: the Mac App update offer no longer replaces the device-not-found dialog when a scan found a device on the other transport)
+- Approved customer-visible result: the Mac App update offer appears only when a scan finds no VibeTV at all; otherwise the existing not-found dialog as before.
+- Scope: apps/control-center setup wizard offer condition and its test. Pull request branch #822 only, not merged, not released.
+- What's new: none — bug fix, the offer no longer appears in that case
