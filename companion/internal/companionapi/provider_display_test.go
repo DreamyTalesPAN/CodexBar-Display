@@ -995,3 +995,27 @@ func TestNextProviderShortcutSkipsProvidersManualWouldNotOffer(t *testing.T) {
 		}
 	}
 }
+
+// Two at once: the persisted usage names the frame on screen as its joined ids
+// ("claude+codex"). The shortcut walks on from the pair's top provider, so the
+// press after the pair shows the provider after claude, not the first one again.
+func TestNextProviderShortcutStepsOnFromTheTopOfAShownPair(t *testing.T) {
+	settings := []codexbar.ProviderSetting{
+		{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+		{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+		{ID: "cursor", Label: "Cursor", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+	}
+	server, _ := nextProviderServer(t,
+		&runtimeconfig.ProviderDisplayConfig{Mode: providerDisplayModeAutomatic, ProviderIDs: []string{"claude", "codex", "cursor"}},
+		settings, "claude+codex", "claude", "codex", "cursor")
+	if selection, _ := pressNextProvider(t, server); len(selection.ProviderIDs) != 1 || selection.ProviderIDs[0] != "codex" {
+		t.Fatalf("pair claude+codex: answered %+v, want codex", selection)
+	}
+
+	server, _ = nextProviderServer(t,
+		&runtimeconfig.ProviderDisplayConfig{Mode: providerDisplayModeAutomatic, ProviderIDs: []string{"claude", "codex", "cursor"}},
+		settings, "codex", "claude", "codex", "cursor")
+	if selection, _ := pressNextProvider(t, server); len(selection.ProviderIDs) != 1 || selection.ProviderIDs[0] != "cursor" {
+		t.Fatalf("single codex: answered %+v, want cursor", selection)
+	}
+}
