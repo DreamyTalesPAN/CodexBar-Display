@@ -56,6 +56,9 @@ export type ThemeStudioPrimitive = {
   color?: string;
   bgColor?: string;
   borderColor?: string;
+  // A pace bar's reserve piece and deficit hatch (usage-pace-v1).
+  reserveColor?: string;
+  deficitColor?: string;
   borderRadius?: number;
   align?: "left" | "center" | "right";
   valign?: "top" | "middle" | "bottom";
@@ -494,6 +497,8 @@ export function normalizeThemeSpec(spec: ThemeStudioSpec): ThemeStudioSpec {
     color: normalizeColor(primitive.color),
     bgColor: normalizeColor(primitive.bgColor),
     borderColor: normalizeColor(primitive.borderColor),
+    reserveColor: normalizeColor(primitive.reserveColor),
+    deficitColor: normalizeColor(primitive.deficitColor),
     borderRadius:
       primitive.borderRadius === undefined
         ? undefined
@@ -715,6 +720,7 @@ export function buildThemePack(
   const usesColorStops = themeStudioSpecUsesColorStops(normalized);
   const usesTextValign = themeStudioSpecUsesTextValign(normalized);
   const usesProgressArc = themeStudioSpecUsesProgressArc(normalized);
+  const usesUsagePace = themeStudioSpecUsesUsagePace(normalized);
   // What the pack declares is the only thing standing between a design and a
   // VibeTV that cannot render it: install checks the manifest, not the spec.
   // Provider slots arrived after usage slots, so they carry the later floor.
@@ -728,11 +734,13 @@ export function buildThemePack(
     ...(usesColorStops ? ["color-stops-v1"] : []),
     ...(usesTextValign ? ["text-valign-v1"] : []),
     ...(usesProgressArc ? ["progress-arc-v1"] : []),
+    ...(usesUsagePace ? ["usage-pace-v1"] : []),
   ];
   // The firmware that draws an arc has no number yet, so an arc carries the
   // newest floor that has one and relies on progress-arc-v1 for the rest.
-  const minFirmware =
-    usesProviderAssets || usesColorStops || usesTextValign || usesProgressArc
+  const minFirmware = usesUsagePace
+    ? "1.0.50"
+    : usesProviderAssets || usesColorStops || usesTextValign || usesProgressArc
       ? "1.0.42"
       : usesProviderSlots
         ? "1.0.41"
@@ -861,6 +869,21 @@ export function themeStudioSpecUsesTextValign(
   );
 }
 
+// Any usage window key containing "Pace" is a pace binding on the firmware
+// (usageSlot1PaceText, us1PaceText, usage.1.PaceText), so all of them count,
+// and so does usageModeShort, which arrived with usage-pace-v1.
+export function themeStudioSpecUsesUsagePace(spec: ThemeStudioSpec): boolean {
+  return spec.primitives.some(
+    (primitive) =>
+      /Pace/.test(primitive.binding || "") ||
+      primitive.binding === "usageModeShort" ||
+      primitive.binding === "usageProviderName" ||
+      /\{[^{}]*Pace[^{}]*\}/.test(primitive.text || "") ||
+      (primitive.text || "").includes("{usageModeShort}") ||
+      (primitive.text || "").includes("{usageProviderName}"),
+  );
+}
+
 export function themeStudioSpecUsesProgressArc(
   spec: ThemeStudioSpec,
 ): boolean {
@@ -909,7 +932,13 @@ function validatePrimitive(
   ) {
     errors.push(`${prefix}: usage index must be a whole number starting at 0.`);
   }
-  for (const key of ["color", "bgColor", "borderColor"] as const) {
+  for (const key of [
+    "color",
+    "bgColor",
+    "borderColor",
+    "reserveColor",
+    "deficitColor",
+  ] as const) {
     const value = primitive[key];
     if (value && !COLOR_RE.test(value)) {
       errors.push(`${prefix}: ${key} must use #RRGGBB.`);
@@ -924,7 +953,9 @@ function validatePrimitive(
   }
   if (
     (primitive.colorStops || []).length > 0 &&
-    primitive.type !== "progress"
+    primitive.type !== "progress" &&
+    // Text bound to a pace key takes its colour from the pace state.
+    !(primitive.type === "text" && /Pace/.test(primitive.binding || ""))
   ) {
     errors.push(`${prefix}: colorStops is only supported on progress.`);
   }
@@ -1358,6 +1389,12 @@ function buildDevicePrimitive(
   if (primitive.borderColor !== undefined) {
     compact.bc = primitive.borderColor;
   }
+  if (primitive.reserveColor !== undefined) {
+    compact.rc = primitive.reserveColor;
+  }
+  if (primitive.deficitColor !== undefined) {
+    compact.dc = primitive.deficitColor;
+  }
   if (primitive.borderRadius !== undefined) {
     compact.br = primitive.borderRadius;
   }
@@ -1519,6 +1556,12 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
       colorStringValue(value.border) ??
       colorStringValue(value.stroke) ??
       colorStringValue(value.bc),
+  );
+  primitive.reserveColor = normalizeColor(
+    colorStringValue(value.reserveColor) ?? colorStringValue(value.rc),
+  );
+  primitive.deficitColor = normalizeColor(
+    colorStringValue(value.deficitColor) ?? colorStringValue(value.dc),
   );
   primitive.assetPath = stringValue(value.assetPath) ?? stringValue(value.a);
   const stateAssets = stateAssetsValue(value.stateAssets) ?? stateAssetsValue(value.sa);

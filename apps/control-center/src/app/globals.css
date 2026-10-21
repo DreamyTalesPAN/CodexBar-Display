@@ -6,6 +6,9 @@
 
 :root {
   --vibetv-support: #506600;
+  /* Pace in the Usage bars: reserve piece and deficit hatching, same in both themes. */
+  --pace-reserve: #C9F26B;
+  --pace-deficit: #E7A3AC;
   --background: #F9F9F9;
   --foreground: #1B1B1B;
   --card: #F9F9F9;

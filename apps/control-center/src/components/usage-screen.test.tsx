@@ -1038,7 +1038,7 @@ describe("UsageScreen", () => {
     const sessionReset = screen.getByText("Reset in 2h 37m");
     const sessionRow = sessionReset.parentElement as HTMLElement;
     expect(sessionRow.textContent).toBe("94% session remainingReset in 2h 37m");
-    expect(sessionRow.nextElementSibling?.getAttribute("aria-label")).toBe(
+    expect(sessionRow.nextElementSibling?.querySelector("[role=progressbar]")?.getAttribute("aria-label")).toBe(
       "94% session remaining",
     );
     expect(sessionReset.closest('[data-slot="card-header"]')).toBeNull();
@@ -1090,7 +1090,7 @@ describe("UsageScreen", () => {
     const spinner = screen.getByLabelText("Updating");
     const row = spinner.parentElement as HTMLElement;
     expect(row.textContent).toBe("45% session used");
-    expect(row.nextElementSibling?.getAttribute("aria-label")).toBe("45% session used");
+    expect(row.nextElementSibling?.querySelector("[role=progressbar]")?.getAttribute("aria-label")).toBe("45% session used");
     expect(spinner.closest('[data-slot="card-header"]')).toBeNull();
     expect(screen.queryByText(/Reset in/)).toBeNull();
   });
@@ -1111,7 +1111,7 @@ describe("UsageScreen", () => {
         ],
       });
       expect(html).toContain("Runs out in 2d 15h");
-      expect(html).toContain('class="text-[13px] text-destructive"');
+      expect(html).toContain('class="text-[13px] font-semibold text-destructive"');
     });
 
     it("shows no runs-out line when the window will last to its reset", () => {

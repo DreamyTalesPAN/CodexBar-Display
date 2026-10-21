@@ -147,6 +147,43 @@ describe("themeNeedsUpgradeableFirmware", () => {
 
 });
 
+describe("a theme that needs usage-pace-v1", () => {
+  const pace: ThemeProduct = {
+    ...themes[0],
+    id: "pace-meter",
+    themeId: "pace-meter",
+    title: "Pace Meter",
+    requiredCapabilities: ["usage-slots-v1", "usage-pace-v1"],
+    requiresFirmware: "1.0.50",
+  };
+  const unknown: ThemeProduct = {
+    ...themes[0],
+    id: "future",
+    themeId: "future",
+    title: "Future Theme",
+    requiredCapabilities: ["future-theme-protocol"],
+  };
+  const withSlots = (supportsUsagePaceV1?: boolean): ThemeLibraryDeviceInfo => ({
+    ...device,
+    firmware: supportsUsagePaceV1 ? "1.0.50" : "1.0.49",
+    capabilities: { theme: { supportsThemeSpecV1: true, supportsUsageSlotsV1: true, supportsUsagePaceV1 } },
+  });
+
+  it("takes the firmware-update path on a VibeTV without the capability, and not on one with it", () => {
+    expect(themeNeedsUpgradeableFirmware(pace, withSlots(false), true)).toBe(true);
+    expect(themeNeedsUpgradeableFirmware(pace, withSlots(true), true)).toBe(false);
+  });
+
+  // An app that predates a capability (v1.0.65 does not know usage-pace-v1 or
+  // any later one) blocks that one pack and still lists every other theme.
+  it("blocks only its own pack when the app does not know the capability", () => {
+    const html = renderLibrary("live", [...themes.slice(0, 1), unknown, pace]);
+    for (const title of ["Live Theme", "Future Theme", "Pace Meter"]) {
+      expect(html).toContain(title);
+    }
+  });
+});
+
 describe("ThemeLibraryScreen Appearance sections", () => {
   // The setup arm used to wrap or hide each of these; nothing asserted the
   // Appearance arm, so unwrapping it could have changed the tab in silence.

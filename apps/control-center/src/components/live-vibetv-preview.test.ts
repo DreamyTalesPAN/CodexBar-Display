@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   boundValue,
+  paceBarMarks,
   buildFrameData,
   fetchThemeRenderPackRevision,
   hasRenderableUsage,
@@ -1145,5 +1146,161 @@ describe("live VibeTV partial usage", () => {
     });
     expect(primitiveUsageSlotVisible({ providerSlot: 2 }, singleProvider)).toBe(false);
     expect(boundValue("providerSlot2Label", singleProvider)).toBe("");
+  });
+});
+
+// The pace bindings and the pace bar, as the firmware draws them
+// (theme_spec_renderer_core.h: FormatBoundPace, PaceBarFor).
+describe("usage pace", () => {
+  const clock = new Date("2026-10-19T12:00:00Z");
+  const paced = (
+    percent: number,
+    pace: { delta?: number; state?: string; lasts?: boolean } | undefined,
+    extra: Record<string, unknown> = {},
+  ) =>
+    buildFrameData(
+      clock.toISOString(),
+      {
+        provider: "claude",
+        usageMode: "remaining",
+        usageSlots: [
+          { id: "session", label: "Session", percent, resetSecs: 12000, pace },
+        ],
+        ...extra,
+      },
+      clock,
+    );
+  const bar: ThemePrimitive = { t: "p", x: 0, y: 0, w: 100, h: 10, b: "usageSlot1Pace" };
+
+  it("says reserve, deficit and on pace as ready sentences", () => {
+    const reserve = paced(91, { delta: -6, state: "reserve", lasts: true });
+    expect(boundValue("usageSlot1PaceText", reserve)).toBe("6% in reserve");
+    expect(boundValue("usageSlot1PaceShort", reserve)).toBe("6% reserve");
+    expect(boundValue("usageSlot1PaceLasts", reserve)).toBe("lasts until reset");
+    expect(boundValue("usageSlot1PaceLastsSep", reserve)).toBe("lasts until reset - ");
+    expect(boundValue("usageSlot1PaceRunsOut", reserve)).toBe("");
+    const deficit = paced(38, { delta: 14, state: "deficit", lasts: false });
+    expect(boundValue("usageSlot1PaceText", deficit)).toBe("14% in deficit");
+    expect(boundValue("usageSlot1PaceShort", deficit)).toBe("14% deficit");
+    expect(boundValue("usageSlot1PaceRunsOut", deficit)).toBe("runs out");
+    const onPace = paced(91, { delta: -1, state: "on pace" });
+    expect(boundValue("usageSlot1PaceText", onPace)).toBe("On pace");
+    expect(boundValue("usageSlot1PaceShort", onPace)).toBe("on pace");
+    expect(boundValue("usageSlot1PaceLasts", onPace)).toBe("");
+  });
+
+  it("shows nothing without a pace, for a window without a countdown and for an unknown state", () => {
+    expect(boundValue("usageSlot1PaceText", paced(91, undefined))).toBe("");
+    expect(boundValue("usageSlot2PaceText", paced(91, { delta: -6, state: "reserve" }))).toBe("");
+    expect(boundValue("usageSlot1PaceText", paced(91, { delta: -6, state: "sideways" }))).toBe("");
+    const noCountdown = paced(91, { delta: -6, state: "reserve" }, {
+      usageSlots: [{ id: "session", label: "Session", percent: 91, resetSecs: 0, pace: { delta: -6, state: "reserve" } }],
+    });
+    expect(boundValue("usageSlot1PaceText", noCountdown)).toBe("");
+  });
+
+  it("reads every spelling of a pace binding the firmware reads", () => {
+    const frame = paced(91, { delta: -6, state: "reserve", lasts: true });
+    for (const key of ["usageSlot1PaceText", "us1PaceText", "usage.0.PaceText"]) {
+      expect(boundValue(key, frame), key).toBe("6% in reserve");
+    }
+    expect(boundValue("us1PaceLastsSep", frame)).toBe("lasts until reset - ");
+    for (const binding of ["usageSlot1Pace", "us1Pace", "usage.0.Pace"]) {
+      expect(paceBarMarks({ ...bar, b: binding }, frame, 91), binding).toMatchObject({ fillTo: 85, planAt: 85 });
+      expect(progressPercent({ ...bar, b: binding }, frame), binding).toBe(91);
+    }
+  });
+
+  it("drops pace together with the reset trust it was computed against", () => {
+    const stale = paced(91, { delta: -6, state: "reserve" }, { resetTrust: "stale" });
+    expect(boundValue("usageSlot1PaceText", stale)).toBe("");
+    const expired = paced(91, { delta: -6, state: "reserve" }, {
+      resetTrust: "live", resetSource: "claude", resetTrustSecs: 60,
+    });
+    // 120 s later the trust budget of 60 s has run out.
+    const later = buildFrameData(
+      clock.toISOString(),
+      { provider: "claude", usageMode: "remaining", resetTrust: "live", resetSource: "claude", resetTrustSecs: 60,
+        usageSlots: [{ id: "session", label: "Session", percent: 91, resetSecs: 12000, pace: { delta: -6, state: "reserve" } }] },
+      new Date(clock.getTime() + 120_000),
+    );
+    expect(boundValue("usageSlot1PaceText", expired)).toBe("6% in reserve");
+    expect(boundValue("usageSlot1PaceText", later)).toBe("");
+  });
+
+  it("names the provider without the notice and puts the notice in the footer line", () => {
+    const frame = { ...paced(91, { delta: -6, state: "reserve", lasts: true }), label: "Claude" };
+    expect(boundValue("usageProviderName", frame)).toBe("Claude");
+    expect(boundValue("usageSlot1PaceFooter", frame)).toBe("lasts until reset - resets 3h 20m");
+    expect(boundValue("usageSlot1PaceFooter", paced(91, undefined))).toBe("resets 3h 20m");
+    const noted = { ...frame, updateNotice: "Update available" };
+    expect(boundValue("usageProviderName", noted)).toBe("Claude");
+    expect(boundValue("l", noted)).toBe("Update available");
+    expect(boundValue("us1PaceFooter", noted)).toBe("Update available");
+    // No countdown: the unavailable text, as the reset binding says it.
+    const none = paced(91, undefined, {
+      usageSlots: [{ id: "session", label: "Session", percent: 91, resetSecs: 0 }],
+    });
+    expect(boundValue("usageSlot1PaceFooter", none)).toBe(boundValue("usageSlot1Reset", none));
+  });
+
+  it("clips a pace piece to the rounded interior of the bar, and only a bar with a piece", () => {
+    const render = (frame: ReturnType<typeof paced>, primitive: ThemePrimitive) =>
+      renderToStaticMarkup(
+        createElement(ThemeSpecPreview, { pack: { spec: { p: [primitive] } }, status: "ready", themeId: "x", animate: false, frame }),
+      );
+    const rounded: ThemePrimitive = { ...bar, br: 3, c: "#EDEDED", bg: "#2B2B2B", bc: "#2B2B2B", rc: "#C9F26B", dc: "#E7A3AC" };
+    expect(render(paced(91, { delta: -6, state: "reserve" }), rounded)).toContain("<clipPath");
+    // No pace, no piece, no clip: the markup of every other bar is unchanged.
+    expect(render(paced(91, undefined), rounded)).not.toContain("<clipPath");
+    expect(render(paced(91, { delta: -6, state: "reserve" }), { ...rounded, br: 0 })).not.toContain("<clipPath");
+  });
+
+  it("says left for what remains and the mode itself otherwise", () => {
+    expect(boundValue("usageModeShort", paced(91, undefined))).toBe("left");
+    expect(boundValue("usageModeShort", paced(9, undefined, { usageMode: "used" }))).toBe("used");
+  });
+
+  it("fills to the smaller of use and plan and puts the piece up to the larger", () => {
+    // 91 % left with 6 % in reserve: 85 % was planned.
+    expect(paceBarMarks(bar, paced(91, { delta: -6, state: "reserve" }), 91)).toEqual({
+      fillTo: 85, pieceTo: 91, planAt: 85, hatched: false,
+    });
+    // 38 % left with 14 % in deficit: 52 % was planned to be left.
+    expect(paceBarMarks(bar, paced(38, { delta: 14, state: "deficit" }), 38)).toEqual({
+      fillTo: 38, pieceTo: 52, planAt: 52, hatched: true,
+    });
+    // Used mode counts the other way: 70 % used with 8 % deficit means 62 % planned.
+    expect(paceBarMarks(bar, paced(70, { delta: 8, state: "deficit" }, { usageMode: "used" }), 70)).toEqual({
+      fillTo: 62, pieceTo: 70, planAt: 62, hatched: true,
+    });
+    // On pace: the use itself, the tick, no piece.
+    expect(paceBarMarks(bar, paced(91, { delta: -1, state: "on pace" }), 91)).toEqual({
+      fillTo: 91, pieceTo: 91, planAt: 90, hatched: false,
+    });
+    // No pace: a plain bar.
+    expect(paceBarMarks(bar, paced(91, undefined), 91)).toEqual({
+      fillTo: 91, pieceTo: 91, planAt: -1, hatched: false,
+    });
+  });
+
+  it("colours a pace text by state and a pace bar's piece by its own colours", () => {
+    const text: ThemePrimitive = {
+      t: "tx", x: 0, y: 0, w: 100, b: "usageSlot1PaceText", c: "#111111",
+      cs: [{ gte: 100, c: "#00AA00" }, { gte: 50, c: "#222222" }, { gte: 0, c: "#AA0000" }],
+    };
+    const theme = (frame: ReturnType<typeof paced>) =>
+      renderToStaticMarkup(
+        createElement(ThemeSpecPreview, {
+          pack: { spec: { p: [text, { ...bar, c: "#EDEDED", bg: "#2B2B2B", bc: "#2B2B2B", rc: "#C9F26B", dc: "#E7A3AC" }] } },
+          status: "ready", themeId: "x", animate: false, frame,
+        }),
+      );
+    expect(theme(paced(91, { delta: -6, state: "reserve" }))).toContain('fill="#00AA00"');
+    expect(theme(paced(91, { delta: -6, state: "reserve" }))).toContain('fill="#C9F26B"');
+    expect(theme(paced(38, { delta: 14, state: "deficit" }))).toContain('fill="#AA0000"');
+    expect(theme(paced(38, { delta: 14, state: "deficit" }))).toContain('fill="#E7A3AC"');
+    // Without a pace the text keeps its solid colour.
+    expect(theme(paced(91, undefined))).toContain('fill="#111111"');
   });
 });

@@ -231,13 +231,15 @@ function usesLabelBinding(specRaw) {
   const labelKeys = new Set(["label", "providerLabel", "l"]);
   const spec = JSON.parse(specRaw);
   return (spec.primitives || spec.p || []).some((primitive) => {
+    // usageSlotNPaceFooter is the notice while one shows, so it carries it too.
+    const showsNotice = (key) => labelKeys.has(key) || /^usageSlot[12]PaceFooter$/.test(key);
     const binding = primitive.binding ?? primitive.b;
     if (typeof binding === "string") {
-      return labelKeys.has(binding);
+      return showsNotice(binding);
     }
     const text = primitive.text ?? primitive.v;
     return typeof text === "string" &&
-      [...text.matchAll(/\{([^{}]+)\}/g)].some((match) => labelKeys.has(match[1]));
+      [...text.matchAll(/\{([^{}]+)\}/g)].some((match) => showsNotice(match[1]));
   });
 }
 

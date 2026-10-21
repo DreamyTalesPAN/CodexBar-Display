@@ -6,21 +6,23 @@
       "id": "claude-creature",
       "title": "Claude Creature",
       "usage": "live",
-      "version": "1.3.2",
-      "themeRev": 9,
-      "themeSpecPath": "/themes/u/claude--9-5c74ca.json",
-      "requiresFirmware": "1.0.40",
+      "version": "1.4.0",
+      "themeRev": 10,
+      "themeSpecPath": "/themes/u/claud-10-dd6753.json",
+      "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
-        "usage-slots-v1"
+        "usage-slots-v1",
+        "color-stops-v1",
+        "usage-pace-v1"
       ],
       "tags": [
         "animated",
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-claude-creature-v1.3.2.zip",
-      "sha256": "c0ed5faf24a708e204e75d7c350da5ff60b995d9c4926a3d5af2db28d06b5272",
-      "bytes": 3343,
+      "downloadAsset": "vibetv-theme-claude-creature-v1.4.0.zip",
+      "sha256": "5d68b02095c849da444d495e929de4558a9f643aab2ff04ee92fe088ac991bc2",
+      "bytes": 3433,
       "earlierThemeSpecPaths": [
         "/themes/u/claude--1-12ab01.json",
         "/themes/u/claude--1-623de0.json",
@@ -32,28 +34,31 @@
         "/themes/u/claude--5-ef8ada.json",
         "/themes/u/claude--6-546f9e.json",
         "/themes/u/claude--7-4963df.json",
-        "/themes/u/claude--8-53ffce.json"
+        "/themes/u/claude--8-53ffce.json",
+        "/themes/u/claude--9-5c74ca.json"
       ]
     },
     {
       "id": "clippy",
       "title": "Clippy",
       "usage": "live",
-      "version": "1.1.3",
-      "themeRev": 5,
-      "themeSpecPath": "/themes/u/clippy-5-4f3746.json",
-      "requiresFirmware": "1.0.40",
+      "version": "1.2.0",
+      "themeRev": 6,
+      "themeSpecPath": "/themes/u/clippy-6-21abe3.json",
+      "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
-        "usage-slots-v1"
+        "usage-slots-v1",
+        "usage-pace-v1",
+        "color-stops-v1"
       ],
       "tags": [
         "animated",
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-clippy-v1.1.3.zip",
-      "sha256": "c1a8cbfc7f222d2250bca8a93915a6f73b338cdd4f81ce52eb40ded6473033a6",
-      "bytes": 18640,
+      "downloadAsset": "vibetv-theme-clippy-v1.2.0.zip",
+      "sha256": "2e95ccada48f523b63e602c59193d6314453ce1e2b25be0ba5fa3801fed25220",
+      "bytes": 18727,
       "earlierThemeSpecPaths": [
         "/themes/u/clippy-1-5d86bb.json",
         "/themes/u/clippy-1-bb9192.json",
@@ -61,49 +66,54 @@
         "/themes/u/clippy-1-caafce.json",
         "/themes/u/clippy-2-269831.json",
         "/themes/u/clippy-3-fe3fd4.json",
-        "/themes/u/clippy-4-7eb2b0.json"
+        "/themes/u/clippy-4-7eb2b0.json",
+        "/themes/u/clippy-5-4f3746.json"
       ]
     },
     {
       "id": "gauge",
       "title": "Gauge",
       "usage": "live",
-      "version": "0.1.0",
-      "themeRev": 2,
-      "themeSpecPath": "/themes/u/ga-2-ad19500f.json",
-      "requiresFirmware": "1.0.42",
+      "version": "0.2.0",
+      "themeRev": 10,
+      "themeSpecPath": "/themes/u/ga-10-317f5a1b.json",
+      "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
         "color-stops-v1",
-        "text-valign-v1",
-        "progress-arc-v1"
+        "progress-arc-v1",
+        "usage-pace-v1"
       ],
       "tags": [
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-gauge-v0.1.0.zip",
-      "sha256": "730086b3b38bb7a45d28c057368a59eb801db55dcc34d426ce14e8f26af2d085",
-      "bytes": 883,
-      "earlierThemeSpecPaths": []
+      "downloadAsset": "vibetv-theme-gauge-v0.2.0.zip",
+      "sha256": "370de9875a6dbab14bf67568a5d2aee98b259e9138630d91eeae4fcadb2b107a",
+      "bytes": 932,
+      "earlierThemeSpecPaths": [
+        "/themes/u/ga-2-ad19500f.json"
+      ]
     },
     {
       "id": "mini-classic",
       "title": "Mini Classic",
       "usage": "live",
-      "version": "1.2.2",
-      "themeRev": 9,
-      "themeSpecPath": "/themes/u/mini-cl-9-6d1af3.json",
-      "requiresFirmware": "1.0.40",
+      "version": "1.3.0",
+      "themeRev": 10,
+      "themeSpecPath": "/themes/u/mini-10-f0720a.json",
+      "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
-        "usage-slots-v1"
+        "usage-slots-v1",
+        "color-stops-v1",
+        "usage-pace-v1"
       ],
       "tags": [
         "animated",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-mini-classic-v1.2.2.zip",
-      "sha256": "3352e3b1bae4c502791eb2e46afc3e27605701f314175c6052a9ccf123c1e552",
-      "bytes": 18499,
+      "downloadAsset": "vibetv-theme-mini-classic-v1.3.0.zip",
+      "sha256": "5da5d9c83f0565c1cbddf7c6003d61c2ffe7c7033704ddc300aa1e4eb0d933df",
+      "bytes": 18590,
       "earlierThemeSpecPaths": [
         "/themes/u/mini-cl-1-410a37.json",
         "/themes/u/mini-cl-1-b3c3f7.json",
@@ -114,7 +124,8 @@
         "/themes/u/mini-cl-5-14d68f.json",
         "/themes/u/mini-cl-6-024b0e.json",
         "/themes/u/mini-cl-7-c7cbf4.json",
-        "/themes/u/mini-cl-8-803dd6.json"
+        "/themes/u/mini-cl-8-803dd6.json",
+        "/themes/u/mini-cl-9-6d1af3.json"
       ]
     },
     {
@@ -141,28 +152,48 @@
       ]
     },
     {
+      "id": "pace-meter",
+      "title": "Pace Meter",
+      "usage": "live",
+      "version": "1.0.0",
+      "themeRev": 2,
+      "themeSpecPath": "/themes/u/pm-2-09a741.json",
+      "requiresFirmware": "1.0.50",
+      "requiredCapabilities": [
+        "usage-slots-v1",
+        "color-stops-v1",
+        "usage-pace-v1"
+      ],
+      "downloadAsset": "vibetv-theme-pace-meter-v1.0.0.zip",
+      "sha256": "b4336b43f02afa241171cf30ed60c2a6dad69212ef3fa198b15d9c43ee75179c",
+      "bytes": 936,
+      "earlierThemeSpecPaths": []
+    },
+    {
       "id": "pixel-battery",
       "title": "Pixel Battery",
       "usage": "live",
-      "version": "1.16.0",
-      "themeRev": 16,
-      "themeSpecPath": "/themes/u/pba-16-f46829.json",
-      "requiresFirmware": "1.0.42",
+      "version": "1.17.0",
+      "themeRev": 17,
+      "themeSpecPath": "/themes/u/pba-17-6714a0.json",
+      "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
         "provider-assets-v1",
         "color-stops-v1",
-        "text-valign-v1"
+        "text-valign-v1",
+        "usage-pace-v1"
       ],
       "tags": [
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-pixel-battery-v1.16.0.zip",
-      "sha256": "9316ceeddd0617afad7be02352f755dc4afc551d93de917e874d7152df16324c",
-      "bytes": 2855,
+      "downloadAsset": "vibetv-theme-pixel-battery-v1.17.0.zip",
+      "sha256": "383c3a7d403bc9ddc3aa550d839c95ee9efbb6663bd3f119f5a4979edb893533",
+      "bytes": 2924,
       "earlierThemeSpecPaths": [
-        "/themes/u/pba-15-9e62e5.json"
+        "/themes/u/pba-15-9e62e5.json",
+        "/themes/u/pba-16-f46829.json"
       ]
     },
     {
@@ -192,20 +223,21 @@
       "id": "synthwave",
       "title": "Synthwave",
       "usage": "live",
-      "version": "1.1.3",
-      "themeRev": 5,
-      "themeSpecPath": "/themes/u/synthwa-5-0f760a.json",
-      "requiresFirmware": "1.0.40",
+      "version": "1.2.0",
+      "themeRev": 6,
+      "themeSpecPath": "/themes/u/synthwa-6-2bbd89.json",
+      "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
-        "usage-slots-v1"
+        "usage-slots-v1",
+        "usage-pace-v1"
       ],
       "tags": [
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-synthwave-v1.1.3.zip",
-      "sha256": "70c4382b601043f6c25f26415bae0d4308cbb1478cfc8dab7ac1a1349aee5df2",
-      "bytes": 1585,
+      "downloadAsset": "vibetv-theme-synthwave-v1.2.0.zip",
+      "sha256": "7473d0e8c1fc7d3443b2e1e9245a56aa182d8738d988b9d758c69c0f4e0a7679",
+      "bytes": 1664,
       "earlierThemeSpecPaths": [
         "/themes/u/synthwa-1-0432f1.json",
         "/themes/u/synthwa-1-0a355b.json",
@@ -213,31 +245,34 @@
         "/themes/u/synthwa-1-cf338e.json",
         "/themes/u/synthwa-2-5f8ac7.json",
         "/themes/u/synthwa-3-619665.json",
-        "/themes/u/synthwa-4-d3ff8f.json"
+        "/themes/u/synthwa-4-d3ff8f.json",
+        "/themes/u/synthwa-5-0f760a.json"
       ]
     },
     {
       "id": "tiny-office",
       "title": "Tiny Office",
       "usage": "live",
-      "version": "0.6.0",
-      "themeRev": 7,
-      "themeSpecPath": "/themes/u/to-7-d7799cec.json",
-      "requiresFirmware": "1.0.42",
+      "version": "0.7.0",
+      "themeRev": 8,
+      "themeSpecPath": "/themes/u/to-8-fdeaccda.json",
+      "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
-        "text-valign-v1"
+        "text-valign-v1",
+        "usage-pace-v1"
       ],
       "tags": [
         "animated",
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-tiny-office-v0.6.0.zip",
-      "sha256": "b548609e4c19886d877119bf5630cc5067fa2bdc3123ab7c5d9a5bd593417d4a",
-      "bytes": 8071,
+      "downloadAsset": "vibetv-theme-tiny-office-v0.7.0.zip",
+      "sha256": "10f5b1715ac2b29bd75dd0a1df50f85821e455cddab98f067e67e6a4bd667c5f",
+      "bytes": 8097,
       "earlierThemeSpecPaths": [
-        "/themes/u/to-6-6eed22ed.json"
+        "/themes/u/to-6-6eed22ed.json",
+        "/themes/u/to-7-d7799cec.json"
       ]
     },
     {

@@ -1200,6 +1200,46 @@ func TestValidateAgainstCapabilitiesRequiresProgressArc(t *testing.T) {
 	}
 }
 
+// Older firmware renders an unknown usageSlotN key as that window's percent:
+// a pace binding on it would show a plausible but wrong number.
+func TestUsagePaceBindingsRequireUsagePaceCapability(t *testing.T) {
+	caps := protocol.DeviceCapabilities{Known: true, SupportsThemeSpecV1: true, SupportsUsageSlotsV1: true, SupportsUsageWindowsV1: true, SupportsColorStopsV1: true, SupportsProgressArcV1: true}
+	for _, primitive := range []string{
+		`{"t":"tx","x":0,"y":0,"b":"usageSlot1PaceText"}`,
+		`{"t":"tx","x":0,"y":0,"v":"{usageSlot2PaceShort}"}`,
+		`{"t":"tx","x":0,"y":0,"v":"Pace {usageSlot1PaceLasts}"}`,
+		`{"t":"tx","x":0,"y":0,"b":"us1PaceRunsOut","cs":[{"gte":100,"c":"#00FF00"},{"gte":0,"c":"#FF0000"}]}`,
+		`{"t":"tx","x":0,"y":0,"v":"{usage.2.PaceText}"}`,
+		`{"t":"tx","x":0,"y":0,"v":"{usageSlot1Label} {usageModeShort}"}`,
+		`{"t":"tx","x":0,"y":0,"b":"usageProviderName"}`,
+		`{"t":"tx","x":0,"y":0,"b":"usageSlot1PaceFooter"}`,
+		`{"t":"tx","x":0,"y":0,"v":"{usageSlot1PaceLastsSep}resets {usageSlot1Reset}"}`,
+		`{"t":"p","x":0,"y":0,"w":100,"h":10,"b":"usageSlot1Pace","cs":[{"gte":100,"c":"#00FF00"},{"gte":0,"c":"#FF0000"}]}`,
+		`{"t":"p","x":0,"y":0,"w":100,"h":100,"b":"usageSlot2Pace","ps":"arc","aw":360,"at":10,"cs":[{"gte":100,"c":"#00FF00"},{"gte":0,"c":"#FF0000"}]}`,
+		`{"t":"p","x":0,"y":0,"w":100,"h":10,"b":"usageSlot2Pace","ps":"segments","s":10}`,
+	} {
+		spec, raw, err := Parse([]byte(`{"v":1,"id":"pace","rev":1,"p":[` + primitive + `]}`))
+		if err != nil {
+			t.Fatalf("parse %s: %v", primitive, err)
+		}
+		if err := ValidateAgainstCapabilities(spec, raw, caps); err == nil || !strings.Contains(err.Error(), "usage-pace-v1") {
+			t.Fatalf("%s on firmware without usage-pace-v1: %v", primitive, err)
+		}
+		paceCaps := caps
+		paceCaps.SupportsUsagePaceV1 = true
+		if err := ValidateAgainstCapabilities(spec, raw, paceCaps); err != nil {
+			t.Fatalf("%s on usage-pace-v1 firmware: %v", primitive, err)
+		}
+	}
+	spec, raw, err := Parse([]byte(`{"v":1,"id":"slots","rev":1,"p":[{"t":"tx","x":0,"y":0,"v":"Pace {usageSlot1Percent}%"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateAgainstCapabilities(spec, raw, caps); err != nil {
+		t.Fatalf("a slot theme without pace must not need usage-pace-v1: %v", err)
+	}
+}
+
 func TestFeatureContainerAliasesMatchFirmware(t *testing.T) {
 	for _, tc := range []struct {
 		name, stopField, assetField string
