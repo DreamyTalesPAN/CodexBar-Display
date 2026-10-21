@@ -8485,3 +8485,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #780 as described in those entries, as seen in build 7202.
 - Scope: #780 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #780 approval record only
+
+## 2026-10-21 — #780: 3D support requires WebGL 2
+
+- User approval: no visible change – UI approval not needed (bug fix: a WebGL 1-only browser is no longer reported as 3D-capable; it keeps the photo fallback, as the pinned three renderer cannot run there)
+- Approved customer-visible result: on a WebGL 1-only machine the setup shows the photo fallback instead of a 3D model that cannot render; with WebGL 2 nothing changes.
+- Scope: `apps/control-center/src/components/vibetv-3d-support.ts` and its test `vibetv-3d-support.test.ts`, plus this approval record. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
