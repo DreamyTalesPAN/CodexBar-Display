@@ -31,7 +31,7 @@ import {
   type ThemePackLoad,
 } from "./setup-display-theme-tiles";
 import { SETUP_REVEAL } from "./setup-reveal";
-import { pinnedPreview } from "./setup-display-previews";
+import { pinnedPreview, rotatingPreviews } from "./setup-display-previews";
 import {
   SelectionCheck,
   SelectionDot,
@@ -62,15 +62,14 @@ export type SetupDisplayModeProvider = {
  * arrives as `null` and stays visibly unavailable instead of being invented.
  */
 export type SetupDisplayModePreview = {
-  providerId?: string;
   providerLabel: string;
   /**
    * The provider's readings in the shape the theme renderer draws, exactly as
-   * the usage service delivered them. Absent while it has none to give; the
+   * the companion built the frame for the stream. Absent while it has none to give; the
    * theme tile then shows a placeholder instead of numbers.
    */
   frame?: DisplayFrame;
-  /** The same frame builder with fixed provider selection before the window cap. */
+  /** The same provider's frame when Manual pins it: the host builds its rows from that provider alone. */
   pinnedFrame?: DisplayFrame;
   /** When those readings were taken, so reset countdowns keep counting down. */
   frameAt?: string;
@@ -495,7 +494,7 @@ function rotationFrames(
   automaticPreviews: SetupDisplayModePreview[] | undefined,
   providers: SetupDisplayModeProvider[],
 ): SetupDisplayModePreview[] {
-  if (automaticPreviews?.length) return automaticPreviews;
+  if (automaticPreviews?.length) return rotatingPreviews(automaticPreviews);
   if (!providers.length) return automaticPreview ? [automaticPreview] : [];
   return providers.map((provider) =>
     provider.label === automaticPreview?.providerLabel
@@ -668,7 +667,7 @@ function PreviewTile({
         className="truncate text-center text-[11px] font-bold tracking-[0.12em] uppercase"
         cycleKey={index}
       >
-        {frame.providerLabel}
+        {frame.frame?.label || frame.providerLabel}
       </CycledText>
 
       <span className="flex gap-3">

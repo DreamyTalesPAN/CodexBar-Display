@@ -1,5 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { displayPreviewsFor } from "./setup-display-previews";
+import type { DisplayFrame } from "../live-vibetv-preview";
 import {
   DisplayModeChoice,
   SetupDisplayModeScreen,
@@ -43,7 +45,7 @@ function render(
         providerLabel: "Claude",
         resetLabel: null,
         windows: [{ label: "Session", percent: null }, { label: "Weekly", percent: 12 }],
-        frame: { provider: "claude", sessionUnavailable: true, weekly: 12 },
+        pinnedFrame: { label: "Claude", weekly: 12, sessionUnavailable: true },
       }}
       mode="automatic"
       onContinue={vi.fn()}
@@ -70,6 +72,64 @@ describe("SetupDisplayModeScreen", () => {
 
     expect(html).toContain(">Display mode</h1>");
     expect(html).not.toContain("Display Mode</h1>");
+  });
+
+  const companionTile = (automatic: DisplayFrame, pinned = automatic) => {
+    const previews = displayPreviewsFor({ providers: [{
+      id: "codex", label: "Codex", session: 91, weekly: 82, resetSecs: 60,
+      usageMode: "used", collectedAt: "2026-10-20T08:00:00Z",
+      windows: [{ id: "weekly", label: "A long window label with more bytes", usedPercent: 91, resetSecs: 7200 }],
+    }] }, [codex], {
+      generatedAt: new Date().toISOString(),
+      providers: [{ id: "codex", automatic, pinned }],
+    });
+    return panels(render({
+      automaticPreviews: previews, manualPreview: previews[0], providers: [codex],
+    }));
+  };
+
+  it("uses the companion's re-anchored root reset and 24-byte window label in the plain tiles", () => {
+    const label = "A long window label with";
+    expect(new TextEncoder().encode(label)).toHaveLength(24);
+    const { automatic, manual } = companionTile({
+      resetSecs: 5400,
+      usageWindows: [{ id: "weekly", label, percent: 37, resetSecs: 5400 }],
+    }, {
+      resetSecs: 3600,
+      usageWindows: [{ id: "weekly", label, percent: 63, resetSecs: 3600 }],
+    });
+    expect(automatic).toContain("Reset in 1h 30m");
+    expect(manual).toContain("Reset in 1h 0m");
+    for (const tile of [automatic, manual]) {
+      expect(tile).toContain(`${label}</span>`);
+      expect(tile).not.toContain("more bytes");
+      expect(tile).not.toContain("91<span");
+    }
+    expect(automatic).toContain("37<span");
+    expect(manual).toContain("63<span");
+  });
+
+  it("keeps the companion's unavailable frame unavailable despite a populated usage snapshot", () => {
+    const { automatic, manual } = companionTile({
+      usageUnavailable: true, resetSecs: 0,
+      sessionUnavailable: true, weeklyUnavailable: true,
+    });
+    for (const tile of [automatic, manual]) {
+      expect(tile).toContain("Reset unavailable");
+      expect(tile).toContain("--");
+      expect(tile).not.toContain("91<span");
+    }
+  });
+
+  it("keeps the companion's Busy label on both fallback tiles", () => {
+    const { automatic, manual } = companionTile({
+      provider: "codex", label: "Busy", session: 42, weekly: 26, resetTrust: "stale",
+    });
+    for (const tile of [automatic, manual]) {
+      expect(tile).toContain(">Busy<");
+      expect(tile).toContain("42<span");
+      expect(tile).toContain("Reset unavailable");
+    }
   });
 
   it("explains both display modes", () => {
@@ -164,7 +224,7 @@ describe("SetupDisplayModeScreen", () => {
     expect(automatic).toContain("64");
     expect(automatic).toContain("--");
     // Manual's provider has no reset reading at all.
-    expect(manual).toContain("Reset unavailable");
+    expect(manual).toContain("Reset unknown");
   });
 
   it("never lends one provider's numbers to another", () => {
@@ -237,6 +297,7 @@ describe("SetupDisplayModeScreen", () => {
     const html = render({
       automaticPreview: {
         providerLabel: "Codex",
+        frame: { provider: "codex", usageUnavailable: true },
         resetLabel: null,
         windows: [{ label: "Session", percent: null }, { label: "Weekly", percent: null }],
       },
@@ -279,6 +340,34 @@ describe("SetupDisplayModeScreen", () => {
     expect(html).not.toContain('data-state="skeleton"');
     expect(html).toContain('data-state="unavailable"');
     expect(html).toContain('aria-label="Codex: no usage yet"');
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+  });
+
+  it("waits for the usage response carrying companion frames even when provider placeholders exist", () => {
+    themePack = readyPack;
+    const previews = displayPreviewsFor(null, [codex]);
+    const html = render({
+      usageLoading: true,
+      automaticPreviews: previews,
+      manualPreview: previews[0],
+      providers: [codex],
+      theme: { id: "claude-creature" },
+    });
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+  });
+
+  it.each([false, true])("releases Continue for a final companion error frame (theme: %s)", (withTheme) => {
+    themePack = readyPack;
+    const error = { provider: "codex", error: "no_providers" };
+    const previews = displayPreviewsFor({ providers: [] }, [codex], {
+      providers: [{ id: "codex", automatic: error, pinned: error }],
+    });
+    const html = render({
+      automaticPreviews: previews,
+      manualPreview: previews[0],
+      providers: [codex],
+      theme: withTheme ? { id: "claude-creature" } : null,
+    });
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
   });
 

@@ -108,6 +108,8 @@ export type DisplayFrame = {
   weekTokens?: number;
   totalTokens?: number;
   tokenTotalsKnown?: boolean;
+  /** An error frame: the device draws its error surface instead of the theme. */
+  error?: string;
 };
 
 type LocalDisplayFrameRequestInit = RequestInit & {
@@ -1529,15 +1531,15 @@ export function buildFrameData(
     label: displayFrame.label ?? displayFrame.provider ?? "",
     session: clampPercent(displayFrame.session),
     weekly: clampPercent(displayFrame.weekly),
-    sessionUnavailable: displayFrame.sessionUnavailable === true,
-    weeklyUnavailable: displayFrame.weeklyUnavailable === true,
+    sessionUnavailable: displayFrame.usageUnavailable === true || displayFrame.sessionUnavailable === true,
+    weeklyUnavailable: displayFrame.usageUnavailable === true || displayFrame.weeklyUnavailable === true,
     resetSecs: remainingResetSeconds(displayFrame.resetSecs),
     usageMode: sourceUsageMode,
     usageWindows: slots.map((slot) => ({
       label: slot.label || "",
       percent: clampPercent(slot.percent),
       resetSecs: remainingResetSeconds(slot.resetSecs),
-      available: true,
+      available: displayFrame.usageUnavailable !== true,
       idle: windowIsIdle(slot),
       // The device drops pace with the reset trust it was computed against.
       pace: basisTrusted ? slot.pace : undefined,
@@ -1545,12 +1547,12 @@ export function buildFrameData(
     usageSlot1Label: slot1?.label || "",
     usageSlot1Percent: clampPercent(slot1?.percent),
     usageSlot1ResetSecs: remainingResetSeconds(slot1?.resetSecs),
-    usageSlot1Available: Boolean(slot1),
+    usageSlot1Available: displayFrame.usageUnavailable !== true && Boolean(slot1),
     usageSlot1Idle: Boolean(slot1) && windowIsIdle(slot1),
     usageSlot2Label: slot2?.label || "",
     usageSlot2Percent: clampPercent(slot2?.percent),
     usageSlot2ResetSecs: remainingResetSeconds(slot2?.resetSecs),
-    usageSlot2Available: Boolean(slot2),
+    usageSlot2Available: displayFrame.usageUnavailable !== true && Boolean(slot2),
     usageSlot2Idle: Boolean(slot2) && windowIsIdle(slot2),
     providerSlots: providerSlots.map((slot) => ({
       label: slot.label || "",

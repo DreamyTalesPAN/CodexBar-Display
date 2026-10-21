@@ -12076,10 +12076,7 @@ async function routeCompanionOnline(
         });
         return;
       }
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(
+      const body =
           usageResponse || {
             ok: true,
             generatedAt: "2026-06-29T10:47:46Z",
@@ -12096,8 +12093,11 @@ async function routeCompanionOnline(
                 usageMode: "used",
               },
             ],
-          },
-        ),
+          };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ...body, previewFrames: previewFramesFromUsageResponse(body) }),
       });
       return;
     }
@@ -12749,6 +12749,36 @@ async function fulfillRouteFromNext(route, targetUrl) {
     headers,
     body: Buffer.from(await response.arrayBuffer()),
   });
+}
+
+// The frames the companion builds for the stream, from the fixture usage: a
+// provider's windows keep their values, a real 0% stays 0.
+function previewFramesFromUsageResponse(usageResponse) {
+  const providers =
+    usageResponse && typeof usageResponse === "object" && Array.isArray(usageResponse.providers)
+      ? usageResponse.providers
+      : [];
+  return {
+    generatedAt: "2026-06-29T10:47:46Z",
+    providers: providers.map((provider) => {
+      const frame = {
+        v: 2,
+        provider: provider.id,
+        label: provider.label,
+        usageMode: provider.usageMode || "used",
+        usageWindows: (provider.windows ?? [
+          { id: "session", label: "Session", usedPercent: provider.session },
+          { id: "weekly", label: "Weekly", usedPercent: provider.weekly },
+        ]).map((window) => ({
+          id: window.id,
+          label: window.label,
+          percent: window.usedPercent,
+          resetSecs: window.resetSecs ?? 0,
+        })),
+      };
+      return { id: provider.id, automatic: frame, pinned: frame };
+    }),
+  };
 }
 
 function displayFrameFromUsageResponse(usageResponse) {

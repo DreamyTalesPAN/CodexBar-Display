@@ -41,7 +41,7 @@ function resetTextOnEverySurface(at: string) {
     usage: renderToStaticMarkup(
       <UsageScreen companionStatus="online" usage={{ providers: [provider] }} />,
     ).match(/Reset in [^<]+/)?.[0],
-    settings: displayPreviewFor(provider, now)?.resetLabel,
+    settings: displayPreviewFor({ label: "Claude", resetSecs: resetSecs - 30 }, sentAt, now)?.resetLabel,
   };
 }
 

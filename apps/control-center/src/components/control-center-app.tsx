@@ -125,7 +125,10 @@ import { MacAppDownloadScreen } from "./setup/mac-app-download-screen";
 import { SetupWelcomeScreen } from "./setup/setup-welcome-screen";
 import { buildAiFixPrompt } from "./setup/setup-ai-prompt";
 import type { SetupConnectSteps } from "./setup/setup-connect";
-import { displayPreviewsFor } from "./setup/setup-display-previews";
+import {
+  displayPreviewsFor,
+  type PreviewFrames,
+} from "./setup/setup-display-previews";
 import {
   PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS,
   forgetResolvedProviderIssues,
@@ -525,6 +528,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const firmwareUpdateInProgress = firmwareUpdateStatus?.phase === "installing";
   const themeInstallInProgress = themeInstallStatus?.phase === "installing";
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
+  const [previewFrames, setPreviewFrames] = useState<PreviewFrames | null>(null);
   const [usageError, setUsageError] = useState<ApiError | null>(null);
   const [providerSetup, setProviderSetup] = useState<ProviderSetupInfo | null>(
     null,
@@ -583,7 +587,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerPreferencesReadOpeningRef = useRef(0);
   const providerListShownRef = useRef(false);
   const quietUsageReadRef = useRef<Promise<void> | null>(null);
-  const usageReadRevisionRef = useRef(0);
+  const usageGenerationRef = useRef(0);
   const providerPreferencesRevisionRef = useRef(0);
   const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
   const displayPreferencesRevisionRef = useRef(0);
@@ -3480,21 +3484,26 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (quiet && quietUsageReadRef.current) {
         return quietUsageReadRef.current;
       }
-      const revision = usageReadRevisionRef.current;
+      const generation = ++usageGenerationRef.current;
       const read = (async () => {
         if (!quiet) {
           setBusyAction("usage");
         }
         try {
-          const payload = await runCompanion<UsageSnapshot>(
-            quiet ? "/v1/usage" : "/v1/usage?refresh=1",
+          // The frames the setup tiles draw are the ones the companion builds
+          // for the stream, in the same response as the usage they come from.
+          const { previewFrames: frames, ...payload } = await runCompanion<
+            UsageSnapshot & { previewFrames?: PreviewFrames }
+          >(
+            quiet ? "/v1/usage?previewFrames=1" : "/v1/usage?refresh=1&previewFrames=1",
             undefined,
             { preserveLastError: quiet },
           );
-          if (revision !== usageReadRevisionRef.current) {
+          if (generation !== usageGenerationRef.current) {
             return;
           }
           setUsage(payload);
+          setPreviewFrames(frames ?? null);
           setUsageError(null);
           setCompanionStatus("online");
           if (!quiet) {
@@ -3506,7 +3515,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             });
           }
         } catch (error) {
-          if (revision !== usageReadRevisionRef.current) {
+          if (generation !== usageGenerationRef.current) {
             return;
           }
           const normalized = normalizeUsageError(
@@ -3532,8 +3541,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             });
           }
         } finally {
-          if (!quiet) {
-            setBusyAction(null);
+          if (generation === usageGenerationRef.current) {
+            setBusyAction((current) => (current === "usage" ? null : current));
           }
         }
       })();
@@ -3751,7 +3760,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           });
           // A usage read started before this save still carries the old
           // display mode. Retire it and ask once with the stored preference.
-          usageReadRevisionRef.current += 1;
+          usageGenerationRef.current += 1;
           quietUsageReadRef.current = null;
           void refreshUsage({ quiet: true });
         } catch (error) {
@@ -5592,17 +5601,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     .filter((item) => item.value)
     .map((item) => item.providerId)
     .filter((id): id is string => Boolean(id));
+  // Automatic rotates over every provider switched on, also one without a
+  // reading yet, which the companion's frame shows as unavailable; only the
+  // Manual list is limited to providers that can display.
   const setupPreviews = displayPreviewsFor(
     usage,
-    (providerDisplay?.mode === "pair"
-      ? setupProviders.filter((item) => item.value)
-      : displayableProviders
-    ).map((item) => ({
-      id: item.providerId,
-      label: item.label,
-    })),
-    device?.capabilities?.theme?.maxUsageWindows,
-    providerDisplay?.hiddenWindows,
+    setupProviders
+      .filter((item) => item.value)
+      .map((item) => ({ id: item.providerId, label: item.label })),
+    previewFrames,
   );
   // Step 05 keeps offering every live theme: hiding one would make the
   // device's limitation invisible. The Install is gated by the same rules the

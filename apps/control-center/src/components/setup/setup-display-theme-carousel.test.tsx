@@ -30,17 +30,19 @@ const PACK = {
 };
 
 function live(label: string, percent: number): SetupDisplayModePreview {
+  const frame = {
+    v: 1,
+    provider: label.toLowerCase(),
+    label,
+    usageMode: "used",
+    usageWindows: [{ id: "session", label: "Session", percent, resetSecs: 3600 }],
+  };
   return {
     providerLabel: label,
     resetLabel: null,
     windows: [{ label: "Session", percent }],
-    frame: {
-      v: 1,
-      provider: label.toLowerCase(),
-      label,
-      usageMode: "used",
-      usageWindows: [{ id: "session", label: "Session", percent, resetSecs: 3600 }],
-    },
+    frame,
+    pinnedFrame: frame,
     frameAt: new Date().toISOString(),
   };
 }
@@ -210,6 +212,7 @@ describe("Automatic shows one theme tile that changes provider (#821 single tile
     await settle();
     const manual = () => tiles(1).find((tile) => tile.dataset.visible === "true")?.dataset.provider;
     const first = manual();
+    expect(first).toBe("Claude");
     act(() => { vi.advanceTimersByTime(ROTATION_HOLD_MS * 3); });
     expect(manual()).toBe(first);
     expect(tiles(1)).toHaveLength(1);

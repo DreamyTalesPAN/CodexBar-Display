@@ -12,7 +12,7 @@ import type {
   DeviceInfo,
   PreferenceHealthState,
 } from "../control-center-types";
-import type { DisplayFrameSnapshot } from "../live-vibetv-preview";
+import type { DisplayFrame, DisplayFrameSnapshot } from "../live-vibetv-preview";
 import type { SupportDiagnostics } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import { connectLogLines, type ConnectPhase } from "./setup-connect-log";
@@ -23,10 +23,7 @@ import {
 } from "./setup-device-dialogs";
 import { candidateKey } from "./setup-connection";
 import { SetupDeviceScreen } from "./setup-device-screen";
-import {
-  SetupDisplayModeScreen,
-  type SetupDisplayModePreview,
-} from "./setup-display-mode-screen";
+import { SetupDisplayModeScreen } from "./setup-display-mode-screen";
 import { displayPreviewFor } from "./setup-display-previews";
 import {
   SetupFirmwareBlockedDialog,
@@ -204,33 +201,38 @@ const SAMPLE_EVENTS: SetupEventsLog = {
 };
 const loadSampleEvents = async () => SAMPLE_EVENTS;
 
-// Run through the same mapping the real step uses, so the gallery's tiles are
-// drawn from usage-service-shaped readings and not from a hand-made frame.
+// Fixture frames serve both the plain tile and the theme tile.
 const GALLERY_COLLECTED_AT = new Date().toISOString();
-const galleryUsage = (
+const galleryPreview = (
   id: string,
   label: string,
   session: number,
   weekly: number,
   resetSecs: number,
-) => ({
-  id,
-  label,
-  session,
-  weekly,
-  resetSecs,
-  usageMode: "used",
-  collectedAt: GALLERY_COLLECTED_AT,
-  windows: [
-    { id: "session", label: "Session", usedPercent: session, resetSecs },
-    { id: "weekly", label: "Weekly", usedPercent: weekly, resetSecs: resetSecs * 24 },
-  ],
-});
+) => {
+  const frame: DisplayFrame = {
+    v: 2,
+    provider: id,
+    label,
+    session,
+    weekly,
+    resetSecs,
+    usageMode: "used",
+    usageWindows: [
+      { id: "session", label: "Session", percent: session, resetSecs },
+      { id: "weekly", label: "Weekly", percent: weekly, resetSecs: resetSecs * 24 },
+    ],
+    resetTrust: "live",
+    resetTrustSecs: 5 * 3600,
+    resetSource: id,
+  };
+  return { ...displayPreviewFor(frame, GALLERY_COLLECTED_AT)!, pinnedFrame: frame };
+};
 const AUTOMATIC_PREVIEWS = [
-  displayPreviewFor(galleryUsage("codex", "Codex", 42, 26, 3 * 3600)),
-  displayPreviewFor(galleryUsage("cursor", "Cursor", 18, 63, 11 * 3600)),
-  displayPreviewFor(galleryUsage("claude", "Claude", 71, 44, 5 * 3600)),
-].filter((preview): preview is SetupDisplayModePreview => preview !== null);
+  galleryPreview("codex", "Codex", 42, 26, 3 * 3600),
+  galleryPreview("cursor", "Cursor", 18, 63, 11 * 3600),
+  galleryPreview("claude", "Claude", 71, 44, 5 * 3600),
+];
 
 const THEME_INSTALL_LOGS = [
   "Preparing theme install",
