@@ -18046,3 +18046,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve this feature together with the existing build9 Settings and three equal display cards.
 - Scope: Integration merge preserving both approval histories.
 - What's new: none — integration only.
+
+## 2026-10-21 — build9: retain final upstream approval marker for 7205
+
+- User approval: pending — build 7205 includes #864 at 659520679309 with its final approval marker.
+- Approved customer-visible result: The validated 7205 behavior is unchanged by this documentation-only merge.
+- Scope: Retain the final upstream approval block and all integration records.
+- What's new: none — documentation only.
