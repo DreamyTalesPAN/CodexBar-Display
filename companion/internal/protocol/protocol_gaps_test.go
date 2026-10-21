@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -232,6 +233,31 @@ func TestResetSourceKeyLeavesEveryFittingIdentityUnchanged(t *testing.T) {
 			if got := ResetSourceKey(provider, window); got != want {
 				t.Errorf("ResetSourceKey(%q, %q) = %q, want unchanged %q", provider, window, got, want)
 			}
+		}
+	}
+}
+
+func TestFrameJSONKeepsEmptyPairLabelWithoutChangingSingleProviderLabels(t *testing.T) {
+	for _, tc := range []struct {
+		provider string
+		label    string
+		want     string
+	}{
+		{"codex+claude", "", `""`},
+		{"codex+claude", "System busy", `"System busy"`},
+		{"codex", "", ""},
+		{"codex", "Codex", `"Codex"`},
+	} {
+		raw, err := json.Marshal(Frame{V: 2, Provider: tc.provider, Label: tc.label})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wire map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &wire); err != nil {
+			t.Fatal(err)
+		}
+		if string(wire["label"]) != tc.want {
+			t.Errorf("%s label=%s want %s", tc.provider, wire["label"], tc.want)
 		}
 	}
 }

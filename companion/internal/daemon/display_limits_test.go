@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -103,8 +104,19 @@ func TestDisplayLimitsPairShowsEachProvidersFirstVisibleWindow(t *testing.T) {
 	}
 
 	got := applyDisplayLimits(claude.Frame, []codexbar.ParsedFrame{codex, claude}, display, basis).Normalize()
-	if got.Provider != "claude+codex" || got.Label != "Claude + Codex" {
+	if got.Provider != "claude+codex" || got.Label != "" {
 		t.Fatalf("pair identity provider=%q label=%q", got.Provider, got.Label)
+	}
+	line, err := got.MarshalLine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal(line, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if string(wire["label"]) != `""` {
+		t.Fatalf("pair wire label=%s want an explicit empty string", wire["label"])
 	}
 	if len(got.UsageWindows) != 2 {
 		t.Fatalf("pair windows=%+v", got.UsageWindows)

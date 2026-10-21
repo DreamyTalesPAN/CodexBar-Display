@@ -319,26 +319,6 @@
         "/themes/s/tf-1-874fd8e2.json",
         "/themes/s/tf-2-94d69490.json"
       ]
-    },
-    {
-      "id": "two-limits",
-      "title": "Two Limits",
-      "usage": "live",
-      "version": "0.2.0",
-      "themeRev": 3,
-      "themeSpecPath": "/themes/u/tl-3-1771dc3e.json",
-      "requiresFirmware": "1.0.50",
-      "requiredCapabilities": [
-        "usage-slots-v1",
-        "color-stops-v1",
-        "usage-pace-v1"
-      ],
-      "downloadAsset": "vibetv-theme-two-limits-v0.2.0.zip",
-      "sha256": "ebcfd5b04b2d91227118a4f768806f38a192cca06a31986ed9a03c3cecd84ac6",
-      "bytes": 856,
-      "earlierThemeSpecPaths": [
-        "/themes/u/tl-2-c5d9351f.json"
-      ]
     }
   ]
 }

@@ -148,9 +148,7 @@ func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBef
 	stream.LastSentAt = lastSentAt.UTC().Format(time.RFC3339)
 	stream.LastTarget = publicTarget(lastTarget)
 	stream.DeviceID = displayStreamLogValue(frameLine, "deviceId")
-	// A pair frame logs its ids joined by "+" (daemon display_limits.go); the
-	// first one is the top member.
-	stream.LastProviderID, _, _ = strings.Cut(displayStreamLogValue(frameLine, "provider"), "+")
+	stream.LastProviderID = topProviderID(displayStreamLogValue(frameLine, "provider"))
 
 	if samePublicTarget(target, cableDeviceTarget) {
 		if !strings.EqualFold(displayStreamLogValue(frameLine, "transport"), "usb") {
@@ -308,4 +306,12 @@ func displayStreamLaunchStateRunning(state string) bool {
 
 func displayStreamLaunchAgentLabel() string {
 	return runtimepaths.DisplayStreamLaunchAgentLabel()
+}
+
+// topProviderID is the provider a shown frame is built around. A pair frame
+// names its ids joined by "+" (daemon display_limits.go); the first one is the
+// top member.
+func topProviderID(frameProvider string) string {
+	top, _, _ := strings.Cut(frameProvider, "+")
+	return top
 }

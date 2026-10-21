@@ -170,7 +170,6 @@ describe("SettingsScreen installed screensaver", () => {
   });
 });
 
-// Variante A (#592): the Source, Top and Bottom selects under their radios.
 describe("SettingsScreen display sources", () => {
   const item = (providerId: string, label: string): ProviderItem => ({
     allowsDefault: false,
@@ -207,12 +206,12 @@ describe("SettingsScreen display sources", () => {
     return onDisplayChange;
   };
 
-  it("saves the pair from Top and Bottom", () => {
+  it("saves the pair from Provider 1 and Provider 2", () => {
     const onDisplayChange = sources("pair", ["claude", "codex"]);
 
-    expect(screen.getByRole("combobox", { name: "Top" }).textContent).toBe("Claude");
-    expect(screen.getByRole("combobox", { name: "Bottom" }).textContent).toBe("Codex");
-    openSelect("Top");
+    expect(screen.getByRole("combobox", { name: "Provider 1" }).textContent).toBe("Claude");
+    expect(screen.getByRole("combobox", { name: "Provider 2" }).textContent).toBe("Codex");
+    openSelect("Provider 1");
     choose("Cursor");
     expect(onDisplayChange).toHaveBeenLastCalledWith(
       { mode: "pair", providerIds: ["cursor", "codex"] },
@@ -220,7 +219,7 @@ describe("SettingsScreen display sources", () => {
     );
     cleanup();
     const second = sources("pair", ["claude", "codex"]);
-    openSelect("Bottom");
+    openSelect("Provider 2");
     choose("Cursor");
     expect(second).toHaveBeenLastCalledWith(
       { mode: "pair", providerIds: ["claude", "cursor"] },
@@ -228,15 +227,21 @@ describe("SettingsScreen display sources", () => {
     );
   });
 
-  it("saves the one source from Source", () => {
-    const onDisplayChange = sources("fixed", ["claude"]);
+  it.each([
+    ["Provider 1", "Codex"],
+    ["Provider 2", "Claude"],
+  ])("swaps and saves the full pair when %s picks the other source", (picker, source) => {
+    const onDisplayChange = sources("pair", ["claude", "codex"]);
 
-    expect(screen.queryByRole("combobox", { name: "Top" })).toBeNull();
-    openSelect("Source");
-    choose("Codex");
-    expect(onDisplayChange).toHaveBeenLastCalledWith(
-      { mode: "fixed", providerIds: ["codex"] },
+    expect(screen.queryAllByRole("combobox", { name: /^(Top|Bottom)$/ })).toHaveLength(0);
+    openSelect(picker);
+    choose(source);
+
+    expect(onDisplayChange).toHaveBeenCalledExactlyOnceWith(
+      { mode: "pair", providerIds: ["codex", "claude"] },
       "codex",
     );
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
+
 });

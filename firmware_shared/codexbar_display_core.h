@@ -1167,6 +1167,7 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
   }
 
   out.provider = String(doc["provider"] | "");
+  // An explicit empty label stays blank; only a missing key uses the default.
   out.label = String(doc["label"] | "Provider");
   out.session = ClampPct(doc["session"] | 0);
   out.weekly = ClampPct(doc["weekly"] | 0);

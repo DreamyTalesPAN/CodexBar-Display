@@ -159,7 +159,6 @@ func withVisibleUsageWindows(frame protocol.Frame, display *runtimeconfig.Provid
 func pairDisplayFrame(selected protocol.Frame, providers []codexbar.ParsedFrame, display *runtimeconfig.ProviderDisplayConfig, basisAt time.Time) protocol.Frame {
 	windows := make([]protocol.UsageWindow, 0, 2)
 	ids := make([]string, 0, 2)
-	labels := make([]string, 0, 2)
 	resetSource := ""
 	for _, providerID := range display.ProviderIDs {
 		provider, ok := parsedProviderByID(providers, providerID)
@@ -192,7 +191,6 @@ func pairDisplayFrame(selected protocol.Frame, providers []codexbar.ParsedFrame,
 		window.Label = label + " " + window.Label
 		windows = append(windows, window)
 		ids = append(ids, id)
-		labels = append(labels, label)
 	}
 	// The pair is known by its ids joined in Frame.Provider, which the wire cuts
 	// to DefaultProviderBytes. Cut, the cached pair would lose its identity, so
@@ -208,7 +206,8 @@ func pairDisplayFrame(selected protocol.Frame, providers []codexbar.ParsedFrame,
 	}
 	frame := selected
 	frame.Provider = strings.Join(ids, pairProviderSeparator)
-	frame.Label = strings.Join(labels, " + ")
+	// Each window already names its provider; keep the shared line for notices.
+	frame.Label = ""
 	frame.UsageWindows = windows
 	frame.UsageSlots = nil
 	frame.ResetSource = resetSource

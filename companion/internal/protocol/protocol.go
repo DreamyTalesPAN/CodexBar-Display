@@ -436,6 +436,19 @@ func usageWindowsWithoutPace(windows []UsageWindow) []UsageWindow {
 	return out
 }
 
+// MarshalJSON preserves an explicitly empty pair label on the wire, in saved
+// frames and in the preview API. Single-provider frames keep omitting it.
+func (f Frame) MarshalJSON() ([]byte, error) {
+	type plainFrame Frame
+	if f.Label == "" && strings.Contains(f.Provider, "+") {
+		return json.Marshal(struct {
+			plainFrame
+			Label string `json:"label"`
+		}{plainFrame: plainFrame(f), Label: ""})
+	}
+	return json.Marshal(plainFrame(f))
+}
+
 func (f Frame) MarshalLine() ([]byte, error) {
 	return f.Normalize().MarshalNormalizedLine()
 }
