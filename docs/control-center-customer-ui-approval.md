@@ -15914,3 +15914,24 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
 - Scope: Merge claude/process-steps-still-working into claude/paultest-build9 and retain all source approval blocks.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — #877: Keep usage current after saving the display mode
+
+- User approval: no visible change – UI approval not needed (bug fix: reject usage responses started before the Used / Remaining save and read the saved mode immediately)
+- Approved customer-visible result: The existing Show choice and usage numbers stay in the same saved mode, including when an older poll finishes late.
+- Scope: Control Center usage read revision, post-write refresh, and regression test; no new controls or copy.
+- What's new: none — correction of stale usage after saving a display preference.
+
+## 2026-10-21 — #877: approval marker after merging main at 3dc0a15b
+
+- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #877; the own entries of #877 keep their approvals)
+- Approved customer-visible result: #877 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
+- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #877 only, not merged, not released.
+- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
+
+## 2026-10-21 — paultest-build9: refresh claude/used-remaining-switch (#877)
+
+- User approval: pending — build9 integration of claude/used-remaining-switch at 851701502c1b for Paul’s Mac test build 7204.
+- Approved customer-visible result: Preserve the refreshed feature together with the existing calm customer flows in the integration candidate.
+- Scope: Merge claude/used-remaining-switch into claude/paultest-build9 and retain all source approval blocks.
+- What's new: none — integration of existing feature entries only.

@@ -583,6 +583,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerPreferencesReadOpeningRef = useRef(0);
   const providerListShownRef = useRef(false);
   const quietUsageReadRef = useRef<Promise<void> | null>(null);
+  const usageReadRevisionRef = useRef(0);
   const providerPreferencesRevisionRef = useRef(0);
   const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
   const displayPreferencesRevisionRef = useRef(0);
@@ -3479,6 +3480,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (quiet && quietUsageReadRef.current) {
         return quietUsageReadRef.current;
       }
+      const revision = usageReadRevisionRef.current;
       const read = (async () => {
         if (!quiet) {
           setBusyAction("usage");
@@ -3489,6 +3491,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             undefined,
             { preserveLastError: quiet },
           );
+          if (revision !== usageReadRevisionRef.current) {
+            return;
+          }
           setUsage(payload);
           setUsageError(null);
           setCompanionStatus("online");
@@ -3501,6 +3506,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             });
           }
         } catch (error) {
+          if (revision !== usageReadRevisionRef.current) {
+            return;
+          }
           const normalized = normalizeUsageError(
             normalizeCaughtError(error, "Usage needs attention."),
           );
@@ -3741,6 +3749,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             }.`,
             tone: "ready",
           });
+          // A usage read started before this save still carries the old
+          // display mode. Retire it and ask once with the stored preference.
+          usageReadRevisionRef.current += 1;
+          quietUsageReadRef.current = null;
           void refreshUsage({ quiet: true });
         } catch (error) {
           const normalized = normalizeCaughtError(

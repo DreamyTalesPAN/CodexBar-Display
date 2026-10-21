@@ -55,6 +55,15 @@ const rotation = {
   writeStrategy: "vibetv_override",
   writable: true,
 };
+const usageModePreference = {
+  ...rotation,
+  id: "codexbar.usageBarsShowUsed",
+  owner: "codexbar",
+  label: "Show",
+  value: "true",
+  effectiveValue: "true",
+  options: [{ value: "true", label: "Used" }, { value: "false", label: "Remaining" }],
+};
 const refused = {
   code: "preference_write_failed",
   message: "This setting could not be updated.",
@@ -92,6 +101,8 @@ function startWindow(themes: unknown[] = []) {
     // The VibeTV the Mac App is connected to.
     device: device as typeof device,
     stored: rotation,
+    usageMode: usageModePreference,
+    holdUsageRead: null as Promise<void> | null,
     // What VibeTV reports about its screensaver slot, if it reports it.
     slot: undefined as { screensaverPath?: string } | undefined,
     settings: {
@@ -181,7 +192,7 @@ function startWindow(themes: unknown[] = []) {
       if (url.endsWith("/v1/preferences?section=display")) {
         const found = companion.stored;
         await companion.holdRead;
-        return jsonResponse({ ok: true, items: [found] });
+        return jsonResponse({ ok: true, items: [found, companion.usageMode] });
       }
       if (url.includes("/v1/preferences?section=providers")) {
         return jsonResponse({ ok: true, items: companion.providers });
@@ -197,6 +208,11 @@ function startWindow(themes: unknown[] = []) {
         }
         companion.stored = { ...rotation, value, effectiveValue: value };
         return jsonResponse({ ok: true, item: companion.stored });
+      }
+      if (url.endsWith(`/v1/preferences/${usageModePreference.id}`) && method === "PATCH") {
+        const { value } = JSON.parse(String(init?.body));
+        companion.usageMode = { ...usageModePreference, value, effectiveValue: value };
+        return jsonResponse({ ok: true, item: companion.usageMode });
       }
       if (url.endsWith(`/v1/preferences/${claude.id}`) && method === "PATCH") {
         const { value } = JSON.parse(String(init?.body));
@@ -244,13 +260,19 @@ function startWindow(themes: unknown[] = []) {
         return jsonResponse({ ok: true, selection: companion.selection });
       }
       if (url.includes("/v1/usage")) {
-        return jsonResponse({
+        const mode = companion.usageMode.value === "true" ? "used" : "remaining";
+        const found = {
           ok: true,
-          usageMode: "used",
+          usageMode: mode,
           providers: companion.providers.map(({ providerId, label }) => ({
-            id: providerId, label, session: 12, weekly: 34, resetSecs: 0, usageMode: "used",
+            id: providerId, label, session: mode === "used" ? 12 : 88,
+            weekly: mode === "used" ? 34 : 66, resetSecs: 0, usageMode: mode,
           })),
-        });
+        };
+        const held = companion.holdUsageRead;
+        companion.holdUsageRead = null;
+        await held;
+        return jsonResponse(found);
       }
       return jsonResponse({ ok: false, error: { code: "HTTP_404" } }, 404);
     }),
@@ -1351,4 +1373,40 @@ it("does not send a queued Brightness change to another VibeTV", async () => {
   store();
   await window.wait(10);
   expect(window.settingsWrites()).toEqual([{ brightnessPercent: 21 }]);
+});
+
+// #877: a poll reads Used before PATCH, but answers after Remaining is saved.
+// Saving must issue a new read immediately and discard the older answer.
+it("refreshes usage after saving Remaining and ignores a pre-write usage answer", async () => {
+  const window = startWindow();
+  window.companion.providers = [claude];
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  let answerOld = () => {};
+  window.companion.holdUsageRead = new Promise<void>((resolve) => { answerOld = resolve; });
+  const usageReads = () => window.companion.requests.filter((request) => /GET .*\/v1\/usage$/.test(request)).length;
+  const before = usageReads();
+  await window.wait(30);
+  expect(usageReads()).toBe(before + 1);
+
+  fireEvent.keyDown(screen.getByRole("combobox", { name: "Show" }), { key: "Enter" });
+  fireEvent.keyDown(screen.getByRole("option", { name: "Remaining" }), { key: "Enter" });
+  await window.wait(1);
+  expect(screen.getByRole("combobox", { name: "Show" }).textContent).toBe("Remaining");
+  expect(usageReads()).toBe(before + 2);
+
+  // Keep a navigation read pending too, so it cannot hide a stale overwrite.
+  let answerNavigation = () => {};
+  window.companion.holdUsageRead = new Promise<void>((resolve) => { answerNavigation = resolve; });
+  fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+  await window.wait(1);
+  expect(window.text()).toContain("88%");
+  answerOld();
+  await window.wait(1);
+  expect(window.text()).toContain("88%");
+  expect(window.text()).not.toContain("12%");
+  answerNavigation();
+  await window.wait(1);
 });

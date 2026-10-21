@@ -299,7 +299,7 @@ func (s *Server) preferenceRegistry() []preferenceAdapter {
 	return []preferenceAdapter{
 		providerPreferenceAdapter{server: s},
 		displayPreferenceAdapter{server: s},
-		usagePreferenceAdapter{goos: runtime.GOOS, read: codexbar.UsageBarsShowUsed, write: codexbar.SetUsageBarsShowUsed},
+		usagePreferenceAdapter{server: s, goos: runtime.GOOS, read: codexbar.ReadUsageBarsShowUsed, write: codexbar.SetUsageBarsShowUsed},
 	}
 }
 
