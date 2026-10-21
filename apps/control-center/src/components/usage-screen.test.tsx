@@ -227,7 +227,7 @@ describe("UsageScreen", () => {
     await expectNoAxeViolations(html);
   });
 
-  it("stops the skeleton pulse under reduced motion", () => {
+  it("draws every loading block with the shared skeleton shimmer", () => {
     const html = renderUsage(null, {
       ...usage,
       tokenUsageReady: false,
@@ -237,7 +237,8 @@ describe("UsageScreen", () => {
     const blocks = html.match(/<div[^>]*data-slot="skeleton"[^>]*>/g) ?? [];
     expect(blocks).toHaveLength(5);
     for (const block of blocks) {
-      expect(block).toContain("motion-reduce:animate-none");
+      expect(block).toContain("vibetv-skeleton");
+      expect(block).not.toContain("animate-pulse");
     }
   });
 
@@ -1290,6 +1291,42 @@ describe("UsageScreen", () => {
       />,
     );
     expect(html).not.toContain("Token history is unavailable");
+  });
+
+  it("draws no chart skeleton for only a hidden provider while token history loads", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        hiddenProviderIds={["codex"]}
+        usage={{
+          ...usage,
+          tokenUsageReady: false,
+          providers: [{ ...usage.providers[0], cost: undefined }],
+        }}
+      />,
+    );
+    expect(html).not.toContain('data-slot="skeleton"');
+    expect(html).not.toContain("Token history is loading");
+    expect(html).toContain("No provider usage is available yet.");
+  });
+
+  it("leaves a hidden provider out of the token total and legend", () => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        hiddenProviderIds={["codex"]}
+        usage={{
+          ...usage,
+          providers: [
+            usage.providers[0],
+            { ...usage.providers[0], id: "claude", label: "Claude", cost: { daily: [{ day: "2026-07-22", totalTokens: 9 }] } },
+          ],
+        }}
+      />,
+    );
+    expect(html).toContain("<span>9</span>");
+    expect(html).not.toContain("1,243");
+    expect(html.match(/data-testid="usage-legend".*?<\/div>/)?.[0]).not.toContain("Codex");
   });
 
   it("shows no still-loading notice beside an action tile", () => {

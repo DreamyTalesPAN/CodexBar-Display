@@ -166,7 +166,7 @@ export function UsageScreen({
   const tokenUsagePending =
     companionStatus === "online" &&
     !usageError &&
-    hasProviders &&
+    shownProviders.length > 0 &&
     !tokenUsageReady;
   // A requested refresh that still waits for its reading: a small spinner by
   // the token total, not a notice above the page (Paul, 2026-10-09).
@@ -197,16 +197,16 @@ export function UsageScreen({
             windowsHost={windowsHost}
           />
         ) : // The notice is a dialog over this page (below), not a box in it.
-        tokenHistoryUnavailable ? null : tokenUsageReady && hasProviders ? (
+        tokenHistoryUnavailable ? null : tokenUsageReady && shownProviders.length > 0 ? (
           <TokenUsageOverTimePanel
             onRefresh={onRefresh}
-            providers={providers}
+            providers={shownProviders}
             refreshPending={refreshPending}
             refreshing={refreshing || refreshPending}
             updating={tokenUsageUpdating}
           />
         ) : tokenUsagePending ? (
-          <TokenUsageSkeleton providerCount={providers.length} />
+          <TokenUsageSkeleton providerCount={shownProviders.length} />
         ) : null}
 
         {tiles.length > 0 ? (
@@ -379,28 +379,28 @@ function TokenUsageSkeleton({ providerCount }: { providerCount: number }) {
       <div aria-hidden>
         <section>
           <div className="flex h-8 items-center justify-between gap-4">
-            <Skeleton className="h-3.5 w-20 motion-reduce:animate-none" />
+            <Skeleton className="h-3.5 w-20" />
             {/* The Refresh button's place. */}
             <div className="size-8 shrink-0" />
           </div>
           <div className="mt-1.5">
             {/* The hero size's line box: 48 px at line height 1.05. */}
             <div className="flex h-[50.4px] items-center">
-              <Skeleton className="h-9 w-56 max-w-full motion-reduce:animate-none" />
+              <Skeleton className="h-9 w-56 max-w-full" />
             </div>
             <div className="mt-1.5 flex h-[21.75px] items-center">
-              <Skeleton className="h-3.5 w-52 max-w-full motion-reduce:animate-none" />
+              <Skeleton className="h-3.5 w-52 max-w-full" />
             </div>
           </div>
         </section>
         <div className="relative mt-12 min-h-56">
-          <Skeleton className="h-56 w-full motion-reduce:animate-none" />
+          <Skeleton className="h-56 w-full" />
         </div>
         <div className="mt-1.5 mb-14 flex flex-wrap items-center gap-x-[18px] gap-y-1">
           {/* Each chip reserves the legend's line box (21.75 px), so a wrapped row is as tall as the loaded one. */}
           {Array.from({ length: providerCount }, (_, index) => (
             <div className="flex h-[21.75px] items-center" key={index}>
-              <Skeleton className="h-3.5 w-14 motion-reduce:animate-none" />
+              <Skeleton className="h-3.5 w-14" />
             </div>
           ))}
         </div>

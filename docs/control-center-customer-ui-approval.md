@@ -13454,3 +13454,116 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve the incoming feature together with the existing Build 6 customer flows in the local integration candidate.
 - Scope: Merge claude/group-small-fixes into claude/paultest-build7; retain all source approval entries.
 - What's new: none — integration of existing feature entries only.
+
+## 2026-10-21 — #840: approval marker after merging main at e3503bda
+
+- User approval: no visible change – UI approval not needed (merge of main (e3503bda) into #840; the own entries of #840 keep their approvals)
+- Approved customer-visible result: #840 as in its own entries plus the entries merged with e3503bda; nothing else changes.
+- Scope: the merge of e3503bda and this approval record. Pull request branch #840 only, not merged, not released.
+- What's new: none — merge of e3503bda, no customer-visible change of its own
+
+<<<<<<<<< Temporary merge branch 1
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change))
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix of #645, a late settings answer for another VibeTV no longer choose
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change); occurrence 2)
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix of #645, a late settings answer for another VibeTV no longer choose
+
+## 2026-10-19 — #783: approval marker after merging main (v1.0.65 release round + #638)
+
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #783: approval marker after merging main (v1.0.65 release round + #638))
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #783: "Your computer is very busy" dialog follows the template (build 2 decision)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #783: "Your computer is very busy" dialog follows the template (build 2 decision) — before → after: the dialog "Your computer is very busy" dims the screen behind it with the grey backdrop like every other dialog → before no backdrop, the page stayed bright and clickable.
+- Approved customer-visible result: the dialog looks as drawn in frame 49 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/system-busy-dialog.tsx`, `apps/control-center/src/components/system-busy-dialog.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #783: build 2b QA, the usage chart has the template's plot height, axis labels and edge (frame 2)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #783: build 2b QA, the usage chart has the template's plot height, axis labels and edge (f — before → after: the chart plot was 184 px high with the day labels 19 px under the axis → it is 160 px high with the day labels 16 px under the axis, and the chart starts 8 px lower (16 px space above the top line) so the lines, the day labels and the legend sit where the template draws them; the value labels (2B, 1B, 0) were right-aligned next to the plot → they start at the left edge of the chart as in the template; the plot ended 4 px before the right edge → it ends at the edge, in line with the tiles below.
+- Approved customer-visible result: the usage chart looks like frame 2 of "Calm Redesign - alle Screens" (plot, axis labels and legend at the template's positions).
+- Scope: `apps/control-center/src/components/usage-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #783: approval marker after merging main
+
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #783: approval marker after merging main)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-21 — #783: approval marker after merging main at f314106c
+
+- User approval: no visible change – UI approval not needed (merge of main (f314106c) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with f314106c; nothing else changes.
+- Scope: the merge of f314106c and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of f314106c, no customer-visible change of its own
+=========
+
+## 2026-10-21 — #856: approval marker after merging main at 61f79061
+
+- User approval: no visible change – UI approval not needed (merge of main (61f79061) into #856; the own entries of #856 keep their approvals)
+- Approved customer-visible result: #856 as in its own entries plus the entries merged with 61f79061; nothing else changes.
+- Scope: the merge of 61f79061 and this approval record. Pull request branch #856 only, not merged, not released.
+- What's new: none — merge of 61f79061, no customer-visible change of its own
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change))
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix of #645, a late settings answer for another VibeTV no longer choose
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change); occurrence 2)
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix of #645, a late settings answer for another VibeTV no longer choose
+
+## 2026-10-21 — #783: token chart and total leave out hidden providers
+
+- User approval: no visible change – UI approval not needed (#783 Codex fix: the token chart and total leave out providers whose tiles are hidden; no new wording or layout)
+- Approved customer-visible result: #783 as in its own entries; the Last 30 days total, chart and legend count only providers that have a tile. No new text or layout.
+- Scope: #783 Codex fix in the usage screen (token-history panel gets the shown providers). Pull request branch only, not merged, not released.
+- What's new: none — a switched-off, unsupported or dataless provider no longer appears in the token total and legend, and no text or layout changes
+
+## 2026-10-21 — #783: approval marker after merging main at 5b9c0cb4
+
+- User approval: no visible change – UI approval not needed (merge of main (5b9c0cb4) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with 5b9c0cb4; nothing else changes.
+- Scope: the merge of 5b9c0cb4 and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of 5b9c0cb4, no customer-visible change of its own
+
+## 2026-10-21 — #783: the loading skeleton leaves out hidden providers
+
+- User approval: no visible change – UI approval not needed (#783 Codex fix: the loading skeleton leaves out hidden providers too)
+- Approved customer-visible result: #783 as in its own entries; a hidden provider no longer gets a token-history loading skeleton beside the empty state. No new text or layout.
+- Scope: #783 Codex fix in the usage screen (pending token-history skeleton counts shown providers only). Pull request branch only, not merged, not released.
+- What's new: none — a switched-off, unsupported or dataless provider no longer draws a loading skeleton, and no text or layout changes
+
+## 2026-10-21 — #783: approval marker after merging main at 467fd7fb
+
+- User approval: no visible change – UI approval not needed (merge of main (467fd7fb) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
+- Scope: the merge of 467fd7fb and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of 467fd7fb, no customer-visible change of its own
+
+## 2026-10-21 — #783: loading skeletons shimmer softly (#598 Variante B)
+
+- User approval: pending — loading skeletons (Usage head, chart and provider cards; also other skeletons in the app) shimmer softly right to left instead of pulsing; flat grey with reduced motion. Paul picked Claude Design page "Usage-Skeleton und Two Limits - Runde 21.10", frame "#598 Usage-Skeleton · Variante B – sanftes Schimmern"; Paul sees it in the next build
+- Approved customer-visible result: #783 as in its own entries; loading skeletons get a soft glint moving right to left instead of an opacity pulse, and flat grey under reduced motion. Same sizes, layout and text.
+- Scope: the shared Skeleton primitive and its keyframes in globals.css; the usage-screen skeleton loses its redundant reduced-motion classes. Pull request branch only, not merged, not released.
+- What's new: none — a restyle of the loading blocks, no feature to announce; no new entry in whats-new.ts
+
+## 2026-10-21 — #783: Build 7 integration of claude/group-usage
+
+- User approval: pending — build7 integration of claude/group-usage at d32b0f425bed for the requested Pace + Two at once Mac test.
+- Approved customer-visible result: Preserve the incoming feature together with the existing Build 6 customer flows in the local integration candidate.
+- Scope: Merge claude/group-usage into claude/paultest-build7; retain all source approval entries.
+- What's new: none — integration of existing feature entries only.
