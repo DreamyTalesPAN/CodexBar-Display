@@ -2738,23 +2738,32 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     );
 
     await clickNavigation(page, "Usage");
-    await page
-      .getByText("Token history is loading", { exact: true })
-      .waitFor({ timeout: 10_000 });
-    const tokenHistoryLoading = page.getByTestId("token-history-loading");
-    assert(
-      (await tokenHistoryLoading.locator('[data-slot="skeleton"]').count()) > 0,
-      "Token history loading must draw the graph skeleton",
-    );
-    assert(
-      (await tokenHistoryLoading.locator('[data-slot="spinner"]').count()) === 0,
-      "Token history loading must not show a spinner (issue #598)",
-    );
-    const tokenHistoryBox = await tokenHistoryLoading.boundingBox();
-    assert(
-      tokenHistoryBox && tokenHistoryBox.height >= 294,
-      "Token history loading must reserve the token chart height",
-    );
+    // A provider without usage data is hidden on Usage: no tile and no token
+    // history to load (hiddenUsageProviderIds in control-center-app.tsx).
+    if (fixture.status === "no_usage_available") {
+      assert(
+        (await page.getByText("Token history is loading", { exact: true }).count()) === 0,
+        "A provider without usage data must not show token history loading",
+      );
+    } else {
+      await page
+        .getByText("Token history is loading", { exact: true })
+        .waitFor({ timeout: 10_000 });
+      const tokenHistoryLoading = page.getByTestId("token-history-loading");
+      assert(
+        (await tokenHistoryLoading.locator('[data-slot="skeleton"]').count()) > 0,
+        "Token history loading must draw the graph skeleton",
+      );
+      assert(
+        (await tokenHistoryLoading.locator('[data-slot="spinner"]').count()) === 0,
+        "Token history loading must not show a spinner (issue #598)",
+      );
+      const tokenHistoryBox = await tokenHistoryLoading.boundingBox();
+      assert(
+        tokenHistoryBox && tokenHistoryBox.height >= 294,
+        "Token history loading must reserve the token chart height",
+      );
+    }
     assert(
       (await page
         .getByRole("heading", { name: "AI providers", exact: true })
