@@ -39,6 +39,10 @@ mkdir -p "${ROOT_DIR}/tmp"
   "${ROOT_DIR}/firmware_esp8266/platformio.ini" \
   "${ROOT_DIR}/firmware_shared/theme_spec_renderer_core.h"
 
+"${CXX_BIN}" -std=c++17 -Wall -Wextra -pedantic \
+  "${ROOT_DIR}/firmware_esp8266/tests/pairing_token_test.cpp" -o "${ROOT_DIR}/tmp/pairing_token_test"
+"${ROOT_DIR}/tmp/pairing_token_test"
+
 "${CXX_BIN}" -std=c++17 -Wall -Wextra -pedantic "${TRANSFER_SRC}" -o "${TRANSFER_OUT}"
 "${TRANSFER_OUT}"
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"runtime"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 )
 
 type SenderConfig struct {
+	Random         io.Reader // nil uses crypto/rand; injectable for pairing tests.
 	Opener         PortOpener
 	Sleep          func(time.Duration)
 	SettleDuration time.Duration
@@ -42,6 +44,7 @@ type Sender struct {
 	// tell that this port is unplugged after a failed probe closed it.
 	cablePath atomic.Value
 
+	random         io.Reader
 	opener         PortOpener
 	sleep          func(time.Duration)
 	settleDuration time.Duration
@@ -93,6 +96,7 @@ func NewSenderWithConfig(cfg SenderConfig) *Sender {
 	}
 
 	return &Sender{
+		random:           cfg.Random,
 		opener:           opener,
 		sleep:            sleep,
 		settleDuration:   settle,
@@ -524,11 +528,16 @@ func (s *Sender) PairDevice(path, deviceID string) (string, error) {
 	if _, err := s.ensurePort(path); err != nil {
 		return "", err
 	}
+	proposedToken, err := protocol.NewPairingToken(s.random)
+	if err != nil {
+		return "", err
+	}
 	request := struct {
 		Kind     string `json:"kind"`
 		Op       string `json:"op"`
 		DeviceID string `json:"deviceId"`
-	}{Kind: "request", Op: "pair", DeviceID: deviceID}
+		Token    string `json:"token"`
+	}{Kind: "request", Op: "pair", DeviceID: deviceID, Token: proposedToken}
 	line, err := json.Marshal(request)
 	if err != nil {
 		return "", err

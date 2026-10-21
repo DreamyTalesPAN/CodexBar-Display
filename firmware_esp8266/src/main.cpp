@@ -22,6 +22,7 @@
 #include "standby_state.h"
 #include "screensaver_preview.h"
 #include "wifi_security_policy.h"
+#include "pairing_token.h"
 #include "gif_asset_validator_file.h"
 #include "sprite_asset_validator_file.h"
 #include "renderer_esp8266.h"
@@ -749,20 +750,6 @@ bool validAuthToken(const String& value) {
     }
   }
   return true;
-}
-
-String generateAuthToken() {
-  // 128 bits from the ESP8266 hardware random number generator.
-  uint8_t bytes[16];
-  ESP.random(bytes, sizeof(bytes));
-  String token;
-  token.reserve(sizeof(bytes) * 2);
-  for (uint8_t value : bytes) {
-    char chunk[3];
-    snprintf(chunk, sizeof(chunk), "%02x", value);
-    token += chunk;
-  }
-  return token;
 }
 
 bool loadDeviceAuthToken() {
@@ -2325,13 +2312,17 @@ bool handleSerialControlLine(const String& line) {
         serialRequestBusy()) {
       emitSerialError("pairing-rejected");
     } else {
-      const bool alreadyPaired = deviceAuthConfigured();
-      const String token = alreadyPaired ? deviceAuthToken : generateAuthToken();
-      if (!alreadyPaired && !saveDeviceAuthToken(token)) {
-        emitSerialError("pairing-rejected");
-      } else {
-        emitSerialPairing(token);
+      using namespace codexbar_display::esp8266;
+      if (!deviceAuthConfigured()) {
+        const char* token = doc["token"] | "";
+        const auto result = StoreProvidedPairingToken(token, saveDeviceAuthToken);
+        if (result != PairingTokenResult::Stored) {
+          emitSerialError(result == PairingTokenResult::KeyRequired
+                              ? "pairing-key-required" : "pairing-rejected");
+          return true;
+        }
       }
+      emitSerialPairing(deviceAuthToken);
     }
   } else if (strcmp(op, "set-connection-mode") == 0) {
     const char* expectedDeviceID = doc["deviceId"] | "";
@@ -2878,9 +2869,14 @@ void handlePairingAPI() {
     return;
   }
   addCorsHeaders();
-  const String token = generateAuthToken();
-  if (!saveDeviceAuthToken(token)) {
-    webServer.send(500, "text/plain; charset=utf-8", "pairing token save failed");
+  using namespace codexbar_display::esp8266;
+  const String token = webServer.arg("token");
+  const auto result = StoreProvidedPairingToken(token.c_str(), saveDeviceAuthToken);
+  if (result != PairingTokenResult::Stored) {
+    const bool keyRequired = result == PairingTokenResult::KeyRequired;
+    webServer.send(keyRequired ? 400 : 500, "text/plain; charset=utf-8",
+                   keyRequired ? "128-bit pairing key required; update VibeTV Control Center"
+                               : "pairing token save failed");
     return;
   }
   if (webServer.hasArg("api")) {

@@ -3559,3 +3559,26 @@ func TestResolveRestoreImagePicksNewestBackupThenPath(t *testing.T) {
 		t.Fatalf("resolveRestoreImage() = %q, want the newest backup with the lowest path %q", got, want)
 	}
 }
+
+func TestPairFirmwareUpdateDeviceSendsComputerKey(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Error(err)
+		}
+		token := r.PostForm.Get("token")
+		key, err := hex.DecodeString(token)
+		if r.Method != http.MethodPost || r.URL.Path != "/api/pair" || r.PostForm.Get("api") != "1" || err != nil || len(key) != 16 {
+			http.Error(w, "128-bit pairing key required", http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "token": token})
+	}))
+	defer server.Close()
+	previous := releaseHTTPClient
+	releaseHTTPClient = server.Client()
+	t.Cleanup(func() { releaseHTTPClient = previous })
+	token, err := pairFirmwareUpdateDevice(context.Background(), server.URL)
+	if err != nil || len(token) != 32 {
+		t.Fatalf("pairing did not send and retain the computer key: %v", err)
+	}
+}

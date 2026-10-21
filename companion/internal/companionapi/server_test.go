@@ -10740,7 +10740,7 @@ func TestDevicePairRejectsInvalidExplicitTarget(t *testing.T) {
 	}
 }
 
-func TestPairRetriesLostResponsesWithBoundedEmptyRequests(t *testing.T) {
+func TestPairRetriesLostResponsesWithSameComputerKey(t *testing.T) {
 	tests := []struct {
 		name      string
 		succeedAt int32
@@ -10754,6 +10754,7 @@ func TestPairRetriesLostResponsesWithBoundedEmptyRequests(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var attempts atomic.Int32
+			var firstBody string
 			device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				attempt := attempts.Add(1)
 				if r.Method != http.MethodPost {
@@ -10766,8 +10767,15 @@ func TestPairRetriesLostResponsesWithBoundedEmptyRequests(t *testing.T) {
 				if err != nil {
 					t.Errorf("read pair body: %v", err)
 				}
-				if len(body) != 0 {
-					t.Errorf("pair request body=%q want empty", body)
+				form, parseErr := url.ParseQuery(string(body))
+				key, keyErr := hex.DecodeString(form.Get("token"))
+				if parseErr != nil || keyErr != nil || len(key) != 16 {
+					t.Error("pairing must send a 128-bit token in the POST body")
+				}
+				if attempt == 1 {
+					firstBody = string(body)
+				} else if string(body) != firstBody {
+					t.Error("retry changed the proposed key")
 				}
 				w.Header().Set("Content-Type", "application/json")
 				if tt.succeedAt > 0 && attempt == tt.succeedAt {
@@ -10802,6 +10810,8 @@ func TestPairAttemptTimeoutBoundsHungResponses(t *testing.T) {
 	var attempts atomic.Int32
 	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempts.Add(1)
+		// HTTP/1 observes disconnects after the request body has been consumed.
+		_, _ = io.Copy(io.Discard, r.Body)
 		<-r.Context().Done()
 	}))
 	defer device.Close()
