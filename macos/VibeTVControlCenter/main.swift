@@ -1684,6 +1684,19 @@ func installationFailure(
     }
 }
 
+// #836: a background service that stays silent right after a Mac restart is
+// fixed by the "Restart service" button. The app presses that button itself,
+// once per launch, before it shows the failure screen.
+func shouldRestartServiceAutomatically(
+    after failure: InstallationFailure,
+    alreadyRestarted: Bool,
+    repairAttempt: Bool
+) -> Bool {
+    // A CodexBar repair is never restarted here: the generic retry clears its
+    // repair flag and would report success without launching CodexBar.
+    failure == .serviceStart && !alreadyRestarted && !repairAttempt
+}
+
 func installationPreviewFailure(_ value: String) -> InstallationFailure? {
     switch value {
     case "background-approval":
@@ -2070,6 +2083,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     // update must not create it.
     private var updaterStarted = false
 #endif
+    // #836: the app presses "Restart service" by itself once per launch.
+    private var serviceRestartedAutomatically = false
     private var installationRequired: Bool {
         requiresApplicationInstallation(Bundle.main.bundleURL)
     }
@@ -2291,6 +2306,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             guard let self else {
                 return
             }
+            // Read before prepareCompanion can change the flag.
+            let repairAttempt = self.codexBarRepairRequired
             let outcome = await self.prepareCompanion(fromStartScreen: true)
             self.preparationTask = nil
             if self.pendingCodexBarRepairRerun {
@@ -2330,6 +2347,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 )
             case .failure(let failure):
                 self.codexBarRepairRequired = false
+                if shouldRestartServiceAutomatically(
+                    after: failure,
+                    alreadyRestarted: self.serviceRestartedAutomatically,
+                    repairAttempt: repairAttempt
+                ) {
+                    // #836: same action as the "Restart service" button.
+                    self.serviceRestartedAutomatically = true
+                    self.retryRuntimePreparation()
+                    return
+                }
                 self.presentInstallationFailure(failure)
             }
         }
