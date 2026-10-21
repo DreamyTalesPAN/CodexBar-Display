@@ -502,8 +502,23 @@ test_merge_base_scopes_validation() {
   assert_not_contains "$output" 'Branch last valid entry'
 }
 
+# A Windows autocrlf checkout: the working file has CRLF, the base blob has LF.
+# Old entries must still count as already present, not as new.
+test_crlf_working_copy_keeps_base_entries() {
+  local repo="${TMP_ROOT}/crlf-working-copy"
+  setup_repo "$repo"
+  commit_approval "$repo" "Historical incomplete entry" ""
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
+  git -C "$repo" config core.autocrlf true
+  local file="$repo/docs/control-center-customer-ui-approval.md"
+  sed $'s/$/\r/' "$file" > "$file.crlf" && mv "$file.crlf" "$file"
+  approval_entry "CRLF change" | sed $'s/$/\r/' >> "$file"
+  expect_gate_success "$repo"
+}
+
 test_required_fields_and_approval_forms
 test_merge_base_scopes_validation
+test_crlf_working_copy_keeps_base_entries
 test_first_broken_entry_is_named
 test_earlier_pending_entry_prints_notice
 test_non_ui_commits_do_not_block

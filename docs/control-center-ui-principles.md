@@ -97,7 +97,14 @@ Before shipping customer-facing UI changes, answer these in order:
 
 Run `npm run check:customer-ui-copy` in `apps/control-center` before shipping customer-facing UI changes. It parses customer-facing TSX copy and blocks internal wording such as `Companion`, `Bridge`, local API terms, release/package diagnostics, and technical setup substeps.
 
-The repository gate also blocks every customer-facing UI diff until the same change includes a new approval entry with `User approval:`, `Approved customer-visible result:` and `What's new:`. A general implementation or release approval is not enough; the visible result must be named.
+The repository gate also blocks every customer-facing UI diff until the same change includes a new approval entry. Each entry has these four lines, and the gate rejects an entry that lacks one:
+
+- `- User approval:`, exactly once per entry and unique in the log, in one of three forms: `approved by Paul` with a quote from the chat (`- User approval: approved by Paul in chat: "yes, that layout"`); `pending — <reason>` when Paul's yes is still due in the PR review (the gate passes and prints a notice); or `no visible change – UI approval not needed (<reason>)` when the customer sees nothing new.
+- `- Approved customer-visible result:` names the exact visible result.
+- `- Scope:` names the files and the change it covers.
+- `- What's new:` as described below.
+
+A general implementation or release approval is not enough; the visible result must be named.
 
 ## What's New
 

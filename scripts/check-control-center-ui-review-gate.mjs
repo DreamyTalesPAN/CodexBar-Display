@@ -212,8 +212,9 @@ function isUiFile(file) {
   return uiFilePatterns.some((pattern) => pattern.test(file));
 }
 
+// CRLF from a Windows autocrlf checkout must not make old entries look new.
 function approvalEntries(text) {
-  return text.split(/^(?=## )/m)
+  return text.replace(/\r\n/g, "\n").split(/^(?=## )/m)
     .filter((entry) => entry.startsWith("## "))
     .map((entry) => entry.trim());
 }
