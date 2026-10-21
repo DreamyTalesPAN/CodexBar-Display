@@ -9241,3 +9241,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none beyond #893 itself; confirming WiFi from Settings shows the selected WiFi card again, a reload during a theme install shows its dialog on Appearance.
 - Scope: finishSetup in control-center-app.tsx; pull request branch #893 only.
 - What's new: none — no visible change beyond #893
+
+## 2026-10-22 — #893: setup end tab tests
+
+- User approval: no visible change – UI approval not needed (test-only: pins which tab setup ends on for a firmware update, a theme install, a Settings WiFi switch, a theme reload and a remembered setup; no product change)
+- Approved customer-visible result: none; no screen changes.
+- Scope: control-center-app.setup-end-tab.test.tsx; pull request branch #893 only.
+- What's new: none — test only
