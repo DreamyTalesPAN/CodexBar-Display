@@ -8143,3 +8143,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; the support report file name stays as it is on main (local date and time).
 - Scope: apps/control-center/src/components/support-report.test.ts only.
 - What's new: none — test-only change.
+
+## 2026-10-21 — #856: approval marker after merging main at 61f79061
+
+- User approval: no visible change – UI approval not needed (merge of main (61f79061) into #856; the own entries of #856 keep their approvals)
+- Approved customer-visible result: #856 as in its own entries plus the entries merged with 61f79061; nothing else changes.
+- Scope: the merge of 61f79061 and this approval record. Pull request branch #856 only, not merged, not released.
+- What's new: none — merge of 61f79061, no customer-visible change of its own
