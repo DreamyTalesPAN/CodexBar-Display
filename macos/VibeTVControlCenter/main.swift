@@ -2094,7 +2094,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     // The probe found an update, or the customer asked for the visible check
     // while it ran; that check follows when the probe's cycle ends.
     private var updateInformationProbeFound = false
-    private var launchUpdateTurnedDown = false
     // Creating the controller starts Sparkle, which may show an overdue
     // scheduled check at once. A launch check skipped for a running VibeTV
     // update must not create it.
@@ -2222,14 +2221,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             if updaterStarted {
                 let updater = updaterController.updater
                 updater.automaticallyDownloadsUpdates = false
-                if launchUpdateTurnedDown {
-                    // The feed answered after the limit. Offer that update in
-                    // Sparkle's dialog now instead of dropping it for a day,
-                    // through the probe below: Sparkle's background check may
-                    // hold a found update back (#570).
-                    launchUpdateTurnedDown = false
-                    backgroundUpdateCheckPending = true
-                }
             }
             if backgroundUpdateCheckPending {
                 backgroundUpdateCheckPending = false
@@ -5546,9 +5537,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             )
         case .abandoned:
             // The start already went on. Installing now would restart the
-            // app in the middle of setup; the dialog offers the update once
-            // this check has ended.
-            launchUpdateTurnedDown = true
+            // app in the middle of setup. The page already offers the update
+            // through the runtime's release state and owns when to prompt
+            // (#822); do not start a native probe that bypasses its setup hold.
             throw CocoaError(.userCancelled)
         case .installing, .done:
             break
