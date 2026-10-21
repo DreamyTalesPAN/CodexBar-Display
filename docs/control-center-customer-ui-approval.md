@@ -9317,3 +9317,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the existing Gauge footer and reset bindings show Reset unavailable once reset trust expires, with no new copy or layout.
 - Scope: shared reset countdown calculation in live-vibetv-preview and its 60-second trust regression test; pre-review P3 for #800.
 - What's new: none — correction to existing preview and device parity only
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at ba55b31f
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (ba55b31f) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with ba55b31f; nothing else changes.
+- Scope: the merge of ba55b31f and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of ba55b31f, no customer-visible change of its own
