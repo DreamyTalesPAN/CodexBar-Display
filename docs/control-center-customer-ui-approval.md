@@ -9047,3 +9047,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the newest usage request owns its values, preview frames, errors and status; late older successes or failures do not replace that result, and the newest settled poll can finish the usage spinner without clearing another action.
 - Scope: extend the existing refreshUsage generation guard in control-center-app.tsx; regressions in control-center-app.usage-refresh.test.tsx cover stale unavailable, read failure, unreachable and access-blocked replies, stale success after a newer failure, and spinner completion; no hardware or running-app change.
 - What's new: none — correct the existing usage refresh race without changing copy or layout.
+
+## 2026-10-21 — #858: approval marker after merging claude/setup11-live-theme-tiles at 50b61fab
+
+- User approval: no visible change – UI approval not needed (merge of claude/setup11-live-theme-tiles (50b61fab) into #858; the own entries of #858 keep their approvals)
+- Approved customer-visible result: #858 as in its own entries plus the entries merged with 50b61fab; nothing else changes.
+- Scope: the merge of 50b61fab and this approval record. Pull request branch #858 only, not merged, not released.
+- What's new: none — merge of 50b61fab, no customer-visible change of its own
