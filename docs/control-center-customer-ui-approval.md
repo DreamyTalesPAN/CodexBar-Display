@@ -12153,6 +12153,26 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #784 as in its own entries plus the entries merged with 41bf10cf; nothing else changes.
 - Scope: the merge of 41bf10cf and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of 41bf10cf, no customer-visible change of its own
+## 2026-10-21 — #784: slider neutral ring scoped to hover and drag
+
+- User approval: no visible change – UI approval not needed (#784 Codex fix: slider neutral ring scoped to hover/drag so the shared focus-ring check passes; same look as the pending slider entry)
+- Approved customer-visible result: the slider thumb looks as in the pending #784 slider entry: grey ring on hover and drag, olive ring only for keyboard focus. Nothing else changes.
+- Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb ring classes), its test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — ring colour classes of the slider thumb, no new text
+
+## 2026-10-21 — #784: approval marker after merging main at f314106c
+
+- User approval: no visible change – UI approval not needed (merge of main (f314106c) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with f314106c; nothing else changes.
+- Scope: the merge of f314106c and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of f314106c, no customer-visible change of its own
+
+## 2026-10-21 — #784: slider keyboard focus ring 2 px olive
+
+- User approval: no visible change – UI approval not needed (#784 slider keyboard focus ring 3px → the shared 2px olive ring decided earlier; token-only)
+- Approved customer-visible result: the slider thumb looks as before for hover and drag; the keyboard focus ring is the shared 2 px olive ring (border plus 1 px ring) like buttons and inputs. Nothing else changes.
+- Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb focus classes), its test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — focus ring classes of the slider thumb, no new text
 
 ## 2026-10-20 — #816: "Not now" on "VibeTV not found" holds through a short status change in the same outage (#787)
 
@@ -12869,19 +12889,19 @@ issue scope, or release permission never implies UI permission.
 - What's new: none — merge of 41bf10cf, no customer-visible change of its own
 ## 2026-10-21 — #784: slider neutral ring scoped to hover and drag
 
-- User approval: no visible change – UI approval not needed (#784 Codex fix: slider neutral ring scoped to hover/drag so the shared focus-ring check passes; same look as the pending slider entry)
-- Approved customer-visible result: the slider thumb looks as in the pending #784 slider entry: grey ring on hover and drag, olive ring only for keyboard focus. Nothing else changes.
-- Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb ring classes), its test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull request branch #784 only, not merged, not released.
-- What's new: none — ring colour classes of the slider thumb, no new text
+## 2026-10-21 — #816: approval marker after merging claude/group-calm-redesign at b095ff2d
 
-## 2026-10-21 — #784: approval marker after merging main at f314106c
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (b095ff2d) into #816; the own entries of #816 keep their approvals)
+- Approved customer-visible result: #816 as in its own entries plus the entries merged with b095ff2d; nothing else changes.
+- Scope: the merge of b095ff2d and this approval record. Pull request branch #816 only, not merged, not released.
+- What's new: none — merge of b095ff2d, no customer-visible change of its own
 
-- User approval: no visible change – UI approval not needed (merge of main (f314106c) into #784; the own entries of #784 keep their approvals)
-- Approved customer-visible result: #784 as in its own entries plus the entries merged with f314106c; nothing else changes.
-- Scope: the merge of f314106c and this approval record. Pull request branch #784 only, not merged, not released.
-- What's new: none — merge of f314106c, no customer-visible change of its own
+## 2026-10-21 — #816: approval marker after merging claude/group-calm-redesign at 2d217aa5
 
-## 2026-10-21 — #784: slider keyboard focus ring 2 px olive
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (2d217aa5) into #816; the own entries of #816 keep their approvals)
+- Approved customer-visible result: #816 as in its own entries plus the entries merged with 2d217aa5; nothing else changes.
+- Scope: the merge of 2d217aa5 and this approval record. Pull request branch #816 only, not merged, not released.
+- What's new: none — merge of 2d217aa5, no customer-visible change of its own
 
 - User approval: no visible change – UI approval not needed (#784 slider keyboard focus ring 3px → the shared 2px olive ring decided earlier; token-only)
 - Approved customer-visible result: the slider thumb looks as before for hover and drag; the keyboard focus ring is the shared 2 px olive ring (border plus 1 px ring) like buttons and inputs. Nothing else changes.
@@ -12894,3 +12914,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 as in its own entries plus the entries merged with 9702a6ef; nothing else changes.
 - Scope: the merge of 9702a6ef and this approval record. Pull request branch #821 only, not merged, not released.
 - What's new: none — merge of 9702a6ef, no customer-visible change of its own
+## 2026-10-21 — #816: approval marker after merging claude/group-calm-redesign at ff601365
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (ff601365) into #816; the own entries of #816 keep their approvals)
+- Approved customer-visible result: #816 as in its own entries plus the entries merged with ff601365; nothing else changes.
+- Scope: the merge of ff601365 and this approval record. Pull request branch #816 only, not merged, not released.
+- What's new: none — merge of ff601365, no customer-visible change of its own
