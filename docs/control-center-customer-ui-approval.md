@@ -15083,3 +15083,32 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
 - Scope: the merge of 35152cc8 and this approval record. Pull request branch #781 only, not merged, not released.
 - What's new: none — merge of 35152cc8, no customer-visible change of its own
+
+## 2026-10-20 — #798: browser flow expects the headline the screen already shows for a blocked migration
+
+- User approval: no visible change – UI approval not needed (#798: browser test script only; the screen already reads "No update available" for a required migration without a verified download, the script still waited for "Everything is up to date")
+- Approved customer-visible result: #798 unchanged; this entry only records the test update.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — test-only change, no customer-visible change
+
+
+## 2026-10-21 — #798: Updates headline pinned for a firmware update that cannot start (#849)
+
+- User approval: no visible change – UI approval not needed (test only: pins #849, the Updates headline no longer says "Update available" for a firmware update whose Mac App download is missing or disabled; no code change)
+- Approved customer-visible result: #798 as in its own entries; nothing changes on screen.
+- Scope: updates-screen tests only. Pull request branch #798 only, not merged, not released.
+- What's new: none — test only, no customer-visible change
+
+## 2026-10-21 — #798: approval marker after merging claude/group-calm-redesign at 260c4843
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (260c4843) into #798; the own entries of #798 keep their approvals)
+- Approved customer-visible result: #798 as in its own entries plus the entries merged with 260c4843; nothing else changes.
+- Scope: the merge of 260c4843 and this approval record. Pull request branch #798 only, not merged, not released.
+- What's new: none — merge of 260c4843, no customer-visible change of its own
+
+## 2026-10-21 — paultest-build8: integrate claude/calm-updates (#798)
+
+- User approval: pending — build8 integration of claude/calm-updates at dfddea503de7 for Paul’s next Mac test build 7203.
+- Approved customer-visible result: Preserve the incoming feature together with the existing calm customer flows in the integration candidate.
+- Scope: Merge claude/calm-updates into claude/paultest-build8; retain all source approval entries.
+- What's new: none — integration of existing feature entries only.
