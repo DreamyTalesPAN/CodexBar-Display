@@ -8444,3 +8444,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 as in its own entries plus the entries merged with 874a7565; nothing else changes.
 - Scope: the merge of 874a7565 and this approval record. Pull request branch #821 only, not merged, not released.
 - What's new: none — merge of 874a7565, no customer-visible change of its own
+
+## 2026-10-21 — #821: Codex fixes for the setup display preview
+
+- User approval: no visible change – UI approval not needed (#821 Codex fixes: setup preview no longer invents usage windows and the Manual tile shows only the pinned provider, as the VibeTV does)
+- Approved customer-visible result: #821 as in its own entries; nothing new is visible, the setup preview only matches what VibeTV already shows.
+- Scope: setup display previews (setup-display-previews.ts, the Manual tile in setup-display-mode-screen.tsx) and their tests. Pull request branch #821 only, not merged, not released.
+- What's new: none — preview corrections that match the device

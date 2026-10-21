@@ -51,6 +51,45 @@ function providerRootResetSecs(
     : Math.max(0, provider.resetSecs ?? 0);
 }
 
+type ProviderRow = NonNullable<DisplayFrame["providerSlots"]>[number];
+
+/**
+ * One provider's row from the windows /v1/usage delivered for it: its soonest
+ * window reset (shifted by `shift` seconds) and the heaviest window's
+ * percentage. Null when no window has a reset ahead or a readable percentage.
+ * A legacy provider has no windows, so it gets no row, as on the device.
+ */
+function providerRowOf(
+  provider: { id: string; label: string; usageMode?: string },
+  windows: { percent?: number; resetSecs?: number }[],
+  shift: number,
+): ProviderRow | null {
+  let soonest = 0;
+  let percent: number | undefined;
+  for (const slot of windows) {
+    const slotPercent = slot.percent ?? Number.NaN;
+    if (!Number.isFinite(slotPercent)) {
+      continue;
+    }
+    const reset = (slot.resetSecs ?? 0) > 0 ? (slot.resetSecs ?? 0) - shift : 0;
+    if (reset > 0 && (soonest === 0 || reset < soonest)) {
+      soonest = reset;
+    }
+    // Used mode: the heaviest window. Remaining mode: the host takes the
+    // heaviest used window and flips it, which is the smallest remaining.
+    percent =
+      percent === undefined
+        ? slotPercent
+        : provider.usageMode === "remaining"
+          ? Math.min(percent, slotPercent)
+          : Math.max(percent, slotPercent);
+  }
+  if (soonest <= 0 || percent === undefined) {
+    return null;
+  }
+  return { id: provider.id, label: provider.label, percent, resetSecs: soonest };
+}
+
 /**
  * The cross-provider rows of the frame, as the host builds them
  * (providerResetSlots in companion/internal/daemon/selection.go): every
@@ -79,37 +118,11 @@ export function providerSlotsFor(
       Number.isNaN(basis) || Number.isNaN(collected)
         ? 0
         : Math.floor((basis - collected) / 1000);
-    let soonest = 0;
-    let percent: number | undefined;
-    // Only the windows /v1/usage actually delivered, as the host iterates
-    // Frame.UsageWindows: a legacy provider with just root session/weekly has
-    // none and gets no row, even when resetSecs is set.
-    for (const slot of providerWindowSlots(provider)) {
-      if (!Number.isFinite(slot.percent)) {
-        continue;
-      }
-      const reset = (slot.resetSecs ?? 0) > 0 ? (slot.resetSecs ?? 0) - shift : 0;
-      if (reset > 0 && (soonest === 0 || reset < soonest)) {
-        soonest = reset;
-      }
-      // Used mode: the heaviest window. Remaining mode: the host takes the
-      // heaviest used window and flips it, which is the smallest remaining.
-      percent =
-        percent === undefined
-          ? slot.percent
-          : provider.usageMode === "remaining"
-            ? Math.min(percent, slot.percent)
-            : Math.max(percent, slot.percent);
-    }
-    if (soonest <= 0 || percent === undefined) {
+    const row = providerRowOf(provider, providerWindowSlots(provider), shift);
+    if (!row) {
       continue;
     }
-    rows.push({
-      id: provider.id,
-      label: provider.label,
-      percent,
-      resetSecs: soonest,
-    });
+    rows.push(row);
     if (rows.length === 2) {
       break;
     }
@@ -226,7 +239,9 @@ export function displayFrameFor(
     weeklyUnavailable: provider.weeklyUnavailable === true,
     resetSecs: providerRootResetSecs(provider, readable),
     usageMode: provider.usageMode,
-    usageWindows: readable,
+    // A legacy provider has no windows: the frame keeps only its root session
+    // and weekly, and no window slot is invented for them (Codex on #821).
+    usageWindows: provider.windows?.length ? readable : [],
     // Cross-provider rows (pv1*/pv2* in a theme), from the complete provider set.
     providerSlots: providerSlotsFor(allProviders, provider.collectedAt),
     // No activity here: /v1/usage's provider.activity is the collector snapshot
@@ -317,6 +332,25 @@ export function displayPreviewsFor(
         windows: [],
       },
   );
+}
+
+/**
+ * The Manual tile's frame: its rotation frame with only the pinned provider's
+ * own row. The host's fixed mode filters the providers to the pinned one before
+ * it builds the rows (companion/internal/daemon/selection.go), and the frame's
+ * basis is that provider's own reading, so the shift is zero.
+ */
+export function pinnedPreview(preview: SetupDisplayModePreview): SetupDisplayModePreview {
+  const frame = preview.frame;
+  if (!frame) {
+    return preview;
+  }
+  const row = providerRowOf(
+    { id: frame.provider ?? "", label: frame.label ?? "", usageMode: frame.usageMode },
+    frame.usageWindows ?? [],
+    0,
+  );
+  return { ...preview, frame: { ...frame, providerSlots: row ? [row] : [] } };
 }
 
 /**

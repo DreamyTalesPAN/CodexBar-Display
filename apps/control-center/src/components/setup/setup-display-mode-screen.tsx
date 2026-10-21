@@ -22,6 +22,7 @@ import {
   type SetupDisplayModeTheme,
 } from "./setup-display-theme-tiles";
 import { SETUP_REVEAL } from "./setup-reveal";
+import { pinnedPreview } from "./setup-display-previews";
 import {
   SelectionCheck,
   SelectionDot,
@@ -224,7 +225,7 @@ export function DisplayModeChoice({
   );
   const { index, reducedMotion } = useProviderRotation(rotation.length);
   const themePack = useThemeRenderPack(theme);
-  const manualFrames = manualPreview ? [manualPreview] : [];
+  const manualFrames = manualPreview ? [pinnedPreview(manualPreview)] : [];
   const tiles = (frames: SetupDisplayModePreview[], at: number) => {
     // The theme's own picture whenever it can be had; the plain tile is what
     // stays if the theme could not be read, so the step never loses its preview.

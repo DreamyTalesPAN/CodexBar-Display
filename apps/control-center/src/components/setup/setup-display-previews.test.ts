@@ -4,6 +4,7 @@ import { buildFrameData, renderTextPrimitive } from "../live-vibetv-preview";
 import {
   displayPreviewFor,
   displayPreviewsFor,
+  pinnedPreview,
   providerSlotsFor,
   withResetTrust,
   withActivityExpiry,
@@ -108,16 +109,24 @@ describe("displayPreviewFor: the frame the theme draws", () => {
     });
   });
 
-  it("reads the plain session and weekly figures when there are no windows", () => {
-    expect(displayPreviewFor(provider({}))?.frame?.usageWindows).toMatchObject([
-      { id: "session", percent: 42 },
-      { id: "weekly", percent: 26 },
-    ]);
+  it("keeps a legacy provider's root values but invents no window slots", () => {
+    // /v1/usage without windows: the host frame keeps only the root session and
+    // weekly, so slot-bound rows must stay unavailable here too (Codex on #821).
+    const frame = displayPreviewFor(provider({}))?.frame;
+
+    expect(frame).toMatchObject({ session: 42, weekly: 26 });
+    expect(frame?.usageWindows).toEqual([]);
   });
 
   it("leaves a window the collector could not read out of the frame", () => {
-    const windows = displayPreviewFor(provider({ weeklyUnavailable: true }))
-      ?.frame?.usageWindows;
+    const windows = displayPreviewFor(
+      provider({
+        windows: [
+          { id: "session", label: "Session", usedPercent: 42, resetSecs: 3600 },
+          { id: "weekly", label: "Weekly", usedPercent: Number.NaN, resetSecs: 7200 },
+        ],
+      }),
+    )?.frame?.usageWindows;
 
     expect(windows).toHaveLength(1);
     expect(windows?.[0].id).toBe("session");
@@ -282,6 +291,18 @@ describe("provider slots in the synthesized frames", () => {
     );
 
     expect(rows.map((row) => row.id)).toEqual(["d"]);
+  });
+
+  it("gives the Manual tile only the pinned provider's row, as the fixed frame does", () => {
+    const previews = displayPreviewsFor(usage, enabled);
+    // The rotation frame carries both rows; the pinned frame only its own.
+    expect(previews[1].frame?.providerSlots).toHaveLength(2);
+    expect(pinnedPreview(previews[1]).frame?.providerSlots).toEqual([
+      { id: "codex", label: "Codex", percent: 12, resetSecs: 10800 },
+    ]);
+    expect(pinnedPreview(previews[0]).frame?.providerSlots).toEqual([
+      { id: "claude", label: "Claude", percent: 55, resetSecs: 3600 },
+    ]);
   });
 
   it("gives a legacy provider without windows no row, even with root resetSecs", () => {
