@@ -8878,3 +8878,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: unavailable token history shows the existing -- state instead of an invented zero.
 - Scope: setup-display-previews.ts and its regression tests; PR #821 only.
 - What's new: none — correct the existing preview's unavailable-state handling.
+
+## 2026-10-21 — #821: release display selection after unavailable usage
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 completed unavailable usage no longer leaves tiles and Continue loading forever)
+- Approved customer-visible result: the existing no-usage tiles appear after an unavailable reading, and Automatic can continue; only the initial usage read or theme-pack load holds the step.
+- Scope: display-mode screen, theme tiles, wizard usage-loading input and their regression tests; PR #821 only.
+- What's new: none — distinguish pending reads from the existing unavailable state with one shared skeleton rule.

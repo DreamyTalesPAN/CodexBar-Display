@@ -144,25 +144,25 @@ describe("Display mode tiles with the active theme", () => {
     expect(url).toContain("specPath=");
   });
 
-  it("shows a skeleton instead of numbers for a provider with no values yet", async () => {
+  it("leaves a provider without values unavailable instead of loading forever", async () => {
     show([live("Claude", 64), noValues("Codex")]);
     await settle();
 
     const [claude, codex] = tiles(0);
     expect(claude.getAttribute("data-state")).toBe("live");
-    expect(codex.getAttribute("data-state")).toBe("skeleton");
+    expect(codex.getAttribute("data-state")).toBe("unavailable");
     expect(codex.textContent).not.toMatch(/\d/);
     expect(codex.querySelector("svg")).toBeNull();
     // Codex waits behind Claude on the one tile until its turn (#821 single tile).
     expect(screen.getByRole("img", { name: "Codex: no usage yet", hidden: true })).toBeTruthy();
   });
 
-  it("shows a skeleton for Manual when its provider has no values", async () => {
+  it("shows the existing no-usage state for Manual when its provider has no values", async () => {
     show([live("Claude", 64)], null);
     await settle();
 
-    expect(tiles(1)).toHaveLength(1);
-    expect(tiles(1)[0].getAttribute("data-state")).toBe("skeleton");
+    expect(tiles(1)).toHaveLength(0);
+    expect(document.querySelectorAll('[data-slot="display-mode-preview"]')[1].textContent).toContain("No usage yet");
   });
 
   it("keeps a skeleton tile while the theme is still loading", () => {

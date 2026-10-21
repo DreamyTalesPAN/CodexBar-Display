@@ -244,7 +244,7 @@ function ThemeTile({
       )}
       data-provider={frame.providerLabel}
       data-slot="display-mode-tile"
-      data-state={data ? "live" : "skeleton"}
+      data-state={data ? "live" : "unavailable"}
       data-visible={active ? "true" : "false"}
     >
       {data ? (
@@ -258,7 +258,7 @@ function ThemeTile({
       ) : (
         <span
           aria-label={`${frame.providerLabel}: no usage yet`}
-          className="block size-full animate-pulse bg-foreground/15"
+          className="block size-full bg-foreground/15"
           role="img"
         />
       )}

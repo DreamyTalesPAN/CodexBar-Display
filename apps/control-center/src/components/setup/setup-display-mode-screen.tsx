@@ -100,6 +100,8 @@ type SetupDisplayModeScreenProps = {
   providers: SetupDisplayModeProvider[];
   /** The choice is being written; the step has not finished yet. */
   saving?: boolean;
+  /** No usage snapshot has been read yet; an unavailable reading is complete. */
+  usageLoading?: boolean;
   selectedProviderId: string | null;
 };
 
@@ -118,15 +120,13 @@ export function SetupDisplayModeScreen({
   onSelectProvider,
   providers,
   saving = false,
+  usageLoading = false,
   selectedProviderId,
 }: SetupDisplayModeScreenProps) {
   const themePack = useThemeRenderPack(theme);
   // Continue waits exactly while a card draws the skeleton, the same rule the
   // tiles use. Unavailable usage is not a skeleton, so it never holds Continue.
-  const rotationCount = rotationFrames(automaticPreview, automaticPreviews, providers).length;
-  const awaitingUsage =
-    tileIsSkeleton(themePack, rotationCount) ||
-    tileIsSkeleton(themePack, manualPreview ? 1 : 0);
+  const awaitingUsage = tileIsSkeleton(themePack, usageLoading);
 
   return (
     <SetupWizardScreen
@@ -155,6 +155,7 @@ export function SetupDisplayModeScreen({
         saving={saving}
         selectedProviderId={selectedProviderId}
         themePack={themePack}
+        usageLoading={usageLoading}
       />
 
       <Button
@@ -195,6 +196,7 @@ type DisplayModeChoiceProps = Pick<
   | "onSelectProvider"
   | "providers"
   | "saving"
+  | "usageLoading"
   | "selectedProviderId"
 > & {
   /** Settings says so when Automatic follows a timer instead of activity. */
@@ -228,6 +230,7 @@ export function DisplayModeChoice({
   onSelectProvider,
   providers,
   saving = false,
+  usageLoading = false,
   selectedProviderId,
   themePack = NO_THEME_PACK,
 }: DisplayModeChoiceProps) {
@@ -241,10 +244,10 @@ export function DisplayModeChoice({
   const tiles = (frames: SetupDisplayModePreview[], at: number) => {
     // The theme's own picture whenever it can be had; the plain tile is what
     // stays if the theme could not be read, so the step never loses its preview.
-    if (tileIsSkeleton(themePack, frames.length)) {
+    if (tileIsSkeleton(themePack, usageLoading)) {
       return <ThemeTileSkeleton count={frames.length} />;
     }
-    if (themePack.pack) {
+    if (themePack.pack && frames[at]?.frame) {
       return (
         <ThemeTileStrip
           frames={frames}
@@ -336,12 +339,11 @@ export function DisplayModeChoice({
 
 /**
  * Whether a card draws the skeleton rather than readings: the theme pack is
- * still loading, or it is in and the card has no provider frames yet. The
+ * still loading, or the usage snapshot has not been read yet. The
  * Continue gate and the tiles both ask this, so they cannot disagree.
  */
-function tileIsSkeleton(themePack: ThemePackLoad, frameCount: number): boolean {
-  if (themePack.status === "loading") return true;
-  return Boolean(themePack.pack) && frameCount === 0;
+function tileIsSkeleton(themePack: ThemePackLoad, usageLoading: boolean): boolean {
+  return themePack.status === "loading" || usageLoading;
 }
 
 /**

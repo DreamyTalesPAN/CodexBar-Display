@@ -196,6 +196,24 @@ describe("SetupWizard: display step tiles", () => {
 // selection. Manual then previewed "No usage yet" and Continue stayed locked,
 // although Claude was the one provider listed under "Show this provider".
 describe("SetupWizard: display step with a saved provider that shows nothing", () => {
+  it("releases the display step when the first usage read has no displayable providers", () => {
+    const props = baseProps({ usage: null, displayProviders: [], automaticPreviews: [] });
+    const { rerender } = render(<SetupWizard {...props} />);
+    const continueButton = () => screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement;
+    expect(continueButton().disabled).toBe(true);
+    expect(document.querySelector('[data-state="skeleton"]')).not.toBeNull();
+
+    const usage = baseProps({}).usage!;
+    rerender(<SetupWizard {...props} usage={{
+      ...usage,
+      providers: usage.providers.map((provider) => ({ ...provider, stale: true, usageUnavailable: true })),
+    }} />);
+
+    expect(document.querySelector('[data-state="skeleton"]')).toBeNull();
+    expect(screen.getAllByText("No usage yet")).toHaveLength(2);
+    expect(continueButton().disabled).toBe(false);
+  });
+
   it("falls back to the first provider that can show usage", async () => {
     const props = baseProps({
       automaticPreviews: [
