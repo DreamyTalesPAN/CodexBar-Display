@@ -8885,6 +8885,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of f314106c and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
 
+## 2026-10-21 — #784: slider keyboard focus ring 2 px olive
+
+- User approval: no visible change – UI approval not needed (#784 slider keyboard focus ring 3px → the shared 2px olive ring decided earlier; token-only)
+- Approved customer-visible result: the slider thumb looks as before for hover and drag; the keyboard focus ring is the shared 2 px olive ring (border plus 1 px ring) like buttons and inputs. Nothing else changes.
+- Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb focus classes), its test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — focus ring classes of the slider thumb, no new text
+
 ## 2026-10-19 — Support: "n of 6 passed" and a Fix link for the usage engine (#795)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Support: "n of 6 passed" and a Fix link for the usage engine (#795)
