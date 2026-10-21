@@ -10,6 +10,7 @@ import {
 } from "./setup-display-mode-screen";
 import { useThemeRenderPack } from "./setup-display-theme-tiles";
 import { pairDisplayPreview } from "./setup-display-previews";
+import { displayPreviewFor, withSentActivity } from "./setup-display-previews";
 
 /** The step loads the theme pack and hands it to the choice, as the wizard does. */
 function Choice(
@@ -154,6 +155,23 @@ describe("Display mode tiles with the active theme", () => {
     for (const card of cards) {
       expect(card.firstElementChild?.getAttribute("data-slot")).toBe("display-mode-preview");
       expect(card.className).toContain("flex-col items-stretch overflow-hidden p-0");
+    }
+  });
+
+  it("renders the retained sent values instead of a grey tile after collection fails", async () => {
+    const sent = live("Codex", 31);
+    const stale = displayPreviewFor({
+      id: "codex", label: "Codex", session: 31, weekly: 0,
+      stale: true, usageUnavailable: true, usageMode: "used",
+    })!;
+    show(withSentActivity([stale], { ok: true, savedAt: sent.frameAt,
+      frame: { ...sent.frame, resetTrust: "offline", resetTrustSecs: 600, resetSource: "codex:primary" },
+    }));
+    await settle();
+
+    for (const card of [0, 1]) {
+      expect(tiles(card)[0].getAttribute("data-state")).toBe("live");
+      expect(tiles(card)[0].textContent).toContain("31");
     }
   });
 

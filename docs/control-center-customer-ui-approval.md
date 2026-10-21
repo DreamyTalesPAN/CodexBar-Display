@@ -11415,6 +11415,97 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of f314106c and this approval record. Pull request branch #780 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
 
+## 2026-10-21 — #780: 3D VibeTV sways once, then stands still (#854)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: #854 the 3D VibeTV in setup sways once and then stays still (Paul decided 21.10. "Nach einer Runde stehen"; not yet seen in a build)
+- Approved customer-visible result: #780 3D VibeTV on the setup screens sways one full cycle after 2.5 s without a touch and then stays still; a drag starts one more cycle. Reduced motion stays still; texts and layout unchanged.
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` (sway loop) and its test `apps/control-center/src/components/vibetv-3d-preview.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #854 not announced to customers
+
+## 2026-10-21 — #780: Back during a firmware write is not overtaken by a late stream recovery (#846)
+
+- User approval: no visible change – UI approval not needed (#780 / #846: Back during a firmware write is no longer overtaken by a late stream recovery)
+- Approved customer-visible result: #780 unchanged; a customer who presses Back during a firmware write stays on the connection choice even if the stream recovers afterwards.
+- Scope: `apps/control-center/src/components/setup/setup-connect.ts` (the Back path ends the run), its test in `apps/control-center/src/components/setup/setup-wizard.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — bug fix that removes a wrong move, not announced to customers
+
+## 2026-10-21 — #780: Only the first VibeTV in the chooser shows the live 3D model (#846)
+
+- User approval: pending — #780 / #846: with several VibeTVs in the chooser only the first row shows the live 3D model, the others a still image of it
+- Approved customer-visible result: with one VibeTV nothing changes; with several, the first row keeps the 3D model and the other rows show the VibeTV photo, so the browser keeps its graphics context and no row ends up with an empty thumbnail.
+- Scope: `apps/control-center/src/components/setup/setup-device-screen.tsx`, its test `setup-device-screen-3d.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #780: Test update for the one-3D-row chooser (#846)
+
+- User approval: no visible change – UI approval not needed (#780 test update for the one-3D-row chooser)
+- Approved customer-visible result: none; the test now expects one live 3D model for the two-VibeTV chooser, matching the app since 2565d584.
+- Scope: `apps/control-center/src/components/setup/setup-3d-preview.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — test-only update
+
+## 2026-10-21 — #780: The flat VibeTV picture no longer flashes before the 3D model
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: #780 setup: the old flat VibeTV picture no longer flashes before the 3D model on "Your VibeTV is live" and in the chooser (Paul 21.10. 7201 feedback: "das komplett löschen einfach")
+- Approved customer-visible result: on "Your VibeTV is live" and in the first row of the chooser the flat VibeTV picture is gone; the area stays empty (same size) until the 3D model is on screen. Without hardware WebGL the flat picture stays as before; rows 2+ of the chooser keep their photo.
+- Scope: `apps/control-center/src/components/setup/setup-3d-preview.tsx`, `setup-device-card.tsx`, `setup-device-screen.tsx`, `setup-live-screen.tsx`, their tests, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #780: approval marker after merging main at 467fd7fb
+
+- User approval: no visible change – UI approval not needed (merge of main (467fd7fb) into #780; the own entries of #780 keep their approvals)
+- Approved customer-visible result: #780 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
+- Scope: the merge of 467fd7fb and this approval record. Pull request branch #780 only, not merged, not released.
+- What's new: none — merge of 467fd7fb, no customer-visible change of its own
+
+## 2026-10-21 — #780: 3D preview follows the selected VibeTV row
+
+- User approval: no visible change – UI approval not needed (bug fix: with several VibeTVs the 3D preview follows the selected VibeTV instead of staying on the first row)
+- Approved customer-visible result: with several VibeTVs in the chooser the 3D model is drawn on the row of the VibeTV that is connected and selected; the first row shows its photo. With nothing connected the first row keeps the 3D model as before.
+- Scope: `apps/control-center/src/components/setup/setup-device-screen.tsx` and its test `setup-device-screen-3d.test.tsx`, plus this approval record. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #780: approval marker after merging main at 35152cc8
+
+- User approval: no visible change – UI approval not needed (merge of main (35152cc8) into #780; the own entries of #780 keep their approvals)
+- Approved customer-visible result: #780 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
+- Scope: the merge of 35152cc8 and this approval record. Pull request branch #780 only, not merged, not released.
+- What's new: none — merge of 35152cc8, no customer-visible change of its own
+
+## 2026-10-21 — #780: Paul's approval of build 7202 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — #780 approval record for build 7202; only the 2 listed 7202 entries of #780 now carry it, everything else stays as it was.
+- Approved customer-visible result: #780 as described in those entries, as seen in build 7202.
+- Scope: #780 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #780 approval record only
+
+## 2026-10-21 — #780: 3D support requires WebGL 2
+
+- User approval: no visible change – UI approval not needed (bug fix: a WebGL 1-only browser is no longer reported as 3D-capable; it keeps the photo fallback, as the pinned three renderer cannot run there)
+- Approved customer-visible result: on a WebGL 1-only machine the setup shows the photo fallback instead of a 3D model that cannot render; with WebGL 2 nothing changes.
+- Scope: `apps/control-center/src/components/vibetv-3d-support.ts` and its test `vibetv-3d-support.test.ts`, plus this approval record. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #780: approval marker after merging main at 3dc0a15b
+
+- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #780; the own entries of #780 keep their approvals)
+- Approved customer-visible result: #780 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
+- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #780 only, not merged, not released.
+- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
+
+## 2026-10-21 — #780: Back keeps the next connection choice explicit
+
+- User approval: no visible change – UI approval not needed (bug fix: Back during pairing keeps a later single-result scan from reconnecting or updating without the customer's next choice)
+- Approved customer-visible result: after Back, setup waits on the existing connection or device choice even if only one path remains; the next explicit Connect or transport choice resumes setup. Initial single-device autoconnect remains unchanged.
+- Scope: `setup-wizard.tsx`, `setup-connection.ts`, and `setup-wizard.test.tsx` under `apps/control-center/src/components/setup`, plus this approval record. Pull request #780 only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #780: failed 3D loading restores the existing preview
+
+- User approval: no visible change – UI approval not needed (bug fix: a real 3D renderer or model-load failure restores the existing photo or live 2D fallback instead of leaving setup artwork blank)
+- Approved customer-visible result: a failed 3D preview behaves like unsupported 3D; the device photo or live 2D preview is visible. Normal 3D loading still shows no flat-picture flash, and the live-screen handover waits until its preview is visible.
+- Scope: `vibetv-3d-preview.tsx` and its test, `setup/setup-device-card.tsx`, `setup/setup-live-screen.tsx`, and `setup/setup-3d-preview.test.tsx` under `apps/control-center/src/components`, plus this approval record. Pull request #780 only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
+
 ## 2026-10-20 — Setup step 11: display mode tiles show the active theme with live values
 
 - User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: Setup step 11: display mode tiles show the active theme with live values — before → after: (1) Automatic shows one tile per provider that is switched on, each the theme picture with that provider's own current values (the one VibeTV is on 104 px and full strength, the others 84 px at 30 % strength, as drawn in frame 22) → before one plain tile of CLAUDE / SESSION / WEEKLY bars that changed provider every 2 seconds; (2) Manual shows one such tile for the chosen provider → before the same plain tile; (3) a provider that has no values yet shows a quiet grey placeholder tile where the picture would be → before the words "No usage yet" or "Usage unavailable"; no example numbers are drawn anywhere, and the app calculates nothing: it shows only what the usage service delivers; (4) while the theme is still being read the tiles show the same placeholders, and if it cannot be read the plain tiles stay as before. Settings keeps its plain tiles for now.
@@ -13047,8 +13138,7 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of e3503bda and this approval record. Pull request branch #840 only, not merged, not released.
 - What's new: none — merge of e3503bda, no customer-visible change of its own
 
-<<<<<<<<< Temporary merge branch 1
-
+<<
 ## 2026-10-19 — #780: approval marker after merging main (v1.0.65 release round + #638)
 
 - User approval: no visible change – UI approval not needed (merge commit into #780; no visible change of its own; entry: #780: approval marker after merging main (v1.0.65 release round + #638))
@@ -13069,16 +13159,14 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #780 as in its own entries plus the entries merged with f314106c; nothing else changes.
 - Scope: the merge of f314106c and this approval record. Pull request branch #780 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
-=========
-
+==
 ## 2026-10-21 — #856: approval marker after merging main at 61f79061
 
 - User approval: no visible change – UI approval not needed (merge of main (61f79061) into #856; the own entries of #856 keep their approvals)
 - Approved customer-visible result: #856 as in its own entries plus the entries merged with 61f79061; nothing else changes.
 - Scope: the merge of 61f79061 and this approval record. Pull request branch #856 only, not merged, not released.
 - What's new: none — merge of 61f79061, no customer-visible change of its own
->>>>>>>>> Temporary merge branch 2
-
+>>
 ## 2026-10-21 — #780: 3D VibeTV sways once, then stands still (#854)
 
 - User approval: pending — #854 the 3D VibeTV in setup sways once and then stays still (Paul decided 21.10. "Nach einer Runde stehen"; not yet seen in a build)
@@ -13135,8 +13223,7 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of f314106c and this approval record. Pull request branch #780 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
 
-<<<<<<<<< Temporary merge branch 1
-
+<<
 ## 2026-10-21 — #821: Codex fixes for the setup display preview
 
 - User approval: no visible change – UI approval not needed (#821 Codex fixes: setup preview no longer invents usage windows and the Manual tile shows only the pinned provider, as the VibeTV does)
@@ -13150,16 +13237,14 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 as in its own entries plus the entries merged with 9702a6ef; nothing else changes.
 - Scope: the merge of 9702a6ef and this approval record. Pull request branch #821 only, not merged, not released.
 - What's new: none — merge of 9702a6ef, no customer-visible change of its own
-=========
-
+==
 ## 2026-10-21 — #780: approval marker after merging main at 467fd7fb
 
 - User approval: no visible change – UI approval not needed (merge of main (467fd7fb) into #780; the own entries of #780 keep their approvals)
 - Approved customer-visible result: #780 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
 - Scope: the merge of 467fd7fb and this approval record. Pull request branch #780 only, not merged, not released.
 - What's new: none — merge of 467fd7fb, no customer-visible change of its own
->>>>>>>>> Temporary merge branch 2
-
+>>
 ## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at 2073aaec
 
 - User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (2073aaec) into #821; the own entries of #821 keep their approvals)
@@ -13202,8 +13287,7 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb focus classes), its test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — focus ring classes of the slider thumb, no new text
 
-<<<<<<<<< Temporary merge branch 1
-
+<<
 ## 2026-10-20 — #816: approval marker after merging claude/group-calm-redesign
 
 - User approval: no visible change – UI approval not needed (#816: approval marker after merging claude/group-calm-redesign: Merge of claude/group-calm-redesign into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
@@ -13238,16 +13322,14 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #816 as in its own entries plus the entries merged with ff601365; nothing else changes.
 - Scope: the merge of ff601365 and this approval record. Pull request branch #816 only, not merged, not released.
 - What's new: none — merge of ff601365, no customer-visible change of its own
-=========
-
+==
 ## 2026-10-21 — #784: approval marker after merging main at 467fd7fb
 
 - User approval: no visible change – UI approval not needed (merge of main (467fd7fb) into #784; the own entries of #784 keep their approvals)
 - Approved customer-visible result: #784 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
 - Scope: the merge of 467fd7fb and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of 467fd7fb, no customer-visible change of its own
->>>>>>>>> Temporary merge branch 2
-
+>>
 ## 2026-10-21 — #816: approval marker after merging claude/group-calm-redesign at ff601365
 
 - User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (ff601365) into #816; the own entries of #816 keep their approvals)
@@ -13462,8 +13544,7 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of e3503bda and this approval record. Pull request branch #840 only, not merged, not released.
 - What's new: none — merge of e3503bda, no customer-visible change of its own
 
-<<<<<<<<< Temporary merge branch 1
-- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
+<<- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
 - User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change))
 - User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
 - User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix of #645, a late settings answer for another VibeTV no longer choose
@@ -13507,8 +13588,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #783 as in its own entries plus the entries merged with f314106c; nothing else changes.
 - Scope: the merge of f314106c and this approval record. Pull request branch #783 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
-=========
-
+==
 ## 2026-10-21 — #856: approval marker after merging main at 61f79061
 
 - User approval: no visible change – UI approval not needed (merge of main (61f79061) into #856; the own entries of #856 keep their approvals)
@@ -14260,29 +14340,25 @@ issue scope, or release permission never implies UI permission.
 ## 2026-10-19 — #783: approval marker after merging main (v1.0.65 release round + #638)
 
 - User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #783: approval marker after merging main (v1.0.65 release round + #638))
->>>>>>>>> Temporary merge branch 2
-- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+>>- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
 
-<<<<<<<<< Temporary merge branch 1
-
+<<
 ## 2026-10-21 — #784: approval marker after merging main at 467fd7fb
 
 - User approval: no visible change – UI approval not needed (merge of main (467fd7fb) into #784; the own entries of #784 keep their approvals)
 - Approved customer-visible result: #784 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
 - Scope: the merge of 467fd7fb and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of 467fd7fb, no customer-visible change of its own
-=========
-
+==
 ## 2026-10-21 — #800: approval marker after merging claude/group-usage at f3cb1c10
 
 - User approval: no visible change – UI approval not needed (merge of claude/group-usage (f3cb1c10) into #800; the own entries of #800 keep their approvals)
 - Approved customer-visible result: #800 as in its own entries plus the entries merged with f3cb1c10; nothing else changes.
 - Scope: the merge of f3cb1c10 and this approval record. Pull request branch #800 only, not merged, not released.
 - What's new: none — merge of f3cb1c10, no customer-visible change of its own
->>>>>>>>> Temporary merge branch 2
-
+>>
 ## 2026-10-21 — #592 on #800: Two at once, Limits on VibeTV
 
 - User approval: pending — #592 two providers at once (Two at once mode, Limits on VibeTV, Two Limits theme); visible parts go to a Claude Design round before Paul sees them
@@ -16033,3 +16109,37 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Keep calm Settings’ Run setup button, spinner-only theme installation and intentionally hidden limits; retain the 3D failure fallback.
 - Scope: Correct the Settings action lookup, remove a superseded progress-bar assertion, expect all hidden limits to remain hidden, and keep the 3D failure test on its existing animation-frame clock.
 - What's new: none — test integration only.
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at 01f8694d
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (01f8694d) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with 01f8694d; nothing else changes.
+- Scope: the merge of 01f8694d and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of 01f8694d, no customer-visible change of its own
+
+## 2026-10-21 — #821: match capped preview fields to the host frame
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 capped legacy lanes, fixed-provider reset rows and plain fallback readings now match the existing host send order; coordinator-authorized three-thread review follow-up)
+- Approved customer-visible result: setup previews show only retained usage windows and their legacy fields, while Manual keeps its own provider row built before the window cap; no new copy, controls or layout.
+- Scope: setup-display-previews.ts, its regression tests and the SetupDisplayModePreview data type; red-first regression checks and scoped local validation only, with no hardware or installed-app changes.
+- What's new: none — correct preview parity with the existing device frame.
+
+## 2026-10-21 — #821: preserve the verified retained device frame
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 after a transient collection failure the preview reuses the matching verified sent frame instead of hiding values still shown by VibeTV; coordinator confirmed follow-up at 16:54 UTC)
+- Approved customer-visible result: Automatic and Manual retain the actual device readings for that provider, including their original offline/stale reset state and remaining trust budget; unavailable or unverified sent frames are never presented as measurements.
+- Scope: setup preview mapping and provider identity, reset-trust preservation, unit regressions and rendered theme-tile regression; no new text, controls, layout or hardware writes.
+- What's new: none — align the failure preview with the host's existing last-good send path.
+
+## 2026-10-21 — #821: append-only full-path scope record
+
+- User approval: no visible change – UI approval not needed (scope record: lists the full paths changed by #821)
+- Approved customer-visible result: none from this documentation correction. The entries “2026-10-21 — #821: Display mode Continue waits while a tile is a skeleton (Codex fix)” and “2026-10-21 — #821: enlarge setup display-mode previews” remain pending; this addendum does not approve their visible results.
+- Scope: docs/control-center-customer-ui-approval.md only; the existing #821 records cover `apps/control-center/src/app/globals.css`, `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/live-vibetv-preview.tsx`, `apps/control-center/src/components/setup/setup-display-mode-screen.test.tsx`, `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `apps/control-center/src/components/setup/setup-display-previews.test.ts`, `apps/control-center/src/components/setup/setup-display-previews.ts`, `apps/control-center/src/components/setup/setup-display-theme-carousel.test.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.test.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, `apps/control-center/src/components/setup/setup-preview-gallery.tsx`, `apps/control-center/src/components/setup/setup-wizard.test.tsx`, `apps/control-center/src/components/setup/setup-wizard.tsx` at 322be47abb49e0b409320e6fbd7086babc52164d. These full paths supplement the existing scope; all original entries are preserved.
+- What's new: none — documentation-only scope correction; no product change or announcement.
+
+## 2026-10-21 — build9: refresh #821 for 7204
+
+- User approval: pending — integrate refreshed #821 into build 7204 with the existing three equally sized setup tiles.
+- Approved customer-visible result: Preserve current setup preview fixes and all three mode cards.
+- Scope: Merge #821, preserve both approval histories and both tile regressions.
+- What's new: none — integration only.

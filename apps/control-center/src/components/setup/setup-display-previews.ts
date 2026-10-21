@@ -1,21 +1,23 @@
 import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
 import { remainingResetSecs, secondsSince } from "@/lib/reset-countdown";
 import { formatReset } from "../usage-screen";
-import type { DisplayFrame } from "../live-vibetv-preview";
+import { buildFrameData, hasRenderableUsage, type DisplayFrame, type DisplayFrameSnapshot } from "../live-vibetv-preview";
 import type { SetupDisplayModePreview } from "./setup-display-mode-screen";
 
-function providerWindowSlots(provider: UsageProviderInfo) {
-  return (provider.windows ?? []).map((window) => ({
-    id: window.id,
-    label: window.label,
-    percent: window.usedPercent,
-    resetSecs: window.resetSecs,
-  }));
+function providerWindowSlots(provider: UsageProviderInfo, maxUsageWindows = 0) {
+  return (provider.windows ?? [])
+    .slice(0, maxUsageWindows > 0 ? maxUsageWindows : undefined)
+    .map((window) => ({
+      id: window.id,
+      label: window.label,
+      percent: window.usedPercent,
+      resetSecs: window.resetSecs,
+    }));
 }
 
-function windowSlotsOf(provider: UsageProviderInfo) {
+function windowSlotsOf(provider: UsageProviderInfo, maxUsageWindows = 0) {
   return provider.windows?.length
-    ? providerWindowSlots(provider)
+    ? providerWindowSlots(provider, maxUsageWindows)
     : [
         provider.sessionUnavailable
           ? null
@@ -179,15 +181,16 @@ export function withResetTrust(
     return frame;
   }
   const basisKnown = Boolean(collectedAt) && !Number.isNaN(new Date(collectedAt!).getTime());
-  const source = resetSourceKey(frame.resetSource ?? frame.provider ?? "");
+  const source = frame.resetSource ?? resetSourceKey(frame.provider ?? "");
   // ApplyResetTrust: a countdown that was positive when read and has run out by
   // the time the frame leaves turns the frame stale -- "Reset unavailable" on
   // the device -- instead of a measured idle account (`hadCountdown`).
   const age = secondsSince(collectedAt, now);
   const ranOut = hasCountdown(frame, 0) && !hasCountdown(frame, age);
-  // ApplyResetTrust: a basis older than the trust horizon (5 h) is stale too,
-  // whatever deadline it still carries (`ResetTrustSec <= 0`).
-  const trustExpired = age >= RESET_TRUST_HORIZON_SECS;
+  // Synthetic frames start with the host's 5 h horizon; a sent frame already
+  // carries its remaining budget and must never receive a fresh one here.
+  const trustBudget = frame.resetTrustSecs ?? RESET_TRUST_HORIZON_SECS;
+  const trustExpired = age >= trustBudget;
   if (!basisKnown || !source || ranOut || trustExpired) {
     return {
       ...frame,
@@ -201,16 +204,16 @@ export function withResetTrust(
   }
   return {
     ...frame,
-    resetTrust: "live",
-    resetTrustSecs: RESET_TRUST_HORIZON_SECS,
+    resetTrust: frame.resetTrust ?? "live",
+    resetTrustSecs: trustBudget,
     resetSource: source,
   };
 }
 
 /**
  * The frame the theme renderer draws for one provider, built only from what
- * the usage service delivered for it. Nothing is calculated here: percentages,
- * labels, reset times and the used/remaining mode are passed through as read.
+ * the usage service delivered for it. Retained windows are projected as in
+ * Frame.Normalize; percentages, labels and the used/remaining mode stay as read.
  * A window the collector could not read is left out, so the renderer shows it
  * as unavailable instead of as a number; a provider with no readable window has
  * no frame at all and the tile draws a placeholder.
@@ -224,22 +227,30 @@ export function displayFrameFor(
   if (provider.stale === true || provider.usageUnavailable === true) {
     return null;
   }
-  const slots = windowSlotsOf(provider);
+  const slots = windowSlotsOf(provider, maxUsageWindows);
   // The same advertised capability used by applyDeviceUsageWindowLimit,
   // before the root reset is projected from the retained windows.
-  const readable = slots.filter((slot) => Number.isFinite(slot.percent))
-    .slice(0, maxUsageWindows > 0 ? maxUsageWindows : undefined);
+  const readable = slots.filter((slot) => Number.isFinite(slot.percent));
   if (!readable.length) {
     return null;
+  }
+  // Frame.Normalize projects named lanes from the retained windows; only a
+  // frame with neither structural lane uses the first two windows by position.
+  let session = readable.find((slot) => slot.id === "session")
+    ?? readable.find((slot) => slot.id === "primary");
+  let weekly = readable.find((slot) => slot.id === "weekly")
+    ?? readable.find((slot) => slot.id === "secondary");
+  if (!session && !weekly) {
+    [session, weekly] = readable;
   }
   return withResetTrust({
     v: 1,
     provider: provider.id,
     label: provider.label,
-    session: provider.session,
-    weekly: provider.weekly,
-    sessionUnavailable: provider.sessionUnavailable === true,
-    weeklyUnavailable: provider.weeklyUnavailable === true,
+    session: provider.windows?.length ? session?.percent ?? 0 : provider.session,
+    weekly: provider.windows?.length ? weekly?.percent ?? 0 : provider.weekly,
+    sessionUnavailable: provider.windows?.length ? !session : provider.sessionUnavailable === true,
+    weeklyUnavailable: provider.windows?.length ? !weekly : provider.weeklyUnavailable === true,
     resetSecs: providerRootResetSecs(provider, readable),
     usageMode: provider.usageMode,
     // A legacy provider has no windows: the frame keeps only its root session
@@ -285,21 +296,25 @@ export function displayPreviewFor(
   provider = { ...provider, windows };
   const frame = displayFrameFor(provider, allProviders, now, maxUsageWindows);
   return {
+    providerId: provider.id,
     providerLabel: provider.label,
     ...(frame ? { frame, frameAt: provider.collectedAt } : {}),
+    // Fixed selection builds its own row before send.go caps usage windows,
+    // including a provider outside Automatic's two cross-provider rows.
+    pinnedFrame: displayFrameFor(provider, [provider], now, maxUsageWindows) ?? undefined,
     resetLabel: unavailable
       ? null
       : formatReset(
           remainingResetSecs(
-            providerRootResetSecs(provider, windowSlotsOf(provider)),
+            providerRootResetSecs(provider, windowSlotsOf(provider, maxUsageWindows)),
             provider.collectedAt,
             now,
           ),
         ),
     windows: provider.windows?.length
-      ? provider.windows.map((window) => ({
+      ? providerWindowSlots(provider, maxUsageWindows).map((window) => ({
           label: window.label,
-          percent: unavailable ? null : window.usedPercent,
+          percent: unavailable ? null : window.percent,
         }))
       : [
           { label: "Session", percent: unavailable || provider.sessionUnavailable ? null : provider.session },
@@ -346,6 +361,7 @@ export function displayPreviewsFor(
         maxUsageWindows,
         hiddenWindows?.[provider.id],
       ) ?? {
+        providerId: provider.id,
         providerLabel: provider.label,
         resetLabel: null,
         windows: [],
@@ -354,22 +370,23 @@ export function displayPreviewsFor(
 }
 
 /**
- * The Manual tile's frame: its rotation frame with only the pinned provider's
- * own row. The host's fixed mode filters the providers to the pinned one before
- * it builds the rows (companion/internal/daemon/selection.go), and the frame's
- * basis is that provider's own reading, so the shift is zero.
+ * The Manual tile uses the same frame builder with fixed provider selection,
+ * before the window cap and reset trust. Only the sent activity is overlaid
+ * afterwards, as it is for Automatic.
  */
 export function pinnedPreview(preview: SetupDisplayModePreview): SetupDisplayModePreview {
-  const frame = preview.frame;
+  const frame = preview.pinnedFrame;
   if (!frame) {
     return preview;
   }
-  const row = providerRowOf(
-    { id: frame.provider ?? "", label: frame.label ?? "", usageMode: frame.usageMode },
-    frame.usageWindows ?? [],
-    0,
-  );
-  return { ...preview, frame: { ...frame, providerSlots: row ? [row] : [] } };
+  return {
+    ...preview,
+    frame: {
+      ...frame,
+      activity: preview.frame?.activity,
+      activityTtlSecs: preview.frame?.activityTtlSecs,
+    },
+  };
 }
 
 /**
@@ -377,29 +394,41 @@ export function pinnedPreview(preview: SetupDisplayModePreview): SetupDisplayMod
  * that frame was for. The daemon decides coding/idle from usage and token deltas
  * after /v1/usage is built, so the device's frame is the only authority; every
  * other provider keeps no verdict (idle), as it would on the device until it is
- * the one being sent.
+ * the one being sent. If collection cannot supply a frame, reuse the matching
+ * verified sent frame, as the host restates lastGood during a transient failure.
  */
 export function withSentActivity(
   previews: SetupDisplayModePreview[],
-  sent: { frame?: DisplayFrame; savedAt?: string } | null | undefined,
+  sent: DisplayFrameSnapshot | null | undefined,
 ): SetupDisplayModePreview[] {
   const provider = sent?.frame?.provider;
   const activity = sent?.frame?.activity;
-  if (!provider || !activity) {
+  if (!provider) {
     return previews;
   }
   // The verdict carries its TTL and the time VibeTV got it, so the tile can let
   // it run out the way the device does (withActivityExpiry).
   const activityTtlSecs = sent.frame?.activityTtlSecs;
-  return previews.map((preview) =>
-    preview.frame?.provider === provider
-      ? {
-          ...preview,
-          activityAt: sent.savedAt,
-          frame: { ...preview.frame, activity, activityTtlSecs },
-        }
-      : preview,
-  );
+  return previews.map((preview) => {
+    if (!preview.frame && preview.providerId === provider && sent.savedAt && hasRenderableUsage(sent)) {
+      const now = new Date();
+      const data = buildFrameData(sent.savedAt, withResetTrust(sent.frame, sent.savedAt, now), now);
+      return {
+        ...preview,
+        frame: sent.frame,
+        frameAt: sent.savedAt,
+        activityAt: sent.savedAt,
+        resetLabel: formatReset(data.resetSecs),
+        windows: data.usageWindows.length ? data.usageWindows.map(({ label, percent }) => ({ label, percent })) : [
+          { label: "Session", percent: data.sessionUnavailable ? null : sent.frame.session ?? null },
+          { label: "Weekly", percent: data.weeklyUnavailable ? null : sent.frame.weekly ?? null },
+        ],
+      };
+    }
+    return preview.frame?.provider === provider && activity
+      ? { ...preview, activityAt: sent.savedAt, frame: { ...preview.frame, activity, activityTtlSecs } }
+      : preview;
+  });
 }
 
 /**
