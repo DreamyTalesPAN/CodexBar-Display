@@ -115,6 +115,8 @@ func main() {
 		err = runOpenControlCenter(args[1:])
 	case "service":
 		err = runService(args[1:])
+	case "agent-hooks":
+		err = runAgentHooks(args[1:])
 	case "prepare-codexbar":
 		err = runPinnedCodexBar(args[1:], false)
 	case "validate-codexbar":
@@ -193,6 +195,7 @@ func printUsage() {
 	fmt.Println("  codexbar-display health")
 	fmt.Println("  codexbar-display open-control-center [--addr 127.0.0.1:47832] [--path /control-center] [--no-open]")
 	fmt.Println("  codexbar-display service <start|stop|status|install|uninstall> [--label <label>] [daemon args for install...]")
+	fmt.Println("  codexbar-display agent-hooks remove")
 	fmt.Println("  codexbar-display version [--short] [--json]")
 	fmt.Println("  codexbar-display upgrade [--port /dev/cu.usbserial-10] [--firmware-env env] [--target-firmware-version x.y.z] [--repo owner/name] [--skip-version-guard]")
 	fmt.Println("  codexbar-display install-update [--target http://<device-ip>] [--manifest-url url] [--confirm-live-update] [--force] [--verbose]")
@@ -626,7 +629,17 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	engine := agentstatus.Start(ctx, agentstatus.BundledDirectory(), runtimepaths.Path(home, "agent-engine"), func() runtimeconfig.AgentActivitySettings {
+	engineDirectory := agentstatus.BundledDirectory()
+	// The engine removes its own hooks, but a build without agent-engine never
+	// starts it. Hooks left by an earlier build then point at nothing (#851).
+	if agentstatus.BundleMissing(engineDirectory) {
+		if removed, err := agentstatus.RemoveObsoleteHooks(agentstatus.ClaudeSettingsPath(home), engineDirectory); err != nil {
+			logf("VibeTV agent hooks could not be cleaned up: %v", err)
+		} else if removed {
+			logf("VibeTV removed agent hooks whose observer is gone")
+		}
+	}
+	engine := agentstatus.Start(ctx, engineDirectory, runtimepaths.Path(home, "agent-engine"), func() runtimeconfig.AgentActivitySettings {
 		cfg, _ := runtimeconfig.Load(home)
 		return cfg.AgentActivitySettings()
 	}, func() {
@@ -1658,6 +1671,28 @@ func runSetup(args []string) error {
 		ValidateOnly: *validateOnly,
 		DryRun:       *dryRun,
 	})
+}
+
+// runAgentHooks lets the Windows uninstaller remove this installation's agent
+// hooks while its files still exist (#851). Other hooks stay untouched.
+func runAgentHooks(args []string) error {
+	if len(args) != 1 || args[0] != "remove" {
+		return errors.New("usage: codexbar-display agent-hooks remove")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	removed, err := agentstatus.RemoveObsoleteHooks(agentstatus.ClaudeSettingsPath(home), agentstatus.BundledDirectory())
+	if err != nil {
+		return err
+	}
+	if removed {
+		fmt.Println("agent hooks: removed")
+	} else {
+		fmt.Println("agent hooks: none")
+	}
+	return nil
 }
 
 func runService(args []string) error {

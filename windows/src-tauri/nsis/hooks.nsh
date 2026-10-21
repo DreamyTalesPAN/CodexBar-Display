@@ -44,6 +44,10 @@
       Abort
   uninstall_runtime_done:
   ${VIBETV_KILL_INSTALLED_COMPANION}
+  ; Agent hooks in Claude Code call node inside $INSTDIR. Remove only this
+  ; installation's hooks before the files go (#851); failure never blocks.
+  nsExec::ExecToLog '"$INSTDIR\codexbar-display.exe" agent-hooks remove'
+  Pop $0
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "VibeTV Control Center"
   Sleep 1500
 !macroend
