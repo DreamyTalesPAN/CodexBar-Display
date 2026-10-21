@@ -9296,3 +9296,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the existing Pace setting stays available during a collection outage; invalid pace data no longer appears as a valid reading, with no new copy or layout.
 - Scope: Settings Pace visibility, Usage pace validation, and regression tests for #800; theme-pack notice validation accepts the firmware's existing footer spellings.
 - What's new: none — corrections to the existing pace behavior only
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at 3af4b175
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (3af4b175) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with 3af4b175; nothing else changes.
+- Scope: the merge of 3af4b175 and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of 3af4b175, no customer-visible change of its own
