@@ -137,7 +137,7 @@ describe("Automatic shows one theme tile that changes provider (#821 single tile
     expect(shown()?.dataset.provider).toBe("Claude");
   });
 
-  it("uses the same native-size device frame in every card, with a half-size narrow fallback", async () => {
+  it("uses one shared frame size and keeps every card in a single row", async () => {
     show(three());
     await settle();
     const previews = document.querySelectorAll('[data-slot="display-mode-preview"]');
@@ -145,8 +145,8 @@ describe("Automatic shows one theme tile that changes provider (#821 single tile
     for (const preview of previews) {
       expect(preview.className).toContain("@container");
       const sizing = preview.firstElementChild as HTMLElement;
-      expect(sizing.className).toContain("size-[120px]");
-      expect(sizing.className).toContain("@min-[240px]:size-[240px]");
+      expect(sizing.className).toContain("size-[var(--display-preview-size,120px)]");
+      expect(sizing.className).toContain("@min-[240px]:size-[var(--display-preview-size,240px)]");
       expect(sizing.style.width).toBe("");
       for (const canvas of preview.querySelectorAll("svg")) {
         expect(canvas.getAttribute("viewBox")).toBe("0 0 240 240");
@@ -154,7 +154,7 @@ describe("Automatic shows one theme tile that changes provider (#821 single tile
       }
     }
     const grid = previews[0].closest("button")?.parentElement;
-    expect(grid?.className).toContain("grid-cols-[repeat(auto-fit,minmax(min(100%,256px),1fr))]");
+    expect(grid?.className).toContain("grid-flow-col auto-cols-fr");
   });
 
   it("keeps exactly one fully visible Automatic frame at rest before and after each fade", async () => {
@@ -177,8 +177,8 @@ describe("Automatic shows one theme tile that changes provider (#821 single tile
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
     show(three());
     for (const tile of [...tiles(0), ...tiles(1)]) {
-      expect(tile.className).toContain("size-[120px]");
-      expect(tile.className).toContain("@min-[240px]:size-[240px]");
+      expect(tile.className).toContain("size-[var(--display-preview-size,120px)]");
+      expect(tile.className).toContain("@min-[240px]:size-[var(--display-preview-size,240px)]");
       expect(tile.parentElement?.className).toContain("@container");
     }
   });
@@ -200,7 +200,7 @@ describe("Automatic shows one theme tile that changes provider (#821 single tile
     const shown = tiles(0).find((tile) => tile.dataset.visible === "true");
     expect(shown?.dataset.provider).toBe("Cursor");
     expect(shown?.dataset.state).toBe("unavailable");
-    expect(shown?.parentElement?.className).toContain("@min-[240px]:size-[240px]");
+    expect(shown?.parentElement?.className).toContain("@min-[240px]:size-[var(--display-preview-size,240px)]");
     expect(shown?.querySelector("svg")).toBeNull();
     expect(shown?.textContent).toBe("");
   });
