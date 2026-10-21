@@ -113,6 +113,28 @@ it("stays closed through a short disconnect and opens again after the signal rec
   expect(result.current[0]).toBe(false);
 });
 
+it("opens again when the Companion sends a WiFi reading without the weak flag", async () => {
+  // The Companion omits `weak` when the signal is fine (omitempty), so a recovery
+  // arrives as a reading with no `weak` key at all.
+  const recovered = {
+    ...wifiDevice(true),
+    health: { ok: true, wifi: { rssi: -60 } },
+  } as DeviceInfo;
+  const { result, rerender } = renderHook(
+    ({ device }) => useWeakWiFiDismissal(device),
+    { initialProps: { device: wifiDevice(true) } },
+  );
+  act(() => result.current[1]());
+  expect(result.current[0]).toBe(true);
+
+  rerender({ device: recovered });
+  await settle();
+  expect(result.current[0]).toBe(false);
+
+  rerender({ device: wifiDevice(true) });
+  expect(result.current[0]).toBe(false);
+});
+
 it("opens again for another device", () => {
   const { result, rerender } = renderHook(
     ({ device }) => useWeakWiFiDismissal(device),

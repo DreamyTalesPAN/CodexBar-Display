@@ -8150,3 +8150,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the approved notice of the block above, unchanged; no new text or layout.
 - Scope: `weak-wifi-dialog.tsx` and its test (dismissal, other-dialog guard), `system-busy-dialog.tsx` (shared other-dialog helper), `control-center-app.tsx` (uses the dismissal hook). Pull request branch only, not merge or release.
 - What's new: none — bug fix, no new entry; the notice keeps its approved wording
+
+## 2026-10-21 — #265: weak WiFi notice, Codex fix for recovery without the weak flag
+
+- User approval: no visible change – UI approval not needed (#861 Codex fix: a WiFi reading without the weak flag counts as recovery)
+- Approved customer-visible result: the approved notice of the blocks above, unchanged; no new text or layout.
+- Scope: `weak-wifi-dialog.tsx` and its test (recovery from a reading without `weak`). Pull request branch only, not merge or release.
+- What's new: none — bug fix, no new entry; the notice keeps its approved wording

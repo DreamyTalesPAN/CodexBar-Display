@@ -34,8 +34,11 @@ export function useWeakWiFiDismissal(
 ): [boolean, () => void] {
   const target = device?.target ?? null;
   const [dismissedFor, setDismissedFor] = useState<string | null>(null);
+  // The Companion omits `weak` when the signal is fine, so a WiFi reading without it is a recovery.
   const recovered =
-    deviceIsCustomerConnected(device) && device.health?.wifi?.weak === false;
+    deviceIsCustomerConnected(device) &&
+    device.health?.wifi !== undefined &&
+    device.health.wifi.weak !== true;
   useEffect(() => {
     if (!recovered) {
       return;
