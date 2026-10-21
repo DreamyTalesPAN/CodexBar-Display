@@ -732,6 +732,13 @@ inline const char* ResetTextFor(bool idle) {
   return idle ? kResetIdleText : kResetUnavailableText;
 }
 
+// Only a countdown is a fixed-width reset footer; the idle and unavailable
+// wordings keep the theme's shrink-fit like any other label.
+inline bool IsResetCountdownText(const char* text) {
+  return std::strcmp(text, kResetIdleText) != 0 &&
+         std::strcmp(text, kResetUnavailableText) != 0;
+}
+
 // The root {reset} token carries no window of its own. It is idle only when
 // every window the frame does carry is idle, so a genuinely stale basis (which
 // leaves no idle window behind) keeps the unavailable wording.
@@ -2075,7 +2082,8 @@ inline bool DrawCompiledPrimitive(
       return false;
     }
     char text[128] = {0};
-    if (RenderCompiledText(scene, primitive, frame, text, sizeof(text), &sink)) {
+    if (RenderCompiledText(scene, primitive, frame, text, sizeof(text), &sink) &&
+        IsResetCountdownText(text)) {
       cmd.fitShrink = false;
     }
     cmd.text = text;

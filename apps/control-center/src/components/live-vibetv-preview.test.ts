@@ -1208,4 +1208,16 @@ describe("displayed-limit reset footer", () => {
     }));
     expect(markup.replace(/<[^>]+>/g, "")).toContain("Weekly resets in 3d 1h");
   });
+  it("shrinks an idle footer without a countdown to fit its width", () => {
+    const fontSize = (spec: ThemePrimitive[]) => {
+      const markup = renderToStaticMarkup(createElement(ThemeSpecPreview, {
+        pack: { themeId: "mini-classic", spec: { p: spec }, assets: {} },
+        status: "ready", themeId: "mini-classic", frame,
+      }));
+      expect(markup.replace(/<[^>]+>/g, "")).toContain("No active session");
+      return Number([...markup.matchAll(/<text[^>]*font-size="([\d.]+)"/g)].at(-1)?.[1]);
+    };
+    const idle = { ...footer, w: 60, s: 2 };
+    expect(fontSize([lane1, { ...idle, ft: "shrink" }])).toBeLessThan(fontSize([lane1, idle]));
+  });
 });

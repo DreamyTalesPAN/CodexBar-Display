@@ -654,6 +654,21 @@ void testFooterKeepsOriginalFontSize() {
   TEST_ASSERT_FALSE(sink.commands.back().fitShrink);
 }
 
+void testIdleFooterStillShrinksToFit() {
+  FrameData frame;
+  frame.usageSlot1Label = "Session";
+  frame.usageSlot1ResetSecs = kResetSecsIdle;
+  frame.usageSlot1Available = true;
+  const char* spec = R"JSON({"v":1,"id":"footer","rev":1,"p":[
+    {"t":"tx","y":30,"sl":1,"v":"{usageSlot1Label}"},
+    {"t":"tx","y":204,"w":60,"f":2,"s":2,"ft":"shrink","sl":1,"v":"Reset in {usageSlot1Reset}"}
+  ]})JSON";
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("No active session", sink.commands.back().text.c_str());
+  TEST_ASSERT_TRUE(sink.commands.back().fitShrink);
+}
+
 // A customer received a VibeTV showing "Resets in Reset unavailable" on the
 // Claude Creature theme: Session at 0% with no active Claude session, so
 // Anthropic sent no session deadline, and the theme's hard-coded "Resets in "
@@ -4549,6 +4564,7 @@ int main() {
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
   RUN_TEST(testFooterUsesFirstDisplayedReset);
   RUN_TEST(testFooterKeepsOriginalFontSize);
+  RUN_TEST(testIdleFooterStillShrinksToFit);
   RUN_TEST(testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix);
   RUN_TEST(testIdleCountdownCollapsesForCompactResetAliases);
   RUN_TEST(testStaleCountdownKeepsTheUnavailableWordingWhileIdleDoesNot);

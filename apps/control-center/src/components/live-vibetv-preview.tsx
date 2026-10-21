@@ -793,12 +793,15 @@ function ThemePrimitiveNode({
       primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
     const font = primitive.font || primitive.f || 1;
     const maxSize = Math.max(1, primitive.fontSize || primitive.s || 1);
+    // Only a countdown footer is fixed-width; idle and unavailable wording still shrinks.
+    const countdownFooter =
+      footer !== null && footer !== RESET_IDLE && footer !== RESET_UNAVAILABLE;
     const size = themeTextFittedSize(
       text,
       font,
       maxSize,
       maxWidth,
-      footer === null && (primitive.fit || primitive.ft) === "shrink",
+      !countdownFooter && (primitive.fit || primitive.ft) === "shrink",
     );
     const fontSize = themeFontSize(font, size);
     return (

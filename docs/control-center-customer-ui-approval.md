@@ -8344,3 +8344,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: At the original footer font size, use “Weekly resets in 3d 1h” when it fits, otherwise “Weekly 3d 1h”; “Resets 3d 1h” is allowed only with one displayed limit. Mini Classic shows “Weekly 3d 1h” at font 2 size 2 in used and remaining mode. Cozy Meadow with idle Session still shows “No active session” at its original font size; Gauge shows “Session 2h 14m”. If no permitted wording fits, retain the font and existing clipping rather than shrink or hide a multi-limit name.
 - Scope: Central firmware and preview footer rendering, font measurement and focused regression tests; no theme-specific cases, provider or hardware changes.
 - What's new: none — preserve the existing footer font size while shortening reset wording.
+
+## 2026-10-21 — #894: Shrink idle reset footers again
+- User approval: no visible change – UI approval not needed (bug fix: idle footer shrinks again as before #894)
+- Approved customer-visible result: Idle "No active session" and "Reset unavailable" footers fit their theme width again by shrinking, as before #894; countdown footers keep their fixed size and wording.
+- Scope: Firmware and Control Center preview footer shrink opt-out limited to countdown wording; focused regression tests in both.
+- What's new: none — restores the pre-#894 shrink for idle and unavailable footers.
