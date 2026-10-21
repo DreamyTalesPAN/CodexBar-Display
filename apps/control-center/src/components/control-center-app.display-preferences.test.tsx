@@ -114,6 +114,7 @@ function startWindow(themes: unknown[] = []) {
     selection: { mode: "automatic", providerIds: [] as string[], configured: true, valid: true },
     providers: [] as (typeof claude)[],
     refuseWrites: false as boolean | "once",
+    refuseUsageWrites: false,
     refuseDisplayWrites: false,
     requests: [] as string[],
     // While set, a read of the display preferences answers late, with the
@@ -216,6 +217,9 @@ function startWindow(themes: unknown[] = []) {
       }
       if (url.endsWith(`/v1/preferences/${usageModePreference.id}`) && method === "PATCH") {
         const { value } = JSON.parse(String(init?.body));
+        if (companion.refuseUsageWrites) {
+          return jsonResponse({ ok: false, error: refused }, 502);
+        }
         companion.usageMode = { ...usageModePreference, value, effectiveValue: value };
         return jsonResponse({ ok: true, item: companion.usageMode });
       }
@@ -1354,6 +1358,39 @@ it("refreshes usage after saving Remaining and ignores a pre-write usage answer"
   expect(window.text()).not.toContain("12%");
   answerNavigation();
   await window.wait(1);
+});
+
+// Found in the leftover audit of #579: changing Used / Remaining left nothing
+// under Recent activity. A saved change names the mode, like Display mode does.
+it("enters a saved Used / Remaining change under Recent activity, and nothing when the save fails", async () => {
+  const window = startWindow();
+  window.companion.providers = [claude];
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  fireEvent.keyDown(screen.getByRole("combobox", { name: "Show" }), { key: "Enter" });
+  fireEvent.keyDown(screen.getByRole("option", { name: "Remaining" }), { key: "Enter" });
+  await window.wait(2);
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await window.wait(1);
+  const entries = () =>
+    within(
+      screen.getByText("Recent activity").closest('[data-slot="card"]') as HTMLElement,
+    )
+      .getAllByRole("listitem")
+      .map((entry) => entry.textContent?.replace(/\d\d:\d\d:\d\d$/, ""));
+  expect(entries()).toContain("Usage display savedRemaining.");
+
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  window.companion.refuseUsageWrites = true;
+  fireEvent.keyDown(screen.getByRole("combobox", { name: "Show" }), { key: "Enter" });
+  fireEvent.keyDown(screen.getByRole("option", { name: "Used" }), { key: "Enter" });
+  await window.wait(2);
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await window.wait(1);
+  expect(entries().filter((entry) => entry?.startsWith("Usage display"))).toEqual(["Usage display savedRemaining."]);
 });
 
 // #895: a fresh Mac has no CodexBar value until the first serve snapshot. The
