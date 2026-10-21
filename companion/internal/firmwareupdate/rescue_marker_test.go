@@ -1,7 +1,11 @@
 package firmwareupdate
 
 import (
+	"bufio"
+	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -51,7 +55,7 @@ func TestClearRescueMarkerIfUnchangedKeepsAMarkerReplacedAfterInspection(t *test
 		t.Fatal("flagged marker not loaded")
 	}
 	replaced := inspected
-	replaced.ChipNotRead, replaced.ChipMAC, replaced.WriteStartedAt = false, "0000aabb11223344", now.Add(time.Second)
+	replaced.ChipNotRead, replaced.ChipMAC = false, "0000aabb11223344"
 	if err := SaveRescueMarker(home, replaced); err != nil {
 		t.Fatal(err)
 	}
@@ -70,6 +74,77 @@ func TestClearRescueMarkerIfUnchangedKeepsAMarkerReplacedAfterInspection(t *test
 	}
 	if _, ok := LoadRescueMarker(home, now.Add(time.Minute)); ok {
 		t.Fatal("an unchanged flagged marker must be cleared")
+	}
+}
+
+// A separate updater reaches recordChip after the cleaner's final read, before
+// its remove. The save must wait for the delete, then leave its chip marker.
+func TestClearRescueMarkerIfUnchangedKeepsConcurrentChipWrite(t *testing.T) {
+	const childHomeEnv = "VIBETV_TEST_RESCUE_MARKER_HOME"
+	const chip = "0000aabb11223344"
+	if home := os.Getenv(childHomeEnv); home != "" {
+		marker, ok := LoadRescueMarker(home, time.Now())
+		if !ok {
+			t.Fatal("child could not load flagged marker")
+		}
+		marker.ChipNotRead, marker.ChipMAC = false, chip
+		fmt.Println("saving chip marker")
+		if err := SaveRescueMarker(home, marker); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" && runtime.GOOS != "windows" {
+		t.Skip("process locks are only supported on desktop platforms")
+	}
+	home := t.TempDir()
+	testenv.Home(t, home)
+	flagged := RescueMarker{Port: "COM4", TargetFirmware: "1.0.9", ImagePath: "/x", ChipNotRead: true, WriteStartedAt: time.Now()}
+	if err := SaveRescueMarker(home, flagged); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestClearRescueMarkerIfUnchangedKeepsConcurrentChipWrite$")
+	cmd.Env = append(os.Environ(), childHomeEnv+"="+home)
+	cmd.Stderr = os.Stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	finished := false
+	err = clearRescueMarkerIfUnchanged(home, flagged, func() {
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		scanner := bufio.NewScanner(stdout)
+		if !scanner.Scan() || scanner.Text() != "saving chip marker" {
+			_ = cmd.Wait()
+			t.Fatal("child did not reach the chip save")
+		}
+		go func() { done <- cmd.Wait() }()
+		select {
+		case err := <-done:
+			finished = true
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(250 * time.Millisecond):
+			// The shared file lock keeps the save waiting until removal ends.
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !finished {
+		if err := <-done; err != nil {
+			t.Fatalf("chip save did not finish after clearing: %v", err)
+		}
+	}
+	got, ok := LoadRescueMarker(home, time.Now())
+	if !ok || got.ChipMAC != chip || got.ChipNotRead || !got.WriteStartedAt.Equal(flagged.WriteStartedAt) {
+		t.Fatalf("the concurrent chip marker was removed: %+v ok=%v", got, ok)
 	}
 }
 
