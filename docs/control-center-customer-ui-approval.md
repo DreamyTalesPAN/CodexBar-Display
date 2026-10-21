@@ -10128,3 +10128,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: nothing is approved yet. Settings › Display mode lists Automatic, One provider and Two at once as calm radios; One provider shows a "Source" select, Two at once shows "Top" and "Bottom" selects; "Limits on VibeTV" follows directly without a description; the dialogs lose their header icon.
 - Scope: apps/control-center/src/components/settings-screen.tsx and its tests; provider-action-dialog.tsx and usage-screen.tsx without the dialog icon. Local integration branch claude/paultest-592a only.
 - What's new: none — no What's-new entry for this variant yet
+
+## 2026-10-21 — #864: Two Limits theme as Variante B (reduced)
+
+- User approval: pending — theme Two Limits on VibeTV as Paul's pick "Two Limits · Variante B – reduziert: nur Balken, Sätze klein" (Claude Design page "Usage-Skeleton und Two Limits - Runde 21.10"): name + window kind, big percent, thin pace bar, small pace sentence, no reset line; Paul sees it on the device in the next build
+- Approved customer-visible result: the reduced Two Limits layout uses a dark background, large percentages without a mode suffix, thin pace bars and small state-coloured pace sentences. The existing combined provider/window label and mode sit on the left; a small grey provider/system-notice line remains at the bottom. Missing slots stay hidden because the existing theme format has no unavailable-dash binding; the second panel starts below the divider to avoid an overlap. Device review remains pending.
+- Scope: theme-packs/two-limits/theme.json and manifest.json, regenerated dist/theme-packs outputs, apps/control-center/src/theme-packs/two-limits-theme.test.ts and this approval record. No firmware, Companion or app UI change.
+- What's new: none — layout refinement of the existing Two Limits theme; its existing announcement remains unchanged.

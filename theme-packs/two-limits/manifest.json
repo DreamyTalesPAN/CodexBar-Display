@@ -3,7 +3,7 @@
   "schemaVersion": 1,
   "id": "two-limits",
   "name": "Two Limits",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "minFirmware": "1.0.50",
   "usage": "live",
   "requiredCapabilities": [
@@ -12,10 +12,10 @@
     "usage-pace-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/tl-2-c5d9351f.json",
+    "path": "/themes/u/tl-3-1771dc3e.json",
     "file": "theme.json",
-    "bytes": 1573,
-    "sha256": "c5d9351f4c0483ccc92575739c16e410f5806f81c2471ac70d4d7df5cf33466e",
+    "bytes": 1317,
+    "sha256": "1771dc3e632b33add61f487eb9086ff51ed5f2ff507356d3848bdf7f8ed2cdf0",
     "contentType": "application/json"
   },
   "assets": []

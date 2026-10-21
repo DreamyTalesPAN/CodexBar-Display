@@ -22,10 +22,13 @@ type displayStreamInfo struct {
 	Healthy    bool   `json:"healthy"`
 	Running    bool   `json:"running"`
 	LastSentAt string `json:"lastSentAt,omitempty"`
-	Target     string `json:"target,omitempty"`
-	LastTarget string `json:"lastTarget,omitempty"`
-	Detail     string `json:"detail,omitempty"`
-	ErrorCode  string `json:"errorCode,omitempty"`
+	// LastProviderID is the provider of the last frame sent. A Two at once pair
+	// reports its top member.
+	LastProviderID string `json:"lastProviderId,omitempty"`
+	Target         string `json:"target,omitempty"`
+	LastTarget     string `json:"lastTarget,omitempty"`
+	Detail         string `json:"detail,omitempty"`
+	ErrorCode      string `json:"errorCode,omitempty"`
 	// ErrorAt is when the stream last reported ErrorCode. The page compares it
 	// with the end of a firmware update, so an error from before the update is
 	// never taken as the stream coming back (Codex on #829).
@@ -145,6 +148,9 @@ func inspectDisplayStreamAfterRunning(ctx context.Context, target string, notBef
 	stream.LastSentAt = lastSentAt.UTC().Format(time.RFC3339)
 	stream.LastTarget = publicTarget(lastTarget)
 	stream.DeviceID = displayStreamLogValue(frameLine, "deviceId")
+	// A pair frame logs its ids joined by "+" (daemon display_limits.go); the
+	// first one is the top member.
+	stream.LastProviderID, _, _ = strings.Cut(displayStreamLogValue(frameLine, "provider"), "+")
 
 	if samePublicTarget(target, cableDeviceTarget) {
 		if !strings.EqualFold(displayStreamLogValue(frameLine, "transport"), "usb") {
