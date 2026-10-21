@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildThemePack, createBlankThemeSpec } from "@/lib/theme-studio";
 import { writeUserThemes } from "@/lib/theme-studio-storage";
+import type { ProviderItem } from "./provider-picker";
 import type { PreferenceDescriptor } from "./control-center-types";
 import { SettingsScreen, type SettingsScreenProps } from "./settings-screen";
 
@@ -168,4 +169,80 @@ describe("SettingsScreen installed screensaver", () => {
     expect(document.body.textContent).toContain("My Screensaver is installed.");
     expect(screen.getByRole("link", { name: "Choose screensaver" })).toBeTruthy();
   });
+});
+
+describe("SettingsScreen display sources", () => {
+  const item = (providerId: string, label: string): ProviderItem => ({
+    allowsDefault: false,
+    availability: { state: "available" },
+    effectiveValue: true,
+    health: { message: "Ready.", service: "operational", state: "healthy" },
+    id: `codexbar.providers.${providerId}.enabled`,
+    label,
+    owner: "codexbar",
+    providerId,
+    section: "providers",
+    type: "boolean",
+    value: true,
+    writable: true,
+    writeStrategy: "codexbar_command",
+  });
+  const sources = (mode: "fixed" | "pair", providerIds: string[]) => {
+    const onDisplayChange = vi.fn();
+    const base = props();
+    render(
+      <SettingsScreen
+        {...base}
+        providerPicker={{
+          ...base.providerPicker,
+          usage: { providers: ["claude", "codex", "cursor"].map((id) => ({
+            id, label: id, session: 0, weekly: 0, resetSecs: 0, usageMode: "used",
+          })) },
+          display: { mode, providerIds, configured: true, valid: true },
+          items: [item("claude", "Claude"), item("codex", "Codex"), item("cursor", "Cursor")],
+          onDisplayChange,
+        }}
+      />,
+    );
+    return onDisplayChange;
+  };
+
+  it("saves the pair from Provider 1 and Provider 2", () => {
+    const onDisplayChange = sources("pair", ["claude", "codex"]);
+
+    expect(screen.getByRole("combobox", { name: "Provider 1" }).textContent).toBe("Claude");
+    expect(screen.getByRole("combobox", { name: "Provider 2" }).textContent).toBe("Codex");
+    openSelect("Provider 1");
+    choose("Cursor");
+    expect(onDisplayChange).toHaveBeenLastCalledWith(
+      { mode: "pair", providerIds: ["cursor", "codex"] },
+      "cursor",
+    );
+    cleanup();
+    const second = sources("pair", ["claude", "codex"]);
+    openSelect("Provider 2");
+    choose("Cursor");
+    expect(second).toHaveBeenLastCalledWith(
+      { mode: "pair", providerIds: ["claude", "cursor"] },
+      "claude",
+    );
+  });
+
+  it.each([
+    ["Provider 1", "Codex"],
+    ["Provider 2", "Claude"],
+  ])("swaps and saves the full pair when %s picks the other source", (picker, source) => {
+    const onDisplayChange = sources("pair", ["claude", "codex"]);
+
+    expect(screen.queryAllByRole("combobox", { name: /^(Top|Bottom)$/ })).toHaveLength(0);
+    openSelect(picker);
+    choose(source);
+
+    expect(onDisplayChange).toHaveBeenCalledExactlyOnceWith(
+      { mode: "pair", providerIds: ["codex", "claude"] },
+      "codex",
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
 });

@@ -9297,6 +9297,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: displayModeChange in apps/control-center/src/components/control-center-app.tsx (the caller now takes its sentence from it) and its tests in control-center-app.test.ts, plus this approval record. Pull request branch #864 only, not merged, not released.
 - What's new: none — no announcement; the Recent activity sentence is the only change
 
+## 2026-10-21 — #864: Two at once pickers "Provider 1"/"Provider 2", picking the same source swaps (Paul 7202)
+
+- User approval: pending — Paul's 7202 feedback on #864: pickers are called "Provider 1" and "Provider 2"; choosing the other picker's source swaps the two instead of showing "Two at once needs two different providers"; Paul sees the integration in build 7203
+- Approved customer-visible result: nothing is approved yet. Settings and setup name the Two at once pickers "Provider 1" and "Provider 2"; choosing the other picker's source swaps both and saves the distinct pair without the duplicate-provider error. Recent activity keeps "Show <Provider 1> and <Provider 2> at once" with the chosen source names.
+- Scope: setup-display-mode-screen.tsx and Settings/setup interaction tests. Both screens already share the setup swap helper on this branch; keep it and verify saving in both directions. Companion validation and generic error handling stay in place; no dedicated app-side duplicate-provider dialog exists to remove.
+- What's new: none — picker labels and swap regression coverage, no new announcement
+
 ## 2026-10-21 — #864: no "A + B" top line in Two at once (Paul 7202)
 
 - User approval: pending — Paul (21.10.): no "A + B" top line in Two at once on the VibeTV and in its preview; Paul sees it in build 7203
