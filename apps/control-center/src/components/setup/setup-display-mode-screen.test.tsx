@@ -161,6 +161,40 @@ describe("SetupDisplayModeScreen", () => {
     expect(render()).toContain("Continue");
   });
 
+  // Continue waits for the tiles to show usage, not for the step to load: a
+  // skeleton holds it, and an unavailable reading releases it.
+  it("keeps Continue closed while a tile still shows a skeleton", () => {
+    const html = render({
+      automaticPreview: { providerLabel: "Codex", resetLabel: null, windows: [] },
+      manualPreview: null,
+      providers: [codex],
+      theme: { id: "claude-creature" },
+    });
+
+    expect(html).toContain('data-state="skeleton"');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+  });
+
+  it("opens Continue once the tiles show real usage", () => {
+    const html = render({ providers: [codex] });
+
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+  });
+
+  it("opens Continue when the usage is unavailable, so the customer is not stuck", () => {
+    const html = render({
+      automaticPreview: {
+        providerLabel: "Codex",
+        resetLabel: null,
+        windows: [{ label: "Session", percent: null }, { label: "Weekly", percent: null }],
+      },
+      manualPreview: null,
+      providers: [codex],
+    });
+
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+  });
+
   // The screen used to take a second Continue, and a changed selection with
   // it, while the first write was still on its way: two writes raced, the
   // first to answer released the step, and what VibeTV kept was whichever

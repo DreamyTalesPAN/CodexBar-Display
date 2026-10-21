@@ -119,6 +119,13 @@ export function SetupDisplayModeScreen({
   saving = false,
   selectedProviderId,
 }: SetupDisplayModeScreenProps) {
+  // A tile is still a skeleton until its provider has a reading. Unavailable
+  // usage keeps its windows (with null percents), so it never holds Continue.
+  const awaitingUsage = [
+    ...rotationFrames(automaticPreview, automaticPreviews, providers),
+    ...(manualPreview ? [manualPreview] : []),
+  ].some((preview) => preview.windows.length === 0);
+
   return (
     <SetupWizardScreen
       contentWidth="wide"
@@ -162,6 +169,7 @@ export function SetupDisplayModeScreen({
         // the same refused provider.
         disabled={
           saving ||
+          awaitingUsage ||
           (mode === "fixed" &&
             !providers.some((provider) => provider.id === selectedProviderId))
         }
