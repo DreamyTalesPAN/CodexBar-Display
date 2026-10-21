@@ -8731,3 +8731,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: measured zero remains 0% in used and remaining mode; explicit unavailable flags still show missing usage.
 - Scope: setup fallback formatter and serialized-frame regression tests.
 - What's new: none — correct existing zero-value rendering
+
+## 2026-10-21 — #858: separate stale resets from usage availability
+
+- User approval: no visible change – UI approval not needed (bug fix: #858 finding 5, expired reset trust does not discard companion usage)
+- Approved customer-visible result: available percentages remain visible when their countdown is unavailable, including retained Busy readings.
+- Scope: setup fallback formatter and root/window regression tests.
+- What's new: none — correct existing usage and reset rendering

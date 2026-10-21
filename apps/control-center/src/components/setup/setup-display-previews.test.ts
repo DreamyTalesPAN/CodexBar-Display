@@ -49,7 +49,7 @@ describe("displayPreviewFor", () => {
     expect(preview?.windows[1].percent).toBeNull();
   });
 
-  it.each([{ usageUnavailable: true }, { resetTrust: "stale" }, { error: "no usage yet" }])("keeps an unavailable frame unavailable: %j", (flags) => {
+  it.each([{ usageUnavailable: true }, { error: "no usage yet" }])("keeps an unavailable frame unavailable: %j", (flags) => {
     const preview = displayPreviewFor({
       ...flags, resetSecs: 10800,
       usageWindows: [{ id: "weekly", label: "Weekly", percent: 42 }],
@@ -73,6 +73,16 @@ describe("displayPreviewFor", () => {
     expect(displayPreviewFor({ usageWindows: [{ id: "weekly", label: "Weekly" }] })?.windows)
       .toEqual([{ label: "Weekly", percent: null }]);
     expect(displayPreviewFor({ usageUnavailable: true })?.windows.every((window) => window.percent === null)).toBe(true);
+  });
+
+  it.each([false, true])("keeps usage readable when only reset trust is stale (windows: %s)", (windows) => {
+    const preview = displayPreviewFor({
+      provider: "codex", label: "Busy", session: 42, weekly: 26,
+      resetTrust: "stale", resetSecs: 3600,
+      ...(windows ? { usageWindows: [{ id: "session", label: "Session", percent: 42 }, { id: "weekly", label: "Weekly", percent: 26 }] } : {}),
+    });
+    expect(preview?.windows.map((window) => window.percent)).toEqual([42, 26]);
+    expect(preview?.resetLabel).toBeNull();
   });
 
   it("has nothing to draw without a provider", () => {

@@ -20,12 +20,12 @@ export function displayPreviewFor(
     return null;
   }
   // An error frame carries no reading: the same no-usage state as the theme tile.
-  const unavailable = frame.resetTrust === "stale" || frame.usageUnavailable === true || Boolean(frame.error);
+  const unavailable = frame.usageUnavailable === true || Boolean(frame.error);
   return {
     providerLabel: frame.label || frame.provider || "",
     frame,
     frameAt,
-    resetLabel: unavailable
+    resetLabel: unavailable || frame.resetTrust === "stale"
       ? null
       : formatReset(
           remainingResetSecs(
