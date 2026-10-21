@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -853,6 +854,75 @@ func TestNextProviderShortcutKeepsTheHiddenLimits(t *testing.T) {
 	}
 	if len(stored.HiddenWindows["claude"]) != 1 || stored.HiddenWindows["claude"][0] != "session" {
 		t.Fatalf("press dropped the hidden limits: %+v", stored.HiddenWindows)
+	}
+}
+
+// Reading provider settings gives another request time to save its limits.
+// A mode-only write must preserve that newer choice, not its earlier snapshot.
+func TestProviderDisplayModeWritesKeepAnInterveningLimitSave(t *testing.T) {
+	latest := map[string][]string{"claude": {"weekly"}}
+	for _, test := range []struct {
+		name, method, path, body string
+		want                     map[string][]string
+	}{
+		{"shortcut", http.MethodPost, "/v1/provider-display/next", "", latest},
+		{"mode-only PATCH", http.MethodPatch, "/v1/provider-display", `{"mode":"fixed","providerIds":["claude"]}`, latest},
+		{"explicit clear", http.MethodPatch, "/v1/provider-display", `{"mode":"fixed","providerIds":["claude"],"hiddenWindows":{}}`, nil},
+		{"explicit replacement", http.MethodPatch, "/v1/provider-display", `{"mode":"fixed","providerIds":["claude"],"hiddenWindows":{" CLAUDE ":[" SESSION "]}}`, map[string][]string{"claude": {"session"}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			settings := []codexbar.ProviderSetting{
+				{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+				{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			}
+			server, _ := nextProviderServer(t, &runtimeconfig.ProviderDisplayConfig{
+				Mode: providerDisplayModeFixed, ProviderIDs: []string{"codex"},
+				HiddenWindows: map[string][]string{"claude": {"session"}},
+			}, settings, "codex", "codex", "claude")
+			interveningSave := func() {
+				if _, err := server.updateConfig(func(cfg *runtimeconfig.Config) {
+					cfg.ProviderDisplay = &runtimeconfig.ProviderDisplayConfig{
+						Mode: cfg.ProviderDisplay.Mode, ProviderIDs: cfg.ProviderDisplay.ProviderIDs, HiddenWindows: latest,
+					}
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if test.method == http.MethodPost {
+				loadUsage := server.loadUsage
+				server.loadUsage = func(now time.Time) (daemon.PersistedUsage, bool) {
+					interveningSave()
+					return loadUsage(now)
+				}
+			} else {
+				server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+					interveningSave()
+					return settings, nil
+				}
+			}
+			recorder := httptest.NewRecorder()
+			server.Handler().ServeHTTP(recorder, httptest.NewRequest(test.method, test.path, bytes.NewBufferString(test.body)))
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("mode write: status=%d body=%s", recorder.Code, recorder.Body.String())
+			}
+			stored, err := server.config()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(stored.ProviderDisplay.HiddenWindows, test.want) {
+				t.Fatalf("stored hidden limits=%v want %v", stored.ProviderDisplay.HiddenWindows, test.want)
+			}
+			var response providerDisplayResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(runtimeconfig.NormalizeHiddenWindows(response.Selection.HiddenWindows), test.want) {
+				t.Fatalf("response hidden limits=%v want %v", response.Selection.HiddenWindows, test.want)
+			}
+			if response.Selection.Mode != providerDisplayModeFixed || len(response.Selection.ProviderIDs) != 1 || response.Selection.ProviderIDs[0] != "claude" {
+				t.Fatalf("mode change lost: %+v", response.Selection)
+			}
+		})
 	}
 }
 
