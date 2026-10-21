@@ -8859,7 +8859,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-21 — #784: Slider thumb ring grey on hover and drag, olive only for keyboard focus (Codex review)
 
-- User approval: pending — #784 slider thumb: mouse hover/drag shows a neutral grey ring, the olive ring only for keyboard focus (Paul decided 21.10. "Maus grau, Tastatur oliv"; not yet seen in a build)
+- User approval: approved by Paul in the communicator chat, 2026-10-21 12:28: "rest passt so" (build 7201 review) — entry: #784 slider thumb: mouse hover/drag shows a neutral grey ring, the olive ring only for keyboard focus (Paul decided 21.10. "Maus grau, Tastatur oliv"; not yet seen in a build)
 - Approved customer-visible result: the slider thumb shows a grey ring while the mouse hovers over it or drags it; the olive ring appears only when the thumb has keyboard focus. Nothing else changes.
 - Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb ring classes), its new test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull-request branch #784 only, not merged, not released.
 - What's new: none — ring colour of the slider thumb, no new text
@@ -8891,6 +8891,13 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the slider thumb looks as before for hover and drag; the keyboard focus ring is the shared 2 px olive ring (border plus 1 px ring) like buttons and inputs. Nothing else changes.
 - Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb focus classes), its test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — focus ring classes of the slider thumb, no new text
+
+## 2026-10-21 — #784: Paul's approval of build 7201 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 12:28: "rest passt so" (build 7201 review) — #784 approval record for build 7201; only the 7201 point of #784 now carries it, everything else stays as it was.
+- Approved customer-visible result: #784 as described in that entry, as seen in build 7201.
+- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #784 approval record only
 
 ## 2026-10-19 — Appearance: one page with type switch, search, filters and one Create button (#790, #791, #792, #794)
 
