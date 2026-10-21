@@ -9546,3 +9546,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: an off or unverifiable screensaver no longer claims Active; live-theme status keeps its existing rule, with no new text or layout.
 - Scope: screensaver card status and regression tests for disabled, missing and unavailable device evidence. Pull request branch #802 only, not merged, not released.
 - What's new: none — correct an unsupported Active status
+
+## 2026-10-21 — #802: keep Installing on the card belonging to the job
+
+- User approval: no visible change – UI approval not needed (bug fix: #802 install spinner follows the job instead of both selected slots)
+- Approved customer-visible result: only the card being installed shows Installing; the selected card of the other type stays blocked without claiming another install.
+- Scope: reuse the existing per-row install status, remove selection-based install state and add both-direction regression tests. Pull request branch #802 only, not merged, not released.
+- What's new: none — remove the false second installation

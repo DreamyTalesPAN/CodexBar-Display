@@ -230,6 +230,33 @@ it("marks only a verifiably enabled, device-installed screensaver Active", () =>
   expect(nightCard().getByTestId("theme-status-pill").textContent).toBe("Installed");
 });
 
+it.each(["clippy", "night-clock"])("shows Installing only for the %s job, with both slots selected", (themeId) => {
+  const job = plain.find((theme) => theme.themeId === themeId)!;
+  render(
+    <Page
+      busyAction="install"
+      device={{ connected: true, paired: true, ready: true }}
+      installStatus={{
+        phase: "installing", themeId, title: job.title,
+        startedAt: "10:00:00", logs: [],
+      }}
+      selectedThemeId="clippy"
+      selectedScreensaverId="night-clock"
+      standby={{ brightnessPercent: 20, enabled: true, timeoutMinutes: 10 }}
+      themeInstallEnabled
+    />,
+  );
+  expect(screen.getAllByRole("button", { name: "Installing" })).toHaveLength(1);
+  const installing = within(document.getElementById(`catalog-theme-${themeId}`)!)
+    .getByRole("button", { name: "Installing" });
+  expect(installing.querySelector('[data-slot="spinner"]')).not.toBeNull();
+  const otherId = themeId === "clippy" ? "night-clock" : "clippy";
+  const otherCard = within(document.getElementById(`catalog-theme-${otherId}`)!);
+  expect(otherCard.queryByRole("button", { name: "Installing" })).toBeNull();
+  expect(otherCard.getByText("Wait")).toBeTruthy();
+  expect(otherCard.queryByRole("button", { name: "Install" })).toBeNull();
+});
+
 it("searches by name only, ignoring case, and Esc clears the field", () => {
   render(<Page themes={withTags} />);
   const search = screen.getByRole("searchbox", { name: "Search" });
