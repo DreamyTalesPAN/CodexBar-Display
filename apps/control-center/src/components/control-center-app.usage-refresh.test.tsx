@@ -209,7 +209,8 @@ it("ends the Refreshing mark within seconds of the new values", async () => {
   await wait(10);
   fireEvent.click(screen.getByRole("button", { name: "Usage" }));
   await wait(1);
-  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  const notice = () => within(screen.getByRole("dialog", { name: "Token history is unavailable" }));
+  fireEvent.click(notice().getByRole("button", { name: "Refresh" }));
   await wait(1);
   // The Refresh button of the notice dialog says "Refreshing" and is closed while it waits.
   expect(
@@ -225,7 +226,7 @@ it("ends the Refreshing mark within seconds of the new values", async () => {
   companion.refreshing = false;
   await wait(4);
   expect(
-    (screen.getByRole("button", { name: "Refresh" }) as HTMLButtonElement).disabled,
+    (notice().getByRole("button", { name: "Refresh" }) as HTMLButtonElement).disabled,
   ).toBe(false);
 });
 

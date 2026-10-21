@@ -9030,3 +9030,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: A dismissed notice stays closed through missing or unready answers; a ready result with history clears the dismissal so a later new incident can be shown.
 - Scope: ControlCenterApp notice state and polling regression tests; pull request branch only.
 - What's new: none — fixes a repeated notice, no new feature
+
+## 2026-10-21 — #783: Keep Refresh reachable without token history
+
+- User approval: pending — the Usage page keeps its Refresh button when token history is unavailable (after the notice was closed); Paul sees it in the next build
+- Approved customer-visible result: The existing chart-header Refresh icon stays on Usage when the chart is hidden for unavailable history, with the same action and busy state and no new text.
+- Scope: UsageScreen shared Refresh button and regression tests; coordinator decision for pre-review finding 3, pull request branch only.
+- What's new: none — restores access to the existing Refresh action

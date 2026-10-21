@@ -72,6 +72,31 @@ it("stays closed once its owner has dismissed it, and the tiles remain", () => {
   expect(screen.getByLabelText("34% weekly used")).toBeTruthy();
 });
 
+it("keeps the chart Refresh action working after OK with no token history", () => {
+  const onRefresh = vi.fn();
+  const onDismissTokenHistory = vi.fn();
+  const props = { companionStatus: "online" as const, onRefresh, onDismissTokenHistory, usage };
+  const view = render(<UsageScreen {...props} />);
+  fireEvent.click(within(screen.getByRole("dialog", { name: title })).getByRole("button", { name: "OK" }));
+  expect(onDismissTokenHistory).toHaveBeenCalledOnce();
+  view.rerender(<UsageScreen {...props} tokenHistoryDismissed />);
+
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByText("Last 30 days")).toBeNull();
+  const refresh = screen.getByRole("button", { name: "Refresh" }) as HTMLButtonElement;
+  expect(refresh.disabled).toBe(false);
+  fireEvent.click(refresh);
+  expect(onRefresh).toHaveBeenCalledOnce();
+
+  view.rerender(<UsageScreen {...props} tokenHistoryDismissed busyAction="usage" />);
+  expect((screen.getByRole("button", { name: "Refresh" }) as HTMLButtonElement).disabled).toBe(true);
+  view.rerender(<UsageScreen {...props} tokenHistoryDismissed usage={{ ...usage, refresh: { state: "refreshing" } }} />);
+  const pending = screen.getByRole("button", { name: "Refresh" }) as HTMLButtonElement;
+  expect(pending.disabled).toBe(true);
+  fireEvent.click(pending);
+  expect(onRefresh).toHaveBeenCalledOnce();
+});
+
 it("waits while another centred dialog is open", () => {
   render(<UsageScreen centredDialogOpen companionStatus="online" usage={usage} />);
 
