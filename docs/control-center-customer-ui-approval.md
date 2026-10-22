@@ -9599,3 +9599,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: after "Run setup again" the Support report card keeps Copy / Download for the report made before the reset, as before the Support report change of this pull request.
 - Scope: apps/control-center/src/components/control-center-app.tsx, resetSetup no longer clears supportReport. Pull request branch #782 only, not merged, not released.
 - What's new: none — reverts the clearing, no customer-visible change of its own
+
+## 2026-10-22 — #883: Windows one-time hint that VibeTV keeps running in the tray
+
+- User approval: approved by Marcus via the Orchestrator, 2026-10-22, question 125 answer "a" — this exact title and text, shown once at the first close, also once for existing customers after the update.
+- Approved customer-visible result: Windows only. The first close of the Control Center window shows one native message box (information icon, OK button) titled "VibeTV Control Center" with the text "VibeTV keeps running in the tray, so your display stays up to date." followed by a blank line and "To open it again, click the VibeTV icon next to the clock. If you don't see it, click the ^ arrow first." It never shows again (marker tray-hint-shown.txt in the app's local data folder).
+- Scope: windows/src-tauri/src/main.rs, show_tray_hint_once called from hide_after_flush. Pull request #919 only, not merged, not released.
+- What's new: none — one-time hint in the Windows shell, not a Control Center notice
