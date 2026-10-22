@@ -5,16 +5,34 @@
       "balanceReadSucceeded": true,
       "creditsAvailable": true,
       "events": [],
-      "remaining": 62633.92747425,
-      "updatedAt": "2026-10-14T07:41:23Z"
+      "remaining": 62509.16382425,
+      "updatedAt": "2026-10-22T10:03:05Z"
+    },
+    "openaiDashboard": {
+      "accountID": "",
+      "accountPlan": "Pro 20x",
+      "creditEvents": [],
+      "creditsAvailable": true,
+      "creditsRemaining": 62633.92747425,
+      "dailyBreakdown": [],
+      "primaryLimit": {
+        "resetDescription": "Oct 24 at 23:14",
+        "resetsAt": "2026-10-24T21:14:05Z",
+        "usedPercent": 10,
+        "windowMinutes": 10080
+      },
+      "signedInEmail": "redacted@example.com",
+      "subscriptionRenewsAt": "2026-11-09T09:04:37Z",
+      "updatedAt": "2026-10-19T08:54:40Z",
+      "usageBreakdown": []
     },
     "pace": {
       "secondary": {
-        "deltaPercent": 54,
-        "etaSeconds": 40403,
-        "expectedUsedPercent": 16,
+        "deltaPercent": 88,
+        "etaSeconds": 679,
+        "expectedUsedPercent": 11,
         "stage": "farAhead",
-        "summary": "54% in deficit | Expected 16% used | Runs out in 11h 14m",
+        "summary": "88% in deficit | Expected 11% used | Runs out in 12m",
         "willLastToReset": false
       }
     },
@@ -23,44 +41,35 @@
       "secondary": "Weekly"
     },
     "resetCredits": {
-      "available": 3,
-      "nextExpiresAt": "2026-10-22T20:40:12Z"
+      "available": 2,
+      "nextExpiresAt": "2026-10-29T18:57:50Z"
     },
     "source": "oauth",
     "usage": {
       "accountEmail": "redacted@example.com",
       "codexResetCredits": {
-        "availableCount": 3,
+        "availableCount": 2,
         "credits": [
           {
-            "description": "Danke, dass du Codex nutzt! Du hast eine kostenlose Zurücksetzung des Ratenlimits erhalten.",
-            "expires_at": "2026-10-22T20:40:12Z",
-            "granted_at": "2026-09-22T20:40:12Z",
-            "id": "codex-reset-credit-v1-1a0a5866671cc2368a6dc191bc8ccc21b0ba2d2a980fe2bf11807cc0426db808",
-            "reset_type": "codex_rate_limits",
-            "status": "available",
-            "title": "Vollständiges Zurücksetzen"
-          },
-          {
-            "description": "Danke, dass du Codex nutzt! Du hast eine kostenlose Zurücksetzung des Ratenlimits erhalten.",
+            "description": "Thanks for using Codex! You've been granted one free rate limit reset.",
             "expires_at": "2026-10-29T18:57:50Z",
             "granted_at": "2026-09-29T18:57:50Z",
             "id": "codex-reset-credit-v1-f16f8749b30484614e1481087c471306366e7c73707e791776b881f31df444e7",
             "reset_type": "codex_rate_limits",
             "status": "available",
-            "title": "Vollständiges Zurücksetzen"
+            "title": "Full reset"
           },
           {
-            "description": "Danke, dass du Codex nutzt! Du hast eine kostenlose Zurücksetzung des Ratenlimits erhalten.",
+            "description": "Thanks for using Codex! You've been granted one free rate limit reset.",
             "expires_at": "2026-11-06T23:27:33Z",
             "granted_at": "2026-10-07T23:27:33Z",
             "id": "codex-reset-credit-v1-d52f43f2bdfa83515cce6133e9aec900f49bef90372d2a478b4a722927469964",
             "reset_type": "codex_rate_limits",
             "status": "available",
-            "title": "Vollständiges Zurücksetzen"
+            "title": "Full reset"
           }
         ],
-        "updatedAt": "2026-10-14T07:41:23Z"
+        "updatedAt": "2026-10-22T10:03:05Z"
       },
       "dataConfidence": "exact",
       "identity": {
@@ -71,24 +80,24 @@
       "loginMethod": "pro",
       "primary": null,
       "providerCost": {
-        "balance": 62633.92747425,
-        "balanceUpdatedAt": "2026-10-14T07:41:23Z",
+        "balance": 62509.16382425,
+        "balanceUpdatedAt": "2026-10-22T10:03:05Z",
         "currencyCode": "Credits",
         "limit": 0,
         "period": "Extra usage",
-        "updatedAt": "2026-10-14T07:41:23Z",
+        "updatedAt": "2026-10-22T10:03:05Z",
         "used": 0
       },
       "secondary": {
-        "resetDescription": "Oct 20 at 7:30 AM",
-        "resetsAt": "2026-10-20T05:30:11Z",
-        "usedPercent": 70,
+        "resetDescription": "Oct 28 at 4:23\u202fPM",
+        "resetsAt": "2026-10-28T15:23:11Z",
+        "usedPercent": 99,
         "windowMinutes": 10080
       },
       "tertiary": null,
-      "updatedAt": "2026-10-14T07:41:23Z"
+      "updatedAt": "2026-10-22T10:03:05Z"
     },
-    "version": "0.162.0"
+    "version": "0.153.0"
   },
   {
     "error": {
@@ -111,18 +120,20 @@
   {
     "pace": {
       "primary": {
-        "deltaPercent": -39,
-        "expectedUsedPercent": 44,
-        "stage": "farBehind",
-        "summary": "39% in reserve | Expected 44% used | Lasts until reset",
-        "willLastToReset": true
+        "deltaPercent": 21,
+        "etaSeconds": 3572,
+        "expectedUsedPercent": 51,
+        "stage": "farAhead",
+        "summary": "21% in deficit | Expected 51% used | Projected empty in 1h",
+        "willLastToReset": false
       },
       "secondary": {
-        "deltaPercent": -2,
-        "expectedUsedPercent": 12,
-        "stage": "slightlyBehind",
-        "summary": "2% in reserve | Expected 12% used | Lasts until reset",
-        "willLastToReset": true
+        "deltaPercent": 19,
+        "etaSeconds": 191009,
+        "expectedUsedPercent": 28,
+        "stage": "farAhead",
+        "summary": "19% in deficit | Expected 28% used | Runs out in 2d 5h",
+        "willLastToReset": false
       }
     },
     "provider": "claude",
@@ -139,7 +150,7 @@
           "rows": [
             {
               "label": "Limit Reset Credits",
-              "secondaryValue": "Expires Oct 22 at 6:00 PM",
+              "secondaryValue": "Expires 6:00\u202fPM",
               "value": "1 available"
             }
           ]
@@ -166,7 +177,7 @@
           "id": "claude-weekly-scoped-fable",
           "title": "Fable only",
           "window": {
-            "resetsAt": "2026-10-20T11:00:00Z",
+            "resetsAt": "2026-10-27T11:00:00Z",
             "usedPercent": 0,
             "windowMinutes": 10080
           }
@@ -180,9 +191,9 @@
       },
       "loginMethod": "Claude Max 20x",
       "primary": {
-        "resetDescription": "Oct 14 at 12:29PM",
-        "resetsAt": "2026-10-14T10:29:59Z",
-        "usedPercent": 5,
+        "resetDescription": "Oct 22 at 2:30PM",
+        "resetsAt": "2026-10-22T12:30:00Z",
+        "usedPercent": 72,
         "windowMinutes": 300
       },
       "providerCost": {
@@ -190,18 +201,18 @@
         "currencyCode": "EUR",
         "limit": 100,
         "period": "Monthly cap",
-        "updatedAt": "2026-10-14T07:41:24Z",
+        "updatedAt": "2026-10-22T10:03:03Z",
         "used": 0
       },
       "secondary": {
-        "resetDescription": "Oct 20 at 12:59PM",
-        "resetsAt": "2026-10-20T10:59:59Z",
-        "usedPercent": 10,
+        "resetDescription": "Oct 27 at 12:00PM",
+        "resetsAt": "2026-10-27T11:00:00Z",
+        "usedPercent": 47,
         "windowMinutes": 10080
       },
       "subscriptionRenewsAt": "2026-11-07T08:08:43Z",
       "tertiary": null,
-      "updatedAt": "2026-10-14T07:41:26Z"
+      "updatedAt": "2026-10-22T10:03:04Z"
     }
   },
   {
@@ -217,7 +228,7 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "No Cursor session found. If you use Safari, grant CodexBar Full Disk Access in System Settings ▸ Privacy & Security. Please log in to cursor.com in Safari, Chrome, Microsoft Edge, Brave, Arc, Dia, ChatGPT Atlas, Chromium, Helium, Vivaldi, Yandex Browser, Firefox, Firefox Beta, Firefox Developer Edition, Firefox Nightly, Zen, Chrome Beta, Chrome Canary, Arc Beta, Arc Canary, Brave Beta, Brave Nightly, Microsoft Edge Beta, Microsoft Edge Canary, Comet, Aside, Opera, Opera Neon, or Ego Lite. You can also sign in to Cursor from the CodexBar menu (Add / switch account)."
+      "message": "No Cursor session found. If you use Safari, grant CodexBar Full Disk Access in System Settings \u25b8 Privacy & Security. Please log in to cursor.com in Safari, Chrome, Microsoft Edge, Brave, Arc, Dia, ChatGPT Atlas, Chromium, Helium, Vivaldi, Yandex Browser, Firefox, Firefox Beta, Firefox Developer Edition, Firefox Nightly, Zen, Chrome Beta, Chrome Canary, Arc Beta, Arc Canary, Brave Beta, Brave Nightly, Microsoft Edge Beta, Microsoft Edge Canary, Comet, Aside, Opera, Opera Neon, or Ego Lite. You can also sign in to Cursor from the CodexBar menu (Add / switch account)."
     },
     "provider": "cursor",
     "source": "auto"
@@ -253,7 +264,7 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "No Alibaba Token Plan session cookies found in browsers. Sign in to Model Studio/Bailian in Chrome, allow CodexBar to access Chrome Safe Storage in Keychain Access, or paste a manual Cookie header. Safari: Safari cookie file not found."
+      "message": "No Alibaba Token Plan session cookies found in browsers. Sign in to Model Studio/Bailian in Chrome, allow CodexBar to access Chrome Safe Storage in Keychain Access, or paste a manual Cookie header."
     },
     "provider": "alibabatokenplan",
     "source": "auto"
@@ -262,7 +273,7 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "No Qwen Cloud session cookies found in browsers. Sign in to Qwen Cloud in a supported browser, then Refresh to authorize cookie access, or paste a manual Cookie header. Safari: Safari cookie file not found."
+      "message": "No Qwen Cloud session cookies found in browsers. Sign in to Qwen Cloud in a supported browser, then Refresh to authorize cookie access, or paste a manual Cookie header."
     },
     "provider": "qwencloud",
     "source": "auto"
@@ -271,7 +282,7 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "Safari cookie file not found."
+      "message": "No Factory session found. Please log in to app.factory.ai in Safari, Chrome, Microsoft Edge, Brave, Arc, Dia, ChatGPT Atlas, Chromium, Helium, Vivaldi, Yandex Browser, Firefox, Firefox Beta, Firefox Developer Edition, Firefox Nightly, Zen, Chrome Beta, Chrome Canary, Arc Beta, Arc Canary, Brave Beta, Brave Nightly, Microsoft Edge Beta, Microsoft Edge Canary, Comet, Aside, Opera, Opera Neon, or Ego Lite."
     },
     "provider": "factory",
     "source": "auto"
@@ -287,21 +298,57 @@
   },
   {
     "error": {
-      "code": 1,
+      "code": 3,
       "kind": "provider",
-      "message": "Not logged in to Gemini. Run 'gemini' in Terminal to authenticate."
+      "message": "Google no longer supports Gemini CLI OAuth for individual, AI Pro, or Ultra accounts. Enable CodexBar's Antigravity provider, sign in to Antigravity or run `agy`, then refresh."
     },
     "provider": "gemini",
     "source": "auto"
   },
   {
-    "error": {
-      "code": 1,
-      "kind": "provider",
-      "message": "Antigravity language server not detected. Launch Antigravity and retry."
-    },
     "provider": "antigravity",
-    "source": "auto"
+    "rateWindowLabels": {
+      "primary": "Gemini Models",
+      "secondary": "Claude and GPT"
+    },
+    "source": "cli",
+    "usage": {
+      "extraRateWindows": [
+        {
+          "id": "antigravity-quota-summary-gemini-weekly",
+          "title": "Gemini weekly",
+          "window": {
+            "resetsAt": "2026-10-29T10:03:09Z",
+            "usedPercent": 0,
+            "windowMinutes": 10080
+          }
+        },
+        {
+          "id": "antigravity-quota-summary-3p-weekly",
+          "title": "Claude/GPT weekly",
+          "window": {
+            "resetsAt": "2026-10-29T10:03:09Z",
+            "usedPercent": 0,
+            "windowMinutes": 10080
+          }
+        }
+      ],
+      "identity": {
+        "providerID": "antigravity"
+      },
+      "primary": {
+        "resetsAt": "2026-10-29T10:03:09Z",
+        "usedPercent": 0,
+        "windowMinutes": 10080
+      },
+      "secondary": {
+        "resetsAt": "2026-10-29T10:03:09Z",
+        "usedPercent": 0,
+        "windowMinutes": 10080
+      },
+      "tertiary": null,
+      "updatedAt": "2026-10-22T10:03:09Z"
+    }
   },
   {
     "error": {
@@ -316,7 +363,7 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "No Devin session found. Sign in to app.devin.ai in a supported Chromium browser on macOS, then open Usage & Limits. Manual auth: Settings → Providers → Devin → Auth source → Manual (app), or cookieSource=manual in your CLI config (default ~/.config/codexbar/config.json). Setup: https://github.com/steipete/CodexBar/blob/main/docs/devin.md#manual-auth"
+      "message": "No Devin session found. Sign in to app.devin.ai in a supported Chromium browser on macOS, then open Usage & Limits. Manual auth: Settings \u2192 Providers \u2192 Devin \u2192 Auth source \u2192 Manual (app), or cookieSource=manual in your CLI config (default ~/.config/codexbar/config.json). Setup: https://github.com/steipete/CodexBar/blob/main/docs/devin.md#manual-auth"
     },
     "provider": "devin",
     "source": "auto"
@@ -343,7 +390,7 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "ChatGPT Atlas cookie access needs Keychain permission — use Refresh beside Cookie source or Refresh in the provider menu to allow it, or paste a Cookie header in Manual mode."
+      "message": "No Manus session token provided."
     },
     "provider": "manus",
     "source": "auto"
@@ -424,7 +471,7 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "Provider plugin script failed: ChatGPT Atlas cookie access needs Keychain permission — use Refresh beside Cookie source or Refresh in the provider menu to allow it, or paste a Cookie header in Manual mode."
+      "message": "Provider plugin script failed: Provider plugin secret access denied: no session cookies were found for this domain"
     },
     "provider": "t3chat",
     "source": "auto"
@@ -457,102 +504,13 @@
     "source": "auto"
   },
   {
-    "provider": "openrouter",
-    "rateWindowLabels": {
-      "primary": "Credits"
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Enter a regular API key or a Management API key in the API key field, or set OPENROUTER_API_KEY. In Settings, the optional Management API key field does not replace it."
     },
-    "source": "api",
-    "usage": {
-      "details": [
-        {
-          "rows": [
-            {
-              "label": "Remaining",
-              "value": "$19.99"
-            },
-            {
-              "label": "Used",
-              "value": "$340.01"
-            },
-            {
-              "label": "Total added",
-              "value": "$360.00"
-            }
-          ],
-          "title": "Credits"
-        },
-        {
-          "chart": {
-            "kind": "bars",
-            "points": [
-              {
-                "label": "Today",
-                "value": 0
-              },
-              {
-                "label": "This week",
-                "value": 0
-              },
-              {
-                "label": "This month",
-                "value": 0
-              }
-            ],
-            "title": "Key spend",
-            "unit": "USD"
-          },
-          "rows": [
-            {
-              "label": "API key limit",
-              "secondaryValue": "Spending cap, not balance",
-              "value": "$23.00"
-            },
-            {
-              "label": "API key remaining",
-              "value": "$4.61"
-            },
-            {
-              "label": "API key used",
-              "value": "$18.39"
-            },
-            {
-              "label": "Today",
-              "value": "$0.00"
-            },
-            {
-              "label": "This week",
-              "value": "$0.00"
-            },
-            {
-              "label": "This month",
-              "value": "$0.00"
-            }
-          ],
-          "title": "API key"
-        },
-        {
-          "rows": [
-            {
-              "label": "Last 30 days",
-              "secondaryValue": "Management API key not configured",
-              "value": "Unavailable right now"
-            }
-          ],
-          "title": "Spend history"
-        }
-      ],
-      "identity": {
-        "loginMethod": "Balance: $19.99",
-        "providerID": "openrouter"
-      },
-      "loginMethod": "Balance: $19.99",
-      "primary": {
-        "usedPercent": 79.9441726826087
-      },
-      "secondary": null,
-      "tertiary": null,
-      "updatedAt": "2026-10-14T07:41:34Z"
-    }
+    "provider": "openrouter",
+    "source": "auto"
   },
   {
     "error": {
@@ -594,7 +552,7 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "ChatGPT Atlas cookie access needs Keychain permission — use Refresh beside Cookie source or Refresh in the provider menu to allow it, or paste a Cookie header in Manual mode."
+      "message": "Perplexity session token is missing or invalid. Please log into Perplexity in your browser."
     },
     "provider": "perplexity",
     "source": "auto"
@@ -630,7 +588,7 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "ChatGPT Atlas cookie access needs Keychain permission — use Refresh beside Cookie source or Refresh in the provider menu to allow it, or paste a Cookie header in Manual mode."
+      "message": "No Abacus AI session found. Sign in to apps.abacus.ai. Supported browsers: Safari, Chrome, Microsoft Edge, Brave, Arc, Dia, ChatGPT Atlas, Chromium, Helium, Vivaldi, Yandex Browser, Firefox, Firefox Beta, Firefox Developer Edition, Firefox Nightly, Zen, Chrome Beta, Chrome Canary, Arc Beta, Arc Canary, Brave Beta, Brave Nightly, Microsoft Edge Beta, Microsoft Edge Canary, Comet, Aside, Opera, Opera Neon, Ego Lite. Or paste a Cookie header in manual mode."
     },
     "provider": "abacus",
     "source": "auto"
@@ -646,15 +604,40 @@
   },
   {
     "provider": "deepseek",
+    "rateWindowLabels": {
+      "primary": "Balance"
+    },
     "source": "web",
     "usage": {
+      "details": [
+        {
+          "rows": [
+            {
+              "label": "Today",
+              "value": "\u2014 \u00b7 0 tokens"
+            },
+            {
+              "label": "Last 30 days",
+              "value": "$0.0000 \u00b7 0 tokens"
+            },
+            {
+              "label": "Requests",
+              "value": "0"
+            }
+          ],
+          "title": "Usage"
+        }
+      ],
       "identity": {
         "providerID": "deepseek"
       },
-      "primary": null,
+      "primary": {
+        "resetDescription": "$0.00 \u2014 add credits at platform.deepseek.com",
+        "usedPercent": 100
+      },
       "secondary": null,
       "tertiary": null,
-      "updatedAt": "2026-10-14T07:41:37Z"
+      "updatedAt": "2026-10-22T10:03:11Z"
     }
   },
   {
@@ -697,7 +680,7 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "ChatGPT Atlas cookie access needs Keychain permission — use Refresh beside Cookie source or Refresh in the provider menu to allow it, or paste a Cookie header in Manual mode."
+      "message": "Qoder session cookie not found. Sign in to qoder.com or qoder.com.cn. Supported browsers: Safari, Chrome, Microsoft Edge, Brave, Arc, Dia, ChatGPT Atlas, Chromium, Helium, Vivaldi, Yandex Browser, Firefox, Firefox Beta, Firefox Developer Edition, Firefox Nightly, Zen, Chrome Beta, Chrome Canary, Arc Beta, Arc Canary, Brave Beta, Brave Nightly, Microsoft Edge Beta, Microsoft Edge Canary, Comet, Aside, Opera, Opera Neon, Ego Lite. Or paste a Cookie header."
     },
     "provider": "qoder",
     "source": "auto"
@@ -814,7 +797,7 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "ChatGPT Atlas cookie access needs Keychain permission — use Refresh beside Cookie source or Refresh in the provider menu to allow it, or paste a Cookie header in Manual mode."
+      "message": "Sign in to cloud.helmcode.com or cloud.nan.builders. Supported browsers: Safari, Chrome, Microsoft Edge, Brave, Arc, Dia, ChatGPT Atlas, Chromium, Helium, Vivaldi, Yandex Browser, Firefox, Firefox Beta, Firefox Developer Edition, Firefox Nightly, Zen, Chrome Beta, Chrome Canary, Arc Beta, Arc Canary, Brave Beta, Brave Nightly, Microsoft Edge Beta, Microsoft Edge Canary, Comet, Aside, Opera, Opera Neon, Ego Lite. Or paste a Cookie header."
     },
     "provider": "helmcode",
     "source": "auto"
@@ -895,7 +878,7 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "ChatGPT Atlas cookie access needs Keychain permission — use Refresh beside Cookie source or Refresh in the provider menu to allow it, or paste a Cookie header in Manual mode."
+      "message": "X API returned an unrecognized account or dollar balance."
     },
     "provider": "xapi",
     "source": "auto"
@@ -903,10 +886,10 @@
   {
     "pace": {
       "secondary": {
-        "deltaPercent": -63,
-        "expectedUsedPercent": 63,
+        "deltaPercent": -90,
+        "expectedUsedPercent": 90,
         "stage": "farBehind",
-        "summary": "63% in reserve | Expected 63% used | Lasts until reset",
+        "summary": "90% in reserve | Expected 90% used | Lasts until reset",
         "willLastToReset": true
       }
     },
@@ -921,7 +904,7 @@
       "accountOrganization": "Redacted Organization",
       "identity": {
         "accountEmail": "redacted@example.com",
-        "accountID": "17ad872b-594c-8152-b31f-00029313591a",
+        "accountID": "00000000-0000-0000-0000-000000000000",
         "accountOrganization": "Redacted Organization",
         "loginMethod": "Business",
         "providerID": "notion"
@@ -937,7 +920,7 @@
         "windowMinutes": 43200
       },
       "tertiary": null,
-      "updatedAt": "2026-10-14T07:41:39Z"
+      "updatedAt": "2026-10-22T10:03:12Z"
     }
   },
   {
@@ -953,7 +936,7 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "Hermes auth file at /Users/redacted/.hermes/auth.json has no Nous Portal access token. Run `hermes auth add nous` to sign in."
+      "message": "No available fetch strategy for nous."
     },
     "provider": "nous",
     "source": "auto"
@@ -998,7 +981,7 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "ChatGPT Atlas cookie access needs Keychain permission — use Refresh beside Cookie source or Refresh in the provider menu to allow it, or paste a Cookie header in Manual mode."
+      "message": "No Raycast session cookies found. Sign in at www.raycast.com/settings or paste a Cookie header."
     },
     "provider": "raycast",
     "source": "auto"
@@ -1011,7 +994,7 @@
       "primary": null,
       "secondary": null,
       "tertiary": null,
-      "updatedAt": "2026-10-14T07:41:40Z"
+      "updatedAt": "2026-10-22T10:03:14Z"
     }
   },
   {
@@ -1027,7 +1010,7 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "TypeSafe session expired. Sign in again or paste a fresh Cookie header."
+      "message": "No TypeSafe session cookies found. Sign in at console.typesafe.ai/settings/billing or paste a Cookie header."
     },
     "provider": "typesafe",
     "source": "auto"
@@ -1036,7 +1019,7 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "ChatGPT Atlas cookie access needs Keychain permission — use Refresh beside Cookie source or Refresh in the provider menu to allow it, or paste a Cookie header in Manual mode."
+      "message": "Sign in to hyper.charm.land or configure a Charm Hyper API key."
     },
     "provider": "hyper",
     "source": "auto"
@@ -1048,6 +1031,15 @@
       "message": "No available fetch strategy for gitkraken."
     },
     "provider": "gitkraken",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Future AGI requires both FI_API_KEY and FI_SECRET_KEY."
+    },
+    "provider": "futureagi",
     "source": "auto"
   },
   {
@@ -1099,7 +1091,7 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "ChatGPT Atlas cookie access needs Keychain permission — use Refresh beside Cookie source or Refresh in the provider menu to allow it, or paste a Cookie header in Manual mode."
+      "message": "No muse.ai session found. Sign in at muse.ai. Supported browsers: Safari, Chrome, Microsoft Edge, Brave, Arc, Dia, ChatGPT Atlas, Chromium, Helium, Vivaldi, Yandex Browser, Firefox, Firefox Beta, Firefox Developer Edition, Firefox Nightly, Zen, Chrome Beta, Chrome Canary, Arc Beta, Arc Canary, Brave Beta, Brave Nightly, Microsoft Edge Beta, Microsoft Edge Canary, Comet, Aside, Opera, Opera Neon, Ego Lite. Or set a manual Cookie header."
     },
     "provider": "museai",
     "source": "auto"
@@ -1108,7 +1100,7 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "ChatGPT Atlas cookie access needs Keychain permission — use Refresh beside Cookie source or Refresh in the provider menu to allow it, or paste a Cookie header in Manual mode."
+      "message": "Sign in to console.lithosai.cloud. Supported browsers: Safari, Chrome, Microsoft Edge, Brave, Arc, Dia, ChatGPT Atlas, Chromium, Helium, Vivaldi, Yandex Browser, Firefox, Firefox Beta, Firefox Developer Edition, Firefox Nightly, Zen, Chrome Beta, Chrome Canary, Arc Beta, Arc Canary, Brave Beta, Brave Nightly, Microsoft Edge Beta, Microsoft Edge Canary, Comet, Aside, Opera, Opera Neon, Ego Lite. Or paste its Cookie header."
     },
     "provider": "lithosai",
     "source": "auto"
@@ -1144,7 +1136,7 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "ChatGPT Atlas cookie access needs Keychain permission — use Refresh beside Cookie source or Refresh in the provider menu to allow it, or paste a Cookie header in Manual mode."
+      "message": "Sign in to tinyapi.rest. Supported browsers: Safari, Chrome, Microsoft Edge, Brave, Arc, Dia, ChatGPT Atlas, Chromium, Helium, Vivaldi, Yandex Browser, Firefox, Firefox Beta, Firefox Developer Edition, Firefox Nightly, Zen, Chrome Beta, Chrome Canary, Arc Beta, Arc Canary, Brave Beta, Brave Nightly, Microsoft Edge Beta, Microsoft Edge Canary, Comet, Aside, Opera, Opera Neon, Ego Lite. Or set a manual Cookie header."
     },
     "provider": "tinyapi",
     "source": "auto"
@@ -1216,9 +1208,27 @@
     "error": {
       "code": 1,
       "kind": "provider",
-      "message": "ChatGPT Atlas cookie access needs Keychain permission — use Refresh beside Cookie source or Refresh in the provider menu to allow it, or paste a Cookie header in Manual mode."
+      "message": "No Parallel session found. Sign in to platform.parallel.ai. Supported browsers: Safari, Chrome, Microsoft Edge, Brave, Arc, Dia, ChatGPT Atlas, Chromium, Helium, Vivaldi, Yandex Browser, Firefox, Firefox Beta, Firefox Developer Edition, Firefox Nightly, Zen, Chrome Beta, Chrome Canary, Arc Beta, Arc Canary, Brave Beta, Brave Nightly, Microsoft Edge Beta, Microsoft Edge Canary, Comet, Aside, Opera, Opera Neon, Ego Lite. Or paste a Cookie header."
     },
     "provider": "parallel",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Sign in at platform.claude.com. Supported browsers: Safari, Chrome, Microsoft Edge, Brave, Arc, Dia, ChatGPT Atlas, Chromium, Helium, Vivaldi, Yandex Browser, Firefox, Firefox Beta, Firefox Developer Edition, Firefox Nightly, Zen, Chrome Beta, Chrome Canary, Arc Beta, Arc Canary, Brave Beta, Brave Nightly, Microsoft Edge Beta, Microsoft Edge Canary, Comet, Aside, Opera, Opera Neon, Ego Lite. Or paste its Cookie header."
+    },
+    "provider": "claudeplatform",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "No available fetch strategy for munito."
+    },
+    "provider": "munito",
     "source": "auto"
   }
 ]

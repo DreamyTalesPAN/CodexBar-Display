@@ -5,16 +5,34 @@
       "balanceReadSucceeded": true,
       "creditsAvailable": true,
       "events": [],
-      "remaining": 62633.92747425,
-      "updatedAt": "2026-10-14T07:41:42Z"
+      "remaining": 62509.16382425,
+      "updatedAt": "2026-10-22T10:03:16Z"
+    },
+    "openaiDashboard": {
+      "accountID": "",
+      "accountPlan": "Pro 20x",
+      "creditEvents": [],
+      "creditsAvailable": true,
+      "creditsRemaining": 62633.92747425,
+      "dailyBreakdown": [],
+      "primaryLimit": {
+        "resetDescription": "Oct 24 at 23:14",
+        "resetsAt": "2026-10-24T21:14:05Z",
+        "usedPercent": 10,
+        "windowMinutes": 10080
+      },
+      "signedInEmail": "redacted@example.com",
+      "subscriptionRenewsAt": "2026-11-09T09:04:37Z",
+      "updatedAt": "2026-10-19T08:54:40Z",
+      "usageBreakdown": []
     },
     "pace": {
       "secondary": {
-        "deltaPercent": 54,
-        "etaSeconds": 40410,
-        "expectedUsedPercent": 16,
+        "deltaPercent": 88,
+        "etaSeconds": 679,
+        "expectedUsedPercent": 11,
         "stage": "farAhead",
-        "summary": "54% in deficit | Expected 16% used | Runs out in 11h 14m",
+        "summary": "88% in deficit | Expected 11% used | Runs out in 12m",
         "willLastToReset": false
       }
     },
@@ -23,44 +41,35 @@
       "secondary": "Weekly"
     },
     "resetCredits": {
-      "available": 3,
-      "nextExpiresAt": "2026-10-22T20:40:12Z"
+      "available": 2,
+      "nextExpiresAt": "2026-10-29T18:57:50Z"
     },
     "source": "oauth",
     "usage": {
       "accountEmail": "redacted@example.com",
       "codexResetCredits": {
-        "availableCount": 3,
+        "availableCount": 2,
         "credits": [
           {
-            "description": "Danke, dass du Codex nutzt! Du hast eine kostenlose Zurücksetzung des Ratenlimits erhalten.",
-            "expires_at": "2026-10-22T20:40:12Z",
-            "granted_at": "2026-09-22T20:40:12Z",
-            "id": "codex-reset-credit-v1-1a0a5866671cc2368a6dc191bc8ccc21b0ba2d2a980fe2bf11807cc0426db808",
-            "reset_type": "codex_rate_limits",
-            "status": "available",
-            "title": "Vollständiges Zurücksetzen"
-          },
-          {
-            "description": "Danke, dass du Codex nutzt! Du hast eine kostenlose Zurücksetzung des Ratenlimits erhalten.",
+            "description": "Thanks for using Codex! You've been granted one free rate limit reset.",
             "expires_at": "2026-10-29T18:57:50Z",
             "granted_at": "2026-09-29T18:57:50Z",
             "id": "codex-reset-credit-v1-f16f8749b30484614e1481087c471306366e7c73707e791776b881f31df444e7",
             "reset_type": "codex_rate_limits",
             "status": "available",
-            "title": "Vollständiges Zurücksetzen"
+            "title": "Full reset"
           },
           {
-            "description": "Danke, dass du Codex nutzt! Du hast eine kostenlose Zurücksetzung des Ratenlimits erhalten.",
+            "description": "Thanks for using Codex! You've been granted one free rate limit reset.",
             "expires_at": "2026-11-06T23:27:33Z",
             "granted_at": "2026-10-07T23:27:33Z",
             "id": "codex-reset-credit-v1-d52f43f2bdfa83515cce6133e9aec900f49bef90372d2a478b4a722927469964",
             "reset_type": "codex_rate_limits",
             "status": "available",
-            "title": "Vollständiges Zurücksetzen"
+            "title": "Full reset"
           }
         ],
-        "updatedAt": "2026-10-14T07:41:42Z"
+        "updatedAt": "2026-10-22T10:03:16Z"
       },
       "dataConfidence": "exact",
       "identity": {
@@ -71,23 +80,23 @@
       "loginMethod": "pro",
       "primary": null,
       "providerCost": {
-        "balance": 62633.92747425,
-        "balanceUpdatedAt": "2026-10-14T07:41:42Z",
+        "balance": 62509.16382425,
+        "balanceUpdatedAt": "2026-10-22T10:03:16Z",
         "currencyCode": "Credits",
         "limit": 0,
         "period": "Extra usage",
-        "updatedAt": "2026-10-14T07:41:42Z",
+        "updatedAt": "2026-10-22T10:03:16Z",
         "used": 0
       },
       "secondary": {
-        "resetDescription": "Oct 20 at 7:30 AM",
-        "resetsAt": "2026-10-20T05:30:11Z",
-        "usedPercent": 70,
+        "resetDescription": "Oct 28 at 4:23\u202fPM",
+        "resetsAt": "2026-10-28T15:23:11Z",
+        "usedPercent": 99,
         "windowMinutes": 10080
       },
       "tertiary": null,
-      "updatedAt": "2026-10-14T07:41:42Z"
+      "updatedAt": "2026-10-22T10:03:16Z"
     },
-    "version": "0.162.0"
+    "version": "0.153.0"
   }
 ]
