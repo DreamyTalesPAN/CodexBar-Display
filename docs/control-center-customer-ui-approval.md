@@ -10108,3 +10108,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: a connection or disconnect failure keeps its existing message in the existing position, but no longer marks the cleared or replacement key input invalid. No new text or layout is introduced.
 - Scope: `openai-key-form.tsx` and its regression tests; remove the operation-error-to-field-invalid mapping because no current field validation result is available and connection attempts clear the input. Issue #887 item 1 only; item 3 remains untouched, not merged, not released.
 - What's new: none — correct a misleading invalid-field indicator
+
+## 2026-10-22 — #888: approval marker after merging main at 242e4846
+
+- User approval: no visible change – UI approval not needed (merge of main (242e4846) into #888; the own entries of #888 keep their approvals)
+- Approved customer-visible result: #888 as in its own entries plus the entries merged with 242e4846; nothing else changes.
+- Scope: the merge of 242e4846 and this approval record. Pull request branch #888 only, not merged, not released.
+- What's new: none — merge of 242e4846, no customer-visible change of its own
