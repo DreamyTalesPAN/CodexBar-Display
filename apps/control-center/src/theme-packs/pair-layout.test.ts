@@ -59,3 +59,45 @@ describe.each(themes)("%s Two at once", (themeId) => {
     }
   });
 });
+
+describe("wording of the usage mode and the Synthwave pair", () => {
+  const load = (themeId: string) => JSON.parse(readFileSync(path.join(root, `dist/theme-packs/render/${themeId}.json`), "utf8")) as ThemeRenderPack;
+  const single = (usageMode: string) => buildFrameData(clock.toISOString(), {
+    provider: "claude", label: "Claude", usageMode,
+    usageWindows: [
+      { id: "claude:weekly", label: "Session", percent: 41, resetSecs: 262800, pace: { delta: 0, state: "on pace", lasts: true } },
+      { id: "codex:weekly", label: "Weekly", percent: 41, resetSecs: 586800, pace: { delta: -6, state: "reserve", lasts: true } },
+    ],
+  }, clock);
+
+  it("Claude Creature says remaining for what remains, without shrinking the mode word", () => {
+    const pack = load("claude-creature");
+    const frame = single("remaining");
+    const text = renderToStaticMarkup(createElement(ThemeSpecPreview, { pack, themeId: "claude-creature", status: "ready", animate: false, frame })).replace(/<[^>]*>/g, "");
+    expect(text).toContain("remaining");
+    expect(text).not.toContain("left");
+    const modeBoxes = (pack.spec!.p ?? []).filter((p) => p.t === "tx" && p.v === "{usageModeStandalone}");
+    expect(modeBoxes).toHaveLength(2);
+    for (const p of modeBoxes) {
+      const fit = themeTextFit(renderTextPrimitive(p, frame), p.f ?? 1, p.s ?? 1, p.w ?? 0, true, p.h ?? 0);
+      expect(fit.font).toBe(p.f);
+      expect(fit.size).toBe(p.s);
+    }
+  });
+
+  it("Synthwave has no USAGE label, in Two at once and for one provider", () => {
+    const pack = load("synthwave");
+    const pair = buildFrameData(clock.toISOString(), {
+      provider: "claude+codex", label: "", usageMode: "remaining",
+      usageWindows: [
+        { id: "claude:weekly", label: "Claude Weekly", percent: 41, resetSecs: 262800, pace: { delta: 0, state: "on pace", lasts: true } },
+        { id: "codex:weekly", label: "Codex Weekly", percent: 41, resetSecs: 586800, pace: { delta: -6, state: "reserve", lasts: true } },
+      ],
+    }, clock);
+    const pairText = renderToStaticMarkup(createElement(ThemeSpecPreview, { pack, themeId: "synthwave", status: "ready", animate: false, frame: pair })).replace(/<[^>]*>/g, "");
+    expect(pairText).not.toContain("USAGE");
+    expect(pairText.startsWith("remaining")).toBe(true);
+    const singleText = renderToStaticMarkup(createElement(ThemeSpecPreview, { pack, themeId: "synthwave", status: "ready", animate: false, frame: single("remaining") })).replace(/<[^>]*>/g, "");
+    expect(singleText).not.toContain("USAGE");
+  });
+});
