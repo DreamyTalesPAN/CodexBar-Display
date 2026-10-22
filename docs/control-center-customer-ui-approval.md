@@ -8391,7 +8391,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-22 — #877: Show follows a Used / Remaining change made in CodexBar
 
-- User approval: pending — Settings → Show now follows a Used / Remaining change made in CodexBar itself while Settings stays open (next usage poll), instead of keeping the old choice
-- Approved customer-visible result: pending — Show matches the mode CodexBar delivers, together with the percentages and the VibeTV frame.
+- User approval: no visible change – UI approval not needed (bug fix: Show no longer keeps a stale choice after CodexBar's own setting changed; no new text or layout)
+- Approved customer-visible result: none; Show shows the mode CodexBar delivers, as the percentages already did.
 - Scope: control-center-app.tsx (the usage poll in Settings re-reads the display settings) and its test; pull request branch #877 only.
-- What's new: pending — Show stays in step with CodexBar's own Used / Remaining setting
+- What's new: none — bug fix, no customer-visible text or layout change
