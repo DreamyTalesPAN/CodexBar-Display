@@ -1935,7 +1935,7 @@ function displayedResetFooter(
       // A pair label ("Claude Weekly") is longer than the limit name ("Weekly").
       const limit = frame.provider.includes("+") ? window.label.replace(/^\S+ /, "") : window.label;
       const variants = [`${window.label} reset ${duration}`, `${limit} reset ${duration}`];
-      if (slots.size === 1) variants.push(`Resets ${duration}`);
+      variants.push(`Reset ${duration}`);
       const maxWidth = primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
       const font = primitive.font || primitive.f || 1;
       const size = Math.max(1, primitive.fontSize || primitive.s || 1);

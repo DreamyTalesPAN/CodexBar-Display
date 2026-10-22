@@ -2238,8 +2238,6 @@ inline bool RenderDisplayedResetFooter(const CompiledThemeSpec& scene,
     if (!explicitFooter && row.y >= primitive.y) return false;
     displayed[row.usageSlot - 1] = true;
   }
-  size_t displayedCount = 0;
-  for (bool slot : displayed) if (slot) ++displayedCount;
   size_t preferred = kMaxThemeSpecUsageWindows;
   if (!frame.usageUnavailable && SafeText(frame.footerWindow)[0] != '\0') {
     for (size_t i = 0; i < kMaxThemeSpecUsageWindows; ++i) {
@@ -2274,11 +2272,10 @@ inline bool RenderDisplayedResetFooter(const CompiledThemeSpec& scene,
     const char* names[] = {label, limit};
     for (size_t v = 0; v < 2; ++v) {
       std::snprintf(out, outSize, "%s reset %s", names[v], duration);
-      if (ResetFooterFits(sink, primitive, out)) break;
+      if (ResetFooterFits(sink, primitive, out)) return true;
     }
-    if (displayedCount == 1 && !ResetFooterFits(sink, primitive, out)) {
-      std::snprintf(out, outSize, "Resets %s", duration);
-    }
+    // No name fits at the original font: the name goes, the font and the text stay whole.
+    std::snprintf(out, outSize, "Reset %s", duration);
     return true;
   }
   if (!sawDisplayed) return false;

@@ -671,7 +671,7 @@ void testFooterKeepsOriginalFontSize() {
   TEST_ASSERT_EQUAL_STRING("Weekly reset 3d", sink.commands.back().text.c_str());
   TEST_ASSERT_EQUAL_INT(2, sink.commands.back().size);
   TEST_ASSERT_FALSE(sink.commands.back().fitShrink);
-  // A single long label may be dropped; a multi-limit footer must keep it.
+  // A label that fits no width is dropped at the original font, with one limit or several.
   frame.usageSlot2Label = "Long weekly limit";
   const char* single = R"JSON({"v":1,"id":"footer","rev":1,"p":[
     {"t":"tx","y":30,"sl":2,"v":"{usageSlot2Label}"},
@@ -679,14 +679,30 @@ void testFooterKeepsOriginalFontSize() {
   ]})JSON";
   sink.commands.clear();
   TEST_ASSERT_TRUE(renderSpec(single, frame, sink));
-  TEST_ASSERT_EQUAL_STRING("Resets 3d", sink.commands.back().text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Reset 3d", sink.commands.back().text.c_str());
   TEST_ASSERT_EQUAL_INT(2, sink.commands.back().size);
   TEST_ASSERT_FALSE(sink.commands.back().fitShrink);
   sink.commands.clear();
   TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
-  TEST_ASSERT_EQUAL_STRING("Long weekly limit reset 3d", sink.commands.back().text.c_str());
-  // It fits no variant at size 2, so the theme's shrink-fit keeps it unclipped.
-  TEST_ASSERT_TRUE(sink.commands.back().fitShrink);
+  TEST_ASSERT_EQUAL_STRING("Reset 3d", sink.commands.back().text.c_str());
+  TEST_ASSERT_EQUAL_INT(2, sink.commands.back().size);
+  TEST_ASSERT_FALSE(sink.commands.back().fitShrink);
+  // Gauge's 130 px line: a long limit name loses the name, not the font.
+  frame.usageSlot2Label = "Weekly (Sonnet)";
+  const char* gauge = R"JSON({"v":1,"id":"footer","rev":1,"p":[
+    {"t":"tx","y":30,"sl":1,"v":"{usageSlot1Label}"},
+    {"t":"tx","y":30,"sl":2,"v":"{usageSlot2Label}"},
+    {"t":"tx","y":184,"w":130,"f":2,"s":1,"ft":"shrink","sl":2,"b":"usageFooterReset"}
+  ]})JSON";
+  sink.commands.clear();
+  TEST_ASSERT_TRUE(renderSpec(gauge, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Reset 3d", sink.commands.back().text.c_str());
+  TEST_ASSERT_EQUAL_INT(1, sink.commands.back().size);
+  TEST_ASSERT_FALSE(sink.commands.back().fitShrink);
+  frame.usageSlot2Label = "Weekly";
+  sink.commands.clear();
+  TEST_ASSERT_TRUE(renderSpec(gauge, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Weekly reset 3d", sink.commands.back().text.c_str());
 }
 
 void testPairFooterNeverClips() {
@@ -715,7 +731,7 @@ void testPairFooterNeverClips() {
     TEST_ASSERT_EQUAL_STRING("Weekly reset 3d", sink.commands.back().text.c_str());
     TEST_ASSERT_FALSE(sink.commands.back().fitShrink);
   }
-  // When even the limit name does not fit, the theme's shrink-fit applies.
+  // When not even "Reset 3d" fits, the theme's shrink-fit applies.
   const char* tiny = R"JSON({"v":1,"id":"footer","rev":1,"p":[
     {"t":"tx","y":30,"sl":1,"v":"{usageSlot1Label}"},
     {"t":"tx","y":30,"sl":2,"v":"{usageSlot2Label}"},
@@ -723,7 +739,7 @@ void testPairFooterNeverClips() {
   ]})JSON";
   RecordingSink sink;
   TEST_ASSERT_TRUE(renderSpec(tiny, frame, sink));
-  TEST_ASSERT_EQUAL_STRING("Weekly reset 3d", sink.commands.back().text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Reset 3d", sink.commands.back().text.c_str());
   TEST_ASSERT_TRUE(sink.commands.back().fitShrink);
 }
 
@@ -761,14 +777,14 @@ struct FooterWordingCase {
 
 const FooterWordingCase kFooterWordingCases[] = {
   {'C', 'C', 2, 0, false, "Session reset 4d"},
-  {'C', 'C', 2, 200, false, "Session reset 4d"},
+  {'C', 'C', 2, 200, false, "Reset 4d"},
   {'C', 'I', 2, 0, false, "Session reset 4d"},
   {'I', 'C', 2, 300, false, "Weekly reset 3d"},
   {'I', 'C', 2, 200, false, "Weekly reset 3d"},
-  {'C', 'C', 2, 170, false, "Session reset 4d"},
+  {'C', 'C', 2, 170, false, "Reset 4d"},
   {'C', 'C', 2, 0, true, "Reset unavailable"},
   {'C', 'C', 1, 0, false, "Session reset 4d"},
-  {'C', 'C', 1, 170, false, "Resets 4d"},
+  {'C', 'C', 1, 170, false, "Reset 4d"},
   {'I', 'C', 1, 0, false, "No active session"},
   {'E', 'C', 1, 0, false, "Reset unavailable"},
   {'C', 'C', 1, 0, true, "Reset unavailable"},

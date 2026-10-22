@@ -20230,3 +20230,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the line under the ring names the limit and shows only the largest time unit, and switches with the Session/Weekly setting; position, size and fonts are unchanged. A VibeTV on older firmware sees "Firmware update needed" for Gauge.
 - Scope: the usageFooterReset binding in firmware_shared/theme_spec_renderer_core.h and the live preview, the Gauge pack (0.2.5, theme revision 15, requires reset-footer-v1), and the capability check for that requirement in the library and active-theme upgrade.
 - What's new: none — wording only
+
+## 2026-10-22 — #913: Footer reset falls back to "Reset <unit>"
+
+- User approval: pending — a footer reset line too long for its width reads "Reset 3d" at the unchanged font instead of shrinking or being cut off
+- Approved customer-visible result: "<Limit> reset 3d" is shown at the theme's original font when it fits, otherwise "Reset 3d" at the same font, in every theme, with one limit or several (Gauge's 130 px line with "Weekly (Sonnet)" shows "Reset 3d"); the old "Resets 3d" wording is gone.
+- Scope: the footer fallback chain in firmware_shared/theme_spec_renderer_core.h and the matching live preview (displayedResetFooter), with their tests.
+- What's new: none — wording only

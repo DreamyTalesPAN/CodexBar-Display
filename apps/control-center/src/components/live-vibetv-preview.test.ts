@@ -1441,13 +1441,31 @@ describe("displayed-limit reset footer", () => {
     // Cozy Meadow really has only one displayed limit, so Weekly stays hidden.
     expect(renderTextPrimitive(cozy.p.at(-1), frame, cozy.p)).toBe("No active session");
   });
-  it("keeps the name with multiple limits and permits Resets only for one", () => {
+  it("keeps the name while it fits and falls back to Reset <unit> for one or several limits", () => {
     const narrow = { ...footer, f: 1, s: 2, w: 120, ft: "shrink" };
-    expect(renderTextPrimitive(narrow, frame, [lane1, lane2, narrow])).toBe("Weekly reset 3d");
+    expect(renderTextPrimitive(narrow, frame, [lane1, lane2, narrow])).toBe("Reset 3d");
     const single = { ...frame, usageWindows: frame.usageWindows.map(w => ({ ...w, label: "Long weekly limit" })) };
-    expect(renderTextPrimitive({ ...narrow, w: 144 }, single, [lane2])).toBe("Resets 3d");
+    expect(renderTextPrimitive({ ...narrow, w: 144 }, single, [lane2])).toBe("Reset 3d");
     const wide = { ...narrow, w: 300 };
     expect(renderTextPrimitive(wide, frame, [lane1, lane2, wide])).toBe("Weekly reset 3d");
+  });
+  it("drops a long name on Gauge's 130 px line without shrinking or clipping", () => {
+    const gauge = JSON.parse(readFileSync(new URL("../../../../theme-packs/gauge/theme.json", import.meta.url), "utf8"));
+    const line = gauge.p.find((p: ThemePrimitive) => (p.b || p.binding) === "usageFooterReset");
+    const draw = (label: string) => {
+      const labelled = { ...frame, usageWindows: frame.usageWindows.map((w) => ({ ...w, label })) };
+      const markup = renderToStaticMarkup(createElement(ThemeSpecPreview, {
+        pack: { themeId: "gauge", spec: gauge, assets: {} }, status: "ready", themeId: "gauge", frame: labelled,
+      }));
+      return {
+        text: renderTextPrimitive(line, labelled, gauge.p),
+        sizes: new Set([...markup.matchAll(/<text[^>]*font-size="([\d.]+)"/g)].map((m) => m[1])),
+      };
+    };
+    const long = draw("Weekly (Sonnet)");
+    expect(long.text).toBe("Reset 3d");
+    expect(draw("Weekly").text).toBe("Weekly reset 3d");
+    expect(long.sizes).toEqual(draw("Weekly").sizes);
   });
   it("names the first displayed limit with a real reset", () => {
     const markup = renderToStaticMarkup(createElement(ThemeSpecPreview, {
@@ -1540,14 +1558,14 @@ const footerWordingCases: Array<{
   expected: string;
 }> = [
   { first: "C", second: "C", shown: 2, width: 0, untrusted: false, expected: "Session reset 4d" },
-  { first: "C", second: "C", shown: 2, width: 200, untrusted: false, expected: "Session reset 4d" },
+  { first: "C", second: "C", shown: 2, width: 200, untrusted: false, expected: "Reset 4d" },
   { first: "C", second: "I", shown: 2, width: 0, untrusted: false, expected: "Session reset 4d" },
   { first: "I", second: "C", shown: 2, width: 300, untrusted: false, expected: "Weekly reset 3d" },
   { first: "I", second: "C", shown: 2, width: 200, untrusted: false, expected: "Weekly reset 3d" },
-  { first: "C", second: "C", shown: 2, width: 170, untrusted: false, expected: "Session reset 4d" },
+  { first: "C", second: "C", shown: 2, width: 170, untrusted: false, expected: "Reset 4d" },
   { first: "C", second: "C", shown: 2, width: 0, untrusted: true, expected: "Reset unavailable" },
   { first: "C", second: "C", shown: 1, width: 0, untrusted: false, expected: "Session reset 4d" },
-  { first: "C", second: "C", shown: 1, width: 170, untrusted: false, expected: "Resets 4d" },
+  { first: "C", second: "C", shown: 1, width: 170, untrusted: false, expected: "Reset 4d" },
   { first: "I", second: "C", shown: 1, width: 0, untrusted: false, expected: "No active session" },
   { first: "E", second: "C", shown: 1, width: 0, untrusted: false, expected: "Reset unavailable" },
   { first: "C", second: "C", shown: 1, width: 0, untrusted: true, expected: "Reset unavailable" },
