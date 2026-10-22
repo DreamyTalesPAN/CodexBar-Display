@@ -602,11 +602,11 @@ void testFooterUsesFirstDisplayedReset() {
   ]})JSON";
   RecordingSink sink;
   TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
-  TEST_ASSERT_EQUAL_STRING("Weekly resets in 3d 1h", sink.commands.back().text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Weekly reset 3d", sink.commands.back().text.c_str());
   frame.usageSlot1ResetSecs = 360000;
   sink.commands.clear();
   TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
-  TEST_ASSERT_EQUAL_STRING("Session resets in 4d 4h", sink.commands.back().text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Session reset 4d", sink.commands.back().text.c_str());
   frame.usageSlot1ResetSecs = kResetSecsIdle;
   frame.usageSlot2ResetSecs = 0; // expired, not idle
   sink.commands.clear();
@@ -627,6 +627,32 @@ void testFooterUsesFirstDisplayedReset() {
   TEST_ASSERT_EQUAL_STRING("No active session", sink.commands.back().text.c_str());
 }
 
+void testFooterNamesLimitWithLargestUnit() {
+  FrameData frame;
+  frame.usageSlot1Label = "Session";
+  frame.usageSlot1ResetSecs = 3600 + 20 * 60;
+  frame.usageSlot1Available = true;
+  frame.usageSlot2Label = "Weekly";
+  frame.usageSlot2ResetSecs = 5 * 86400 + 3600;
+  frame.usageSlot2Available = true;
+  const char* spec = R"JSON({"v":1,"id":"footer","rev":1,"p":[
+    {"t":"tx","y":30,"sl":1,"v":"{usageSlot1Label}"},
+    {"t":"tx","y":30,"sl":2,"v":"{usageSlot2Label}"},
+    {"t":"tx","y":204,"sl":1,"v":"Reset in {usageSlot1Reset}"}
+  ]})JSON";
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Session reset 1h", sink.commands.back().text.c_str());
+  frame.usageSlot1ResetSecs = 45 * 60;
+  sink.commands.clear();
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Session reset 45m", sink.commands.back().text.c_str());
+  frame.usageSlot1ResetSecs = kResetSecsIdle;
+  sink.commands.clear();
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Weekly reset 5d", sink.commands.back().text.c_str());
+}
+
 void testFooterKeepsOriginalFontSize() {
   FrameData frame;
   frame.usageSlot1Label = "Session";
@@ -642,7 +668,7 @@ void testFooterKeepsOriginalFontSize() {
   ]})JSON";
   RecordingSink sink;
   TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
-  TEST_ASSERT_EQUAL_STRING("Weekly 3d 1h", sink.commands.back().text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Weekly reset 3d", sink.commands.back().text.c_str());
   TEST_ASSERT_EQUAL_INT(2, sink.commands.back().size);
   TEST_ASSERT_FALSE(sink.commands.back().fitShrink);
   // A single long label may be dropped; a multi-limit footer must keep it.
@@ -653,12 +679,12 @@ void testFooterKeepsOriginalFontSize() {
   ]})JSON";
   sink.commands.clear();
   TEST_ASSERT_TRUE(renderSpec(single, frame, sink));
-  TEST_ASSERT_EQUAL_STRING("Resets 3d 1h", sink.commands.back().text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Resets 3d", sink.commands.back().text.c_str());
   TEST_ASSERT_EQUAL_INT(2, sink.commands.back().size);
   TEST_ASSERT_FALSE(sink.commands.back().fitShrink);
   sink.commands.clear();
   TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
-  TEST_ASSERT_EQUAL_STRING("Long weekly limit 3d 1h", sink.commands.back().text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Long weekly limit reset 3d", sink.commands.back().text.c_str());
   // It fits no variant at size 2, so the theme's shrink-fit keeps it unclipped.
   TEST_ASSERT_TRUE(sink.commands.back().fitShrink);
 }
@@ -686,7 +712,7 @@ void testPairFooterNeverClips() {
   for (const char* spec : {creature, battery}) {
     RecordingSink sink;
     TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
-    TEST_ASSERT_EQUAL_STRING("Weekly 3d 1h", sink.commands.back().text.c_str());
+    TEST_ASSERT_EQUAL_STRING("Weekly reset 3d", sink.commands.back().text.c_str());
     TEST_ASSERT_FALSE(sink.commands.back().fitShrink);
   }
   // When even the limit name does not fit, the theme's shrink-fit applies.
@@ -697,7 +723,7 @@ void testPairFooterNeverClips() {
   ]})JSON";
   RecordingSink sink;
   TEST_ASSERT_TRUE(renderSpec(tiny, frame, sink));
-  TEST_ASSERT_EQUAL_STRING("Weekly 3d 1h", sink.commands.back().text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Weekly reset 3d", sink.commands.back().text.c_str());
   TEST_ASSERT_TRUE(sink.commands.back().fitShrink);
 }
 
@@ -734,15 +760,15 @@ struct FooterWordingCase {
 };
 
 const FooterWordingCase kFooterWordingCases[] = {
-  {'C', 'C', 2, 0, false, "Session resets in 4d 4h"},
-  {'C', 'C', 2, 200, false, "Session 4d 4h"},
-  {'C', 'I', 2, 0, false, "Session resets in 4d 4h"},
-  {'I', 'C', 2, 300, false, "Weekly resets in 3d 1h"},
-  {'I', 'C', 2, 200, false, "Weekly 3d 1h"},
-  {'C', 'C', 2, 170, false, "Session 4d 4h"},
+  {'C', 'C', 2, 0, false, "Session reset 4d"},
+  {'C', 'C', 2, 200, false, "Session reset 4d"},
+  {'C', 'I', 2, 0, false, "Session reset 4d"},
+  {'I', 'C', 2, 300, false, "Weekly reset 3d"},
+  {'I', 'C', 2, 200, false, "Weekly reset 3d"},
+  {'C', 'C', 2, 170, false, "Session reset 4d"},
   {'C', 'C', 2, 0, true, "Reset unavailable"},
-  {'C', 'C', 1, 0, false, "Session resets in 4d 4h"},
-  {'C', 'C', 1, 170, false, "Resets 4d 4h"},
+  {'C', 'C', 1, 0, false, "Session reset 4d"},
+  {'C', 'C', 1, 170, false, "Resets 4d"},
   {'I', 'C', 1, 0, false, "No active session"},
   {'E', 'C', 1, 0, false, "Reset unavailable"},
   {'C', 'C', 1, 0, true, "Reset unavailable"},
@@ -5248,16 +5274,16 @@ void testChosenFooterWindow() {
  const char* spec = R"JSON({"v":1,"id":"footer","rev":1,"p":[{"t":"tx","y":20,"sl":1,"v":"{usageSlot1Label}"},{"t":"tx","y":50,"sl":2,"v":"{usageSlot2Label}"},{"t":"tx","y":200,"v":"Reset in {usageSlot1Reset}"}]})JSON";
  RecordingSink chosen;
  TEST_ASSERT_TRUE(renderSpec(spec,frame,chosen));
- TEST_ASSERT_EQUAL_STRING("Weekly resets in 2h 0m",chosen.commands.back().text.c_str());
+ TEST_ASSERT_EQUAL_STRING("Weekly reset 2h",chosen.commands.back().text.c_str());
  frame.usageWindows[1].resetSecs = 0;
  RecordingSink fallback;
  TEST_ASSERT_TRUE(renderSpec(spec,frame,fallback));
- TEST_ASSERT_EQUAL_STRING("Session resets in 1h 0m",fallback.commands.back().text.c_str());
+ TEST_ASSERT_EQUAL_STRING("Session reset 1h",fallback.commands.back().text.c_str());
  frame.usageWindows[1].resetSecs = 7200;
  frame.usageWindows[1].available = false;
  RecordingSink hidden;
  TEST_ASSERT_TRUE(renderSpec(spec,frame,hidden));
- TEST_ASSERT_EQUAL_STRING("Session resets in 1h 0m",hidden.commands.back().text.c_str());
+ TEST_ASSERT_EQUAL_STRING("Session reset 1h",hidden.commands.back().text.c_str());
 }
 
 // The pace bar table, row for row the same as paceBarRows in
@@ -5352,6 +5378,7 @@ int main() {
   RUN_TEST(testTokenAvailabilityFlipRepaintsTokenBindings);
   RUN_TEST(testUsageUnavailableKeepsThemeAndProgress);
   RUN_TEST(testFooterUsesFirstDisplayedReset);
+  RUN_TEST(testFooterNamesLimitWithLargestUnit);
   RUN_TEST(testFooterKeepsOriginalFontSize);
   RUN_TEST(testPairFooterNeverClips);
   RUN_TEST(testIdleFooterStillShrinksToFit);

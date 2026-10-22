@@ -20216,3 +20216,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the usage labels use the same "remaining" wording as the other themes with unchanged font sizes; the text is longer and still fits on the 240 px screen (Gauge wraps a long window name to two lines).
 - Scope: the {usageModeShort} token in firmware_shared/theme_spec_renderer_core.h and the live preview; theme files are unchanged.
 - What's new: none — wording only
+
+## 2026-10-22 — #7208: Reset footer names the limit and its largest unit
+
+- User approval: pending — the theme footer reset reads "Weekly reset 5d" / "Session reset 1h" / "Session reset 45m" instead of "Weekly 5d 1h" or "Weekly resets in 5d 1h"
+- Approved customer-visible result: the footer names the limit followed by "reset" and only the largest time unit, rounded down; it is shorter than before, so it fits where the long form was cut back, with unchanged font sizes.
+- Scope: the footer reset formatter in firmware_shared/theme_spec_renderer_core.h and displayedResetFooter in the live preview, plus their tests. Themes with their own per-limit "resets …" lines (Gauge, Pace Meter) are unchanged.
+- What's new: none — wording only

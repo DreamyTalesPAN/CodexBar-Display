@@ -2255,14 +2255,14 @@ inline bool RenderDisplayedResetFooter(const CompiledThemeSpec& scene,
     if (window.resetSecs <= 0 || frame.usageUnavailable) continue;
     char duration[32] = {};
     FormatDuration(window.resetSecs, duration, sizeof(duration));
+    if (char* space = std::strchr(duration, ' ')) *space = '\0';  // largest unit only
     // A pair label ("Claude Weekly") is longer than the limit name ("Weekly").
     const char* label = SafeText(window.label);
     const char* limit = std::strchr(frame.provider, '+') != nullptr && std::strchr(label, ' ') != nullptr
         ? std::strchr(label, ' ') + 1 : label;
-    const char* formats[] = {"%s resets in %s", "%s %s", "%s %s"};
-    const char* names[] = {label, label, limit};
-    for (size_t v = 0; v < 3; ++v) {
-      std::snprintf(out, outSize, formats[v], names[v], duration);
+    const char* names[] = {label, limit};
+    for (size_t v = 0; v < 2; ++v) {
+      std::snprintf(out, outSize, "%s reset %s", names[v], duration);
       if (ResetFooterFits(sink, primitive, out)) break;
     }
     if (displayedCount == 1 && !ResetFooterFits(sink, primitive, out)) {
