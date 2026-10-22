@@ -96,9 +96,15 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		if len(windows) == 0 {
 			windows = frame.UsageSlots
 		}
+		// CodexBar CLI calls these primary/secondary; its dashboard calls
+		// the same structural windows session/weekly. Preserve the source id.
+		dashboardKind := map[string]string{"primary": "session", "secondary": "weekly"}[cfg.FooterReset]
 		for _, window := range windows {
-			_, kind, paired := strings.Cut(window.ID, ":")
-			if window.ID == cfg.FooterReset || paired && kind == cfg.FooterReset {
+			kind := window.ID
+			if _, pairedKind, paired := strings.Cut(window.ID, ":"); paired {
+				kind = pairedKind
+			}
+			if kind == cfg.FooterReset || dashboardKind != "" && kind == dashboardKind {
 				frame.FooterWindow = window.ID
 				break
 			}

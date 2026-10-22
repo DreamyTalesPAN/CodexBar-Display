@@ -641,7 +641,8 @@ If a board does not emit hello during validation windows, use fallback mode:
 A device advertising `reset-footer-v1` (or `capabilities.theme.supportsResetFooterV1`)
 accepts the optional frame string `footerWindow`, an existing usage-window id.
 The Companion preference `vibetv.display.footerReset` selects CodexBar's `primary`
-(Session reset, default) or `secondary` (Weekly reset) window; pair frames retain
+(Session reset, default) or `secondary` (Weekly reset) window, also matching
+the dashboard kinds `session` and `weekly`; pair frames retain
 their provider-prefixed window id. The Companion omits the field for devices
 without this capability and when no matching window is present. A shared theme
 footer uses the chosen window only when displayed and carrying a trustworthy
