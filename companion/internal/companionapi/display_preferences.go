@@ -10,8 +10,9 @@ import (
 // Used or Remaining is CodexBar's own choice (usageBarsShowUsed); VibeTV keeps
 // no second copy of it (AGENTS.md, CodexBar Integration Boundary).
 const (
-	displayRotatePreferenceID = "vibetv.display.rotateSeconds"
-	displayPacePreferenceID   = "vibetv.display.showPace"
+	displayRotatePreferenceID      = "vibetv.display.rotateSeconds"
+	displayFooterResetPreferenceID = "vibetv.display.footerReset"
+	displayPacePreferenceID        = "vibetv.display.showPace"
 )
 
 // displayPreferenceAdapter serves the VibeTV-owned display preference. It
@@ -23,7 +24,7 @@ type displayPreferenceAdapter struct {
 func (displayPreferenceAdapter) Section() string { return "display" }
 
 func (displayPreferenceAdapter) Owns(settingID string) bool {
-	return settingID == displayRotatePreferenceID || settingID == displayPacePreferenceID
+	return settingID == displayRotatePreferenceID || settingID == displayPacePreferenceID || settingID == displayFooterResetPreferenceID
 }
 
 func (a displayPreferenceAdapter) List(context.Context) ([]preferenceDescriptor, error) {
@@ -31,7 +32,7 @@ func (a displayPreferenceAdapter) List(context.Context) ([]preferenceDescriptor,
 	if err != nil {
 		return nil, err
 	}
-	return []preferenceDescriptor{displayRotateDescriptor(cfg), displayPaceDescriptor(cfg)}, nil
+	return []preferenceDescriptor{displayRotateDescriptor(cfg), displayPaceDescriptor(cfg), displayFooterResetDescriptor(cfg)}, nil
 }
 
 func (a displayPreferenceAdapter) Write(_ context.Context, settingID string, value any) (preferenceDescriptor, error) {
@@ -43,7 +44,11 @@ func (a displayPreferenceAdapter) Write(_ context.Context, settingID string, val
 			return
 		}
 		option, _ := value.(string)
-		cfg.DisplayRotateSeconds, _ = strconv.Atoi(option)
+		if settingID == displayFooterResetPreferenceID {
+			cfg.FooterReset = option
+		} else {
+			cfg.DisplayRotateSeconds, _ = strconv.Atoi(option)
+		}
 	})
 	if err != nil {
 		return preferenceDescriptor{}, err
@@ -53,6 +58,9 @@ func (a displayPreferenceAdapter) Write(_ context.Context, settingID string, val
 	}
 	if settingID == displayPacePreferenceID {
 		return displayPaceDescriptor(cfg), nil
+	}
+	if settingID == displayFooterResetPreferenceID {
+		return displayFooterResetDescriptor(cfg), nil
 	}
 	return displayRotateDescriptor(cfg), nil
 }
@@ -97,5 +105,18 @@ func displayRotateDescriptor(cfg runtimeconfig.Config) preferenceDescriptor {
 		Availability:  preferenceAvailability{State: "available"},
 		WriteStrategy: "vibetv_override",
 		Writable:      true,
+	}
+}
+
+func displayFooterResetDescriptor(cfg runtimeconfig.Config) preferenceDescriptor {
+	value := cfg.FooterReset
+	if value != "secondary" {
+		value = "primary"
+	}
+	return preferenceDescriptor{
+		ID: displayFooterResetPreferenceID, Section: "display", Owner: "vibetv", Type: preferenceTypeEnum,
+		Label: "Reset in footer", Value: value, EffectiveValue: value,
+		Options:      []preferenceOption{{Value: "primary", Label: "Session reset"}, {Value: "secondary", Label: "Weekly reset"}},
+		Availability: preferenceAvailability{State: "available"}, WriteStrategy: "vibetv_override", Writable: true,
 	}
 }

@@ -60,7 +60,8 @@ type Config struct {
 	ProviderSelectionSetupComplete *bool                  `json:"providerSelectionSetupComplete,omitempty"`
 	// DisplayRotateSeconds makes Automatic move to the next provider on a
 	// timer. Zero keeps the activity-based choice (issue #322).
-	DisplayRotateSeconds int `json:"displayRotateSeconds,omitempty"`
+	DisplayRotateSeconds int    `json:"displayRotateSeconds,omitempty"`
+	FooterReset          string `json:"footerReset,omitempty"`
 	// HidePace keeps CodexBar's reserve or deficit off VibeTV (Settings,
 	// "Pace"). The default, false, shows it on themes that have a place for it.
 	HidePace bool `json:"hidePace,omitempty"`
@@ -359,6 +360,9 @@ func (cfg Config) KnownDevice(deviceID string) (KnownDevice, bool) {
 }
 
 func (cfg *Config) Normalize() {
+	if cfg.FooterReset != "secondary" {
+		cfg.FooterReset = "primary"
+	}
 	cfg.Theme = NormalizeTheme(cfg.Theme)
 	cfg.ConnectionMode = NormalizeConnectionMode(cfg.ConnectionMode)
 	if !cfg.WiFiTransitionPending() {

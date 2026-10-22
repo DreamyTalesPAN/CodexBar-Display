@@ -85,9 +85,11 @@ struct UsageWindowData {
   int64_t resetSecs = 0;
   bool available = false;
   usage_window_contract::Pace pace;
+  const char* id = "";
 };
 
 struct FrameData {
+  const char* footerWindow = "";
   const char* provider = "";
   const char* label = "";
   bool updateAvailable = false;
@@ -2229,10 +2231,22 @@ inline bool RenderDisplayedResetFooter(const CompiledThemeSpec& scene,
   }
   size_t displayedCount = 0;
   for (bool slot : displayed) if (slot) ++displayedCount;
+  size_t preferred = kMaxThemeSpecUsageWindows;
+  if (!frame.usageUnavailable && SafeText(frame.footerWindow)[0] != '\0') {
+    for (size_t i = 0; i < kMaxThemeSpecUsageWindows; ++i) {
+      const auto& window = frame.usageWindows[i];
+      if (displayed[i] && window.available && window.resetSecs > 0 &&
+          std::strcmp(SafeText(window.id), frame.footerWindow) == 0) {
+        preferred = i;
+        break;
+      }
+    }
+  }
   bool sawDisplayed = false;
   bool sawAvailable = false;
   bool allIdle = true;
-  for (size_t i = 0; i < kMaxThemeSpecUsageWindows; ++i) {
+  for (size_t order = 0; order < kMaxThemeSpecUsageWindows; ++order) {
+    const size_t i = preferred < kMaxThemeSpecUsageWindows ? preferred : order;
     if (!displayed[i]) continue;
     sawDisplayed = true;
     UsageWindowData window = UsageWindowFor(frame, static_cast<int>(i));

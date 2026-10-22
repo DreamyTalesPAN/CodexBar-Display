@@ -51,6 +51,7 @@ import {
   deviceCanSwitchToCable,
   deviceIsCustomerConnected,
   deviceIsReady,
+  deviceLacks,
   deviceOffersCable,
   type ApiError,
   type DeviceInfo,
@@ -60,6 +61,9 @@ import {
 } from "./control-center-types";
 
 const standbyTimeoutOptions = [1, 5, 10, 15, 30, 60];
+
+// Shown on an option that this VibeTV firmware cannot draw.
+const UPDATE_NEEDED_NOTE = "Update needed. Update VibeTV to use this.";
 
 export function standbyTimeoutLabel(minutes: number): string {
   return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
@@ -241,6 +245,10 @@ export function SettingsScreen({
     (item) => item.id === "codexbar.usageBarsShowUsed",
   );
   const dialogError = actionError ?? errorForHost(providerError, windowsHost);
+  const footerReset = displayPreferences.find(
+    (item) => item.id === "vibetv.display.footerReset",
+  );
+  const footerNeedsUpdate = deviceLacks(device, "footer");
   const rotation = displayPreferences.find(
     (item) => item.id === "vibetv.display.rotateSeconds",
   );
@@ -289,6 +297,10 @@ export function SettingsScreen({
         : null;
     }, providerId);
   };
+  // The firmware cannot draw pace or two providers at once; say so instead of
+  // offering a switch or card that does nothing on this VibeTV.
+  const paceLacks = deviceLacks(device, "pace");
+  const pairLacks = deviceLacks(device, "pair");
 
   return (
     <div className="mx-auto w-full max-w-[1040px] pt-6 pb-10">
@@ -354,8 +366,10 @@ export function SettingsScreen({
             </div>
           ) : null}
           <RadioRow
-            description="VibeTV shows two sources, one above the other."
-            disabled={displayMode !== "pair" && pairChoices.length < 2}
+            description={
+              pairLacks ? UPDATE_NEEDED_NOTE : "VibeTV shows two sources, one above the other."
+            }
+            disabled={pairLacks || (displayMode !== "pair" && pairChoices.length < 2)}
             label="Two at once"
             onSelect={() => selectMode("pair")}
             selected={displayMode === "pair"}
@@ -455,9 +469,9 @@ export function SettingsScreen({
           <ItemSeparator className="my-0" />
           <SettingsSection id="settings-pace" title="Pace">
             <PaceSetting
-              descriptor={pace.descriptor}
-              disabled={localActionBusy}
-              note={pace.note}
+              descriptor={paceLacks ? { ...pace.descriptor, value: false } : pace.descriptor}
+              disabled={localActionBusy || paceLacks}
+              note={paceLacks ? UPDATE_NEEDED_NOTE : pace.note}
               onChange={onDisplayPreferenceChange}
             />
           </SettingsSection>
@@ -490,6 +504,18 @@ export function SettingsScreen({
                 : `${brightness}%`
           }
         />
+        {footerReset ? (
+          <>
+            <PreferenceRow
+              descriptor={footerReset}
+              disabled={localActionBusy || device?.capabilities?.theme?.supportsResetFooterV1 !== true}
+              onChange={onDisplayPreferenceChange}
+            />
+            {footerNeedsUpdate ? (
+              <p className="text-sm text-muted-foreground">{UPDATE_NEEDED_NOTE}</p>
+            ) : null}
+          </>
+        ) : null}
       </SettingsSection>
 
       {standbySupport ? (

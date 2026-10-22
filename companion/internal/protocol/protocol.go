@@ -93,6 +93,7 @@ type ClockSchedule struct {
 }
 
 type Frame struct {
+	FooterWindow       string        `json:"footerWindow,omitempty"`
 	V                  int           `json:"v"`
 	Provider           string        `json:"provider,omitempty"`
 	Label              string        `json:"label,omitempty"`
@@ -151,6 +152,7 @@ type UpdateState struct {
 func (f Frame) Normalize() Frame {
 	f.V = NormalizeProtocolVersion(f.V)
 	protocolVersion := f.V
+	f.FooterWindow = truncateUTF8Bytes(strings.TrimSpace(f.FooterWindow), DefaultUsageWindowIDBytes)
 	f.Provider = truncateUTF8Bytes(strings.TrimSpace(f.Provider), DefaultProviderBytes)
 	f.Label = truncateUTF8Bytes(strings.TrimSpace(f.Label), DefaultProviderLabelBytes)
 	if f.Session < 0 {

@@ -1585,6 +1585,17 @@ describe("footer wording table", () => {
   }
 });
 
+it("prefers the selected footer window only when displayed with a reset", () => {
+ const now = new Date("2026-10-21T12:00:00Z");
+ const footer: ThemePrimitive = {t:"tx",y:200,v:"Reset in {usageSlot1Reset}"};
+ const rows: ThemePrimitive[] = [{t:"tx",y:20,sl:1},{t:"tx",y:50,sl:2},footer];
+ const frame = buildFrameData(now.toISOString(), {provider:"claude",footerWindow:"secondary",usageWindows:[{id:"primary",label:"Session",percent:20,resetSecs:3600},{id:"secondary",label:"Weekly",percent:30,resetSecs:7200}]},now);
+ expect(renderTextPrimitive(footer,frame,rows)).toBe("Weekly resets in 2h 0m");
+ expect(renderTextPrimitive(footer,frame,[rows[0],footer])).toBe("Session resets in 1h 0m");
+ frame.usageWindows[1].resetSecs = 0;
+ expect(renderTextPrimitive(footer,frame,rows)).toBe("Session resets in 1h 0m");
+});
+
 // The pace bar table, row for row the same as paceBarRows in
 // firmware_esp8266/test/test_native_theme_spec/test_theme_spec_renderer.cpp.
 // The plan is clamped to 0..100, so a deficit larger than the use plans 0.

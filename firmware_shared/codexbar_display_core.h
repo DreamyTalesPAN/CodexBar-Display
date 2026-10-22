@@ -154,6 +154,7 @@ struct Frame {
   // must never render as a fabricated 0.
   bool hasTokenTotals = false;
   bool hasUsageMode = false;
+  String footerWindow;
   String usageMode;
   String activity;
   // How long `activity` stays valid without a fresh frame, counted from
@@ -793,7 +794,8 @@ inline bool FrameThemeSpecDataVisualChanged(const Frame& previous, const Frame& 
                          use.Uses(themespec::kThemeSpecFieldSession |
                                   themespec::kThemeSpecFieldWeekly |
                                   themespec::kThemeSpecFieldReset);
-  return (use.Uses(themespec::kThemeSpecFieldProvider) && previous.provider != next.provider) ||
+  return (use.usageWindowResets != 0 && previous.footerWindow != next.footerWindow) ||
+         (use.Uses(themespec::kThemeSpecFieldProvider) && previous.provider != next.provider) ||
          (use.Uses(themespec::kThemeSpecFieldLabel) &&
           (previous.label != next.label || previous.updateAvailable != next.updateAvailable)) ||
          (use.Uses(themespec::kThemeSpecFieldProviderName) && previous.label != next.label) ||
@@ -874,6 +876,9 @@ inline uint32_t ThemeSpecLiveChangedFields(
   }
   if (previous.weeklyUnavailable != next.weeklyUnavailable) {
     fields |= themespec::kThemeSpecFieldWeekly;
+  }
+  if (previous.footerWindow != next.footerWindow) {
+    fields |= themespec::kThemeSpecFieldUsageWindows | themespec::kThemeSpecFieldUsageWindowReset;
   }
   if (previous.hasUsageMode != next.hasUsageMode || previous.usageMode != next.usageMode) {
     fields |= themespec::kThemeSpecFieldUsageMode;
@@ -1093,6 +1098,7 @@ inline bool ParseFrameLine(const char* line, Frame& out) {
     out.hasThemeSpec = (out.themeSpecId.length() > 0 && out.themeSpecRev > 0);
   }
 
+  out.footerWindow = String(doc["footerWindow"] | "");
   out.usageMode = LowerTrimmedText(doc["usageMode"]);
   out.hasUsageMode = out.usageMode == "used" || out.usageMode == "remaining";
   if (!out.hasUsageMode) {

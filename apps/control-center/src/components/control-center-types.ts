@@ -378,6 +378,7 @@ export type DeviceInfo = {
       supportsTextValignV1?: boolean;
       supportsProgressArcV1?: boolean;
       supportsUsagePaceV1?: boolean;
+      supportsResetFooterV1?: boolean;
       maxUsageWindows?: number;
       supportsStoredThemes?: boolean;
       maxThemeSpecBytes?: number;
@@ -658,6 +659,25 @@ export function deviceImageIsStuck(device: DeviceInfo | null | undefined) {
 
 export function deviceIsReady(device: DeviceInfo | null | undefined) {
   return device?.ready === true;
+}
+
+/**
+ * Whether a ready VibeTV lacks the firmware feature a Settings option needs.
+ * An offline or unknown device is never called old: it returns false.
+ */
+export function deviceLacks(
+  device: DeviceInfo | null | undefined,
+  need: "pace" | "pair" | "footer",
+) {
+  if (!deviceIsReady(device)) {
+    return false;
+  }
+  const theme = device?.capabilities?.theme;
+  if (need === "footer") return theme?.supportsResetFooterV1 !== true;
+  return need === "pace"
+    ? theme?.supportsUsagePaceV1 !== true
+    : theme?.supportsUsageWindowsV1 !== true ||
+        (theme?.maxUsageWindows ?? 0) < 2;
 }
 
 export function deviceIsCustomerConnected(

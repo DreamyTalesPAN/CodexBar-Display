@@ -19,6 +19,7 @@ const (
 	FeatureColorStopsV1     = "color-stops-v1"
 	FeatureTextValignV1     = "text-valign-v1"
 	FeatureProgressArcV1    = "progress-arc-v1"
+	FeatureResetFooterV1    = "reset-footer-v1"
 	FeatureUsagePaceV1      = "usage-pace-v1"
 	DefaultMaxFrameBytes    = 512
 	DefaultMinBrightness    = 10
@@ -60,6 +61,7 @@ type ThemeCapabilities struct {
 	SupportsColorStopsV1     bool     `json:"supportsColorStopsV1,omitempty"`
 	SupportsTextValignV1     bool     `json:"supportsTextValignV1,omitempty"`
 	SupportsProgressArcV1    bool     `json:"supportsProgressArcV1,omitempty"`
+	SupportsResetFooterV1    bool     `json:"supportsResetFooterV1,omitempty"`
 	SupportsUsagePaceV1      bool     `json:"supportsUsagePaceV1,omitempty"`
 	MaxUsageWindows          int      `json:"maxUsageWindows,omitempty"`
 	SupportsStoredThemes     bool     `json:"supportsStoredThemes,omitempty"`
@@ -277,6 +279,7 @@ type DeviceCapabilities struct {
 	SupportsColorStopsV1       bool
 	SupportsTextValignV1       bool
 	SupportsProgressArcV1      bool
+	SupportsResetFooterV1      bool
 	SupportsUsagePaceV1        bool
 	MaxUsageWindows            int
 	SupportsStoredThemes       bool
@@ -351,6 +354,7 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		SupportsTextValignV1:       supportsTextValignV1,
 		SupportsProgressArcV1:      supportsProgressArcV1,
 		SupportsUsagePaceV1:        supportsUsagePaceV1,
+		SupportsResetFooterV1:      h.HasFeature(FeatureResetFooterV1) || h.Capabilities.Theme.SupportsResetFooterV1,
 		MaxUsageWindows:            h.Capabilities.Theme.MaxUsageWindows,
 		SupportsStoredThemes:       supportsStoredThemes,
 		MaxFrameBytes:              h.MaxFrameBytes,

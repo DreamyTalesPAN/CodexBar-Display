@@ -8333,6 +8333,1440 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 35152cc8 and this approval record. Pull request branch #785 only, not merged, not released.
 - What's new: none — merge of 35152cc8, no customer-visible change of its own
 
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change))
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix of #645, a late settings answer for another VibeTV no longer choose
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change); occurrence 2)
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix of #645, a late settings answer for another VibeTV no longer choose
+
+## 2026-10-16 — #663: Same device-switch reset as #645 for display brightness (no visible change)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change) [2]
+- Approved customer-visible result: unchanged; Brightness and the Settings screensaver switch stay as in the entries above. While another VibeTV's settings are still unknown, Brightness stays disabled, as the screensaver switch does.
+- Scope: `control-center-app.tsx`, its display preferences test. Pull-request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change of its own
+
+## 2026-10-16 — #674: approval marker after merging #645 and main (no visible change)
+
+
+
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change)) [2]
+
+- Approved customer-visible result: as approved in the #663 entry above (no visible change); nothing else changes.
+
+- Scope: the merge of the #645 branch and main into this branch and this approval record. Pull request branch only, not merge or release.
+
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-16 — #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible change)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang [2]
+- Approved customer-visible result: none. When another VibeTV connects, a Brightness change still waiting to be sent is dropped instead of being sent to that VibeTV; the slider and all wording stay as they are.
+- Scope: `resetDeviceSettings` in `apps/control-center/src/components/control-center-app.tsx`, its test in `control-center-app.display-preferences.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change
+
+
+## 2026-10-19 — #674: Codex review fix of #645, a late settings answer for another VibeTV no longer chooses the selected theme (no visible change)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #674: Codex review fix of #645, a late settings answer for another VibeTV no longer choose [2]
+- Approved customer-visible result: none with one VibeTV. When another VibeTV connects while a read of the first one's settings is still on its way, that late answer no longer marks the first VibeTV's active theme as selected under Appearance › Themes; the selection follows the VibeTV connected now, as Brightness and the Settings screensaver switch already do.
+- Scope: `readSettings` in `apps/control-center/src/components/control-center-app.tsx`, its test in `control-center-app.display-preferences.test.tsx`, and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change
+
+
+## 2026-10-16 — Usage: calm tiles, action tiles and no Check again (#644 follow-up)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: calm tiles, action tiles and no Check again (#644 follow-up)
+- Approved customer-visible result: Usage tiles use one font in two sizes and two weights, with only the normal text and muted text colours and ink bars. Each tile reads number first: "45% session used", "26% weekly used", and the totals line "41.8M total · 2.4M this week". No Stale pill, no status pill, no "??" and no "Check again". A tile with stale numbers keeps them and shows a small spinner where the reset time was; a tile without numbers shows a grey placeholder shape and the same spinner. A provider that needs the customer shows "Sign in needed", "Access needed" or "Setup needed" in red after its name, with the placeholder shape in place of its numbers; the link opens the sign-in or Settings.
+- Scope: `usage-screen.tsx` and its test, `control-center-app.tsx` (only the wiring of the action tiles), the two wording assertions in `scripts/test-customer-flows.mjs`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — visual calm of the Usage tiles, no new notice
+
+## 2026-10-16 — Usage tiles: Codex review fixes for stale numbers and sign-in actions (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage tiles: Codex review fixes for stale numbers and sign-in actions (#669)
+- Approved customer-visible result: A stale tile keeps its last good numbers with the small spinner where the reset time was, as in the approved frame 5B; a provider without numbers keeps the grey placeholder shape. "Sign in needed" runs the sign-in only where the Companion can start one; for other providers it opens Settings. No new element, no new wording; this fix is not seen by Paul yet.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Usage tiles: Codex review fixes for offline Mac App and setup sign-in (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage tiles: Codex review fixes for offline Mac App and setup sign-in (#669)
+- Approved customer-visible result: While the Mac App is not reachable, no action tile is shown and the "Mac App needs setup." message stands alone. "Setup needed" starts the same sign-in as the setup row for the providers the Companion can sign in (Codex, Claude, Cursor, Antigravity) and opens Settings for the others. No new element, no new wording; this fix is not seen by Paul yet.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Usage tiles: a stale provider with a sign-in need keeps its numbers (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage tiles: a stale provider with a sign-in need keeps its numbers (#669)
+- Approved customer-visible result: For a provider whose reading is stale and that needs sign-in, the tile shows its last good numbers with the red action link after the name, instead of the placeholder shape. Frame 5B shows the link only with the placeholder shape, so this combination is not yet approved. Wording stays the same; not seen by Paul yet.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Usage tiles: a cleared stale provider shows no 0% (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage tiles: a cleared stale provider shows no 0% (#669)
+- Approved customer-visible result: A stale provider with nothing retained (all zeros) shows the grey placeholder shape and the spinner, not "0% session used" or "0% weekly used". A stale provider with a non-zero last good reading shows it as in the entry above. No new element; not seen by Paul yet.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Usage tiles: a zero on a stale reading shows the placeholder (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage tiles: a zero on a stale reading shows the placeholder (#669)
+- Approved customer-visible result: On a stale reading a lane with 0% shows the grey placeholder and the spinner, never "0% session used"; a lane with a non-zero value keeps its number, so a stale reading with one unavailable lane shows only the valid one. This also means a real 0% on a stale reading is not shown as a number. No new element; not seen by Paul yet.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Usage tiles: accessible name of the action link (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage tiles: accessible name of the action link (#669)
+- Approved customer-visible result: Unchanged. The action link keeps its visible wording ("Sign in needed", "Access needed", "Setup needed"); only its accessible name adds the provider, e.g. "Sign in needed for Claude". Not seen by Paul yet.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — accessible name only, no customer-visible change of its own
+
+## 2026-10-16 — Usage overlay for providers that need the customer, and no "Check again" (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage overlay for providers that need the customer, and no "Check again" (#669)
+- Approved customer-visible result: On any page, one dialog at a time for an enabled provider that needs the customer. Sign-in: title "{Label} needs a new sign-in", text "VibeTV can't show {Label} until you sign in again.", buttons "Not now" and "Sign in to {Label}". Access: title "{Label} needs access", text "VibeTV can't show {Label} until you allow access on this computer.", buttons "Not now" and "Open AI providers". Setup: title "{Label} needs setup", text "VibeTV can't show {Label} until it is set up.", buttons "Not now" and "Set up {Label}". A failed sign-in start shows in the dialog's text. Once closed it stays closed until the provider is healthy and breaks again. Provider rows and the setup list no longer show "Check … again" buttons; the provider row's own messages say "VibeTV checks again by itself" in place of "then check again", and the setup's own-app notice no longer asks the customer to click Check again. A stale provider with sign-in shows an empty action tile, not its numbers.
+- Scope: `provider-action-dialog.tsx` (new) and its test, `system-busy-dialog.tsx` (shared helper), `usage-screen.tsx` and its test, `control-center-app.tsx`, the setup and settings provider list files and their tests, `provider-picker.tsx`, `setup-preview-gallery.tsx`, `scripts/test-customer-flows.mjs` (removed the Check-again expectations and the test that clicked it), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the overlay and the removed button are the approved screen, not a new release note
+
+## 2026-10-16 — Provider overlay: Settings-bound action closes it, nothing while the Mac App is offline (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Provider overlay: Settings-bound action closes it, nothing while the Mac App is offline (#
+- Approved customer-visible result: As in the overlay entry above. The primary button of "Open AI providers" and of a setup that opens Settings now closes the overlay in the same click, since Settings opens behind it. The overlay does not show while the Mac App is not reachable. Sign-in buttons keep the overlay open until the sign-in finishes. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, `usage-screen.tsx` (the action's Settings flag), `control-center-app.tsx` (the offline condition), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: priority with the busy notice, error only for its own provider (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Provider overlay: priority with the busy notice, error only for its own provider (#669)
+- Approved customer-visible result: As in the overlay entries above. When both the busy computer notice and a provider overlay are due, the provider overlay shows first and the busy notice returns after it is closed (the busy notice already waits for any other dialog). A failed sign-in start shows in the dialog of that provider only; a failure of another request does not appear there. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, `system-busy-dialog.tsx` (the shared helper takes the titles it waits for), `control-center-app.tsx` (the failure per provider), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: not during setup, failure only for its own incident (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Provider overlay: not during setup, failure only for its own incident (#669)
+- Approved customer-visible result: As in the overlay entries above. The overlay does not appear while setup owns the screen, so its buttons never point at a page that is not there. A failed sign-in start shows in that provider's overlay only while that provider stays in the same state; it is cleared when the sign-in succeeds or the overlay is closed. No new wording.
+- Scope: `control-center-app.tsx` (overlay mount condition and the failure state), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: not on the Settings page, which lists the same provider (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Provider overlay: not on the Settings page, which lists the same provider (#669)
+- Approved customer-visible result: As in the overlay entries above, on every page except Settings. Settings already shows the same provider's message in its own dialog, so the customer sees one dialog for the provider, not two in a row. No new wording.
+- Scope: `control-center-app.tsx` (overlay mount condition), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: a failed sign-in from a Usage tile reopens it (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Provider overlay: a failed sign-in from a Usage tile reopens it (#669)
+- Approved customer-visible result: As in the overlay entries above. When a sign-in start fails, the overlay of that provider opens again even after "Not now", and shows the failure in its text. The failure is cleared when the provider is healthy again, when the sign-in succeeds, or when the overlay is closed. No new element; no new wording.
+- Scope: `provider-action-dialog.tsx` and its test (the failure is kept with the action), `control-center-app.tsx` (reports the sign-in start), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: sign-in actions open Settings where sign-in is unavailable (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Provider overlay: sign-in actions open Settings where sign-in is unavailable (#669)
+- Approved customer-visible result: Where the Companion cannot start a sign-in yet, "Sign in to {Label}" opens Settings and closes the overlay, instead of showing a sign-in that does nothing. No new wording.
+- Scope: `usage-screen.tsx` and its test, `control-center-app.tsx` (no fallback in the wiring), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: seen once when Settings opens, late failures ignored (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Provider overlay: seen once when Settings opens, late failures ignored (#669)
+- Approved customer-visible result: As in the overlay entries above. Opening Settings counts the overlay as seen, so leaving Settings does not bring the same overlay back; Settings shows that provider's own dialog. A sign-in failure that arrives after its provider was already healthy again is not shown. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, `control-center-app.tsx` (tab change and the Settings action), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: a failure from Settings stays on Settings (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Provider overlay: a failure from Settings stays on Settings (#669)
+- Approved customer-visible result: A sign-in that fails when started from Settings is shown by the Settings page only, and is not repeated in the overlay after leaving Settings. A sign-in started from the overlay or a Usage tile reopens the overlay with the failure. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, `control-center-app.tsx` (the origin of a sign-in), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: a failed sign-in shows its message only (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Provider overlay: a failed sign-in shows its message only (#669)
+- Approved customer-visible result: A failed sign-in start shows its message in the overlay's text; the companion's next-action sentence, which still says "then check again", is not shown there. No new element; no new wording of our own. Not seen by Paul yet. The same sentence still appears on the Settings page for a failed start; changing the companion's text is a separate change.
+- Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Customer flow: the Claude overlay is closed before the Usage check (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Customer flow: the Claude overlay is closed before the Usage check (#669)
+- Approved customer-visible result: Unchanged. The flow test waits for the "Claude needs a new sign-in" overlay and clicks "Not now" before it opens Usage, as the customer would.
+- Scope: `scripts/test-customer-flows.mjs` (one test), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test change, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: seen once whenever Settings is the page (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Provider overlay: seen once whenever Settings is the page (#669)
+- Approved customer-visible result: As in the overlay entries above. Whenever Settings is the page, however it was opened (the sidebar, a Usage action, or "Show me in Settings" from What's New), the overlay counts as seen and does not return when leaving Settings. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, `control-center-app.tsx` (the Settings state is passed to the hook), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: all seen on Settings in one update (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Provider overlay: all seen on Settings in one update (#669)
+- Approved customer-visible result: As in the overlay entries above. Opening Settings marks every provider's overlay seen at once; with many providers the page no longer re-renders once per provider. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Usage tiles: an unavailable lane is announced to screen readers (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage tiles: an unavailable lane is announced to screen readers (#669)
+- Approved customer-visible result: Unchanged on screen. A screen reader now hears "session usage unavailable" for a lane that has no number, as well as the lane that has one. Not seen by Paul yet.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — accessible name only, no customer-visible change of its own
+
+## 2026-10-16 — Usage tiles: test for the screen-reader line (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage tiles: test for the screen-reader line (#669)
+- Approved customer-visible result: Unchanged. The test checks that a screen reader hears "session usage unavailable" for an unavailable lane.
+- Scope: `usage-screen.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test change, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: provider health refreshed on every main page (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Provider overlay: provider health refreshed on every main page (#669)
+- Approved customer-visible result: As in the overlay entries above: the overlay appears on any main page when a provider needs the customer. The provider health and usage refresh now runs on every main page, not only Overview, Usage and Settings, so the overlay appears without a page change. No new wording.
+- Scope: `control-center-app.tsx` (the refresh condition of the usage surface), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — refresh cadence on other pages, no customer-visible change of its own
+
+## 2026-10-16 — Customer flow: the concurrent sign-in test closes both overlays first (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Customer flow: the concurrent sign-in test closes both overlays first (#669)
+- Approved customer-visible result: Unchanged. The flow test closes the "Codex" and "Claude" overlays with "Not now" before it navigates, as the customer would.
+- Scope: `scripts/test-customer-flows.mjs` (one test), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test change, no customer-visible change of its own
+
+## 2026-10-16 — Provider rows: the seven looks of the states overview, quiet error 5b (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Provider rows: the seven looks of the states overview, quiet error 5b (#669)
+- Approved customer-visible result: On "Choose AI providers" and in Settings › AI providers the switch stays at the right in every look:
+  1. Switched on and OK: name and switch.
+  2. Switched on and CodexBar is fetching: name, a small spinner, switch.
+  3. Sign-in needed (not signed in, browser sign-in, or setup needed): name, red "Sign in needed" with an arrow, switch. Clicking starts the sign-in where the app can start it; otherwise it opens the provider's dialog.
+  4. Access missing (macOS): name, red "Allow access" with an arrow, switch. Clicking opens the provider's dialog.
+  5. Quiet error (stale, timed out, rate limited, unavailable, service outage, engine error, config error, unknown): name, a small muted spinner, switch. No text, no warning icon, no button.
+  6. Not supported or no usage data: name in muted text, "No usage data" in muted text, switch.
+  7. Switched off: name and switch off.
+  The warning icon and the round "Sign in to … ›" button are removed. The provider's dialog opens by itself only for looks 3 and 4, once; it never opens for looks 5 and 6.
+  On Usage: no tile for a provider that is switched off, unsupported, or without usage data. Quiet error keeps its last numbers with a small muted spinner in place of the reset time. The access action on a tile reads "Allow access"; the setup action reads "Sign in needed" and starts the sign-in like the row. The weekly line reads "26% weekly used".
+  The provider overlay (frame 3A) opens only for looks 3 and 4. A setup need uses the sign-in copy and its "Sign in to <Provider>" button.
+- Scope: `setup/setup-provider-row.tsx` and its test (the seven looks; the unused message helper removed), `setup/setup-providers-screen.tsx` and its test (the dialog opens by itself only for looks 3 and 4), `usage-screen.tsx` and its test (action labels, no tile for looks 6 and 7), `provider-action-dialog.tsx` and its test (setup need uses the sign-in copy), `control-center-app.tsx` (the hidden-tile list), `control-center-app.display-preferences.test.tsx`, `scripts/test-customer-flows.mjs` (the row names and the dialog expectation for looks 5 and 6), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the approved states overview, no new release note
+
+## 2026-10-16 — Usage: no loading line beside a provider action (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: no loading line beside a provider action (#669)
+- Approved customer-visible result: While usage is still loading, a provider that needs the customer shows its action tile (as in the entries above) and not the "Loading usage" line beside it. No new wording.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Usage: token history from the visible providers only (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: token history from the visible providers only (#669)
+- Approved customer-visible result: A provider that gets no tile (switched off, unsupported, or without usage data) no longer makes the Usage page report "Token history is unavailable". No new wording.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: a checking read keeps a dismissal (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Provider overlay: a checking read keeps a dismissal (#669)
+- Approved customer-visible result: A provider that is checked again (shown as checking) keeps a dismissed overlay closed; the overlay returns only when the provider is healthy again and breaks again. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, `control-center-app.tsx` (the checking providers), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: a failed sign-in is kept while the provider is checking (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Provider overlay: a failed sign-in is kept while the provider is checking (#669)
+- Approved customer-visible result: A failed sign-in start stays shown for a provider that is being checked again, as in the entries above. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: a healthy result ends the dismissal after a check (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Provider overlay: a healthy result ends the dismissal after a check (#669)
+- Approved customer-visible result: When a provider that was being checked is healthy, its closed overlay is closed for good until it breaks again; a need that returns after that shows the overlay again. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Customer flow: row locators use the sign-in names (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Customer flow: row locators use the sign-in names (#669)
+- Approved customer-visible result: Unchanged.
+- Scope: `scripts/test-customer-flows.mjs` (three locators), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test change, no customer-visible change of its own
+
+## 2026-10-16 — Provider overlay: a shown failure is kept through a check (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Provider overlay: a shown failure is kept through a check (#669)
+- Approved customer-visible result: A sign-in failure shown in the overlay stays there when the provider is checked again and its need returns. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the overlay, no customer-visible change of its own
+
+## 2026-10-16 — Usage: no "still loading" notice beside an action tile (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: no "still loading" notice beside an action tile (#669)
+- Approved customer-visible result: While usage is still loading, a provider that needs the customer shows its action tile and no "Usage is still loading" notice beside it. A real usage error is still shown. No new wording.
+- Scope: `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix to the Usage tiles, no customer-visible change of its own
+
+## 2026-10-16 — Customer flow: the Windows sign-in test closes the Claude overlay first (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Customer flow: the Windows sign-in test closes the Claude overlay first (#669)
+- Approved customer-visible result: Unchanged. The flow closes the "Claude needs a new sign-in" overlay with "Not now" before it opens Settings.
+- Scope: `scripts/test-customer-flows.mjs` (one test), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test change, no customer-visible change of its own
+
+## 2026-10-16 — Customer flows: close the provider overlays where a flow is not about them (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Customer flows: close the provider overlays where a flow is not about them (#669)
+- Approved customer-visible result: Unchanged. Two flows that open with a sign-in or access need close its overlay with "Not now" before they navigate.
+- Scope: `scripts/test-customer-flows.mjs` (a helper and two calls), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test change, no customer-visible change of its own
+
+## 2026-10-16 — Customer flows: overlay closed once the page has its preferences (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Customer flows: overlay closed once the page has its preferences (#669)
+- Approved customer-visible result: Unchanged.
+- Scope: `scripts/test-customer-flows.mjs` (the helper is called after the connected heading), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test change, no customer-visible change of its own
+
+## 2026-10-16 — Usage: a sign-in failure from the overlay stays in its dialog (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: a sign-in failure from the overlay stays in its dialog (#669)
+- Approved customer-visible result: A sign-in that fails when started from the provider overlay or a Usage tile shows its message in that overlay only; Settings does not show it again. No new wording.
+- Scope: `control-center-app.tsx` (the Settings error is set only for Settings starts), `usage-screen.tsx` (hidden providers keep their token history), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change of its own
+
+## 2026-10-16 — Provider rows: a closed access message comes back after a healthy result (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Provider rows: a closed access message comes back after a healthy result (#669)
+- Approved customer-visible result: A closed access message for a provider returns when the cause comes back after the provider was healthy or switched off; while the cause stays, it stays closed. No new wording.
+- Scope: `setup/setup-providers-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change of its own
+
+## 2026-10-16 — Provider rows: closed messages are forgotten also while the list is hidden; token notice counts shown providers (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Provider rows: closed messages are forgotten also while the list is hidden; token notice c
+- Approved customer-visible result: A closed access message for a provider returns when the cause comes back after the provider was healthy or switched off, also when the provider list was not on screen in between. The Usage token-history notice names the one provider that is shown, when only one is. No new wording.
+- Scope: `setup/setup-providers-screen.tsx` and its test, `control-center-app.tsx` (the app-level reset on each preference read), `usage-screen.tsx` (the notice uses the shown providers), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fixes, no customer-visible change of its own
+
+## 2026-10-16 — Usage: test pins the reset times of healthy tiles while token history counts (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: test pins the reset times of healthy tiles while token history counts (#669)
+- Approved customer-visible result: No change. A healthy, fresh tile shows its reset time top-right and on each later window line while the token history is still counting, with no spinner. No new wording.
+- Scope: `usage-screen.test.tsx` (one new test), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — test only, no customer-visible change
+
+## 2026-10-17 — Usage tiles: "Tokens:" before the token line, session reset on the session line (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage tiles: "Tokens:" before the token line, session reset on the session line (#669)
+- Approved customer-visible result: The token line reads "Tokens: 12.7B total · 5.2B this week". A tile's reset is no longer top right next to the provider name: it sits right-aligned on the first line of the tile, on the line with the big percent ("86% session remaining"; for a weekly-first provider such as Codex, on "71% weekly remaining"). The header holds only the name. The Updating spinner takes that place while the tile is quiet. No other wording.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (tile layout, token line, tests), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — label and layout change only, no new notice
+
+## 2026-10-16 — Usage: the token chart draws a day without tokens as zero, not as a gap (#579, carried from #603)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: the token chart draws a day without tokens as zero, not as a gap (#579, carried fro
+- Approved customer-visible result: Not yet seen by Paul. In Usage, each provider's line in the token chart runs unbroken from the first to the last day of the chart; a day on which a provider used no tokens sits on the zero line. Calendar days on which no provider used tokens keep their place on the time axis. Where the first and last reported day lie more than 400 days apart, every reported day is kept as it is, without filling in days. Totals and tooltip values of days with tokens are unchanged; a day without tokens shows 0 in the tooltip.
+- Scope: `usage-screen.tsx`, its test, and this approval record. Stacked on #669; pull request branch only, not merge or release.
+- What's new: none — a correction, nothing new to announce
+
+## 2026-10-17 — Usage: Paul approves the token chart without gaps (#579, carried from #603; refers to the pending entry of 2026-10-16)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: Paul approves the token chart without gaps (#579, carried from #603; refers to the 
+- Approved customer-visible result: the token chart as described in the pending entry above: each provider's line runs unbroken, and a day on which a provider used no tokens sits on the zero line, with 0 in the tooltip. Nothing beyond that entry.
+- Scope: this approval record only; no code change in this entry. Pull request branch only, not merge or release.
+- What's new: none — approval record
+## 2026-10-17 — Usage: a stale reading shows its real 0% lane (#670)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: a stale reading shows its real 0% lane (#670)
+- Approved customer-visible result: On Usage, a stale reading shows a real 0% lane as its number ("0% session used", "0% weekly used") with the Updating spinner, as in look 5b; a lane without a reading stays placeholder bars. No new wording.
+- Scope: `usage-screen.tsx` and its test, `control-center-types.ts` (three optional retained flags), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the same copy as before; only the zero lane is now a number
+
+## 2026-10-17 — Usage: a provider whose only reading is a retained 0% stays visible (#670)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: a provider whose only reading is a retained 0% stays visible (#670)
+- Approved customer-visible result: As in the #670 entry above, that provider's tile stays on Usage and shows its real 0% lanes ("0% session used", "0% weekly used") with the Updating spinner. Before this fix the tile was hidden. No new wording.
+- Scope: `usage-screen.tsx` (provider visibility counts a retained reading) and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no new notice
+## 2026-10-17 — Sign-in replies: a superseded sign-in no longer reopens or clears the provider overlay (#679)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Sign-in replies: a superseded sign-in no longer reopens or clears the provider overlay (#6
+- Approved customer-visible result: look unchanged. Only a rare race changes: a sign-in reply that arrives after a newer sign-in started, or after the provider left and came back, no longer reopens the overlay or clears the newer failure. No wording or layout change.
+- Scope: `control-center-app.tsx` (sign-in start and reply pass a sign-in token), `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release. Stacked on #669.
+- What's new: none — fix of a reported defect, no customer-visible change of its own
+
+## 2026-10-17 — Sign-in replies: a sign-in left during a check is forgotten once the check is healthy (#679)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Sign-in replies: a sign-in left during a check is forgotten once the check is healthy (#67
+- Approved customer-visible result: No change. A late sign-in reply for a provider that was healthy in between (after its check ended) no longer reopens its overlay, as the #679 entry above describes. No new wording.
+- Scope: `provider-action-dialog.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no customer-visible change of its own
+## 2026-10-17 — Usage: "Runs out in" line when CodexBar says a window will not last (#210, #412)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: "Runs out in" line when CodexBar says a window will not last (#210, #412)
+- Approved customer-visible result: Under a window's bar a red line appears only when CodexBar says that window will not last to its reset: before → after: no line → "Runs out in 2d 15h" (the duration is CodexBar's remaining time, shown with the same format as "Reset in 1d 2h"). No line when CodexBar sends no pace, when the window will last to its reset, or on a stale, quiet or action tile. Nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-types.ts`, `usage-screen.tsx` and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the line is part of the Usage tile, not an announcement; a What's new entry needs Paul's own decision
+
+## 2026-10-17 — Usage: the "Runs out in" countdown runs from the snapshot time (#210, #412)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: the "Runs out in" countdown runs from the snapshot time (#210, #412)
+- Approved customer-visible result: As in the entry above, a red "Runs out in …" line under a window's bar only when CodexBar says that window will not last to its reset. Its duration counts down from when the reading was taken and the line goes away when the time is up. No new wording.
+- Scope: `usage-screen.tsx` (runs-out countdown) and its test, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — review fix, no new notice
+## 2026-10-17 — Usage: named windows keep CodexBar's label, e.g. "Fable only" (#669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: named windows keep CodexBar's label, e.g. "Fable only" (#669)
+- Approved customer-visible result: A named CodexBar window keeps its label as delivered ("100% Fable only remaining"); session and weekly keep their lowercase wording ("45% session used", "26% weekly used"). No new wording.
+- Scope: `usage-screen.tsx` (label of named CodexBar windows), `usage-screen.test.tsx` (label expectations and one new test), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — label fix only, no new notice
+## 2026-10-17 — Usage: plan name and extra-usage cap from CodexBar (stacked on #669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: plan name and extra-usage cap from CodexBar (stacked on #669)
+- Approved customer-visible result: A Usage tile shows the plan name CodexBar reports after the provider name, and the monthly extra-usage cap CodexBar reports with its used amount, in CodexBar's currency. Nothing is shown when CodexBar sends neither. Windows shows no cap; the plan name appears where Win-CodexBar sends one.
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, `control-center-types.ts`, `usage-screen.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the plan name and the cap are what CodexBar already reports, shown where the tile is
+
+## 2026-10-17 — Usage: branch brought up to date with the #669 tile layout (#708)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: branch brought up to date with the #669 tile layout (#708)
+- Approved customer-visible result: As in the "Tokens:" entry above, with this PR's plan name in the tile header and the cap line under the Tokens line, as in the entry before it. No new wording.
+- Scope: `apps/control-center/src/components/usage-screen.tsx` (merge of #669 into this PR), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the same tiles as above, no new notice
+
+## 2026-10-17 — Usage head in variant A: "Last 30 days", legend and icon Refresh, chart without card (stacked on #680)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage head in variant A: "Last 30 days", legend and icon Refresh, chart without card (stac
+- Approved customer-visible result: Usage opens with a left-aligned head. Small muted text "Last 30 days" on the left; on the right the provider names, each with a small dot in its chart colour (Claude in ink, Codex in olive), and an icon-only Refresh button. The button keeps its behaviour: while a refresh runs it shows a spinner and is closed. Below: the 30-day total in 28 px semibold, followed by a small muted "tokens", and the total in words in small muted text. The token chart runs the full width without a card and without a title: thin lines, a very light fill, three values on the left axis and the dates below, all in small muted text. Before → after: "Total tokens in the last 30 days" (heading) → "Last 30 days"; "Tokens used over time" (card title) → removed; "Refresh token usage" with its text (card button) → an icon-only button named "Refresh". No other wording.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (head and chart only; the tiles are not touched), the selectors of `scripts/test-customer-flows.mjs` that follow these labels, and this approval record. Stacked on #680 (→ #669); pull request branch only, not merge or release.
+- What's new: none — layout and colour change only, no new notice
+
+## 2026-10-17 — Usage head bigger: hero total, taller chart, legend below the chart (stacked on #714)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage head bigger: hero total, taller chart, legend below the chart (stacked on #714)
+- Approved customer-visible result: the 30-day total in Usage is set in a larger hero size (46 px, semibold, tight line height), the only text size beyond 28 px and 13 px. The token chart is taller (384 px instead of 256 px), still without card or title. The provider legend (colour dot and name) moves from the head line to below the chart, left-aligned under the x-axis. The Refresh icon stays top right on the "Last 30 days" line. Wording unchanged; no new control.
+- Scope: `usage-screen.tsx`, `usage-screen.test.tsx`, the hero token in `src/app/globals.css`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — size and position change only, no new notice
+
+## 2026-10-17 — Usage chart colours follow the provider, not the order of the response (Codex review on #714)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage chart colours follow the provider, not the order of the response (Codex review on #7
+- Approved customer-visible result: none beyond the colours of the entry above: Claude in ink, Codex in olive. When the response lists Codex first, the colours had swapped before; now they stay with the provider. In the usual order nothing changes.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (chart colour assignment only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — colour fix only, no new notice
+
+## 2026-10-17 — Usage chart: another provider never takes the colour of Claude or Codex (Codex review on #714)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage chart: another provider never takes the colour of Claude or Codex (Codex review on #
+- Approved customer-visible result: none beyond the colours of the entries above. A provider other than Claude and Codex (for example Gemini) now takes one of the three colours left (chart-3 to chart-5) instead of the colour of Codex or Claude, which it could share before. Claude and Codex are unchanged.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (chart colour assignment only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — colour fix only, no new notice
+
+## 2026-10-17 — Usage: grey outline of the head and chart while the token history loads (#598, stacked on #714)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: grey outline of the head and chart while the token history loads (#598, stacked on 
+- Approved customer-visible result: none yet; pending Paul's review. Proposed: while the token history loads, the head ("Last 30 days" line, legend, number and words line) and the chart area are grey blocks at the heights of the finished graph, no spinner, no figures; the same look under reduced motion, without the pulse.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (loading state of the token history only), the loading assertions of `scripts/test-customer-flows.mjs`, and this approval record. Stacked on #714; pull request branch only, not merge or release.
+- What's new: none — loading state only, no new notice
+
+## 2026-10-17 — Usage: grey blocks follow the bigger head and the legend below the chart while the token history loads (#598, stacked on #714)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: grey blocks follow the bigger head and the legend below the chart while the token h
+- Approved customer-visible result: none yet; pending Paul's review. Proposed: while the token history loads, the grey blocks keep the layout of #714 (head line with the Refresh place, a block at the hero size for the total, the words line, a 384 px chart block, one legend chip per provider below it). No text change.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (loading block only), and this approval record. Stacked on #714; pull request branch only, not merge or release.
+- What's new: none — loading state only, no new notice
+
+## 2026-10-17 — Approval record: the #714 colour fixes merged into the skeleton (no visible change of its own)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Approval record: the #714 colour fixes merged into the skeleton (no visible change of its 
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the #714 colour fixes and changes no screen.
+
+## 2026-10-17 — Usage: the token history notice opens as an overlay dialog, not a box at the top (stacked on #724)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: the token history notice opens as an overlay dialog, not a box at the top (stacked 
+- Approved customer-visible result: On Usage, when a shown provider has no token history, the notice is a dialog over the page instead of a box at its top. Its title is "Token history is unavailable", its sentence is the same as before (one provider: "No token history was found for … on this Mac. Your usage limits are shown below."; several: "Complete local token history is not available for every selected provider. Available usage limits are shown below."). Its buttons are "Refresh" (it reads "Refreshing" and is closed while a refresh runs), "OK" and the X, both of which close it. Closed, it stays closed while the notice stands, also after leaving Usage and coming back; it comes back once the notice has cleared and happens again. It waits while another centred dialog is open (runtime repair, lost VibeTV picker, usage failure, system busy, Run setup again?, What's new). The tiles stay usable under it. The token chart is not shown in this state, as before. Before → after: the box at the top with the title, the sentence and "Refresh" → the same title, sentence and "Refresh" in an overlay dialog with "OK". Nothing else changes.
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, `apps/control-center/src/components/control-center-app.tsx` (the dismissal, the wait and the reset), the tests `usage-screen.test.tsx`, `usage-screen.warning-overlay.test.tsx` (new) and `control-center-app.usage-refresh.test.tsx` (button names), and this approval record. Stacked on #724; pull request branch only, not merge or release.
+- What's new: none — the same sentences in a dialog, no new capability
+
+## 2026-10-17 — Usage notice: the page behind it is not dimmed, so the tiles can be pressed (Codex review on #745)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage notice: the page behind it is not dimmed, so the tiles can be pressed (Codex review 
+- Approved customer-visible result: The Usage notice of the previous entry (same title, sentence, "Refresh" and "OK") no longer dims the page behind it. The tiles and the rest of Usage can be pressed under the notice; "OK" or the X closes it as before. Before → after: page behind the notice dimmed and not clickable → not dimmed and clickable. Nothing else changes.
+- Scope: `apps/control-center/src/components/usage-screen.tsx` (the notice's scrim), `apps/control-center/src/components/usage-screen.warning-overlay.test.tsx` (a test that the page behind is not held), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no new capability, the same dialog without the dimming
+
+## 2026-10-17 — Usage notice: a provider's action dialog comes first (Codex review on #745)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage notice: a provider's action dialog comes first (Codex review on #745)
+- Approved customer-visible result: On Usage, the provider's action dialog is shown first, as before, and the token history notice is not shown on top of it. Once that dialog is closed, the notice shows, unless it was already closed. The text of both dialogs is unchanged. Before → after: the notice over the provider's action dialog → the provider's action dialog alone, the notice after it. Nothing else changes.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the condition the notice waits for) and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no new capability, the same dialogs in a fixed order
+
+## 2026-10-17 — Approval record: #724 merged into the stack (no visible change of its own)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Approval record: #724 merged into the stack (no visible change of its own)
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the #724 branch and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the skeleton head merged into this branch (no visible change of its own)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Approval record: the skeleton head merged into this branch (no visible change of its own)
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the skeleton head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Usage loading blocks: the grey legend blocks wrap on a narrow screen like the legend (Codex review on #724)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage loading blocks: the grey legend blocks wrap on a narrow screen like the legend (Code
+- Approved customer-visible result: none beyond the loading blocks of the entry above. Only the grey legend row changes: it wraps like the loaded legend and keeps its height on one line. No text, no other layout.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (loading legend row only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — loading state only, no new notice
+
+## 2026-10-18 — Usage loading blocks: each grey legend chip keeps the legend's line height when it wraps (Codex review on #724)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage loading blocks: each grey legend chip keeps the legend's line height when it wraps (
+- Approved customer-visible result: none beyond the loading blocks of the entries above. Only the height of the grey legend row changes (one line of the legend's height per row); no text, no other layout.
+- Scope: `usage-screen.tsx` (loading legend row only), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — loading state only, no new notice
+
+## 2026-10-17 — Approval record: the #724 loading-legend fix merged into this branch (no visible change of its own)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Approval record: the #724 loading-legend fix merged into this branch (no visible change of
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the #724 head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-18 — Approval record: the skeleton head merged into this branch (no visible change of its own)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Approval record: the skeleton head merged into this branch (no visible change of its own) [2]
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the skeleton head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-18 — Codex review fix on #745: Tab leaves the token history notice for the page (no visible change)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Codex review fix on #745: Tab leaves the token history notice for the page (no visible cha
+- Approved customer-visible result: none. Focus order only; nothing looks different.
+- Scope: `setup/setup-dialog.tsx` (non-modal dialogs, scrim off) and `usage-screen.warning-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — focus fix only, no new notice
+
+## 2026-10-18 — Codex review fix on #745: Tab skips the focus guards Radix adds around a notice (no visible change)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Codex review fix on #745: Tab skips the focus guards Radix adds around a notice (no visibl
+- Approved customer-visible result: none. Focus order only; nothing looks different.
+- Scope: `setup/setup-dialog.tsx` (non-modal dialogs, scrim off) and `usage-screen.warning-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — focus fix only, no new notice
+
+## 2026-10-17 — Usage: a usage error opens as an overlay dialog, not a box at the top (stacked on #745)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: a usage error opens as an overlay dialog, not a box at the top (stacked on #745)
+- Approved customer-visible result: On Usage, when a usage refresh fails, the error is a dialog over the page instead of a box at its top. Its title and sentence are the same as before. Its buttons are "Try again" (it reads "Trying again" and is closed while a refresh runs) and "OK"; "OK" or the X closes it. Closed, it stays closed while the error stands, and it comes back only after the error has cleared and happens again. It waits while another centred dialog is open (runtime repair, lost VibeTV picker, usage failure, system busy, Run setup again?, What's new), and the token history notice waits until it is closed. The tiles stay usable under it. Before → after: the box at the top with the title, the sentence and "Try again" → the same title, sentence and "Try again" in an overlay dialog with "OK". Nothing else changes.
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, `apps/control-center/src/components/control-center-app.tsx` (the dismissal, the wait and the reset), the tests `usage-screen.error-overlay.test.tsx` (new) and `usage-screen.test.tsx`, and this approval record. Stacked on #745; pull request branch only, not merge or release.
+- What's new: none — the same sentences in a dialog, no new capability
+
+## 2026-10-17 — Approval record: #745 merged into the stack (no visible change of its own)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Approval record: #745 merged into the stack (no visible change of its own)
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the #745 branch and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the #745 head merged into the stack again (no visible change of its own)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Approval record: the #745 head merged into the stack again (no visible change of its own)
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the current #745 head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the merge record above, on its own commit (no visible change)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Approval record: the merge record above, on its own commit (no visible change)
+- Approved customer-visible result: none beyond the entries above; this record only moves the merge record of the entry above onto a commit of its own.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the #745 head merged into the stack again (no visible change of its own)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Approval record: the #745 head merged into the stack again (no visible change of its own) [2]
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the current #745 head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the #745 head with the #724 loading-legend fix merged into the stack (no visible change of its own)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Approval record: the #745 head with the #724 loading-legend fix merged into the stack (no 
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the current #745 head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-17 — Approval record: the merge record above, on its own commit (no visible change)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Approval record: the merge record above, on its own commit (no visible change) [2]
+- Approved customer-visible result: none beyond the entries above; this record only moves the merge record of the entry above onto a commit of its own.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-18 — Approval record: the #745 head with the loading-legend fixes merged into the stack (no visible change of its own)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Approval record: the #745 head with the loading-legend fixes merged into the stack (no vis
+- Approved customer-visible result: none beyond the entries above; this record restates the merge of the current #745 head and changes no screen.
+- Scope: this approval record only. Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-18 — Codex review fix on #746: after OK on a usage error with no usage yet, the page shows its empty state, not a blank page
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Codex review fix on #746: after OK on a usage error with no usage yet, the page shows its 
+- Approved customer-visible result: none beyond the existing empty state. No new text; the blank page after OK is replaced by the empty state that Usage already shows without an error.
+- Scope: `apps/control-center/src/components/usage-screen.tsx` (one condition) and `usage-screen.error-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the same empty state, no new notice
+
+## 2026-10-18 — Usage notices: the standard dialog darkening (visible change)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage notices: the standard dialog darkening (visible change)
+- Approved customer-visible result: none yet; Paul's yes is pending. Visible change: the page behind the token history notice is darkened like every other dialog (was: not darkened, tiles usable under it). Words and buttons unchanged.
+- Scope: `usage-screen.tsx` (token history notice: standard backdrop) and `usage-screen.warning-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look change only, no new notice
+
+## 2026-10-18 — Usage error: the standard dialog darkening (visible change)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage error: the standard dialog darkening (visible change)
+- Approved customer-visible result: none yet; Paul's yes is pending. Visible change: the page behind the usage error dialog is darkened like every other dialog (was: not darkened, tiles usable under it). Words and buttons unchanged.
+- Scope: `usage-screen.tsx` (usage error: standard backdrop) and `usage-screen.error-overlay.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look change only, no new notice
+## 2026-10-18 — Usage tiles: calm type 13 / 28 px, 400 / 600 (option, stacked on #669)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage tiles: calm type 13 / 28 px, 400 / 600 (option, stacked on #669)
+- Approved customer-visible result: none yet, pending Paul's decision. Proposed: tile titles 13 px / 600; the token line and the Status and Activity values 13 px / 400 in muted ink (the values were ink); a tile's main number 28 px / 600; a lane label such as "86% session remaining" stays on one line. No wording change. The Usage head above the tiles is unchanged.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (tile type, lane label, three tests), and this approval record. Option PR stacked on #669; not merged or released.
+- What's new: none — type and colour only, no new notice
+
+## 2026-10-18 — Usage tiles: a reset that does not fit beside a lane label moves beneath it (option, #777)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage tiles: a reset that does not fit beside a lane label moves beneath it (option, #777)
+- Approved customer-visible result: none yet, pending Paul's decision. Proposed: at narrow tile width (960 px window) a lane label such as "94% session (5h) remaining" stays on one line and its reset ("Reset in 2h 37m") moves to the line beneath when there is no room beside it, instead of being clipped. No wording change. The Usage head above the tiles is unchanged.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (lane row wraps, one test assertion), and this approval record. Option PR #777 stacked on #669; not merged or released.
+- What's new: none — layout fallback only, no new notice
+
+## 2026-10-18 — Usage tiles: a wrapped reset stays right-aligned (option, #777)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage tiles: a wrapped reset stays right-aligned (option, #777)
+- Approved customer-visible result: none yet, pending Paul's decision. Proposed: when a lane label and its reset do not fit on one line (960 px window), the reset ("Reset in 1h") moves to the line beneath and stays right-aligned there, instead of sitting at the left edge. No wording change. The Usage head above the tiles is unchanged.
+- Scope: `usage-screen.tsx` and `usage-screen.test.tsx` (reset alignment, one test assertion), and this approval record. Option PR #777 stacked on #669; not merged or released.
+- What's new: none — layout alignment only, no new notice
+
+## 2026-10-19 — Group: Usage page (13 PRs in one)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Group: Usage page (13 PRs in one)
+- Approved customer-visible result: none beyond the entries above; this record restates that the listed parts are combined into one pull request and changes no screen. Not yet seen by Paul as a whole.
+- Scope: this approval record, and one test line in `usage-screen.test.tsx` (the option #777 type test reads the token row, which #708 made a container). Pull request branch only, not merge or release.
+- What's new: none — approval record only
+
+## 2026-10-19 — Usage page matched to the approved calm master (#783)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage page matched to the approved calm master (#783)
+- Approved customer-visible result: none yet, pending Paul's review. Look only, no wording change: the 30-day total is 48 px (was 46 px) with the "tokens" unit and the words line set closer to it; the token chart is 224 px high (was 384 px) with a 2.5 px line, fewer date labels and a visible baseline; the legend sits closer under the chart and the tiles closer under the legend; tile padding and gaps are 22 px; the tile name is 15 px / 600 (was 13 px); the first lane's number is 32 px (was 28 px); the number of each later lane is in ink and its words muted; the lane bars are 12 px high with a 4 px corner (were 6 px, fully round). Body text stays 13 px (#777); the master's 14.5 px waits for Paul. Not part of this change: the pace bar (target tick, reserve and deficit pieces, line under each bar), which is a separate feature.
+- Scope: `usage-screen.tsx`, `usage-screen.test.tsx` (look-pinning assertions), `globals.css` (hero size 48 px, letter spacing -0.02em), and this approval record.
+- What's new: none — look only, no new notice
+
+## 2026-10-19 — Usage: master body size, olive Codex line, no Activity row, weekly axis (#783)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Usage: master body size, olive Codex line, no Activity row, weekly axis (#783)
+- Approved customer-visible result: none yet, pending Paul's review. Look only, no new wording. (1) Body text on Usage is 14.5 px / 400 (was 13 px): "Last 30 days", the "tokens" unit, the number in words, the chart axis labels, the legend, the lane labels and their reset, the token line and the Status value. The pace line under a bar stays 13 px. (2) The Codex line, its area and its legend dot are the master's dark olive `#444933` in the light theme (was `#506600`); the dark theme keeps the light olive `#A9C76A`, which stays apart from Claude's light grey. (3) The tile no longer shows an Activity row (it showed "Activity" with a word such as "coding" or "idle" under the lanes): the master draws none. The Status value stays. (4) The chart's date axis labels the first day, then every seventh day, and the last day (before: about ten labels three days apart), for example Sep 20, Sep 27, Oct 4, Oct 11, Oct 19; a weekly day less than four days before the last day is left out; the first label starts at the axis and the last one ends at its right edge.
+- Scope: `usage-screen.tsx`, `usage-screen.test.tsx`, `globals.css` (`--chart-2` in the light theme), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look only, no new notice
+
+## 2026-10-19 — Approval record for the merge of main into claude/group-usage (no visible change)
+
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: Approval record for the merge of main into claude/group-usage (no visible change))
+- Approved customer-visible result: as recorded in the entries above; nothing else changed.
+- Scope: the merge of main (#645, #682 and later) into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-19 — #783: approval marker after merging main (release round: #645 #664 #674 #676 #678 #681 …)
+
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #783: approval marker after merging main (release round: #645 #664 #674 #676 #678 #681 …))
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in main's entries; nothing else changes.
+- Scope: the merge of main into this branch (setup provider tests keep this branch's state overview) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #783: approval marker after merging main (v1.0.65 release round + #638)
+
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #783: approval marker after merging main (v1.0.65 release round + #638))
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #783: Usage matched to the template (build 2 QA)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #783: Usage matched to the template (build 2 QA) — before → after: (1) the Usage page starts 24 px higher: the "Last 30 days" row sits 16 px under the page header → before 40 px; the page ends 32 px below the tiles → before 40 px; (2) the two provider tiles stand 16 px apart → before 20 px; (3) in the first lane of a tile the big percent has no extra line space, so the bar sits 3 px lower under it → before the bar 3 px closer.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/usage-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #783: Codex fixes, first day on short charts and plan-only providers
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #783: Codex fixes, first day on short charts and plan-only providers — before → after: (1) the usage chart of 2 to 4 days labels its first day too → before only its last day; (2) a provider with a plan name or an extra-usage cap but zero use stays in the usage list → before it was hidden.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, `apps/control-center/src/components/usage-screen.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #783: "Your computer is very busy" dialog follows the template (build 2 decision)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #783: "Your computer is very busy" dialog follows the template (build 2 decision) — before → after: the dialog "Your computer is very busy" dims the screen behind it with the grey backdrop like every other dialog → before no backdrop, the page stayed bright and clickable.
+- Approved customer-visible result: the dialog looks as drawn in frame 49 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/system-busy-dialog.tsx`, `apps/control-center/src/components/system-busy-dialog.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #783: build 2b QA, the usage chart has the template's plot height, axis labels and edge (frame 2)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #783: build 2b QA, the usage chart has the template's plot height, axis labels and edge (f — before → after: the chart plot was 184 px high with the day labels 19 px under the axis → it is 160 px high with the day labels 16 px under the axis, and the chart starts 8 px lower (16 px space above the top line) so the lines, the day labels and the legend sit where the template draws them; the value labels (2B, 1B, 0) were right-aligned next to the plot → they start at the left edge of the chart as in the template; the plot ended 4 px before the right edge → it ends at the edge, in line with the tiles below.
+- Approved customer-visible result: the usage chart looks like frame 2 of "Calm Redesign - alle Screens" (plot, axis labels and legend at the template's positions).
+- Scope: `apps/control-center/src/components/usage-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #783: approval marker after merging main
+
+- User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #783: approval marker after merging main)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #783: Usage spacing follows the template (7197 review, point 2)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #783: Usage spacing follows the template (7197 review, point 2) — Before → after: from the number and its words to the chart there were 20 px → there are 48 px; from the chart and its legend to the provider cards there were 28 px → there are 56 px.
+- Approved customer-visible result: the Usage page looks as drawn in frame "Usage" (#usage) of "Calm Redesign - alle Screens": 48 px between the number and the chart, 56 px between the legend and the provider cards (also in the loading state).
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, `apps/control-center/src/components/usage-screen.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #783: Usage page margin grows and the provider cards keep 428 px (7197 review, point 3)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #783: Usage page margin grows and the provider cards keep 428 px (7197 review, point 3) — Before → after: the Usage page was centred in a column of at most 1180 px with a fixed 40 px margin and the provider cards stretched over two or three equal columns → the page margin is 48 px and grows with the window up to 96 px, the chart follows the full width, and the provider cards are 428 px wide, at most three in a row (at most 1316 px), left-aligned like the chart and not stretched.
+- Approved customer-visible result: the Usage page looks as drawn in frames "Usage" (#usage) and "Usage at 1920 x 1080" (#usage-large) of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, `apps/control-center/src/components/usage-screen.test.tsx`, `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #783: Usage page margin is 4cqw of the page area, like Updates and Support (7197 review, point 3, margin expression)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #783: Usage page margin is 4cqw of the page area, like Updates and Support (7197 review, p — Before → after: the growing page margin on Usage was 4 % of the window width (48 px up to 96 px) → it is 4 % of the page area beside the sidebar (still 48 px up to 96 px), the same expression the Updates and Support pages use; the look is the same at the clamp ends, a few pixels narrower in between.
+- Approved customer-visible result: the Usage page margin looks as drawn in frames "Usage" (#usage) and "Usage at 1920 x 1080" (#usage-large) of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #783: two Codex fixes on the Usage overlay button and narrow windows
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #783: two Codex fixes on the Usage overlay button and narrow windows — Before → after: #783 the provider overlay said "Sign in to <provider>" also when that sign-in can only be done in Settings, and the click just opened Settings → #783 the button then says "Open AI providers" (the existing wording of the permission overlay). #783 below a 428 px wide page area the provider card was cut off on the right → #783 the card shrinks to the width there; from 428 px on it stays 428 px as approved.
+- Approved customer-visible result: #783 the overlay button names where it leads; Usage cards never cut off; normal and wide windows unchanged (7197 template point 3).
+- Scope: #783 `apps/control-center/src/components/provider-action-dialog.tsx`, `apps/control-center/src/components/usage-screen.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #783 Codex fixes not announced
+
+## 2026-10-20 — #783: Paul's approval of build 7198 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" — #783 approval record for build 7198 (everything except the Appearance cards #802); the #783 entries above now carry it, merge markers are marked as no visible change, entries added after build 7198 stay pending.
+- Approved customer-visible result: #783 as described in its entries above, as seen in build 7198.
+- Scope: #783 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #783 approval record only
+
+## 2026-10-20 — #783: result lines of approved entries cleaned up
+
+- User approval: no visible change – UI approval not needed (#783: result lines of approved entries cleaned up: record cleanup, wording only: entries that already carry Paul's approval no longer open their result line with an old status word)
+- Approved customer-visible result: #783 unchanged; only the wording of the approval record.
+- Scope: #783 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #783 record cleanup
+
+## 2026-10-20 — #783: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#783 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #783 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #783 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #783 approval record only
+
+## 2026-10-20 — #783: approval marker after merging main at 5f09bf54
+
+- User approval: no visible change – UI approval not needed (merge of main (5f09bf54) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with 5f09bf54; nothing else changes.
+- Scope: the merge of 5f09bf54 and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of 5f09bf54, no customer-visible change of its own
+
+## 2026-10-21 — #783: approval marker after merging main at e3503bda
+
+- User approval: no visible change – UI approval not needed (merge of main (e3503bda) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with e3503bda; nothing else changes.
+- Scope: the merge of e3503bda and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of e3503bda, no customer-visible change of its own
+
+## 2026-10-21 — #783: Paul's approval of build 7200 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #783 approval record for build 7200; the #783 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 stay pending.
+- Approved customer-visible result: #783 as described in its entries above, as seen in build 7200.
+- Scope: #783 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #783 approval record only
+
+## 2026-10-21 — #783: a different usage error shows again after OK
+
+- User approval: no visible change – UI approval not needed (#783 Codex fix: a different usage error shows again after an earlier one was dismissed; no new wording or layout)
+- Approved customer-visible result: #783 as in its entries above; only a different usage error that replaces a dismissed one now shows again. The same error stays closed, no new text or layout.
+- Scope: #783 Codex fix in the Usage page error dialog state. Pull request branch only, not merged, not released.
+- What's new: none — the dismissal resets on a different error, no new text or layout
+
+## 2026-10-21 — #783: approval marker after merging main at 41bf10cf
+
+- User approval: no visible change – UI approval not needed (merge of main (41bf10cf) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with 41bf10cf; nothing else changes.
+- Scope: the merge of 41bf10cf and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of 41bf10cf, no customer-visible change of its own
+
+## 2026-10-21 — #783: a dismissed sign-in overlay stays closed through a timeout read
+
+- User approval: no visible change – UI approval not needed (#783 Codex fix: a dismissed sign-in overlay stays closed through a timeout/rate-limit read of the same incident; no new wording or layout)
+- Approved customer-visible result: #783 as in its entries above; a dismissed sign-in or access overlay stays closed while its provider is stale, timeout, rate-limited or checking, and opens again only after a healthy or switched-off read. No new text or layout.
+- Scope: #783 Codex fix in the provider overlay dismissal (provider-action-dialog, setup-providers-screen helper, control-center-app caller). Pull request branch only, not merged, not released.
+- What's new: none — the dismissal holds through transient reads, no new text or layout
+
+## 2026-10-21 — #783: approval marker after merging main at f314106c
+
+- User approval: no visible change – UI approval not needed (merge of main (f314106c) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with f314106c; nothing else changes.
+- Scope: the merge of f314106c and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of f314106c, no customer-visible change of its own
+
+## 2026-10-21 — #783: token chart and total leave out hidden providers
+
+- User approval: no visible change – UI approval not needed (#783 Codex fix: the token chart and total leave out providers whose tiles are hidden; no new wording or layout)
+- Approved customer-visible result: #783 as in its own entries; the Last 30 days total, chart and legend count only providers that have a tile. No new text or layout.
+- Scope: #783 Codex fix in the usage screen (token-history panel gets the shown providers). Pull request branch only, not merged, not released.
+- What's new: none — a switched-off, unsupported or dataless provider no longer appears in the token total and legend, and no text or layout changes
+
+## 2026-10-21 — #783: approval marker after merging main at 5b9c0cb4
+
+- User approval: no visible change – UI approval not needed (merge of main (5b9c0cb4) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with 5b9c0cb4; nothing else changes.
+- Scope: the merge of 5b9c0cb4 and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of 5b9c0cb4, no customer-visible change of its own
+
+## 2026-10-21 — #783: the loading skeleton leaves out hidden providers
+
+- User approval: no visible change – UI approval not needed (#783 Codex fix: the loading skeleton leaves out hidden providers too)
+- Approved customer-visible result: #783 as in its own entries; a hidden provider no longer gets a token-history loading skeleton beside the empty state. No new text or layout.
+- Scope: #783 Codex fix in the usage screen (pending token-history skeleton counts shown providers only). Pull request branch only, not merged, not released.
+- What's new: none — a switched-off, unsupported or dataless provider no longer draws a loading skeleton, and no text or layout changes
+
+## 2026-10-21 — #783: approval marker after merging main at 467fd7fb
+
+- User approval: no visible change – UI approval not needed (merge of main (467fd7fb) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
+- Scope: the merge of 467fd7fb and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of 467fd7fb, no customer-visible change of its own
+
+## 2026-10-21 — #783: loading skeletons shimmer softly (#598 Variante B)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: loading skeletons (Usage head, chart and provider cards; also other skeletons in the app) shimmer softly right to left instead of pulsing; flat grey with reduced motion. Paul picked Claude Design page "Usage-Skeleton und Two Limits - Runde 21.10", frame "#598 Usage-Skeleton · Variante B – sanftes Schimmern"; Paul sees it in the next build
+- Approved customer-visible result: #783 as in its own entries; loading skeletons get a soft glint moving right to left instead of an opacity pulse, and flat grey under reduced motion. Same sizes, layout and text.
+- Scope: the shared Skeleton primitive and its keyframes in globals.css; the usage-screen skeleton loses its redundant reduced-motion classes. Pull request branch only, not merged, not released.
+- What's new: none — a restyle of the loading blocks, no feature to announce; no new entry in whats-new.ts
+
+## 2026-10-21 — #783: approval marker after merging main at 35152cc8
+
+- User approval: no visible change – UI approval not needed (merge of main (35152cc8) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
+- Scope: the merge of 35152cc8 and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of 35152cc8, no customer-visible change of its own
+
+## 2026-10-21 — #783: Paul's approval of build 7202 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — #783 approval record for build 7202; only the 1 listed 7202 entries of #783 now carry it, everything else stays as it was.
+- Approved customer-visible result: #783 as described in those entries, as seen in build 7202.
+- Scope: #783 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #783 approval record only
+
+## 2026-10-21 — #783: Customer-flow test waits for token history only with usage data
+
+- User approval: no visible change – UI approval not needed (test-only: the provider-readiness customer-flow assertion matches the no-usage hiding rule of #783; the app is unchanged)
+- Approved customer-visible result: none; the customer sees the same Usage screen as before.
+- Scope: apps/control-center/scripts/test-customer-flows.mjs only (port of 2815e311 from #864).
+- What's new: none — test-only change, no customer-visible change
+
+## 2026-10-21 — #783: Leave uncounted provider days empty
+
+- User approval: pending — while the token count is still running, days a provider has not counted yet show no value instead of 0 in the Usage chart; settled days unchanged
+- Approved customer-visible result: Missing days stay empty until that provider's token history settles; reported values and settled zero-filling remain unchanged.
+- Scope: buildProviderTokenChart and its regression tests; pull request branch only.
+- What's new: none — correction of provisional chart values, no new feature
+
+## 2026-10-21 — #783: Preserve the token-history notice dismissal
+
+- User approval: no visible change – UI approval not needed (bug fix: the dismissed token-history notice stays closed through a temporary incomplete answer)
+- Approved customer-visible result: A dismissed notice stays closed through missing or unready answers; a ready result with history clears the dismissal so a later new incident can be shown.
+- Scope: ControlCenterApp notice state and polling regression tests; pull request branch only.
+- What's new: none — fixes a repeated notice, no new feature
+
+## 2026-10-21 — #783: Keep Refresh reachable without token history
+
+- User approval: pending — the Usage page keeps its Refresh button when token history is unavailable (after the notice was closed); Paul sees it in the next build
+- Approved customer-visible result: The existing chart-header Refresh icon stays on Usage when the chart is hidden for unavailable history, with the same action and busy state and no new text.
+- Scope: UsageScreen shared Refresh button and regression tests; coordinator decision for pre-review finding 3, pull request branch only.
+- What's new: none — restores access to the existing Refresh action
+
+## 2026-10-21 — #783: approval marker after merging main at 3dc0a15b
+
+- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #783; the own entries of #783 keep their approvals)
+- Approved customer-visible result: #783 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
+- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
+
+## 2026-10-19 — Pace on Usage (#789, stacked on #783)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Paul reviews (pace on Usage per the approved master + 19.10. decisions)
+- Approved customer-visible result: none yet, pending Paul's review. New: in the lane bars of Claude and Codex (session and weekly), a thin tick marks where CodexBar expects the use to be; the gap between the bar and the tick is a green piece for a reserve and a red hatched piece for a deficit; one 13 px line under the bar says "6% in reserve", "12% in deficit", or "On pace", with CodexBar's run-out time after it when CodexBar gives one ("12% in deficit · runs out in 2d 15h"; before: a red "Runs out in 2d 15h" line on its own). The words follow CodexBar: "ahead of plan" is a deficit, "behind plan" is a reserve; "ahead" and "behind" are never printed. A lane CodexBar sends no pace for (for example "Fable only", and every lane where the engine sends none, such as today's Windows engine) shows no tick, no piece and no line.
+- Scope: `usage-pace.tsx` and `usage-pace.test.tsx` (new), `usage-screen.tsx`, `usage-screen.test.tsx` (the bar sits in a wrapper; the run-out line is now bold), `control-center-types.ts`, `globals.css` (two pace colours), the Companion usage window fields (`usage.go`, `usage_pace_test.go`), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — pace in the bars is the feature itself, no new notice
+
+## 2026-10-19 — Pace on Usage: Codex review fix (#789)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Paul reviews (pace on Usage per the approved master + 19.10. decisions); this entry restates the entry above after a Codex review fix.
+- Approved customer-visible result: none yet, pending Paul's review. Visible result unchanged from the entry above, except one edge: when CodexBar sends a stage but not its gap or expected-use number, the lane shows no tick, no piece and no line (before this fix the tick would sit at 0%). Not seen by Paul.
+- Scope: `usage-pace.tsx` and `usage-pace.test.tsx`, plus Companion files (`parse.go`, `types.go`, `usage.go` and their tests) that are not screens, and this approval record.
+- What's new: none — edge case of the pace feature, no new notice
+
+## 2026-10-19 — Approval record for the merge of claude/group-usage into claude/usage-pace (no visible change)
+
+- User approval: none needed for this entry; it records only the merge of `claude/group-usage` (and main) into `claude/usage-pace`, no visible change of its own. The pace line already is 13 px, 600 for reserve and deficit and 400 for "On pace", as in the master. The visible changes of the branch are in the entries above, all pending Paul's review.
+- Approved customer-visible result: as recorded in the entries above; nothing else changed.
+- Scope: the merge of the base branch into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — merge of the base branch, no customer-visible change of its own
+
+## 2026-10-19 — #800: approval marker after merging the Usage group (with main)
+
+- User approval: no visible change – UI approval not needed (#800: approval marker after merging the Usage group (with main): Merge of #783 (which brought main) into Pace; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and the merged entries; nothing else changes.
+- Scope: the merge of `claude/group-usage` into this branch and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #800: approval marker after merging claude/group-usage (v1.0.65 release round + #638)
+
+- User approval: no visible change – UI approval not needed (#800: approval marker after merging claude/group-usage (v1.0.65 release round + #638): Merge of claude/group-usage into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — Pace on the VibeTV, step 1: capability handling (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Paul reviews (scope decided by Paul and the communicator, 19.10.: one Pace PR; pace themes per the approved page "Pace – alle Themes"). Not seen by Paul as running UI.
+- Approved customer-visible result: none yet, pending Paul's review. New: a theme that needs the new firmware capability `usage-pace-v1` is offered like every other theme that needs a firmware capability: on a VibeTV whose firmware lacks it, the theme library shows the existing "firmware update needed" state for it and the active-theme upgrade asks for the firmware update; no other theme is flagged. No new text and no new screen; no pace theme exists in this step. Also on Usage, no pace is shown for a stale reading or for a window whose reset has passed since CodexBar collected it (before: the Usage page drew it).
+- Scope: `control-center-types.ts` (capability field), `theme-library-screen.tsx` (capability blocker), `theme-studio-capabilities.ts` (type field only), `active-theme-upgrade.ts` and its test, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — capability handling for the Pace themes that follow, no customer-visible notice of its own
+
+## 2026-10-19 — Pace themes, 1: new theme Pace Meter (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Pace themes, 1: new theme Pace Meter (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. The What's new sentence of this entry is not on that page and is not seen by Paul. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator. The What's new sentence below is not on that page and is not yet seen by Paul.
+- Approved customer-visible result: Before: no such theme. After: the Themes list offers a live theme `Pace Meter` for one provider, drawn as on the approved page. Two lanes, session above weekly. Top left the provider name in grey; per lane the percentage large on the left, `Session left` / `Weekly left` (`used` when the app shows use) and `resets 3h 34m` on the right, a full-width bar, and under it the pace line. In reserve: the bar fills to the plan, a green piece runs to the use, a 2 px white tick stands on the plan, the line reads `6% in reserve` in green. In deficit: the bar fills to the use, a red hatched piece runs to the plan, the tick stands on the plan, the line reads `14% in deficit` in red, and `runs out` stands at the right when CodexBar says the quota runs out. On pace: the tick and the line `On pace`, no piece. Without pace (Windows today, or a lane CodexBar sends none for): percentage, label, countdown and a plain bar, no tick, no piece, no pace line. The second provider variant of the page is not built (#811). Differences from the page: the tick of the on-pace picture stands on the plan, which the app draws at the use (the page draws it at the reserve value of the other state); the font is the device font; `Session left` follows the usage mode. The theme needs the new firmware (1.0.50); an older VibeTV shows the existing "Firmware update needed" state for it. The What's new notice gets one entry: title `New theme: Pace Meter`, text `Session and weekly use against your plan: a tick marks where you should be, in reserve or in deficit.`
+- Scope: new `theme-packs/pace-meter/`, its built ZIP, render packs and catalog entry in `dist/theme-packs/`, `lib/whats-new.ts` and its tests (`whats-new.test.ts`, `control-center-app.whats-new.test.tsx`), `theme-packs/pace-themes.test.ts`, and this approval record. Pull request branch only, not merged, not released; checked with unit tests and the Control Center preview, not on a device.
+- What's new: `theme-pace-meter`
+
+## 2026-10-19 — Pace themes, 2: Gauge becomes Gauge 2.0 (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Pace themes, 2: Gauge becomes Gauge 2.0 (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator.
+- Approved customer-visible result: Before: a half ring from 9 to 3 o'clock in traffic-light colours, the provider name on top, the percentage in the opening, `Session remaining`, a small `Weekly 87%` and `Reset in 3h 34m` at the bottom. After: a ring open at the bottom (270 degrees, a little smaller), light fill on a dark track, the provider name large inside the ring above the number, `Session left` under the number, nothing on top. Under the ring the pace line (`6% in reserve` green, `14% in deficit` red, `On pace`) and `lasts until reset - resets 3h 34m` / `runs out - resets 1h 12m`, then a divider and `Weekly 87%` with its pace line on the right. In reserve the ring fills to the plan with a green piece to the use; in deficit a red hatched piece runs from the use to the plan; a 2 px white tick crosses the ring at the plan. Without pace: ring with the percentage inside, `Session left`, `resets 3h 34m` and `Weekly 87%`; no tick, piece or pace line. Differences from the page: the separator in the reset line is ` - ` (the device font has no middle dot); the number is the device's large font; the notice texts of the provider line (`Update available`) may run over the ring for a moment.
+- Scope: `theme-packs/gauge/` (new version 0.2.0, revision 3), its built ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts`, and this approval record. Pull request branch only; needs firmware 1.0.50; unit tests and preview only.
+- What's new: none — an existing theme changes its look, no new notice
+
+## 2026-10-19 — Pace themes, 3: Claude Creature and Mini Classic show the pace as a short text (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-19 00:00: "hatte bisher keinen Balken, bekommt auch jetzt keinen" (time unknown) — entry: Pace themes, 3: Claude Creature and Mini Classic show the pace as a short text (#800) — Paul's own comment on Claude Creature and Mini Classic in his edit of the page "Pace - alle Themes", which he approved on 2026-10-19 (the entry records it as said on that date)
+- Approved customer-visible result: Before: under `remaining` of each of the two usage windows nothing. After: under `remaining` the pace as a short text: `6% reserve` (green), `14% deficit` (red), `on pace` (grey in Mini Classic, light in Claude Creature); no bar, no tick. Without pace the screen is as before. Difference from the page: the text is the device's small 8 px font, because the larger one would run into the animation in the middle (the page draws 13 px).
+- Scope: `theme-packs/claude-creature/` (1.4.0, revision 10) and `theme-packs/mini-classic/` (1.3.0, revision 10) with their ZIPs, render packs, catalog entries and `theme-legibility.test.ts`, and this approval record. Needs firmware 1.0.50.
+- What's new: none — existing themes get a line, no new notice
+
+## 2026-10-19 — Pace themes, 4: Clippy, Pixel Battery, Synthwave and Tiny Office show reserve and deficit on their bars (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Pace themes, 4: Clippy, Pixel Battery, Synthwave and Tiny Office show reserve and deficit on their bars (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator.
+- Approved customer-visible result: Before: bars without any mark of the plan. After: each bar has a 2 px white tick on the plan; in reserve a green piece runs from the plan to the use, in deficit a red hatched piece from the use to the plan, on pace the tick only. Clippy: the blocks fill dark blue (before green); the label row reads `Session` / `Weekly` (before `Session remaining`) with the pace sentence on the right (`6% in reserve`, `14% in deficit`, `On pace`). Pixel Battery: the segments keep their traffic-light colours by what is left; the label row reads `Session` / `Weekly` with the sentence on the right. Synthwave: the neon bars are 16 px high (before 20), the sentence stands under each bar in neon green, neon red or the bar's colour. Tiny Office: the thin segment bars are 7 px high (before 5), with tick and piece, and no sentence. Without pace each theme shows its bars and numbers as before, in the new label wording and bar height, with no tick, piece or sentence. Differences from the page: the tick stands on the plan in the on-pace state (the page draws it at the reserve value); the font is the device font; a hatched piece in Pixel Battery and Tiny Office is shown in whole segments.
+- Scope: `theme-packs/{clippy,pixel-battery,synthwave,tiny-office}/` (1.2.0, 1.17.0, 1.2.0, 0.7.0) with ZIPs, render packs, catalog entries and `theme-packs/tiny-office-theme.test.ts`, and this approval record. Needs firmware 1.0.50.
+- What's new: none — existing themes change their look, no new notice
+
+## 2026-10-19 — Pace themes, 5: the previews and Theme Studio draw pace like VibeTV (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Pace themes, 5: the previews and Theme Studio draw pace like VibeTV (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator. No screen of its own: this is what the previews of the themes above show.
+- Approved customer-visible result: Before: a pace theme could not be previewed. After: on Overview, in the Themes list and in Theme Studio the preview of a pace theme draws the tick, the piece, the hatch and the pace sentences exactly as VibeTV does; the Themes list previews show a reserve on the session and a deficit on the weekly window of the example data. Theme Studio keeps `reserveColor` / `deficitColor` of a pace bar when it opens and saves a pack, accepts colour stops on text bound to a pace key, and asks for `usage-pace-v1` and firmware 1.0.50 for a pack that uses pace. No new control.
+- Scope: `components/live-vibetv-preview.tsx` and its test, `lib/theme-studio.ts`, `lib/theme-studio-capabilities.ts`, `components/theme-library-screen.test.tsx` (an app that does not know a capability blocks only that pack), and this approval record.
+- What's new: none — previews of the themes above, no new notice
+
+## 2026-10-19 — Settings: the section Pace under Display mode (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Settings: the section Pace under Display mode (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator (the Settings frame of that page).
+- Approved customer-visible result: Before: no such section. After: directly under `Display mode` a section `Pace` (label on the left, a divider like the other sections) with one row, `Show reserve or deficit` and a switch, on by default. While the switch is on and the active catalog theme has no place for pace, one muted line under it: `<Theme name> has no place for it. Pace Meter shows it.` (for example `Token Counter has no place for it. Pace Meter shows it.`). Off: VibeTV is sent no pace, so no pace theme shows tick, piece or sentence; Usage keeps its pace. The section is not shown when the usage engine sends no pace (today's Windows engine). The page's example line names Mini Classic, which now has a place for pace after this PR; the line follows the active theme.
+- Scope: `components/settings-pace.tsx` (new), one block in `components/settings-screen.tsx`, `components/settings-pace.test.tsx`, the Companion preference `vibetv.display.showPace` (`runtimeconfig` `hidePace`, `display_preferences.go`, `daemon/send.go`) with tests, and this approval record.
+- What's new: none — a setting for the Pace themes, no new notice
+
+## 2026-10-19 — Pace themes: Codex review fix, the preview reads every spelling of a pace binding (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Pace themes: Codex review fix, the preview reads every spelling of a pace binding (#800): Codex review fix that changes what the preview of a custom theme shows (pace instead of empty text); Paul has not seen it. Earlier wording: Codex review fix, no visible change of the approved Pace themes; not seen by Paul. The look of the entries above stands as approved on the page "Pace - alle Themes".
+- Approved customer-visible result: Unchanged for the shipped themes. A custom theme that binds pace as `us1PaceText`, `us1Pace` or `usage.0.PaceText` is previewed with its pace, as VibeTV draws it (before: the preview showed empty text and a plain bar for those spellings).
+- Scope: `components/live-vibetv-preview.tsx` and its test, the firmware repaint rules (not screens), and this approval record.
+- What's new: none — a preview correction, no new notice
+
+## 2026-10-19 — Pace themes: Codex review fix, Theme Studio treats usageModeShort as a pace capability (#800)
+
+- User approval: no visible change – UI approval not needed (Pace themes: Codex review fix, Theme Studio treats usageModeShort as a pace capability (#800): Codex review fix, manifest correction only (capability and firmware version named in the exported pack), no visible change; not seen by Paul)
+- Approved customer-visible result: Unchanged. A pack that Theme Studio exports and that uses only `usageModeShort` now asks for `usage-pace-v1` and firmware 1.0.50, as the Companion already requires (before: the manifest named no such capability).
+- Scope: `lib/theme-studio.ts` and its test, and this approval record.
+- What's new: none — a manifest correction, no new notice
+
+## 2026-10-19 — Pace themes: Codex review fix, preview and device drop pace of a stale reading (#800)
+
+- User approval: no visible change – UI approval not needed (Pace themes: Codex review fix, preview and device drop pace of a stale reading (#800): Codex review fix, no visible change of the approved Pace themes (the entry itself states it): while the reading is fresh nothing changes, only stale data stops showing an old pace; not seen by Paul)
+- Approved customer-visible result: Unchanged while the reading is fresh. When a collection failed or the reset trust has run out, VibeTV and its preview show no reserve or deficit (before: the preview, and a retained last-good frame on the device, kept the old pace), like Usage.
+- Scope: `components/live-vibetv-preview.tsx` and its test, the Companion frame (`daemon/send.go`, not a screen), and this approval record.
+- What's new: none — a stale-data correction, no new notice
+
+## 2026-10-19 — Usage pace: Codex review fix, a lane's pace goes when its reset countdown has run out (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Usage pace: Codex review fix, a lane's pace goes when its reset countdown has run out (#800): Codex review fix that makes a lane's tick, piece and pace line disappear when its reset has passed; the entry does not state no visible change and Paul has not seen it. Earlier wording: Codex review fix to the Usage pace of the entries above; not seen by Paul.
+- Approved customer-visible result: Unchanged while the lane's reset is ahead. When the reset time of a lane has passed since the reading (the countdown of the page reaches zero before the next poll), its tick, piece and pace line go with it instead of staying until the next reading.
+- Scope: `components/usage-screen.tsx`, `components/usage-pace.test.tsx`, and this approval record.
+- What's new: none — a stale-data correction, no new notice
+
+## 2026-10-19 — Settings Pace: Codex review fix, the note names the live theme during standby (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Settings Pace: Codex review fix, the note names the live theme during standby (#800): Codex review fix that changes the muted note under the Pace switch during standby; Paul has not seen it. Earlier wording: Codex review fix to the Settings section Pace above; not seen by Paul.
+- Approved customer-visible result: Unchanged. While VibeTV shows its screensaver, the muted line under the switch is worked out from the customer's live theme, not from the screensaver (before: a screensaver could be named as "has no place for it").
+- Scope: `components/settings-screen.tsx`, `components/settings-pace.test.tsx`, and this approval record.
+- What's new: none — a correction, no new notice
+
+## 2026-10-19 — Pace themes: Gauge 2.0 keeps the update notice inside the ring; shorter What's new text (#800)
+
+- User approval: communicator decision on the Gauge notice (the notice must never run over the ring); the What's new text is the communicator's wording, pending Paul's yes. Not seen by Paul.
+- Approved customer-visible result: Gauge 2.0 (replaces its look in the entry above). Before: the provider name stood in 18 px type at the top of the ring and the notice that replaces it (`Update available`, `Open VibeTV Mac App`) ran over the ring. After: the provider name (and the notice in its place) is in the small device type lower in the ring, so `Update available` and `Open VibeTV Mac App` stay inside the opening of the ring; the percentage is in the 32 px device font (before 52 px) below it, then `Session left`, the pace line and the reset line as before. The separator in the reset line stays ` - `: the device font used there has only the characters 32 to 127, so it has no middle dot. The What's new entry of Pace Meter now reads: title `New theme: Pace Meter`, text `New: Pace shows whether your session and weekly limits will last – in reserve, on pace or in deficit.` (before: `Session and weekly use against your plan: a tick marks where you should be, in reserve or in deficit.`)
+- Scope: `theme-packs/gauge/` (revision 5, version 0.2.0 unchanged, still unpublished) with its ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts`, `lib/whats-new.ts`, `components/control-center-app.whats-new.test.tsx`, and this approval record.
+- What's new: none — corrects the entry `theme-pace-meter` above
+
+## 2026-10-19 — Gauge 2.0: more room for the update notice, revision 5 (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Gauge 2.0: more room for the update notice, revision 5 (#800): Gauge 2.0 layout correction decided by the communicator; Paul has not seen it as running UI. Earlier wording: communicator decision on the Gauge notice (see the entry above); not seen by Paul.
+- Approved customer-visible result: As in the entry above, with the provider name and the notice 4 px lower and the percentage and `Session left` 4 and 3 px lower, so that `Open VibeTV Mac App` keeps about 3 px clear of the ring on both sides (before: under 1 px). Pictures: `review-1016/ui/pace-vs-vorlage/gauge.png`.
+- Scope: `theme-packs/gauge/` (revision 5), its ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts`, and this approval record.
+- What's new: none — layout correction of an unpublished theme
+
+## 2026-10-19 — Gauge 2.0: percentage and provider name back at the approved size and place; the notice is cut inside the ring (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Gauge 2.0: percentage and provider name back at the approved size and place; the notice is cut inside the ring (#800): Gauge 2.0 layout correction decided by the communicator; Paul has not seen it as running UI. Earlier wording: communicator correction (the approved look of the percentage must not change); not seen by Paul as running UI.
+- Approved customer-visible result: Gauge 2.0 (replaces the two Gauge entries above). The percentage is back in the large device font (digits about 33 px high, 29 px on the page) at the place of the page, the provider name stands above it in the device font 2, and `Session left` below as on the page; the layout of the first Gauge entry, with the name 2 px higher so that it clears the number. The update notice (`Update available`, `Open VibeTV Mac App`) replaces the provider name, as it does in every theme. VibeTV cannot show it outside the ring while the name stays in the ring: the firmware has no text that names the provider without the notice, and a second label-bound text would show the provider twice. So the name box lies inside the opening of the ring (90 px wide) and VibeTV clips a longer text at the box: the notice appears cut (`Update availab`, `Open VibeTV M`) and never touches the ring. A binding for the plain provider name would allow the notice at the bottom edge; that needs new firmware.
+- Scope: `theme-packs/gauge/` (revision 8, version 0.2.0 unchanged, unpublished), its ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts` (the ring-fit test now checks the clip box), and this approval record. Firmware and the firmware requirement (1.0.50) are unchanged.
+- What's new: none — layout correction of an unpublished theme
+
+## 2026-10-19 — Gauge 2.0: provider name in the ring as on the page, the update notice under the ring (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Gauge 2.0: provider name in the ring as on the page, the update notice under the ring (#800): Gauge 2.0 layout correction decided by the communicator; Paul has not seen it as running UI. Earlier wording: communicator decision (Paul would reject a clipped notice; the approved look of the number and the name stands); not seen by Paul as running UI.
+- Approved customer-visible result: Gauge 2.0, replacing the Gauge entries above. The percentage and the provider name stand in the ring exactly as in the entry of the approved page (name in the device font above the large number, `Session left` below). New firmware text `usageProviderName` (the provider's name without the notice) keeps the name in the ring while a notice shows. While VibeTV shows a notice (`Update available`, `Open VibeTV Mac App`) it stands whole, centred, in place of the reset line under the ring and outside it; the reset line is not drawn while the notice shows and comes back with it gone. Nothing is cut and nothing touches the ring. Without a notice the screen is as in the approved pictures. The preview draws the same when it knows a notice.
+- Scope: `theme-packs/gauge/` (revision 9, version 0.2.0 unchanged, unpublished) with ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts`, `components/live-vibetv-preview.tsx` and its test (the new bindings), `lib/theme-studio.ts` (usage-pace-v1 for `usageProviderName`), the firmware bindings `usageProviderName` and `usageSlotNPaceFooter` and the repaint fix after a sleep (not screens), `scripts/build-theme-packs.mjs` (the footer binding counts as showing the notice), and this approval record.
+- What's new: none — layout correction of an unpublished theme
+
+## 2026-10-19 — Gauge 2.0: the notice also shows when there is no usage window (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Gauge 2.0: the notice also shows when there is no usage window (#800): Codex review fix to Gauge 2.0: the notice now shows in the footer when no usage window exists; Paul has not seen it. Earlier wording: Codex review fix to the Gauge entry above; no visible change in the normal states; not seen by Paul.
+- Approved customer-visible result: As in the entry above. New: while no usage window exists (startup, provider error) and VibeTV shows a notice, the notice stands in the footer line under the ring (before: it would not have been visible at all). `usageProviderName` no longer counts as a text that shows the notice, so VibeTV draws the notice on the footer, not over the name.
+- Scope: `theme-packs/gauge/` (revision 10), its ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts`, the firmware field for the provider name (not a screen), and this approval record.
+- What's new: none — correction of an unpublished theme
+
+## 2026-10-19 — Pace bars: Codex review fix, the piece follows the rounded bar in VibeTV and in the preview (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Pace bars: Codex review fix, the piece follows the rounded bar in VibeTV and in the preview (#800): Codex review fix that changes how the pace piece is drawn at rounded bar ends; Paul has not seen it. Earlier wording: Codex review fix to the Pace themes above; not seen by Paul.
+- Approved customer-visible result: A reserve or deficit piece that reaches an end of a bar with rounded corners (Pace Meter at the very end of the track) is cut to the rounded interior, on VibeTV and in the previews, instead of ending square over the corner. Segmented pace bars keep the rounding of every segment, also the paced ones. No other change.
+- Scope: `components/live-vibetv-preview.tsx` and its test, the firmware bar drawing (not a screen), and this approval record.
+- What's new: none — a drawing correction, no new notice
+
+## 2026-10-20 — #800: approval marker after merging main
+
+- User approval: no visible change – UI approval not needed (#800: approval marker after merging main: Merge of main into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #800: approval marker after merging claude/group-usage (7197 review points 2 and 3)
+
+- User approval: no visible change – UI approval not needed (#800: approval marker after merging claude/group-usage (7197 review points 2 and 3): Merge of claude/group-usage (#783) into this branch, which brings the #783 entries "Usage spacing" (7197 point 2) and "Usage page margin and 428 px provider cards" (7197 point 3); no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in the merged #783 entries of 7197 points 2 and 3 (pending, Paul reviews); the pace rows of #800 sit inside the 428 px provider cards.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #800: approval marker commit for the merge of claude/group-usage (7197 review points 2 and 3)
+
+- User approval: no visible change – UI approval not needed (#800: approval marker commit for the merge of claude/group-usage (7197 review points 2 and 3): Merge of claude/group-usage (#783) into this branch (7197 review points 2 and 3, #783 entries); no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in the merged #783 entries of 7197 points 2 and 3 (pending, Paul reviews); nothing else changes.
+- Scope: this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #800: approval marker after merging claude/group-usage (4cqw margin, 7197 review point 3)
+
+- User approval: no visible change – UI approval not needed (#800: approval marker after merging claude/group-usage (4cqw margin, 7197 review point 3): Merge of claude/group-usage (#783) into this branch, which brings the #783 entry "Usage page margin is 4cqw of the page area" (7197 point 3, margin expression); no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in the merged #783 entry of 7197 point 3 (pending, Paul reviews); nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #800: approval marker commit for the merge of claude/group-usage (4cqw margin, 7197 review point 3)
+
+- User approval: no visible change – UI approval not needed (#800: approval marker commit for the merge of claude/group-usage (4cqw margin, 7197 review point 3): Merge of claude/group-usage (#783) into this branch (7197 point 3, margin expression, #783 entry); no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in the merged #783 entry of 7197 point 3 (pending, Paul reviews); nothing else changes.
+- Scope: this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #800: approval marker commit for the merge 54194585 of claude/group-usage (Codex fixes c89aa649)
+
+- User approval: pending — merge 54194585 of claude/group-usage into #800; no visible change of its own; Paul reviews the visible changes of #783 before merge.
+- Approved customer-visible result: #800 merge 54194585 as in the #783 entry "two Codex fixes on the Usage overlay button and narrow windows"; nothing else changes.
+- Scope: #800 merge 54194585 and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #800 merge 54194585 has no customer-visible change of its own
+
+## 2026-10-20 — #800: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#800 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #800 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #800 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #800 approval record only
+
+## 2026-10-20 — #800: approval marker after merging claude/group-usage at e20a5a93
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (e20a5a93) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with e20a5a93; nothing else changes.
+- Scope: the merge of e20a5a93 and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of e20a5a93, no customer-visible change of its own
+
+## 2026-10-20 — #800: approval marker after merging claude/group-usage at 467940ee
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (467940ee) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with 467940ee; nothing else changes.
+- Scope: the merge of 467940ee and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of 467940ee, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at bb879b1d
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (bb879b1d) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with bb879b1d; nothing else changes.
+- Scope: the merge of bb879b1d and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of bb879b1d, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at bae9ab1e
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (bae9ab1e) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with bae9ab1e; nothing else changes.
+- Scope: the merge of bae9ab1e and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of bae9ab1e, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at a5b256b4
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (a5b256b4) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with a5b256b4; nothing else changes.
+- Scope: the merge of a5b256b4 and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of a5b256b4, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at e927aefb
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (e927aefb) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with e927aefb; nothing else changes.
+- Scope: the merge of e927aefb and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of e927aefb, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at f563a07e
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (f563a07e) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with f563a07e; nothing else changes.
+- Scope: the merge of f563a07e and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of f563a07e, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at f3cb1c10
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (f3cb1c10) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with f3cb1c10; nothing else changes.
+- Scope: the merge of f3cb1c10 and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of f3cb1c10, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at 4715951a
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (4715951a) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with 4715951a; nothing else changes.
+- Scope: the merge of 4715951a and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of 4715951a, no customer-visible change of its own
+
+## 2026-10-21 — #800: Paul's approval of build 7202 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — #800 approval record for build 7202; only the 16 listed 7202 entries of #800 now carry it, everything else stays as it was.
+- Approved customer-visible result: #800 as described in those entries, as seen in build 7202.
+- Scope: #800 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #800 approval record only
+
+## 2026-10-21 — #800: retain the Pace setting and reject unavailable pace values
+
+- User approval: no visible change – UI approval not needed (bug fix: keep Pace settings during stale collections and suppress missing or out-of-range deltas)
+- Approved customer-visible result: the existing Pace setting stays available during a collection outage; invalid pace data no longer appears as a valid reading, with no new copy or layout.
+- Scope: Settings Pace visibility, Usage pace validation, and regression tests for #800; theme-pack notice validation accepts the firmware's existing footer spellings.
+- What's new: none — corrections to the existing pace behavior only
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at 3af4b175
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (3af4b175) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with 3af4b175; nothing else changes.
+- Scope: the merge of 3af4b175 and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of 3af4b175, no customer-visible change of its own
+
+## 2026-10-21 — #800: expire preview reset countdowns with their trust
+
+- User approval: no visible change – UI approval not needed (bug fix: stop the preview reset countdown when its measurement trust expires, matching the device)
+- Approved customer-visible result: the existing Gauge footer and reset bindings show Reset unavailable once reset trust expires, with no new copy or layout.
+- Scope: shared reset countdown calculation in live-vibetv-preview and its 60-second trust regression test; pre-review P3 for #800.
+- What's new: none — correction to existing preview and device parity only
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at ba55b31f
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (ba55b31f) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with ba55b31f; nothing else changes.
+- Scope: the merge of ba55b31f and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of ba55b31f, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at 1b03f96d
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (1b03f96d) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with 1b03f96d; nothing else changes.
+- Scope: the merge of 1b03f96d and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of 1b03f96d, no customer-visible change of its own
+
+## 2026-10-21 — #800: exact Pace segments and shorter reserve/deficit labels
+
+- User approval: pending — Paul asked on 2026-10-21 22:40: hatched part as long as the deficit, '40% deficit' / '6% reserve' without 'in', all themes; result not yet seen by him
+- Approved customer-visible result: 96% used with 40% deficit fills normally to 56% and hatches 56–96%; reserve spans its stated percentage, including partial segments; labels read “40% deficit” and “6% reserve”, with “On pace” unchanged.
+- Scope: shared firmware and Control Center/Theme Studio preview rendering for Pace Meter, Gauge, Clippy, Pixel Battery, Synthwave and Tiny Office; shared text bindings also cover Claude Creature and Mini Classic; Usage page labels and regression tests. No Two-at-once header or overlap changes; no hardware rehearsal in this worker.
+- What's new: none — correction to existing Pace rendering and wording.
+
+## 2026-10-21 — #800: Pace bar table tests
+
+- User approval: no visible change – UI approval not needed (test-only: pace bar segment table in firmware and preview)
+- Approved customer-visible result: none; the pace bar drawing is unchanged.
+- Scope: Table-driven pace bar tests at 0, 1, 50, 99 and 100 percent used, for reserve, deficit and on pace, in used and remaining mode, with the plan clamped past 0 or 100; in the native firmware suite and the Control Center preview suite.
+- What's new: none — tests only.
+
+## 2026-10-21 — #592 on #800: Two at once, Limits on VibeTV
+
+- User approval: pending — #592 two providers at once (Two at once mode, Limits on VibeTV, Two Limits theme); visible parts go to a Claude Design round before Paul sees them
+- Approved customer-visible result: nothing is approved yet. Display mode gains "Two at once" (with a First and Second provider choice) in setup and Settings, and Settings gains "Limits on VibeTV"; these screens are the carried #592 versions and are redesigned in a Claude Design round first.
+- Scope: Control Center only: display mode panel, provider pair choice, Limits on VibeTV section, the pair preview and the "One provider" name of the former Manual mode. Pace is not part of this entry; it comes from #800 unchanged.
+- What's new: none — the visible parts go to a Claude Design round first
+
+## 2026-10-21 — #592 on #800: Two Limits theme
+
+- User approval: pending — #592 two providers at once (Two Limits theme with the #800 pace bar and sentences); visible parts go to a Claude Design round before Paul sees them
+- Approved customer-visible result: nothing is approved yet. The theme "Two Limits" shows two limits (or two providers at once) with the pace bar, the reserve or deficit piece and the sentences of the #800 Pace themes; layout and colours are open for the Claude Design round.
+- Scope: theme pack two-limits (theme, manifest, render pack, catalog entry), its documentation and its test. Its preview image in docs/assets still shows the #592 look.
+- What's new: none — the visible parts go to a Claude Design round first
+
+## 2026-10-21 — #864: What's new entry for the Two Limits theme
+
+- User approval: pending — #864 What's new entry for the Two Limits theme (draft text, Paul sees it with the Two-at-once design round)
+- Approved customer-visible result: nothing is approved yet. A customer who updates is told once, with the other new themes, "New theme: Two Limits" and the draft sentence "New: Two Limits shows two sources at once on your VibeTV – two providers or two accounts."; the entry links to the theme in Themes.
+- Scope: one What's-new entry (`theme-two-limits`) in apps/control-center/src/lib/whats-new.ts, its test fixture and expectations in control-center-app.whats-new.test.tsx (the notice now shows the newest three themes, Gauge is no longer among them), and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: `theme-two-limits`
+
+## 2026-10-21 — #864: approval marker after merging claude/usage-pace at 8d16d879
+
+- User approval: no visible change – UI approval not needed (merge of claude/usage-pace (8d16d879) into #864; the own entries of #864 keep their approvals)
+- Approved customer-visible result: #864 as in its own entries plus the entries merged with 8d16d879; nothing else changes.
+- Scope: the merge of 8d16d879 and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge of 8d16d879, no customer-visible change of its own
+
+## 2026-10-21 — #864: Two Limits theme as Variante B (reduced)
+
+- User approval: pending — theme Two Limits on VibeTV as Paul's pick "Two Limits · Variante B – reduziert: nur Balken, Sätze klein" (Claude Design page "Usage-Skeleton und Two Limits - Runde 21.10"): name + window kind, big percent, thin pace bar, small pace sentence, no reset line; Paul sees it on the device in the next build
+- Approved customer-visible result: the reduced Two Limits layout uses a dark background, large percentages without a mode suffix, thin pace bars and small state-coloured pace sentences. The existing combined provider/window label and mode sit on the left; a small grey provider/system-notice line remains at the bottom. Missing slots stay hidden because the existing theme format has no unavailable-dash binding; the second panel starts below the divider to avoid an overlap. Device review remains pending.
+- Scope: theme-packs/two-limits/theme.json and manifest.json, regenerated dist/theme-packs outputs, apps/control-center/src/theme-packs/two-limits-theme.test.ts and this approval record. No firmware, Companion or app UI change.
+- What's new: none — layout refinement of the existing Two Limits theme; its existing announcement remains unchanged.
+
+## 2026-10-21 — #864: Recent activity names both sources in Two at once
+
+- User approval: pending — Recent activity says "Show <Top> and <Bottom> at once" when the Two at once sources change (wording decided by the coordinator 21.10.); Paul sees it in the next build
+- Approved customer-visible result: nothing is approved yet. Under Recent activity, a change of only the Bottom source of Two at once is recorded with the draft sentence "Show <Top> and <Bottom> at once" (source labels as the picker shows them) instead of nothing, and switching from a fixed or Automatic display to Two at once is recorded the same way. Other entries keep their wording ("Always show <provider>." and "Automatic: VibeTV switches between your providers.").
+- Scope: displayModeChange in apps/control-center/src/components/control-center-app.tsx (the caller now takes its sentence from it) and its tests in control-center-app.test.ts, plus this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — no announcement; the Recent activity sentence is the only change
+
+## 2026-10-21 — #864: theme Two Limits removed (Paul 7202)
+
+- User approval: pending — Paul (21.10.): "das theme two limits ist zu nah dran an pace meter … lass uns das theme two limits erstmal rausnehmen": the theme Two Limits and its What's new entry are gone; Two at once uses Pace Meter and the other themes; Paul sees it in build 7203
+- Approved customer-visible result: nothing is approved yet. The theme Two Limits is no longer in the catalog, in Themes or in What's new. What's new announces Gauge, Token Counter and Pace Meter; Two at once uses Pace Meter and the other themes.
+- Scope: theme-packs/two-limits and its outputs in dist/theme-packs (render packs, ZIPs, catalog entry), the What's new entry theme-two-limits and its test expectations, the display-limits-settings test fixture, docs/themes.md, docs/assets/README.md and its preview image, and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — the Two Limits entry is removed; no new announcement
+
+## 2026-10-21 — #864: Two at once pickers "Provider 1"/"Provider 2", picking the same source swaps (Paul 7202)
+
+- User approval: pending — Paul's 7202 feedback on #864: pickers are called "Provider 1" and "Provider 2"; choosing the other picker's source swaps the two instead of showing "Two at once needs two different providers"; Paul sees the integration in build 7203
+- Approved customer-visible result: nothing is approved yet. Settings and setup name the Two at once pickers "Provider 1" and "Provider 2"; choosing the other picker's source swaps both and saves the distinct pair without the duplicate-provider error. Recent activity keeps "Show <Provider 1> and <Provider 2> at once" with the chosen source names.
+- Scope: setup-display-mode-screen.tsx and Settings/setup interaction tests. Both screens already share the setup swap helper on this branch; keep it and verify saving in both directions. Companion validation and generic error handling stay in place; no dedicated app-side duplicate-provider dialog exists to remove.
+- What's new: none — picker labels and swap regression coverage, no new announcement
+
+## 2026-10-21 — #864: no "A + B" top line in Two at once (Paul 7202)
+
+- User approval: pending — Paul (21.10.): no "A + B" top line in Two at once on the VibeTV and in its preview; Paul sees it in build 7203
+- Approved customer-visible result: Two at once leaves the shared provider line blank because each usage slot already names its provider. Device notices still appear on that line; the app's own provider names and Showing now text stay unchanged. Paul's review on build 7203 remains pending.
+- Scope: pair-frame label construction and serialization, firmware preservation of explicitly empty labels, live VibeTV preview label preservation, focused tests and protocol documentation. No theme layout changes.
+- What's new: none — removal of the redundant pair header, no separate announcement.
+
+## 2026-10-21 — #864: approval marker after the Two Limits removal merge
+
+- User approval: no visible change – UI approval not needed (merge of the remote #864 branch with the Two Limits removal; the remote's own change is Go-only: the Two at once shortcut in the Companion API)
+- Approved customer-visible result: #864 as in its own entries; the Two Limits theme stays removed, nothing else changes.
+- Scope: the merge commits and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge marker, no customer-visible change of its own
+
+## 2026-10-21 — #864: queued display changes build on the latest selection
+
+- User approval: no visible change – UI approval not needed (bug fix: quick successive limit toggles are all saved)
+- Approved customer-visible result: Ticking or unticking several limits in quick succession keeps every change; each save starts from the selection the earlier save left behind. Pair order changes are logged under Recent activity like any other pair change.
+- Scope: the limits callback hands its change to the display write queue as a function of the selection there, the picker type accepts that form, and the Companion logs a pair's member or order change as a display mode change. Tests for the queue, the limits change, and the logged pair order.
+- What's new: none — bug fix, no separate announcement.
+
+## 2026-10-21 — #864: approval marker after merging claude/usage-pace at 5f6798fd
+
+- User approval: no visible change – UI approval not needed (merge of claude/usage-pace (5f6798fd) into #864; the own entries of #864 keep their approvals)
+- Approved customer-visible result: #864 as in its own entries plus the entries merged with 5f6798fd; nothing else changes.
+- Scope: the merge of 5f6798fd and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge of 5f6798fd, no customer-visible change of its own
+
+## 2026-10-21 — #864: preserve the saved pair during a temporary missing reading
+
+- User approval: no visible change – UI approval not needed (bug fix: keep the saved Two at once card and both provider pickers visible while a member awaits fresh usage)
+- Approved customer-visible result: Setup and Settings keep the saved pair selected when either enabled member has stale, unavailable, or missing usage; its preview stays unavailable and the saved provider order stays intact. One provider keeps its existing reading requirement.
+- Scope: shared pair picker inputs, setup and Settings pair choices and previews, regression tests, and the theme guide correction for the deliberately empty pair frame label.
+- What's new: none — restore the existing saved choice, no separate announcement.
+
+## 2026-10-21 — #864: apply queued pair picker changes to the latest selection
+
+- User approval: no visible change – UI approval not needed (bug fix: preserve both rapid pair picker edits and their swap rule while a display PATCH is pending)
+- Approved customer-visible result: Each pair picker changes only its own slot against the selection left by the preceding save, so both rapid edits remain saved, including a swap.
+- Scope: pair picker callback passes position and provider, Settings derives the pair in the existing display write queue, setup applies the shared swap helper to its current draft, and regression tests hold a display PATCH while both pickers change.
+- What's new: none — correct existing pair saves, no separate announcement.
+
+## 2026-10-21 — #864: F1 keep the last visible limit inside queued edits
+
+- User approval: no visible change – UI approval not needed (bug fix: queued unticks cannot hide the last visible limit)
+- Approved customer-visible result: Rapid unticks keep the first choice and leave the final visible limit selected, even while an earlier display save is pending.
+- Scope: display-limits-settings updater and its queued two-untick regression.
+- What's new: none — restore the existing last-visible-limit editing rule.
+
+## 2026-10-21 — #864: F2 keep hidden limits hidden after source loss
+
+- User approval: pending — when the chosen limit disappears, One provider shows unavailable instead of resurrecting a hidden limit; Two at once shows the other readable member alone
+- Approved customer-visible result: Hidden limits stay unticked and can be selected explicitly again. A reading with no chosen limit left stays unavailable in the single-provider preview and on VibeTV; a readable pair member keeps its own reading and countdown.
+- Scope: daemon visible-window filtering and pair selection, shared display previews, and regression tests for source loss and checkbox editing.
+- What's new: none — correct hidden-limit behavior, pending review of the changed unavailable state.
+
+## 2026-10-21 — #864: approval marker after merging claude/usage-pace at 585afefc
+
+- User approval: no visible change – UI approval not needed (merge of claude/usage-pace (585afefc) into #864; the own entries of #864 keep their approvals)
+- Approved customer-visible result: #864 as in its own entries plus the entries merged with 585afefc; nothing else changes.
+- Scope: the merge of 585afefc and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge of 585afefc, no customer-visible change of its own
+
+## 2026-10-21 — #864: approval marker after merging claude/usage-pace at 8d0fe117
+
+- User approval: no visible change – UI approval not needed (merge of claude/usage-pace (8d0fe117) into #864; the own entries of #864 keep their approvals)
+- Approved customer-visible result: #864 as in its own entries plus the entries merged with 8d0fe117; nothing else changes.
+- Scope: the merge of 8d0fe117 and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge of 8d0fe117, no customer-visible change of its own
+
+## 2026-10-22 — #864: Theme Library shows the token-history hint also in Two at once
+
+- User approval: pending — Theme Library shows the existing token-history hint also in Two at once
+- Approved customer-visible result: in Two at once, a theme that draws token numbers gets the same "Shows -- while token history is unavailable. See Usage." line that one-provider mode already shows, because Two at once frames carry no token totals; nothing else changes.
+- Scope: Theme Library hint for Two at once (usage-screen.tsx helper, control-center-app.tsx call site, tests). Pull request branch #864 only, not merged, not released.
+- What's new: none — the hint text already exists; only the case in which it shows is extended to Two at once
+## 2026-10-21 — footer-first-reset: Use the first displayed reset in the shared footer
+- User approval: pending — Paul asked ~22:20 „hier unten steht keine reset time, das tritt auch bei anderen themes auf, bspw. cozy coder“; footer-first-reset implementation awaits visual review.
+- Approved customer-visible result: Mini Classic with idle Session and Weekly reset in 3d 1h shows “Weekly resets in 3d 1h”; Cozy Meadow displays only Session and keeps “No active session”, never borrowing the hidden Weekly reset; unavailable deadlines remain unavailable.
+- Scope: Central firmware and Control Center preview footer rendering, with matching regression tests; no provider semantics or theme-specific rules.
+- What's new: none — correction of the existing reset footer.
+
+## 2026-10-21 — #894: Keep the reset footer at its theme font size
+- User approval: pending — #894 fixed-size footer wording refinement requested after the smaller Mini Classic screenshot; exact final wording awaits visual approval.
+- Approved customer-visible result: At the original footer font size, use “Weekly resets in 3d 1h” when it fits, otherwise “Weekly 3d 1h”; “Resets 3d 1h” is allowed only with one displayed limit. Mini Classic shows “Weekly 3d 1h” at font 2 size 2 in used and remaining mode. Cozy Meadow with idle Session still shows “No active session” at its original font size; Gauge shows “Session 2h 14m”. If no permitted wording fits, retain the font and existing clipping rather than shrink or hide a multi-limit name.
+- Scope: Central firmware and preview footer rendering, font measurement and focused regression tests; no theme-specific cases, provider or hardware changes.
+- What's new: none — preserve the existing footer font size while shortening reset wording.
+
+## 2026-10-21 — #894: Shrink idle reset footers again
+- User approval: no visible change – UI approval not needed (bug fix: idle footer shrinks again as before #894)
+- Approved customer-visible result: Idle "No active session" and "Reset unavailable" footers fit their theme width again by shrinking, as before #894; countdown footers keep their fixed size and wording.
+- Scope: Firmware and Control Center preview footer shrink opt-out limited to countdown wording; focused regression tests in both.
+- What's new: none — restores the pre-#894 shrink for idle and unavailable footers.
+
+## 2026-10-21 — #894: Footer wording table tests
+- User approval: no visible change – UI approval not needed (test-only: footer wording table in firmware and preview)
+- Approved customer-visible result: none; the rendered footer wording is unchanged.
+- Scope: Table-driven footer wording tests (countdown, idle, unavailable; used and remaining; one and two displayed limits; hidden limits) in the native firmware suite and the Control Center preview suite.
+- What's new: none — tests only.
+
+## 2026-10-22 — #894: Pair footer is never clipped
+- User approval: no visible change – UI approval not needed (bug fix: a Two-at-once footer text no longer runs past the screen edge; it names the limit without the provider, then shrinks)
+- Approved customer-visible result: none beyond the fix: "Claude Weekly 3d 1h" that did not fit now reads "Weekly 3d 1h".
+- Scope: Footer wording selection in firmware and preview tries the limit name after the pair label, and a countdown that fits no variant keeps the theme's shrink-fit; native and preview tests with Claude Creature and Pixel Battery footer widths.
+- What's new: none — bug fix; nothing new to announce.
+
+## 2026-10-22 — #894 on #864: Integrate footer renderer
+- User approval: no visible change – UI approval not needed (merge existing footer renderer onto the approved Limits settings base; retain pace tests)
+- Approved customer-visible result: Existing #894 footer behavior and #864 settings remain intact.
+- Scope: Merge preview, firmware tests and approval history; retain the newer Gauge pace expectations.
+- What's new: none — integration of existing changes.
+
+## 2026-10-22 — Reset in footer: Session or Weekly preference on #864
+- User approval: pending — add Reset in footer with Session reset and Weekly reset in Limits on VibeTV, including the old-firmware Update needed state
+- Approved customer-visible result: A label and Select choose the footer reset, defaulting to Session reset; a missing, hidden or unavailable chosen reset retains the existing first-displayed-reset behavior. Older firmware disables the row and says Update needed / Update VibeTV to use this.
+- Scope: Companion preference and capability-gated frame, firmware selection and matching Appearance preview; no reset values are invented.
+- What's new: none — preference prepared for review in a stacked draft.
+
+## 2026-10-22 — #864: Settings Pace and Two at once say Update needed on older VibeTV firmware
+
+- User approval: pending — Pace and Two at once are disabled and say "Update needed. Update VibeTV to use this." when a ready VibeTV lacks the firmware feature
+- Approved customer-visible result: on VibeTV firmware without usage-pace-v1 the Pace switch shows off and is disabled; without usage-windows-v1 or room for two windows the Two at once card is disabled. Both show "Update needed. Update VibeTV to use this." instead of their usual line. Offline or unknown devices and capable firmware are unchanged.
+- Scope: Settings Pace and Display mode Two at once (settings-screen.tsx, settings-pace.tsx tests, deviceLacks in control-center-types.ts, DisplayModeChoice pairNote prop). The setup wizard is unchanged. Pull request branch #864 only, not merged, not released.
+- What's new: none — a notice that these settings need a VibeTV update; nothing new to use
+
+## 2026-10-22 — Reset footer: Integrate #864 firmware gating
+- User approval: no visible change – UI approval not needed (merge the existing Pace and Two at once firmware gating into the footer stack)
+- Approved customer-visible result: Retain the existing #864 Update needed behavior and the footer selection.
+- Scope: Merge current #864 settings, tests, helper and both approval histories.
+- What's new: none — integration only.
+
+## 2026-10-22 — Reset footer: Reuse shared Update needed pattern
+- User approval: pending — Reset in footer uses the same Update needed. Update VibeTV to use this. note as Pace and Two at once
+- Approved customer-visible result: The disabled Reset in footer row uses the existing firmware update wording; offline devices do not claim an update is needed.
+- Scope: Reuse #864 deviceLacks and UPDATE_NEEDED_NOTE for the footer setting.
+- What's new: none — one consistent hint for firmware-dependent settings.
+## 2026-10-22 — #864: approval marker after merging claude/usage-pace at dd826fe5
+
+- User approval: no visible change – UI approval not needed (merge of claude/usage-pace (dd826fe5) into #864; the own entries of #864 keep their approvals)
+- Approved customer-visible result: #864 as in its own entries plus the entries merged with dd826fe5; nothing else changes.
+- Scope: the merge of dd826fe5 and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge of dd826fe5, no customer-visible change of its own
+
+## 2026-10-22 — #909: Merge current #864 pace base
+- User approval: no visible change – UI approval not needed (retain both footer and pace tests while merging current #864 at 10f2f21f)
+- Approved customer-visible result: The existing #864 pace behavior and #909 footer choice remain intact.
+- Scope: Resolve appended preview and native tests and preserve both approval histories from #864.
+- What's new: none — base synchronization only.
+
+## 2026-10-22 — #909: Approval marker after #864 pace merge
+- User approval: no visible change – UI approval not needed (approval marker for the #864 pace merge, whose combined diff is not recognized by the gate)
+- Approved customer-visible result: No additional change beyond the merged base and the pending footer preference entries.
+- Scope: Approval record only after merging 10f2f21f into #909.
+- What's new: none — approval marker only.
+
 ## 2026-10-17 — Calm redesign of the Setup Wizard, steps 1–8 (variant B, #713)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:30: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: Calm redesign of the Setup Wizard, steps 1–8 (variant B, #713)
@@ -18542,24 +19976,6 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve this feature together with the existing build9 Settings and three equal display cards.
 - Scope: Integration merge preserving both approval histories.
 - What's new: none — integration only.
-## 2026-10-21 — footer-first-reset: Use the first displayed reset in the shared footer
-- User approval: pending — Paul asked ~22:20 „hier unten steht keine reset time, das tritt auch bei anderen themes auf, bspw. cozy coder“; footer-first-reset implementation awaits visual review.
-- Approved customer-visible result: Mini Classic with idle Session and Weekly reset in 3d 1h shows “Weekly resets in 3d 1h”; Cozy Meadow displays only Session and keeps “No active session”, never borrowing the hidden Weekly reset; unavailable deadlines remain unavailable.
-- Scope: Central firmware and Control Center preview footer rendering, with matching regression tests; no provider semantics or theme-specific rules.
-- What's new: none — correction of the existing reset footer.
-
-## 2026-10-21 — #894: Keep the reset footer at its theme font size
-- User approval: pending — #894 fixed-size footer wording refinement requested after the smaller Mini Classic screenshot; exact final wording awaits visual approval.
-- Approved customer-visible result: At the original footer font size, use “Weekly resets in 3d 1h” when it fits, otherwise “Weekly 3d 1h”; “Resets 3d 1h” is allowed only with one displayed limit. Mini Classic shows “Weekly 3d 1h” at font 2 size 2 in used and remaining mode. Cozy Meadow with idle Session still shows “No active session” at its original font size; Gauge shows “Session 2h 14m”. If no permitted wording fits, retain the font and existing clipping rather than shrink or hide a multi-limit name.
-- Scope: Central firmware and preview footer rendering, font measurement and focused regression tests; no theme-specific cases, provider or hardware changes.
-- What's new: none — preserve the existing footer font size while shortening reset wording.
-
-## 2026-10-21 — #894: Shrink idle reset footers again
-- User approval: no visible change – UI approval not needed (bug fix: idle footer shrinks again as before #894)
-- Approved customer-visible result: Idle "No active session" and "Reset unavailable" footers fit their theme width again by shrinking, as before #894; countdown footers keep their fixed size and wording.
-- Scope: Firmware and Control Center preview footer shrink opt-out limited to countdown wording; focused regression tests in both.
-- What's new: none — restores the pre-#894 shrink for idle and unavailable footers.
-
 
 ## 2026-10-21 — build9: refresh #894 for 7205
 
@@ -18694,12 +20110,6 @@ issue scope, or release permission never implies UI permission.
 - Scope: Theme Library hint for Two at once (usage-screen.tsx helper, control-center-app.tsx call site, tests). Pull request branch #864 only, not merged, not released.
 - What's new: none — the hint text already exists; only the case in which it shows is extended to Two at once
 
-## 2026-10-21 — #894: Footer wording table tests
-- User approval: no visible change – UI approval not needed (test-only: footer wording table in firmware and preview)
-- Approved customer-visible result: none; the rendered footer wording is unchanged.
-- Scope: Table-driven footer wording tests (countdown, idle, unavailable; used and remaining; one and two displayed limits; hidden limits) in the native firmware suite and the Control Center preview suite.
-- What's new: none — tests only.
-
 ## 2026-10-22 — #893: a theme install still open at setup end keeps Appearance
 
 - User approval: no visible change – UI approval not needed (restores the behaviour before #893 for a theme install that is running or has failed when setup ends: it stays on Appearance, where its dialog is; firmware updates still end on Overview)
@@ -18764,11 +20174,6 @@ issue scope, or release permission never implies UI permission.
 - Scope: Test expectations in live-vibetv-preview, display-preferences and setup-providers-screen tests.
 - What's new: none — tests only.
 
-## 2026-10-22 — #894: Pair footer is never clipped
-- User approval: no visible change – UI approval not needed (bug fix: a Two-at-once footer text no longer runs past the screen edge; it names the limit without the provider, then shrinks)
-- Approved customer-visible result: none beyond the fix: "Claude Weekly 3d 1h" that did not fit now reads "Weekly 3d 1h".
-- Scope: Footer wording selection in firmware and preview tries the limit name after the pair label, and a countdown that fits no variant keeps the theme's shrink-fit; native and preview tests with Claude Creature and Pixel Battery footer widths.
-- What's new: none — bug fix; nothing new to announce.
 
 ## 2026-10-22 — #592: Claude Creature pace text is one font step larger
 
