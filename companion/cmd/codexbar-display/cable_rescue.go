@@ -12,6 +12,7 @@ import (
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/firmwareupdate"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
 )
 
@@ -148,7 +149,9 @@ func resumableRescueMarker(home string) (firmwareupdate.RescueMarker, bool) {
 	if !portListed(ports, marker.Port) {
 		// Replugged into another USB socket: only one new port, silent and
 		// not the marked one, may be resumed. Anything else stays unwritten.
-		moved, found := firmwareupdate.MovedRescuePort(marker, usb.WithoutTTYAliases(ports), readCableFirmwareHelloFn)
+		moved, found := firmwareupdate.MovedRescuePort(marker, usb.WithoutTTYAliases(ports), func(port string) (protocol.DeviceHello, error) {
+			return readCableFirmwareHelloFn(context.Background(), port)
+		})
 		if !found {
 			fmt.Printf("Cable rescue: marked port %s is not present, nothing to resume\n", marker.Port)
 			return firmwareupdate.RescueMarker{}, false
@@ -166,7 +169,7 @@ func resumableRescueMarker(home string) (firmwareupdate.RescueMarker, bool) {
 	// port name: the marker stays for the half-written one, and this port is not
 	// written either (Codex review on #819). This runs before the image checks:
 	// a healthy VibeTV clears its stale marker even when the cached image is gone.
-	if hello, helloErr := readCableFirmwareHelloFn(marker.Port); helloErr == nil &&
+	if hello, helloErr := readCableFirmwareHelloFn(context.Background(), marker.Port); helloErr == nil &&
 		(strings.TrimSpace(hello.DeviceID) != "" || strings.TrimSpace(hello.Firmware) != "") {
 		fw := strings.TrimSpace(hello.Firmware)
 		sameBoard := strings.EqualFold(strings.TrimSpace(hello.Board), strings.TrimSpace(marker.Board))
