@@ -10314,3 +10314,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: after a key was saved in a reopened Theme Studio key dialog, Create goes straight to the AI; the key dialog does not open again because an earlier dismissed dialog's answer arrived late.
 - Scope: ai-theme-studio-screen.tsx and its regression test. Pull request #781 only, not merged, not released.
 - What's new: none — race fix, no announcement
+
+## 2026-10-22 — #781: approval marker after merging main at 2d42c92f
+
+- User approval: no visible change – UI approval not needed (merge of main (2d42c92f) into #781; the own entries of #781 keep their approval)
+- Approved customer-visible result: #781 as in its own entries plus the entries merged with 2d42c92f; nothing else changes.
+- Scope: the merge of 2d42c92f and this approval record. Pull request #781 only, not merged, not released.
+- What's new: none — merge of 2d42c92f, no customer-visible change of its own
