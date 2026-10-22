@@ -610,6 +610,9 @@ func exactProviderReadinessFromOutput(providerID string, raw []byte, commandErr,
 // bare stand-in -- an inventory read is no more trustworthy than the usage call
 // that just failed. A ready provider skips the extra call, unless a row that is
 // not ready still lacks CodexBar's name; then the call only names those rows.
+// It asks for each such name once per runtime: an id the inventory never names,
+// or an inventory read that keeps failing, does not repeat the call on every
+// check (#914).
 func providersWithSwitchState(ctx context.Context, bin string, providers []ProviderReadiness) []ProviderReadiness {
 	standIn := len(providers) == 1 && providers[0].ID == "codexbar"
 	if standIn && providers[0].Status != ProviderNotConfigured {
@@ -619,7 +622,7 @@ func providersWithSwitchState(ctx context.Context, bin string, providers []Provi
 	for _, provider := range providers {
 		if provider.Status == ProviderReady {
 			ready = true
-		} else if provider.ID != "codexbar" && !providerNameKnown(provider.ID) {
+		} else if provider.ID != "codexbar" && !providerNameKnownOrAsked(provider.ID) {
 			named = false
 		}
 	}
@@ -627,6 +630,13 @@ func providersWithSwitchState(ctx context.Context, bin string, providers []Provi
 		return providers
 	}
 	raw, runErr := readProviderInventory(ctx, 5*time.Second, bin, runUsageCommandFn)
+	if ready {
+		for _, provider := range providers {
+			if provider.Status != ProviderReady && provider.ID != "codexbar" {
+				rememberProviderNameAsked(provider.ID)
+			}
+		}
+	}
 	inventory, parseErr := parseProviderSettings(raw)
 	if runErr != nil || parseErr != nil || len(inventory) == 0 {
 		return providers
@@ -954,9 +964,12 @@ func ProviderSignInStartable(id string) bool {
 // providerDisplayNames holds the display names CodexBar gave in its last
 // inventory: the labels the Control Center shows for each provider. The
 // inventory parsers fill it; providerDisplayName reads it.
+// providerNamesAsked holds the ids providersWithSwitchState already read the
+// inventory for only to name them (#914), named or not.
 var (
 	providerDisplayNamesMu sync.Mutex
 	providerDisplayNames   = map[string]string{}
+	providerNamesAsked     = map[string]struct{}{}
 )
 
 func rememberProviderDisplayName(id, label string) {
@@ -965,12 +978,20 @@ func rememberProviderDisplayName(id, label string) {
 	providerDisplayNames[id] = label
 }
 
-// providerNameKnown reports whether CodexBar's inventory has named the provider.
-func providerNameKnown(id string) bool {
+// providerNameKnownOrAsked reports whether the inventory has named the provider
+// or was already read once to name it.
+func providerNameKnownOrAsked(id string) bool {
 	providerDisplayNamesMu.Lock()
 	defer providerDisplayNamesMu.Unlock()
-	_, ok := providerDisplayNames[id]
-	return ok
+	_, known := providerDisplayNames[id]
+	_, asked := providerNamesAsked[id]
+	return known || asked
+}
+
+func rememberProviderNameAsked(id string) {
+	providerDisplayNamesMu.Lock()
+	defer providerDisplayNamesMu.Unlock()
+	providerNamesAsked[id] = struct{}{}
 }
 
 // providerDisplayName is the label a provider's sentences use: CodexBar's
