@@ -27,8 +27,18 @@ func TestNormalizeClaudeWindowsPreservesEveryValidOrderedWindow(t *testing.T) {
 	}
 }
 
-// Win-CodexBar's /usage serializes UsageSnapshot with snake_case keys (shape
-// recorded in testdata/cli/win-codexbar-0.55.0/serve-usage.json, issue #951).
+// The /usage payloads below mirror, field for field, what the bundled
+// Win-CodexBar v0.60.3-vibetv.12 (marcus7989/Win-CodexBar, scripts/fetch-win-codexbar.ps1)
+// serializes (issue #951; no captured output of that release exists in the repo):
+//
+//	rust/src/cli/serve/data.rs:54-59        {"provider", "source", "usage", "cost"}
+//	rust/src/core/usage_snapshot.rs:138     "extra_rate_windows" (snake_case, skipped when empty)
+//	rust/src/core/usage_snapshot.rs:78-85   NamedRateWindow {id, title, window}
+//	rust/src/core/rate_window.rs:75-94      RateWindow {used_percent, window_minutes,
+//	                                        resets_at, reset_description, is_informational}
+//
+// Cursor's Grok Bot lane is built with window_minutes 10080
+// (rust/src/providers/cursor/api.rs:445-448, test at :516).
 func TestNormalizeKeepsNamedExtraWindowFromSnakeCaseUsage(t *testing.T) {
 	const dashboard = `{
   "schemaVersion": 1,
@@ -36,21 +46,24 @@ func TestNormalizeKeepsNamedExtraWindowFromSnakeCaseUsage(t *testing.T) {
     "id": "cursor",
     "windows": [
       {"kind": "session", "label": "Plan", "usedPercent": 0, "remainingPercent": 100, "resetAt": "2026-11-01T00:00:00Z"},
-      {"kind": "cursor-grok-bot", "label": "Grok Bot", "usedPercent": 42, "remainingPercent": 58, "resetAt": "2026-11-01T00:00:00Z"}
+      {"kind": "cursor-grok-bot", "label": "Grok Bot", "usedPercent": 42, "remainingPercent": 58, "resetAt": "2026-10-29T00:00:00Z"}
     ],
     "error": null,
     "updatedAt": "2026-10-22T08:00:00Z"
   }]
 }`
 	const usage = `[{
+  "cost": null,
   "provider": "cursor",
+  "source": "web",
   "usage": {
     "extra_rate_windows": [{
       "id": "cursor-grok-bot",
       "title": "Grok Bot",
-      "window": {"is_informational": false, "resets_at": "2026-11-01T00:00:00Z", "used_percent": 42}
+      "window": {"is_informational": false, "resets_at": "2026-10-29T00:00:00Z", "used_percent": 42.0, "window_minutes": 10080}
     }],
-    "primary": {"is_informational": false, "resets_at": "2026-11-01T00:00:00Z", "used_percent": 0}
+    "primary": {"is_informational": false, "resets_at": "2026-11-01T00:00:00Z", "used_percent": 0.0},
+    "updated_at": "2026-10-22T08:00:00.000000Z"
   }
 }]`
 
@@ -60,6 +73,46 @@ func TestNormalizeKeepsNamedExtraWindowFromSnakeCaseUsage(t *testing.T) {
 	if result.Windows[1].UsedPercent != 42 {
 		t.Fatalf("expected Grok Bot at 42%%, got %+v", result.Windows[1])
 	}
+	if got := result.Windows[1].WindowMinutes; got == nil || *got != 10080 {
+		t.Fatalf("expected Grok Bot window_minutes 10080, got %v", got)
+	}
+}
+
+// Same payload shape (see above). A weekly-only quota and a 5-hour Codex Spark
+// lane that are both unused and reset together differ only in window_minutes
+// (300 vs 10080): without it both look identical and the weekly quota is dropped.
+func TestNormalizeKeepsStructuralWindowWhenSnakeCaseExtraDiffersOnlyInDuration(t *testing.T) {
+	const dashboard = `{
+  "schemaVersion": 1,
+  "providers": [{
+    "id": "codex",
+    "windows": [
+      {"kind": "weekly", "label": "Weekly", "usedPercent": 0, "remainingPercent": 100, "resetAt": "2026-10-29T00:00:00Z"},
+      {"kind": "codex-spark", "label": "Codex Spark 5-hour", "usedPercent": 0, "remainingPercent": 100, "resetAt": "2026-10-29T00:00:00Z"}
+    ],
+    "error": null,
+    "updatedAt": "2026-10-22T08:00:00Z"
+  }]
+}`
+	const usage = `[{
+  "cost": null,
+  "provider": "codex",
+  "source": "oauth",
+  "usage": {
+    "extra_rate_windows": [{
+      "id": "codex-spark",
+      "title": "Codex Spark 5-hour",
+      "window": {"is_informational": false, "resets_at": "2026-10-29T00:00:00Z", "used_percent": 0.0, "window_minutes": 300}
+    }],
+    "primary": {"is_informational": true, "reset_description": "No active session", "used_percent": 0.0, "window_minutes": 300},
+    "secondary": {"is_informational": false, "resets_at": "2026-10-29T00:00:00Z", "used_percent": 0.0, "window_minutes": 10080},
+    "updated_at": "2026-10-22T08:00:00.000000Z"
+  }
+}]`
+
+	result := normalizeFixture(t, dashboard, usage, "codex")
+
+	assertWindowLabels(t, result.Windows, "Weekly", "Codex Spark 5-hour")
 }
 
 func TestNormalizeAntigravityWindowsDeduplicatesStructuralAliases(t *testing.T) {

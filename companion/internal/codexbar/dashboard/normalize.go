@@ -55,6 +55,7 @@ type UsageMetadata struct {
 type RateWindow struct {
 	UsedPercent            *float64   `json:"usedPercent"`
 	WindowMinutes          *int       `json:"windowMinutes"`
+	WindowMinutesSnake     *int       `json:"window_minutes"`
 	ResetsAt               *time.Time `json:"resetsAt"`
 	ResetAt                *time.Time `json:"resetAt"`
 	IsSyntheticPlaceholder bool       `json:"isSyntheticPlaceholder"`
@@ -217,7 +218,7 @@ func addStructuralWindow(index map[string]usageWindowMetadata, dashboardKind str
 	index[dashboardKind] = usageWindowMetadata{
 		usageKnown:      knownUsage(window.UsageKnown),
 		synthetic:       window.IsSyntheticPlaceholder || window.IsInformational || window.IsInformationalSnake,
-		windowMinutes:   window.WindowMinutes,
+		windowMinutes:   window.minutes(),
 		metadataReset:   window.resetAt(),
 		structuralAlias: true,
 	}
@@ -241,9 +242,16 @@ func addNamedWindow(index map[string]usageWindowMetadata, named NamedRateWindow)
 	index[id] = usageWindowMetadata{
 		usageKnown:    usageKnown,
 		synthetic:     named.Window.IsSyntheticPlaceholder || named.Window.IsInformational || named.Window.IsInformationalSnake,
-		windowMinutes: named.Window.WindowMinutes,
+		windowMinutes: named.Window.minutes(),
 		metadataReset: named.Window.resetAt(),
 	}
+}
+
+func (window RateWindow) minutes() *int {
+	if window.WindowMinutes != nil {
+		return window.WindowMinutes
+	}
+	return window.WindowMinutesSnake
 }
 
 func (window RateWindow) resetAt() *time.Time {
