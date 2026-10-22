@@ -6,9 +6,9 @@
       "id": "claude-creature",
       "title": "Claude Creature",
       "usage": "live",
-      "version": "1.4.3",
-      "themeRev": 13,
-      "themeSpecPath": "/themes/u/cld-13-f42776d5.json",
+      "version": "1.4.4",
+      "themeRev": 14,
+      "themeSpecPath": "/themes/u/cld-14-89978ac1.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -20,9 +20,9 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-claude-creature-v1.4.3.zip",
-      "sha256": "369cb078df74ed7a55444083f0983d36eaa5ff6c741f9b384d5c4db802957593",
-      "bytes": 3447,
+      "downloadAsset": "vibetv-theme-claude-creature-v1.4.4.zip",
+      "sha256": "77d43885ddf9a1e0905b388ba60be6bd61908498bf60bb7a5a9b0f635012071f",
+      "bytes": 3445,
       "earlierThemeSpecPaths": [
         "/themes/u/claud-10-dd6753.json",
         "/themes/u/claude--1-12ab01.json",
@@ -38,16 +38,17 @@
         "/themes/u/claude--8-53ffce.json",
         "/themes/u/claude--9-5c74ca.json",
         "/themes/u/cld-11-e02f4e15.json",
-        "/themes/u/cld-12-b25a61c0.json"
+        "/themes/u/cld-12-b25a61c0.json",
+        "/themes/u/cld-13-f42776d5.json"
       ]
     },
     {
       "id": "clippy",
       "title": "Clippy",
       "usage": "live",
-      "version": "1.2.4",
-      "themeRev": 10,
-      "themeSpecPath": "/themes/u/cp-10-d86e631f.json",
+      "version": "1.2.5",
+      "themeRev": 11,
+      "themeSpecPath": "/themes/u/cp-11-820d61d9.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -60,9 +61,9 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-clippy-v1.2.4.zip",
-      "sha256": "b3565b9159d98d4c5492e6707d951d80f569b5e4b6b72af2a7b229f32269c073",
-      "bytes": 18768,
+      "downloadAsset": "vibetv-theme-clippy-v1.2.5.zip",
+      "sha256": "67024fe825797745a6167df259bafe94089c8bdd20bf67d32291dc5be9f070c5",
+      "bytes": 18771,
       "earlierThemeSpecPaths": [
         "/themes/u/clippy-1-5d86bb.json",
         "/themes/u/clippy-1-bb9192.json",
@@ -73,6 +74,7 @@
         "/themes/u/clippy-4-7eb2b0.json",
         "/themes/u/clippy-5-4f3746.json",
         "/themes/u/clippy-6-21abe3.json",
+        "/themes/u/cp-10-d86e631f.json",
         "/themes/u/cp-7-8e3b005e.json",
         "/themes/u/cp-8-e3fbe9a5.json",
         "/themes/u/cp-9-47bef231.json"

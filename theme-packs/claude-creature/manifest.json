@@ -3,7 +3,7 @@
   "schemaVersion": 1,
   "id": "claude-creature",
   "name": "Claude Creature",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "minFirmware": "1.0.50",
   "requiredCapabilities": [
     "usage-slots-v1",
@@ -11,10 +11,10 @@
     "usage-pace-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/cld-13-f42776d5.json",
+    "path": "/themes/u/cld-14-89978ac1.json",
     "file": "theme.json",
     "bytes": 1575,
-    "sha256": "f42776d54a71b308c5b0173589f4fc48d45bc5512d75bf5e621954f1f2120123",
+    "sha256": "89978ac13eefb433e5b594804dd0990a148eab22c81e456dc0a056223960c211",
     "contentType": "application/json"
   },
   "assets": [

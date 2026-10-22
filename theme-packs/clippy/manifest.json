@@ -3,7 +3,7 @@
   "schemaVersion": 1,
   "id": "clippy",
   "name": "Clippy",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "minFirmware": "1.0.50",
   "requiredCapabilities": [
     "usage-slots-v1",
@@ -12,18 +12,18 @@
     "text-valign-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/cp-10-d86e631f.json",
+    "path": "/themes/u/cp-11-820d61d9.json",
     "file": "theme.json",
-    "bytes": 1605,
-    "sha256": "d86e631f4379df4836183d00025369c47e97093a1201b7ca16d2b3c0d67a361d",
+    "bytes": 1679,
+    "sha256": "820d61d957624765bc3324d3251a0b5c11da59d071fe7b81a271637e6ba4349e",
     "contentType": "application/json"
   },
   "assets": [
     {
       "path": "/themes/u/cp-bg.cbi",
       "file": "assets/cp-bg.cbi",
-      "bytes": 1093,
-      "sha256": "0dcfe2d46916dfb345c70926be4f6ba524aef434c1a67d2061667f57f9ff85db",
+      "bytes": 1073,
+      "sha256": "81dbadd1137bbfa7d6fe331450cf67c05548581fe04b7ed846b7d43010ac5d90",
       "contentType": "text/plain"
     },
     {
