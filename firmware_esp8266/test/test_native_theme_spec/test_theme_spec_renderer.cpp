@@ -5192,6 +5192,31 @@ void testTextFitUsesSmallestFontAndTwoLinesWithinExistingHeight() {
   TEST_ASSERT_EQUAL_STRING(cmd.text, fit.first);
 }
 
+// A font 4 text that does not fit steps down to font 2 before the 8 px font 1.
+void testTextFitStepsDownFromFont4ToFont2BeforeFont1() {
+  TextCommand cmd;
+  cmd.text = "Claude Weekly (Sonnet)";
+  cmd.font = 4; cmd.size = 1; cmd.maxWidth = 224; cmd.height = 26; cmd.fitShrink = true;
+  auto measure = [](const char* value, int font, int size) { return std::strlen(value) * (font == 4 ? 12 : font == 2 ? 7 : 6) * size; };
+  auto fit = codexbar_display::themespec::FitText(cmd, measure);
+  TEST_ASSERT_EQUAL(2, fit.font);
+  TEST_ASSERT_EQUAL(1, fit.size);
+  TEST_ASSERT_EQUAL_STRING(cmd.text, fit.first);
+  TEST_ASSERT_EQUAL_STRING("", fit.second);
+  cmd.text = "Claude Session"; // 168 px at font 4
+  fit = codexbar_display::themespec::FitText(cmd, measure);
+  TEST_ASSERT_EQUAL(4, fit.font);
+  cmd.maxWidth = 100; cmd.height = 32; // font 2 needs two lines here
+  cmd.text = "Claude Weekly (Sonnet)";
+  fit = codexbar_display::themespec::FitText(cmd, measure);
+  TEST_ASSERT_EQUAL(2, fit.font);
+  TEST_ASSERT_EQUAL_STRING("Claude Weekly", fit.first);
+  TEST_ASSERT_EQUAL_STRING("(Sonnet)", fit.second);
+  cmd.height = 16;
+  fit = codexbar_display::themespec::FitText(cmd, measure);
+  TEST_ASSERT_EQUAL(1, fit.font);
+}
+
 void testKnownUnavailableUsageKeepsNameAndDashWithoutInventingValues() {
   FrameData frame;
   frame.provider = "claude+codex";
@@ -5628,6 +5653,7 @@ int main() {
   RUN_TEST(testResetShowsLargestUnitUnlessFull);
   RUN_TEST(testProviderNameAndPaceFooterAroundTheNotice);
   RUN_TEST(testTextFitUsesSmallestFontAndTwoLinesWithinExistingHeight);
+  RUN_TEST(testTextFitStepsDownFromFont4ToFont2BeforeFont1);
   RUN_TEST(testKnownUnavailableUsageKeepsNameAndDashWithoutInventingValues);
   RUN_TEST(testProviderNameRepaintsWithItsLabelOnly);
   RUN_TEST(testPaceRepaintsAfterTheCountdownRanOutAndTrustReturns);

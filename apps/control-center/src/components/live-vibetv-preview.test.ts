@@ -1530,7 +1530,7 @@ describe("bounded text and unavailable slot layout", () => {
   it("measures font 4 with the pinned TFT table, including the percentage glyph", () => {
     expect(themeFirmwareTextMetrics("96%", 4, 1)?.width).toBe(49);
     expect(themeFirmwareTextMetrics("100%", 4, 1)?.width).toBe(63);
-    expect(themeTextFit("100%", 4, 1, 55, true)).toEqual({font: 1, size: 1, lines: ["100%"]});
+    expect(themeTextFit("100%", 4, 1, 55, true)).toEqual({font: 2, size: 1, lines: ["100%"]});
   });
 
   it("wraps long limit names inside the existing box before falling back to the smallest font", () => {
@@ -1541,6 +1541,12 @@ describe("bounded text and unavailable slot layout", () => {
     expect(fit.lines.join(" ")).toBe(text);
     for (const line of fit.lines) expect(themeFirmwareTextMetrics(line, fit.font, fit.size)!.width).toBeLessThanOrEqual(110);
     expect(themeTextFit("Anthropic Claude Enterprise", 2, 1, 164, true, 16)).toEqual({font: 1, size: 1, lines: ["Anthropic Claude Enterprise"]});
+  });
+  it("steps a font 4 limit name down to font 2 before the 8 px font 1", () => {
+    expect(themeTextFit("Claude Session", 4, 1, 224, true, 26)).toEqual({font: 4, size: 1, lines: ["Claude Session"]});
+    expect(themeTextFit("Claude Weekly (Sonnet)", 4, 1, 224, true, 26)).toEqual({font: 2, size: 1, lines: ["Claude Weekly (Sonnet)"]});
+    expect(themeTextFit("Claude Weekly (Sonnet)", 4, 1, 110, true, 32)).toEqual({font: 2, size: 1, lines: ["Claude Weekly", "(Sonnet)"]});
+    expect(themeTextFit("Claude Weekly (Sonnet)", 4, 1, 110, true, 16).font).toBe(1);
   });
   it("retains the known unavailable slot name and a dash, without percentages, pace or bars", () => {
     const now = new Date("2026-10-21T12:00:00Z");

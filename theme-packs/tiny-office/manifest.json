@@ -3,7 +3,7 @@
   "schemaVersion": 1,
   "id": "tiny-office",
   "name": "Tiny Office",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "minFirmware": "1.0.50",
   "usage": "live",
   "requiredCapabilities": [
@@ -12,10 +12,10 @@
     "usage-pace-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/to-11-98ef389a.json",
+    "path": "/themes/u/to-12-5d257b7b.json",
     "file": "theme.json",
     "bytes": 1714,
-    "sha256": "98ef389a417c82a37fd956fbc057a60448bf3505a9eefb486b1b867161b3f99a",
+    "sha256": "5d257b7b071c47e56cccce75665386c8bd8bee53934aa50ff7ee22db0dd4f51f",
     "contentType": "application/json"
   },
   "assets": [
@@ -23,35 +23,35 @@
       "path": "/themes/u/to-bg.cbi",
       "file": "assets/to-bg.cbi",
       "bytes": 269,
-      "sha256": "2832ae0aabc2ddee30686785683d6b7d696a6218513c518be1c243630801c92d",
+      "sha256": "a9e6fe8ac6a80436ab7018599e7dbc6e51faccb3d5f6a2ad668da61c94d8bd1b",
       "contentType": "text/plain"
     },
     {
       "path": "/themes/u/to-i.cbi",
       "file": "assets/to-i.cbi",
-      "bytes": 3653,
-      "sha256": "84ccc384ac6f328f2e4464e58644a6b2ea940d9ee619962e0ceb173f031253de",
+      "bytes": 3429,
+      "sha256": "2ef9a680f9f0bd8a63e5dba821abc49848710dc8765da63187c627c84730034d",
       "contentType": "text/plain"
     },
     {
       "path": "/themes/u/to-c.cbi",
       "file": "assets/to-c.cbi",
-      "bytes": 3803,
-      "sha256": "3a6487c62a09479c837188331f29fdffae4379cd63170303e135a451953f7f53",
+      "bytes": 3712,
+      "sha256": "883235245707c13636a202ef6e60f15ad65f00c330204c0225eafd1ab90136fd",
       "contentType": "text/plain"
     },
     {
       "path": "/themes/u/to-ia.cba",
       "file": "assets/to-ia.cba",
-      "bytes": 5898,
-      "sha256": "6138a88231b63e8d6e0636c04da99147f4e40126a03f8d1034db82cdfaa726c6",
+      "bytes": 5493,
+      "sha256": "c051eef361065a7783c5290c2ab954b7b6bcbf7674e1fa3d677d986880ae4d84",
       "contentType": "text/plain"
     },
     {
       "path": "/themes/u/to-ca.cba",
       "file": "assets/to-ca.cba",
-      "bytes": 10779,
-      "sha256": "e271bd49852766752c4dc1d309fc2ce764125d45284ca3b27b80d3469a228248",
+      "bytes": 11531,
+      "sha256": "5d77de7b5b33a7bd143c833755269f1d9766ec7a6a234904a5d0f35237b2b453",
       "contentType": "text/plain"
     }
   ]

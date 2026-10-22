@@ -5,7 +5,7 @@ import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   buildFrameData, primitiveUsageSlotVisible, renderTextPrimitive,
-  ThemeSpecPreview, themeFirmwareTextMetrics, themeTextFittedSize, themeTextAlignedY,
+  ThemeSpecPreview, themeFirmwareTextMetrics, themeTextFit, themeTextAlignedY,
   type ThemePrimitive, type ThemeRenderPack,
 } from "@/components/live-vibetv-preview";
 import { importThemeSpec, validateThemeSpec } from "@/lib/theme-studio";
@@ -90,7 +90,8 @@ describe("Tiny Office theme pack", () => {
     const label = primitives.find((p) => p.v === "{usageSlot2Label}")!;
     const percent = primitives.find((p) => p.v === "{usageSlot2Percent}%")!;
     expect(label.y! + label.h!).toBeLessThanOrEqual(percent.y!);
-    expect(themeFirmwareTextMetrics(text(label, data), label.f!, label.s!)!.width).toBeLessThanOrEqual(label.w!);
+    const fit = themeTextFit(text(label, data), label.f!, label.s!, label.w!, true, label.h!);
+    expect(fit.lines.map((line) => themeFirmwareTextMetrics(line, fit.font, fit.size)!.width).every((width) => width <= label.w!)).toBe(true);
     const manifest = JSON.parse(readFileSync(path.join(root, "theme-packs/tiny-office/manifest.json"), "utf8"));
     // The first firmware that ships usage-pace-v1.
     expect(manifest.minFirmware).toBe("1.0.50");
@@ -125,9 +126,11 @@ describe("Tiny Office theme pack", () => {
         if (!primitiveUsageSlotVisible(p, data)) continue;
         const width = p.w ?? p.width ?? 0;
         const font = p.f ?? p.font ?? 1;
-        const size = themeTextFittedSize(text(p, data), font, p.s ?? p.fontSize ?? 1, width, true);
-        const measured = themeFirmwareTextMetrics(text(p, data), font, size)?.width;
-        expect(measured, `${text(p, data)} in lane ${width}`).toBeLessThanOrEqual(width);
+        const fit = themeTextFit(text(p, data), font, p.s ?? p.fontSize ?? 1, width, true, p.h ?? 0);
+        for (const line of fit.lines) {
+          const measured = themeFirmwareTextMetrics(line, fit.font, fit.size)?.width;
+          expect(measured, `${line} in lane ${width}`).toBeLessThanOrEqual(width);
+        }
       }
     }
     expect(primitives.filter((p) => p.t === "tx").map((p) => text(p, spark))).toContain("Codex Spark Weekly");

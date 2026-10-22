@@ -20311,3 +20311,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Install sits right under the cards with no page scrolling at 1440×900 and 1280×800; at 1440×900 both card rows are shown in full, at 1280×800 the second row's title line sits under the fade at the bottom edge; cards keep their 200 px size and grid.
 - Scope: the max-height of the theme grid in setup-theme-screen.tsx (viewport-based), with the corrected wording of the previous block for the 1280×800 case.
 - What's new: none — layout only
+
+## 2026-10-22 — #7210: Two at once limit names larger and directly above their own bar
+
+- User approval: pending — in Two at once, the limit names ("Claude Session", "Codex Weekly") are larger and sit directly above their own bar in Clippy, Pixel Battery, Synthwave and Tiny Office, and the live preview shows a long name in the next smaller font instead of the smallest one
+- Approved customer-visible result: Each limit name is bottom-aligned just above its own bar, never on a divider line, in the 26 px font; a name too long for one line (for example "Claude Weekly (Sonnet)") shows in the 16 px font instead of the 8 px font. Pace text moves to the percent column. Clippy's and Tiny Office's art is drawn smaller and Synthwave's grid floor is cropped to make the room.
+- Scope: the font fallback of themeTextFit in live-vibetv-preview.tsx (same step as the device's FitText) and the layouts of the four theme packs.
+- What's new: none — layout only

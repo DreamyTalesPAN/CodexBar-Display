@@ -45,9 +45,9 @@ function encodeAnimation(width, height, fps, palette, frames) {
 
 // Area-average the reference once before palette reduction; never snap RGB
 // channels independently or dither. The reference is framed at 120x72, then
-// the top 5 and bottom 13 rows (ceiling/floor) are dropped so the scene is
-// 120x54 and the device can give the numbers a taller font. Drawn 2x.
-const FRAME_H = 72, TOP_CUT = 5, SCENE_H = 54;
+// the top 5 and bottom 17 rows (ceiling/floor) are dropped so the scene is
+// 120x50 and the device can give the numbers and limit names a taller font. Drawn 2x.
+const FRAME_H = 72, TOP_CUT = 5, SCENE_H = 50;
 async function compileScene(state) {
   const { data, info } = await sharp(path.join(root, `docs/assets/tiny-office/${state}.png`))
     .flatten({ background: "#101020" })
@@ -229,7 +229,7 @@ function x_in(x, rect) { return x >= rect.x && x < rect.x + rect.w; }
 
 const backdrop = Array(60 * 60).fill(0);
 // A full-canvas static background with restrained header/scene separators.
-for (const y of [4, 32]) for (let x = 0; x < 60; x++) backdrop[y * 60 + x] = 1;
+for (const y of [4, 30]) for (let x = 0; x < 60; x++) backdrop[y * 60 + x] = 1;
 const idle = await compileScene("idle");
 const coding = await compileScene("coding");
 const assets = [

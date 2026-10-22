@@ -2915,7 +2915,7 @@ export function themeTextFit(text: string, font: number, maxSize: number, maxWid
       if (splits.length) return { font, size, lines: [text.slice(0, splits[0]), text.slice(splits[0] + 1)] };
     }
     if (font === 1) return { font, size, lines: [text] };
-    font = 1;
+    font = font > 2 ? 2 : 1;
     size = 1;
   }
 }

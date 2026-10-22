@@ -1931,7 +1931,7 @@ inline FittedText FitText(const TextCommand& cmd, Measure measure) {
       }
     }
     if (result.font == 1) return result;
-    result.font = 1;
+    result.font = result.font > 2 ? 2 : 1;
     result.size = 1;
   }
 }
