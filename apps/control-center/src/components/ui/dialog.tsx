@@ -93,7 +93,7 @@ function DialogContent({
   onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
-  /** Which dialogs this one waits for (see dialog-stack). */
+  /** The rank this dialog holds while open (see dialog-stack). */
   rank?: DialogRank
 }) {
   // Radix hands focus back only to a Dialog.Trigger, and the dialogs here open

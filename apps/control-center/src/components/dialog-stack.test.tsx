@@ -14,6 +14,8 @@ import { useWaitsForDialog } from "./dialog-stack";
 import { SetupDialog } from "./setup/setup-dialog";
 import { SetupUsageDialog, setupUsageCauseCopy } from "./setup/setup-usage-dialog";
 import { SystemBusyDialog, systemBusyCopy } from "./system-busy-dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "./ui/sheet";
 import { WhatsNewDialog } from "./whats-new-dialog";
 
 afterEach(cleanup);
@@ -210,4 +212,45 @@ it("a page notice that appears over an open announcement goes first, and the ann
 
   await act(async () => rerender(ranked(false, false)));
   expect(usageDialog()).not.toBeNull();
+});
+
+it("an announcement waits behind the open mobile sidebar sheet", async () => {
+  render(
+    createElement(
+      "div",
+      null,
+      createElement(
+        Sheet,
+        { open: true },
+        createElement(
+          SheetContent,
+          { side: "left" },
+          createElement(SheetTitle, null, "Sidebar"),
+          createElement(SheetDescription, null, "Displays the mobile sidebar."),
+        ),
+      ),
+      usageNotice(),
+    ),
+  );
+  await act(async () => {});
+  expect(screen.queryByRole("dialog", { name: "Sidebar" })).not.toBeNull();
+  expect(usageDialog()).toBeNull();
+});
+
+it("an announcement waits behind an open popover", async () => {
+  render(
+    createElement(
+      "div",
+      null,
+      createElement(
+        Popover,
+        { open: true },
+        createElement(PopoverTrigger, null, "File"),
+        createElement(PopoverContent, null, createElement("button", null, "New design")),
+      ),
+      usageNotice(),
+    ),
+  );
+  await act(async () => {});
+  expect(usageDialog()).toBeNull();
 });

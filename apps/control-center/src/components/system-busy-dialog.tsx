@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useWaitsForDialog } from "./dialog-stack";
 import { SetupDialog } from "./setup/setup-dialog";
 
 /**
@@ -33,9 +32,6 @@ export function useSystemBusyDismissal(
  * announcement: it waits while a page dialog is open (#632).
  */
 export function SystemBusyDialog({ onClose }: { onClose: () => void }) {
-  if (useWaitsForDialog("announcement")) {
-    return null;
-  }
   return (
     <SetupDialog
       rank="announcement"

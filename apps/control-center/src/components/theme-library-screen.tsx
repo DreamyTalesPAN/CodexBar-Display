@@ -48,7 +48,6 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Progress } from "@/components/ui/progress";
-import { useWaitsForDialog } from "@/components/dialog-stack";
 import { SetupDialog } from "@/components/setup/setup-dialog";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -294,7 +293,6 @@ export function ThemeLibraryScreen({
   // The page's notices wait while a dialog the customer asked for is open
   // (see dialog-stack) and never show together: an error wins over the
   // storage notice.
-  const noticesWait = useWaitsForDialog("notice");
   const libraryThemes: ThemeLibraryItem[] = [
     ...userThemes
       .filter((custom) => themeDocumentUsage(custom.document) === usage)
@@ -802,7 +800,7 @@ export function ThemeLibraryScreen({
       ) : null}
       {/* Errors are overlays over the page. OK or the X clears the error; an
           error that arrives while another dialog is open waits for it. */}
-      {libraryError && !noticesWait ? (
+      {libraryError ? (
         <SetupDialog
           rank="notice"
           description={copyForHost(libraryError, windowsHost)}
@@ -817,8 +815,7 @@ export function ThemeLibraryScreen({
       {/* The storage notice shows after the error is closed, never with it. */}
       {storageWarning &&
       storageWarning !== closedStorageWarning &&
-      !libraryError &&
-      !noticesWait ? (
+      !libraryError ? (
         <SetupDialog
           rank="notice"
           description={storageWarning}

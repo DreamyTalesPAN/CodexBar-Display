@@ -35,12 +35,15 @@ export function DialogSlot({ rank }: { rank: DialogRank }) {
 
 /**
  * Whether a dialog of this rank must wait, kept current while it is mounted.
- * It starts waiting: a dialog that opens in the same render holds its slot in
- * that commit's layout effects, before this one renders again, so the one that
- * waits is never in the document, and never takes the focus, beside it.
+ * It starts waiting (a question never does): a dialog that opens in the same
+ * render holds its slot in that commit's layout effects, before this one
+ * renders again, so the one that waits is never in the document, and never
+ * takes the focus, beside it. When a question closes while a notice and an
+ * announcement both wait, they un-wait together and the announcement can be in
+ * the document for one render, unpainted, before the notice takes the slot.
  */
 export function useWaitsForDialog(rank: DialogRank): boolean {
-  const [waiting, setWaiting] = useState(true);
+  const [waiting, setWaiting] = useState(rank !== "question");
   useLayoutEffect(() => {
     const sync = () => setWaiting(held.slice(0, RANKS[rank]).some((count) => count > 0));
     sync();

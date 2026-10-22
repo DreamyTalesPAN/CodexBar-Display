@@ -1,7 +1,6 @@
 "use client";
 
 import { copyForHost } from "@/lib/customer-platform";
-import { useWaitsForDialog } from "../dialog-stack";
 import { SetupDialog } from "./setup-dialog";
 
 export type SetupUsageCause =
@@ -65,11 +64,6 @@ export function SetupUsageDialog({
   open,
   windowsHost = false,
 }: SetupUsageDialogProps) {
-  // Shown over whatever the customer is doing, it waits while a page dialog
-  // is open and shows after it closes (#632).
-  if (useWaitsForDialog("announcement")) {
-    return null;
-  }
   const { description, title } = setupUsageCauseCopy[cause];
   return (
     <SetupDialog

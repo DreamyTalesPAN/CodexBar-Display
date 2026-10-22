@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { DialogRank } from "@/components/dialog-stack";
+import { useWaitsForDialog, type DialogRank } from "@/components/dialog-stack";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
@@ -24,7 +24,7 @@ export type SetupDialogAction = {
 type SetupDialogProps = {
   children?: ReactNode;
   description?: ReactNode;
-  /** Which dialogs this one waits for (see dialog-stack). */
+  /** The rank this dialog holds while open; it waits for every earlier rank (see dialog-stack). */
   rank?: DialogRank;
   onOpenChange: (open: boolean) => void;
   /** Lets an announcement leave focus where it is (#632). */
@@ -64,7 +64,7 @@ type SetupDialogProps = {
 export function SetupDialog({
   children,
   description,
-  rank,
+  rank = "question",
   onOpenChange,
   onOpenAutoFocus,
   open,
@@ -75,6 +75,9 @@ export function SetupDialog({
   title,
   wide = false,
 }: SetupDialogProps) {
+  if (useWaitsForDialog(rank)) {
+    return null;
+  }
   return (
     <Dialog modal={false} onOpenChange={onOpenChange} open={open}>
       {/*

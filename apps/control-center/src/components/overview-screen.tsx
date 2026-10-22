@@ -21,7 +21,6 @@ import {
   deviceIsReady,
   deviceUsesCable,
 } from "./control-center-types";
-import { useWaitsForDialog } from "./dialog-stack";
 import { SetupDialog } from "./setup/setup-dialog";
 import {
   LiveVibeTVPreview,
@@ -162,10 +161,6 @@ export function OverviewScreen({
     return () => window.clearTimeout(timer);
   }, []);
 
-  // The notice waits while a dialog the customer asked for is open.
-  const noticeWaits = useWaitsForDialog("notice");
-  const noticeOpen = notice !== null && !noticeWaits;
-
   return (
     <div className="flex w-full flex-1 flex-col pb-8">
       {/* The page fills the window's height (#784 point 1): the numbers sit at
@@ -279,7 +274,7 @@ export function OverviewScreen({
           onOpenChange={(open) => {
             if (!open) onCloseNotice?.(notice);
           }}
-          open={noticeOpen}
+          open
           rank="notice"
           secondaryAction={{
             label: "Not now",
