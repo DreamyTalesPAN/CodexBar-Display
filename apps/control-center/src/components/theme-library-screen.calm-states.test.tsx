@@ -299,6 +299,32 @@ it("an install failure waits for the open preview and shows once it closes", asy
   expect(await screen.findByRole("dialog", { name: "Theme install failed." })).toBeTruthy();
 });
 
+// Codex review on #802 (P2): OK on an install failure stays dismissed when a
+// preview opens and closes while the same failed status is still retained.
+it("a dismissed install failure stays dismissed across a preview", async () => {
+  vi.stubGlobal("fetch", async () => ({ ok: false }));
+  renderLibrary({
+    device: { connected: true, paired: true, ready: true },
+    installStatus: {
+      logs: [],
+      phase: "error",
+      startedAt: "10:00:00",
+      themeId: "drift",
+      title: "Drift",
+    },
+    themeInstallEnabled: true,
+    themes: [drift],
+  });
+  const failed = await screen.findByRole("dialog", { name: "Theme install failed." });
+  fireEvent.click(within(failed).getByRole("button", { name: "Close" }));
+  await waitFor(() => expect(screen.queryAllByRole("dialog")).toEqual([]));
+
+  fireEvent.click(screen.getByRole("button", { name: "Preview Drift" }));
+  const preview = screen.getByRole("dialog", { name: "Drift" });
+  fireEvent.click(within(preview).getByRole("button", { name: "Close" }));
+  await waitFor(() => expect(screen.queryAllByRole("dialog")).toEqual([]));
+});
+
 // OK clears the error; the next failure sets it again and opens it again.
 it("OK clears an error, and the next failure opens it again", async () => {
   vi.stubGlobal("fetch", async () => ({ ok: false }));

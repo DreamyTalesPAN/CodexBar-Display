@@ -348,6 +348,8 @@ export function ThemeLibraryScreen({
   const [preparingInstallRow, setPreparingInstallRow] = useState("");
   const [installRow, setInstallRow] = useState("");
   const [previewTheme, setPreviewTheme] = useState<ThemeLibraryItem | null>(null);
+  // Kept here: the install-failure dialog unmounts while another dialog is open.
+  const [dismissedInstallErrorAt, setDismissedInstallErrorAt] = useState<string | null>(null);
   const recoveryUsage = recovery ? themeDocumentUsage(recovery.document) : "live";
   const recoveryMatchesUsage = usage === "all" || recoveryUsage === usage;
   // A page notice waits while another dialog of this page is open.
@@ -1015,6 +1017,8 @@ export function ThemeLibraryScreen({
       !deleteTheme &&
       !replacingRecovery ? (
         <InstallErrorDialog
+          dismissedAt={dismissedInstallErrorAt}
+          onDismissedAt={setDismissedInstallErrorAt}
           canRetry={
             !busyAction && !preparingInstallRow && !failedInstallBlocker
           }
@@ -1662,29 +1666,32 @@ function installBlockerFor({
 
 function InstallErrorDialog({
   canRetry,
+  dismissedAt,
+  onDismissedAt,
   onRetry,
   status,
   usage,
 }: {
   canRetry: boolean;
+  dismissedAt: string | null;
+  onDismissedAt: (startedAt: string | null) => void;
   onRetry: () => void;
   status: ThemeInstallStatus;
   usage: ThemeStudioUsage;
 }) {
-  const [dismissedErrorAt, setDismissedErrorAt] = useState<string | null>(null);
   const noun = usage === "screensaver" ? "Screensaver" : "Theme";
   const retry = () => {
-    setDismissedErrorAt(null);
+    onDismissedAt(null);
     onRetry();
   };
   return (
     <SetupStepFailedDialog
-      error={dismissedErrorAt === status.startedAt ? null : status.failure || {
+      error={dismissedAt === status.startedAt ? null : status.failure || {
         code: "theme_install_failed",
         message: `${noun} install failed.`,
         nextAction: status.error || `Keep VibeTV connected and try installing the ${noun.toLowerCase()} again.`,
       }}
-      onOpenChange={(open) => { if (!open) setDismissedErrorAt(status.startedAt); }}
+      onOpenChange={(open) => { if (!open) onDismissedAt(status.startedAt); }}
       onRetry={canRetry ? retry : undefined}
     />
   );

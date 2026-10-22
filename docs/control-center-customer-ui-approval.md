@@ -11051,3 +11051,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: an install that fails while the preview, delete or replace-draft dialog is open shows its existing failure dialog after that dialog closes, not over it.
 - Scope: theme-library-screen.tsx and its calm-states regression test. Pull request #802 only, not merged, not released.
 - What's new: none — dialog ordering fix, no announcement
+
+## 2026-10-22 — #802: a dismissed install failure stays dismissed across a preview (Codex review)
+
+- User approval: no visible change – UI approval not needed (bug fix: an install failure the customer already closed no longer reopens after a preview, delete or replace-draft dialog closes; text and layout stay as approved)
+- Approved customer-visible result: closing the install-failure dialog stays closed for that failed install, also after another page dialog opened and closed.
+- Scope: theme-library-screen.tsx (dismissal state moves to the screen) and its calm-states regression test. Pull request #802 only, not merged, not released.
+- What's new: none — dialog state fix, no announcement
