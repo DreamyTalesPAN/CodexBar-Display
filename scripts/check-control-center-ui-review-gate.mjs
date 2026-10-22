@@ -266,7 +266,9 @@ function noVisibleChangeUncoveredUiFiles(commit) {
   const branchFiles = forkPoint
     ? lines(tryGit(["diff", "--no-renames", "--name-only", forkPoint, parent]))
     : null;
-  const entryText = addedApprovalText(commitDiff(commit));
+  // The entries as they read now count too: one corrected in place may name
+  // its scope only in the corrected text.
+  const entryText = [addedApprovalText(commitDiff(commit)), ...entryVersions(commit).flatMap((versions) => versions.slice(1))].join("\n");
   return unique([
     ...changedFilesSince(previous, parent)
       .filter(isUiFile)
@@ -278,13 +280,31 @@ function noVisibleChangeUncoveredUiFiles(commit) {
 }
 
 function onlyNoVisibleChange(commit) {
-  const entries = addedEntries(commitDiff(commit));
+  const versions = entryVersions(commit);
   return (
-    entries.length > 0 &&
-    entries.every((entry) =>
-      NO_VISIBLE_CHANGE_START.test(entryField(entry, "- User approval:").replace(LEADING_MARKDOWN, "")),
-    )
+    versions.length > 0 &&
+    versions.every((entryAsCommittedAndNow) => entryAsCommittedAndNow.some(saysNoVisibleChange))
   );
+}
+
+function saysNoVisibleChange(entry) {
+  return NO_VISIBLE_CHANGE_START.test(entryField(entry, "- User approval:").replace(LEADING_MARKDOWN, ""));
+}
+
+// Each entry a commit adds, as committed and as it reads in the analysed head
+// (Codex review of #823): an entry committed as pending and corrected in place
+// to "no visible change" later is a "no visible change" entry, though the
+// commit that added it does not say so.
+function entryVersions(commit) {
+  const now = entriesOf(recordLines(readRecordFile(APPROVAL_FILE, analysisRef).split("\n")));
+  return addedEntries(commitDiff(commit)).map((entry) => [
+    entry,
+    ...now.filter((block) => entryHeading(block) === entryHeading(entry)),
+  ]);
+}
+
+function entryHeading(entry) {
+  return entry.split("\n")[0].trim();
 }
 
 // An approval commit that is already on main was gated in its own pull request.
@@ -331,12 +351,7 @@ function addedApprovalText(diff) {
   return diff
     .split(/^(?=@@ )/m)
     .flatMap((hunk) =>
-      lines(hunk)
-        .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
-        .map((line) => line.slice(1))
-        .join("\n")
-        .split(/^(?=## )/m)
-        .filter((block) => block.startsWith("## ")),
+      entriesOf(recordLines(addedRawLines(hunk))),
     )
     .join("\n");
 }
@@ -395,14 +410,53 @@ function approvalDiff(from, to) {
 }
 
 function addedLinesOf(diff) {
-  return lines(diff)
+  return diff.split(/^(?=@@ )/m).flatMap((hunk) => recordLines(addedRawLines(hunk)));
+}
+
+// The added lines of a diff with their indentation.
+function addedRawLines(diff) {
+  return diff
+    .split("\n")
     .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
-    .map((line) => line.slice(1).trim());
+    .map((line) => line.slice(1));
+}
+
+// The trimmed lines of the log that can be part of an entry (Codex review of
+// #823): an example in a code fence (``` or ~~~) is no entry, so its lines
+// and the fence lines are left out, and an indented "## " line is no heading.
+// Indented lines are kept otherwise: entries continue nested list items with
+// them.
+function recordLines(rawLines) {
+  const kept = [];
+  let fence = "";
+  for (const raw of rawLines) {
+    const line = raw.trim();
+    const marker = /^(\x60{3,}|~{3,})/.exec(line);
+    if (fence) {
+      if (marker && marker[1][0] === fence) {
+        fence = "";
+      }
+      continue;
+    }
+    if (marker) {
+      fence = marker[1][0];
+      continue;
+    }
+    if (/^( {4}|\t)/.test(raw) && line.startsWith("#")) {
+      continue;
+    }
+    kept.push(line);
+  }
+  return kept;
 }
 
 // One block per added entry: its "## " heading starts it.
 function addedEntries(diff) {
-  return addedLinesOf(diff)
+  return entriesOf(addedLinesOf(diff));
+}
+
+function entriesOf(recordLineList) {
+  return recordLineList
     .join("\n")
     .split(/^(?=## )/m)
     .filter((entry) => entry.startsWith("## "));

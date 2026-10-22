@@ -990,6 +990,52 @@ test_no_visible_change_after_merge_of_base_ui_passes() {
   export GIT_COMMITTER_DATE="2026-10-18T07:00:00Z"
 }
 
+# An entry first committed as pending and later corrected in place to "no
+# visible change" is judged as it reads now (Codex review of #823 at 67c6d359):
+# it covers the earlier UI only when it names it.
+test_corrected_no_visible_change_entry_needs_its_scope() {
+  local repo="${TMP_ROOT}/no-visible-change-corrected"
+  setup_repo "$repo"
+  export GIT_COMMITTER_DATE="2026-10-23T07:00:00Z"
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Unapproved visible UI change"
+  mkdir -p "$repo/companion"
+  printf 'package main\n' > "$repo/companion/fix.go"
+  printf '\n## Companion fix\n\n- User approval: pending — Paul reviews this PR (test).\n- Approved customer-visible result: No screen differs.\n- Scope: companion/fix.go and this approval record.\n%s\n' \
+    "$WHATS_NEW_NONE" >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add .
+  git -C "$repo" commit -q -m "Companion fix, approval pending"
+  expect_gate_due "$repo"
+  NO_CHANGE_LINE="$NO_CHANGE_LINE" perl -pi -e 's/^- User approval: pending — Paul reviews this PR \(test\)\.$/$ENV{NO_CHANGE_LINE}/' \
+    "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" commit -q -am "Correct the entry to no visible change"
+  expect_gate_due "$repo"
+  assert_contains "$(run_gate "$repo")" "apps/control-center/src/components/overview-screen.tsx"
+  export GIT_COMMITTER_DATE="2026-10-18T07:00:00Z"
+}
+
+# A fenced or indented example in the log is no entry (Codex review of #823 at
+# 96571e7d): it does not cover the UI change before it.
+test_code_example_in_log_is_no_entry() {
+  local repo="${TMP_ROOT}/fenced-example"
+  setup_repo "$repo"
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Unapproved visible UI change"
+  { printf '\nExample of an entry:\n\n```markdown'; approval_entry "Example entry"; printf '```\n'; } \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" commit -q -am "Add an example entry in a code block"
+  expect_gate_due "$repo"
+
+  repo="${TMP_ROOT}/indented-example"
+  setup_repo "$repo"
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Unapproved visible UI change"
+  { printf '\nExample of an entry:\n'; approval_entry "Indented example" | sed 's/^/    /'; } \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" commit -q -am "Add an indented example entry"
+  expect_gate_due "$repo"
+}
+
 # An approval entry that a later commit removes again approves nothing (Codex
 # review of #823): the UI change before it is due again.
 test_removed_approval_entry_does_not_cover_ui() {
@@ -1295,6 +1341,8 @@ test_removed_approval_entry_does_not_cover_ui
 test_no_visible_change_does_not_cover_earlier_ui
 test_no_visible_change_keeps_earlier_unscoped_approval_ui_due
 test_no_visible_change_after_merge_of_base_ui_passes
+test_corrected_no_visible_change_entry_needs_its_scope
+test_code_example_in_log_is_no_entry
 test_pending_and_draft_stay_due_next_to_the_new_forms
 test_unrecognized_approval_value_is_due
 test_every_added_entry_needs_all_four_fields
