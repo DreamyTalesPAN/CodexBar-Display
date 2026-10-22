@@ -538,7 +538,8 @@ fn inner_within(outer: WindowRect, frame: (u32, u32)) -> (u32, u32) {
 // used; None means "keep the previous one".
 fn remembered_after(
     current: WindowRect,
-    reported: WindowRect,
+    change: Option<Change>,
+    frame: (u32, u32),
     minimized: bool,
     maximized: bool,
     previous: Option<Remembered>,
@@ -546,11 +547,14 @@ fn remembered_after(
     if minimized {
         return None;
     }
-    // The event reported another rectangle than the window has now, and the
-    // window is maximized: it was maximized after the event, so the reported
-    // one is the last normal place.
-    if maximized && reported != current {
-        return Some((Some(reported), true));
+    // The event reported another rectangle than the maximized window has now: it
+    // was maximized after the event. The event carries only part of the
+    // rectangle, so the rest comes from the last normal place, never from the
+    // maximized window.
+    if maximized && reported_rect(change, current, frame) != current {
+        if let Some((Some(normal), _)) = previous {
+            return Some((Some(reported_rect(change, normal, frame)), true));
+        }
     }
     Some(remembered_for(current, maximized, previous))
 }
@@ -562,16 +566,16 @@ enum Change {
     Resized(tauri::PhysicalSize<u32>),
 }
 
-// The window as the event saw it: Moved gives the outer position, Resized the
-// inner size, which the frame (outer minus inner size) turns into the outer one.
-fn reported_rect(change: Option<Change>, current: WindowRect, frame: (u32, u32)) -> WindowRect {
+// `base` with what the event reported: Moved gives the outer position, Resized
+// the inner size, which the frame (outer minus inner size) turns into the outer one.
+fn reported_rect(change: Option<Change>, base: WindowRect, frame: (u32, u32)) -> WindowRect {
     match change {
-        None => current,
-        Some(Change::Moved(position)) => WindowRect { x: position.x, y: position.y, ..current },
+        None => base,
+        Some(Change::Moved(position)) => WindowRect { x: position.x, y: position.y, ..base },
         Some(Change::Resized(size)) => WindowRect {
             width: size.width + frame.0,
             height: size.height + frame.1,
-            ..current
+            ..base
         },
     }
 }
@@ -595,8 +599,7 @@ fn window_geometry(
     };
     let inner = window.inner_size().ok()?;
     let frame = (size.width.saturating_sub(inner.width), size.height.saturating_sub(inner.height));
-    let reported = reported_rect(change, current, frame);
-    remembered_after(current, reported, minimized, maximized, previous)
+    remembered_after(current, change, frame, minimized, maximized, previous)
 }
 
 // The workers run unordered, so a snapshot of an older event must not replace
@@ -1947,10 +1950,10 @@ mod tests {
         let maximized_bounds = rect(0, 0, 1920, 1040);
         // Closed normal at an older place, then moved and resized, then maximized.
         let at_last_release = Some(remembered_for(released_before, false, None));
-        let after_move = remembered_after(moved, moved, false, false, at_last_release);
-        let after_maximize = remembered_after(maximized_bounds, maximized_bounds, false, true, after_move);
+        let after_move = remembered_after(moved, None, (0, 0), false, false, at_last_release);
+        let after_maximize = remembered_after(maximized_bounds, None, (0, 0), false, true, after_move);
         // Closed while maximized: the release keeps the moved place.
-        let at_close = remembered_after(maximized_bounds, maximized_bounds, false, true, after_maximize);
+        let at_close = remembered_after(maximized_bounds, None, (0, 0), false, true, after_maximize);
         assert_eq!(at_close, Some((Some(moved), true)));
     }
 
@@ -1968,32 +1971,42 @@ mod tests {
         let kept = Some((Some(before), true));
         // Restored from maximized: the new normal place is the one to keep.
         assert_eq!(
-            remembered_after(restored, restored, false, false, kept),
+            remembered_after(restored, None, (0, 0), false, false, kept),
             Some((Some(restored), false))
         );
         // Minimized: its position says nothing, nothing is stored.
-        assert_eq!(remembered_after(maximized_bounds, maximized_bounds, true, false, kept), None);
+        assert_eq!(remembered_after(maximized_bounds, None, (0, 0), true, false, kept), None);
     }
 
     #[test]
-    fn a_maximize_before_the_worker_runs_keeps_the_place_the_event_reported() {
+    fn a_maximize_before_the_worker_runs_completes_the_event_from_the_last_normal_place() {
         let rect = |x, y, width, height| WindowRect { x, y, width, height };
         let older = rect(0, 0, 1000, 700);
-        let moved = rect(100, 80, 1280, 900);
-        let maximized_bounds = rect(0, 0, 1920, 1040);
+        let maximized_bounds = rect(-8, -8, 1936, 1056);
         let previous = Some((Some(older), false));
-        // The move reported `moved`, but the worker samples the maximized window.
+        let frame = (16, 32);
+        // Moved, then maximized before the worker ran: the new place, the old size.
+        let moved = Some(Change::Moved(tauri::PhysicalPosition::new(100, 80)));
         assert_eq!(
-            remembered_after(maximized_bounds, moved, false, true, previous),
-            Some((Some(moved), true))
+            remembered_after(maximized_bounds, moved, frame, false, true, previous),
+            Some((Some(rect(100, 80, 1000, 700)), true))
+        );
+        // Resized, then maximized: the old place, the new size plus the frame.
+        let resized = Some(Change::Resized(tauri::PhysicalSize::new(1264, 868)));
+        assert_eq!(
+            remembered_after(maximized_bounds, resized, frame, false, true, previous),
+            Some((Some(rect(0, 0, 1280, 900)), true))
         );
         // The maximize's own event reports the maximized bounds: nothing to take.
+        let own = Some(Change::Moved(tauri::PhysicalPosition::new(-8, -8)));
         assert_eq!(
-            remembered_after(maximized_bounds, maximized_bounds, false, true, Some((Some(moved), false))),
-            Some((Some(moved), true))
+            remembered_after(maximized_bounds, own, frame, false, true, previous),
+            Some((Some(older), true))
         );
-        // A resize reports the inner size; the frame turns it into the outer one.
-        let change = Some(Change::Resized(tauri::PhysicalSize::new(1264, 868)));
-        assert_eq!(reported_rect(change, moved, (16, 32)), moved);
+        // No normal place known: no rectangle, only the maximized state.
+        assert_eq!(
+            remembered_after(maximized_bounds, moved, frame, false, true, None),
+            Some((None, true))
+        );
     }
 }
