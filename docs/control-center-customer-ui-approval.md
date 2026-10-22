@@ -9272,7 +9272,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-21 — #816: Paul's approval of build 7200 recorded
 
-- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #816 approval record for build 7200; the #816 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 stay pending.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #816 approval record for build 7200; the #816 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 keep their own approval line.
 - Approved customer-visible result: #816 as described in its entries above, as seen in build 7200.
 - Scope: #816 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #816 approval record only
@@ -9367,3 +9367,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none from this documentation correction. All existing approval states remain unchanged.
 - Scope: docs/control-center-customer-ui-approval.md only; the existing #816 records cover `apps/control-center/src/components/control-center-app.not-found-dismissal.test.tsx`, `apps/control-center/src/components/control-center-app.tsx` at 3917e7cf3f464631b2f609d116a4534ef9cbe31b. These full paths supplement the existing scope; all original entries are preserved.
 - What's new: none — documentation-only scope correction; no product change or announcement.
+
+## 2026-10-22 — #816: approval-log wording after Paul's 7200 quote
+
+- User approval: no visible change – UI approval not needed (approval-log wording only: the text after Paul's 7200 quote on the #816 approval record; the quote and date are unchanged)
+- Approved customer-visible result: #816 as in its own entries; nothing else changes.
+- Scope: docs/control-center-customer-ui-approval.md only. Pull request branch #816 only, not merged, not released.
+- What's new: none — approval-log wording only, no customer-visible change
