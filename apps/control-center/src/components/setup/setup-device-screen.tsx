@@ -147,8 +147,8 @@ export function SetupDeviceScreen({
         candidate.deviceId.toLowerCase() === previewDevice.deviceId.toLowerCase(),
     );
   // The single 3D model follows the connected VibeTV's row; row 0 keeps it
-  // only while nothing is connected.
-  const live3DIndex = previewDevice ? candidates.findIndex(isPreviewDevice) : 0;
+  // when no row is the connected one, so one VibeTV always shows the 3D model.
+  const live3DIndex = Math.max(candidates.findIndex(isPreviewDevice), 0);
   const wifiBusy = connecting || wifiSubmitting || waitingForWiFi;
   const passwordRequired = manualWiFiName ||
     wifiNetworks.find((network) => network.ssid === wifiName)?.encrypted !== false;

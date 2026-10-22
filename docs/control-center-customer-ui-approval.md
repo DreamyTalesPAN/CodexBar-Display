@@ -9122,3 +9122,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: until every rotation preview has its companion frame, Automatic and Manual draw the same-size skeleton (no partial set, no "No usage yet" placeholder) and Continue stays disabled; once all are there, the real previews show and Continue opens. Continue is the 44px calm button in the 460px column, not full window width.
 - Scope: `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `apps/control-center/src/components/setup/setup-display-mode-screen.test.tsx`, `apps/control-center/src/components/setup/setup-display-theme-carousel.test.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.test.tsx`, `apps/control-center/src/components/setup/setup-display-mode-rotation.test.tsx`, `apps/control-center/src/components/setup/setup-wizard.test.tsx`, `apps/control-center/src/components/settings-screen.test.tsx`; no new text, copy, controls or hardware writes.
 - What's new: none — skeleton shown until the companion has answered for every preview; Continue sized like the other calm steps.
+
+## 2026-10-22 — #858: one VibeTV in the chooser shows the 3D model
+
+- User approval: pending — Paul asked on 2026-10-22 09:30 that the chooser show the 3D VibeTV instead of the photo when one VibeTV is offered; result not yet seen by him
+- Approved customer-visible result: With one VibeTV offered, its chooser row shows the same 3D model as the other setup steps instead of the photo; the photo stays only where WebGL2 is unavailable. With several VibeTVs the 3D model sits on the connected row, or on the first row when none of the rows is the connected one (previously no row showed it in that case).
+- Scope: `apps/control-center/src/components/setup/setup-device-screen.tsx`, `apps/control-center/src/components/setup/setup-device-screen-3d.test.tsx`; no text changes, no hardware writes.
+- What's new: none — correct the requested chooser before customer approval.
