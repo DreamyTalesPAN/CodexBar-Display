@@ -10114,3 +10114,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Main's calm redesign with only #783's existing Usage behaviour retained.
 - Scope: Conflict resolution on PR #783; no release or hardware changes.
 - What's new: none — merge of main, no new customer-visible behaviour
+
+## 2026-10-22 — #783: counting badge follows the visible total
+
+- User approval: no visible change – UI approval not needed (fix incorrect counting badge caused only by hidden provider history, Codex P2)
+- Approved customer-visible result: The existing Still counting badge disappears when every shown provider has settled; hidden providers cannot make the visible total provisional.
+- Scope: Usage token-history badge and focused regression tests; Companion's updating and settled fields stay authoritative.
+- What's new: none — correct the scope of an existing status indicator

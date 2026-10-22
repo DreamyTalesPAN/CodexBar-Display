@@ -1329,6 +1329,26 @@ describe("UsageScreen", () => {
     expect(html.match(/data-testid="usage-legend".*?<\/div>/)?.[0]).not.toContain("Codex");
   });
 
+  it.each([true, false, undefined])("scopes the counting badge to shown provider history (%s)", (costSettled) => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        hiddenProviderIds={["codex"]}
+        usage={{
+          ...usage,
+          tokenUsageUpdating: true,
+          providers: [
+            { ...usage.providers[0], costSettled: false },
+            { ...usage.providers[0], id: "claude", label: "Claude", costSettled,
+              cost: { daily: [{ day: "2026-07-22", totalTokens: 9 }] } },
+          ],
+        }}
+      />,
+    );
+    expect(html).toContain("<span>9</span>");
+    expect(html.includes('data-testid="token-history-updating"')).toBe(costSettled !== true);
+  });
+
   it("shows no still-loading notice beside an action tile", () => {
     const html = renderToStaticMarkup(
       <UsageScreen

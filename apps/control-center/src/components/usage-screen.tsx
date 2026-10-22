@@ -207,7 +207,9 @@ export function UsageScreen({
             providers={shownProviders}
             refreshPending={refreshPending}
             refreshing={refreshing || refreshPending}
-            updating={tokenUsageUpdating}
+            updating={tokenUsageUpdating && shownProviders.some(
+              (provider) => provider.cost != null && provider.costSettled !== true,
+            )}
           />
         ) : tokenUsagePending ? (
           <TokenUsageSkeleton providerCount={shownProviders.length} />
