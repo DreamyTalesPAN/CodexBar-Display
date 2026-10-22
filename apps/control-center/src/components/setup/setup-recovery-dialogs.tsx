@@ -1,6 +1,5 @@
 "use client";
 
-import { AppWindow, RefreshCw } from "lucide-react";
 import { SetupDialog } from "./setup-dialog";
 
 type SetupRecoveryDialogsProps = {
@@ -19,9 +18,10 @@ type SetupRecoveryDialogsProps = {
  * It used to appear only before the customer had entered the app once, which
  * meant a service that died later said nothing at all.
  *
- * It deliberately does not hold the screen behind it. A step's own error can
- * freeze its step, but an announcement about the background service must leave
- * the app usable — taking it away is the very thing this is reporting.
+ * It dims the screen behind it like every other dialog (the approved template
+ * draws the same grey backdrop on both), but the dim takes no clicks: an
+ * announcement about the background service must leave the app usable --
+ * taking it away is the very thing this is reporting.
  */
 export function SetupRecoveryDialogs({
   onHide,
@@ -37,17 +37,15 @@ export function SetupRecoveryDialogs({
         // background service that runs to the end either way, and nothing at
         // any layer can stop it part way.
         description="The background service stopped responding and is restarting automatically. Your setup stays saved."
-        icon={RefreshCw}
         onOpenChange={(open) => !open && onHide()}
         open={phase === "repairing"}
         primaryAction={{ label: "Hide", onSelect: onHide }}
         scrim={false}
+        showCloseButton={false}
         title="Repairing VibeTV Control Center"
-        tone="neutral"
       />
       <SetupDialog
         description="The background service could not be restarted automatically. Your setup stays saved."
-        icon={AppWindow}
         onOpenChange={(open) => !open && onHide()}
         open={phase === "failed"}
         primaryAction={{
@@ -55,12 +53,13 @@ export function SetupRecoveryDialogs({
           label: "Try automatic repair again",
           onSelect: onRetry,
         }}
-        scrim={false}
         secondaryAction={{
           label: "Restart Control Center",
           onSelect: onRestart,
         }}
+        scrim={false}
         title="VibeTV Control Center needs attention"
+        wide
       />
     </>
   );

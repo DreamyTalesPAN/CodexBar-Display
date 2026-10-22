@@ -262,7 +262,9 @@ The device only has to tick those counters down with its own monotonic clock:
   the wall-clock-free form of "collected at": the device adds its own elapsed
   time since the frame arrived to get the current age.
 - `resetSource` is the identity of the countdown (`provider` or
-  `provider:window`). A changed value is a different countdown.
+  `provider:window`). A changed value is a different countdown. An identity over
+  31 bytes is sent as its first 18 bytes, `-`, and 12 hex characters of a hash of
+  the whole identity; the device compares it as an opaque string.
 
 Trust states:
 

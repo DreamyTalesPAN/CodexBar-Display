@@ -1223,6 +1223,22 @@ func runURLSchemeTests() {
         "a disabled SMAppService must not trigger a registration refresh"
     )
     require(
+        runtimeRegistrationNeedsRefresh(
+            repairRequested: true,
+            registeredVersion: "1.0.64+64",
+            currentVersion: "1.0.64+64"
+        ),
+        "a Restart service request must replace the runtime registration even when its version matches"
+    )
+    require(
+        !runtimeRegistrationNeedsRefresh(
+            repairRequested: false,
+            registeredVersion: "1.0.64+64",
+            currentVersion: "1.0.64+64"
+        ),
+        "an ordinary start must keep a registration whose version matches"
+    )
+    require(
         runtimeHealthGatePassed(.healthy(version: "1.2.3")),
         "proven runtime health must survive a stale Service Management status after an app update"
     )
