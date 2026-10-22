@@ -9570,3 +9570,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Retained firmware success text is hidden when the Companion/device is disconnected or firmware metadata is missing; terminal no-answer explanations remain available.
 - Scope: updates-screen.tsx note visibility and red-first regression cases for all three unavailable states; coordinator explicitly authorized this narrow suppression.
 - What's new: none — bug fix, not announced to customers
+
+## 2026-10-22 — #798: a failed hosted DMG check does not fail an installed Mac App
+
+- User approval: no visible change – UI approval not needed (bug fix: an installed Mac App whose runtime check answered no longer shows "Could not check for updates" because the separate hosted DMG check failed)
+- Approved customer-visible result: The failure dialog opens only when the Mac App check itself failed, or the app is outside /Applications and its DMG check failed.
+- Scope: updates-screen.tsx macAppCheckFailed condition and its red-first regression test in updates-screen.calm.test.tsx.
+- What's new: none — bug fix, not announced to customers

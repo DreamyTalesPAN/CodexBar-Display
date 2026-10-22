@@ -336,6 +336,23 @@ describe("calm Updates screen", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("a failed hosted DMG check fails the Mac App only where the DMG is the update path (#798)", () => {
+    // The runtime answered for the installed app, so its status is the answer.
+    const failedDmg = { ...upToDate.companionRelease!, dmgDownloadStatus: "check_failed" as const };
+    const view = render(<UpdatesScreen {...upToDate} companionRelease={failedDmg} />);
+    expect(screen.queryByRole("dialog", { name: "Could not check for updates" })).toBeNull();
+    view.unmount();
+
+    render(
+      <UpdatesScreen
+        {...upToDate}
+        companionInfo={{ app: { version: "1.0.64", installedInApplications: false } }}
+        companionRelease={failedDmg}
+      />,
+    );
+    expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
+  });
+
   it("failed check: Close keeps the failure in the row and does not ask again", () => {
     const failed = {
       checkedAt: "2026-10-19T09:10:00Z",

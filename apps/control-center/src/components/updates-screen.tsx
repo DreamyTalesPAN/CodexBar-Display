@@ -238,10 +238,12 @@ export function UpdatesScreen({
     : busyAction === "firmware-update";
   const installingAnyUpdate = installingUpdate;
   const creatingReport = supportReportBusy;
+  // An installed app's status is the runtime's answer, so a failed hosted DMG check does not fail it (#798).
   const macAppCheckFailed =
     macAppRunning &&
     (companionRelease?.status === "check_failed" ||
-      companionRelease?.dmgDownloadStatus === "check_failed");
+      (!companionInfo?.app?.installedInApplications &&
+        companionRelease?.dmgDownloadStatus === "check_failed"));
   const firmwareCheckFailed = firmwareUpdate?.status === "check_failed";
   // A newer failed check is a new failure and opens again; a check that
   // answered is not part of it.
