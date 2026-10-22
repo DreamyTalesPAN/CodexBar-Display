@@ -115,7 +115,10 @@ const SCENARIOS: Scenario[] = [
 // longest label there is) and the longest provider names for the title.
 const NAME_SCENARIOS: Scenario[] = [
   { name: "Codex limit names", solo: { provider: "codex", label: "Codex", limits: [["weekly", "Codex Weekly", 99], ["session", "Codex Session", 99]] } },
-  { name: "Antigravity", solo: { provider: "antigravity", label: "Antigravity", limits: [["weekly", "Weekly", 99], ["session", "Session", 50]] } },
+  {
+    name: "Antigravity", solo: { provider: "antigravity", label: "Antigravity", limits: [["weekly", "Weekly", 99], ["session", "Session", 50]] },
+    pair: [["antigravity:weekly", "Antigravity Weekly", 99], ["perplexity:session", "Perplexity Session", 50]], // the two longest provider names, with descenders
+  },
   { name: "Perplexity", solo: { provider: "perplexity", label: "Perplexity", limits: [["weekly", "Weekly", 99], ["session", "Session", 50]] } },
 ];
 
@@ -310,9 +313,8 @@ const SHRINK_PENDING: Array<{ theme: string; source: RegExp; why: string }> = [
   { theme: "reset-countdown", source: /ResetFull/, why: "open decision: the countdown is declared at 4 and drawn at 2 (a widened box or a declared 2)" },
 ];
 
-function shrunkTexts(themeId: string, pack: ThemeRenderPack, pending = false): string[] {
-  const prims = pack.spec?.p ?? [];
-  const open = (p: ThemePrimitive) => SHRINK_PENDING.some((entry) => entry.theme === themeId && entry.source.test(source(p)));
+// Every state a screen is asked to draw, shared by the size guard and the screen edge guard.
+const REACHABLE_FRAMES = (() => {
   const frames: Array<[string, FrameData]> = [];
   for (const two of [false, true]) for (const scenario of [...SCENARIOS, ...NAME_SCENARIOS].filter((s) => !two || s.pair)) for (const usageMode of ["used", "remaining"]) {
     for (const pace of [undefined, ...(Object.keys(ALL_PACES) as PaceName[])]) for (const [footer, weeklySecs, firstSecs] of FOOTERS) {
@@ -323,8 +325,14 @@ function shrunkTexts(themeId: string, pack: ThemeRenderPack, pending = false): s
   for (const now of CLOCKS) for (const wideTokens of [false, true]) {
     frames.push([`${now.toTimeString().slice(0, 5)}, ${wideTokens ? "wide" : "normal"} token counts`, frameFor(false, "used", undefined, undefined, undefined, 424000, SCENARIOS[0], 9100, now, wideTokens)]);
   }
+  return frames;
+})();
+
+function shrunkTexts(themeId: string, pack: ThemeRenderPack, pending = false): string[] {
+  const prims = pack.spec?.p ?? [];
+  const open = (p: ThemePrimitive) => SHRINK_PENDING.some((entry) => entry.theme === themeId && entry.source.test(source(p)));
   const found = new Map<string, string>();
-  for (const [state, frame] of frames) {
+  for (const [state, frame] of REACHABLE_FRAMES) {
     for (const p of prims.filter((q) => q.t === "tx" && primitiveUsageSlotVisible(q, frame) && open(q) === pending)) {
       const text = renderTextPrimitive(p, frame, prims);
       if (!text.trim()) continue;
@@ -332,6 +340,25 @@ function shrunkTexts(themeId: string, pack: ThemeRenderPack, pending = false): s
       if (fit.font !== (p.f ?? 1) || fit.size !== (p.s ?? 1)) {
         found.set(`${source(p)} ${text}`, `"${text}" (${source(p)}) is drawn at font ${fit.font} size ${fit.size}, declared font ${p.f ?? 1} size ${p.s ?? 1} (first in: ${state})`);
       }
+    }
+  }
+  return [...found.values()];
+}
+
+// No ink of any text comes within 3 px of the screen edge, in any reachable state: the descender of "On pace" stood on the last pixel row
+// of Gauge's second limit (7214) because no guard looked at the edge.
+function edgeHits(pack: ThemeRenderPack): string[] {
+  const prims = pack.spec?.p ?? [];
+  const found = new Map<string, string>();
+  // The update notice takes the title's place (and the footer's) in every state; it is a sentence on purpose and may shrink.
+  const notices = [false, true].map((two): [string, FrameData] => [`${two ? "Two at once" : "One provider"}, update notice`, { ...frameFor(two, "used", "on pace", 0), updateNotice: "Open VibeTV Mac App" }]);
+  for (const [state, frame] of [...REACHABLE_FRAMES, ...notices]) {
+    for (const p of prims.filter((q) => q.t === "tx" && primitiveUsageSlotVisible(q, frame))) {
+      const text = renderTextPrimitive(p, frame, prims);
+      if (!text.trim()) continue;
+      const ink = textInk(p, text);
+      const gap = Math.floor(Math.min(ink.x, ink.y, 240 - ink.x - ink.w, 240 - ink.y - ink.h));
+      if (gap < CLEAR) found.set(`${source(p)} ${text}`, `"${text}" (${source(p)}) [${show(ink)}] is ${gap} px from the screen edge, under ${CLEAR} px (first in: ${state})`);
     }
   }
   return [...found.values()];
@@ -359,5 +386,11 @@ describe("animations, dividers, bars and text of every catalog theme stay apart 
 
   it.each(LAYOUT_PENDING)("$theme still has a footer on its frame line (decision pending): drop the entry from LAYOUT_PENDING once fixed", (entry) => {
     expect(layoutViolations(loadPack(entry.theme), entry.theme, true)).not.toEqual([]);
+  });
+});
+
+describe("no text ink comes within 3 px of the screen edge", () => {
+  it.each(catalogIds)("%s", (themeId) => {
+    expect(edgeHits(loadPack(themeId))).toEqual([]);
   });
 });
