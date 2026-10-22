@@ -149,6 +149,15 @@ describe("SetupThemeScreen", () => {
     expect(html).not.toContain("&gt;");
   });
 
+  // The log grows under the Install button by up to 12 + 120 px; the page must
+  // not scroll for it, so the theme box gives that room up while it has lines.
+  it("shrinks the theme box by the log's room once the log has lines", () => {
+    expect(render()).toContain("max-h-[calc(100dvh-278px)]");
+    const html = render({ installLogs: ["Uploading theme"], installing: true });
+    expect(html).toContain("max-h-[calc(100dvh-410px)]");
+    expect(html).not.toContain("max-h-[calc(100dvh-278px)]");
+  });
+
   // Install is closed while one runs, so a new pick has nothing to act on: the
   // running install still activates the theme it started with, and its status
   // poll puts that one back as selected. All the customer got was a card that

@@ -20325,3 +20325,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Every theme except Reset Countdown shows only the largest unit of a reset: Night Clock's two provider rows read "6d" / "4d" or "3h" / "1h" in the live preview and on the device; Pixel Battery's footer names the limit ("Session reset 55m") at every minute count, as it already did from one hour on.
 - Scope: the provider-slot reset bindings (pv1r, pv2r, providerSlotNReset) in live-vibetv-preview.tsx and in the firmware renderer, and the footer width of Pixel Battery 1.17.4.
 - What's new: none — Night Clock and Pixel Battery text only
+
+## 2026-10-22 — #7210: Setup theme step keeps the install log inside the window
+
+- User approval: pending — while a theme installs, the theme cards get a little less height so the Install button and the progress log stay inside a 1440×900 or 1280×800 window without page scrolling
+- Approved customer-visible result: With the install log showing, the card area is shorter (it scrolls inside its box) and Install plus the full log fit in the window; before the log appears the layout is unchanged.
+- Scope: the max-height of the theme grid in setup-theme-screen.tsx while the install log has lines.
+- What's new: none — layout only
