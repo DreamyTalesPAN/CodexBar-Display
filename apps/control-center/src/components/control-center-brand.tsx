@@ -15,7 +15,7 @@ export function ControlCenterBrand({
     return (
       <span
         aria-label="VibeTV"
-        className={cn("text-sm font-black text-sidebar-primary", className)}
+        className={cn("text-sm font-black text-sidebar-foreground", className)}
       >
         VT
       </span>
@@ -37,8 +37,8 @@ export function ControlCenterBrand({
 
   return (
     <div className={cn("min-w-0", className)}>
-      <div className="text-2xl font-black uppercase leading-none">
-        VIBE<span className="text-sidebar-primary">TV</span>
+      <div className="text-base font-black uppercase leading-none">
+        VIBETV
       </div>
       {showTagline ? (
         <div className="mt-1 text-[0.7rem] font-semibold uppercase tracking-wide text-sidebar-foreground/65">

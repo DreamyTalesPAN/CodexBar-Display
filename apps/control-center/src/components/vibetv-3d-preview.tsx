@@ -37,7 +37,7 @@ type VibeTV3DPreviewProps = {
    * show; the caller then drops its flat preview.
    */
   onReady?: () => void;
-  /** The renderer or model could not load; reveal the existing flat fallback. */
+  /** Reveal the existing flat fallback if the renderer or model fails. */
   onFailed?: () => void;
   updateOwnedDisconnect?: boolean;
   usage: UsageSnapshot | null;
@@ -96,9 +96,11 @@ export function VibeTV3DPreview({
   const [screenHost, setScreenHost] = useState<HTMLDivElement | null>(null);
   const [modelFailed, setModelFailed] = useState(false);
   const onReadyRef = useRef(onReady);
+  const invalidateRef = useRef<(() => void) | null>(null);
   const screenSettledRef = useRef(false);
   const onScreenSettled = useCallback(() => {
     screenSettledRef.current = true;
+    invalidateRef.current?.();
   }, []);
   // A settled screen (e.g. no VibeTV yet) can still switch to "Loading
   // preview" when a VibeTV and its frame arrive: then it is not ready again.
@@ -199,10 +201,13 @@ export function VibeTV3DPreview({
     let modelShown = false;
     let drawn = false;
     let announced = false;
-    // Frames are requested only while something moves or is about to move.
-    let running = false;
     let dragging = false;
-    controls.addEventListener("start", () => { dragging = true; wake(); });
+    controls.addEventListener("start", () => {
+      dragging = true;
+      window.clearTimeout(swayTimer);
+      wake();
+    });
+    controls.addEventListener("change", () => invalidate());
     controls.addEventListener("end", () => {
       dragging = false;
       touchedAt = performance.now();
@@ -212,9 +217,13 @@ export function VibeTV3DPreview({
     // Like the design: 2.5 s after the last touch the device sways once, a full
     // cycle, and then stands still. A drag starts the count again.
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    let frameRequest = 0;
+    let frameRequest: number | null = null;
+    let swayTimer = 0;
+    let hiddenAt = document.hidden ? performance.now() : null;
     let previousAt = performance.now();
     const loop = () => {
+      frameRequest = null;
+      if (disposed || document.hidden) return;
       const now = performance.now();
       const elapsed = Math.min(now - previousAt, 100);
       previousAt = now;
@@ -241,15 +250,42 @@ export function VibeTV3DPreview({
         announced = true;
         onReadyRef.current?.();
       }
-      // Still waiting for the sway to start counts as moving; after its cycle
-      // and the settling to rest, nothing does.
-      running = dragging || swaying || spun || turned || !announced || (!still && swayAt <= 0);
-      if (running) frameRequest = requestAnimationFrame(loop);
+      if (swaying || spun || turned) wake();
+      // No frames during the idle delay or while waiting for the model/screen.
+      // Those wake this loop themselves when they are ready.
+      window.clearTimeout(swayTimer);
+      if (!still && !dragging && swayAt <= 0) {
+        swayTimer = window.setTimeout(wake, -swayAt + 1);
+      }
     };
     // Restarts the frames after they stopped, e.g. for a drag or a resize.
     const wake = () => {
-      if (!running) loop();
+      if (!disposed && !document.hidden && frameRequest === null) {
+        frameRequest = requestAnimationFrame(loop);
+      }
     };
+    const invalidate = () => {
+      dirty = true;
+      wake();
+    };
+    invalidateRef.current = invalidate;
+
+    const visibilityChanged = () => {
+      const now = performance.now();
+      if (document.hidden) {
+        hiddenAt ??= now;
+        if (frameRequest !== null) cancelAnimationFrame(frameRequest);
+        frameRequest = null;
+        window.clearTimeout(swayTimer);
+      } else {
+        // Resume the same cycle, excluding time the window spent hidden.
+        if (hiddenAt !== null) touchedAt += now - hiddenAt;
+        hiddenAt = null;
+        previousAt = now;
+        wake();
+      }
+    };
+    document.addEventListener("visibilitychange", visibilityChanged);
 
     const resize = () => {
       const width = Math.max(1, stage.clientWidth);
@@ -258,8 +294,7 @@ export function VibeTV3DPreview({
       camera.updateProjectionMatrix();
       renderer.setSize(width, height, false);
       cssRenderer.setSize(width, height);
-      dirty = true;
-      wake();
+      invalidate();
     };
     const observer = new ResizeObserver(resize);
     observer.observe(stage);
@@ -304,7 +339,7 @@ export function VibeTV3DPreview({
         screen.scale.set(GLASS_WIDTH * MM / SCREEN_PX, GLASS_HEIGHT * MM / SCREEN_PX, 1);
         screenPivot.add(screen);
         modelShown = true;
-        dirty = true;
+        invalidate();
         setScreenHost(host);
       },
       undefined,
@@ -313,7 +348,10 @@ export function VibeTV3DPreview({
 
     return () => {
       disposed = true;
-      cancelAnimationFrame(frameRequest);
+      invalidateRef.current = null;
+      if (frameRequest !== null) cancelAnimationFrame(frameRequest);
+      window.clearTimeout(swayTimer);
+      document.removeEventListener("visibilitychange", visibilityChanged);
       observer.disconnect();
       controls.dispose();
       scene.environment?.dispose();
@@ -327,6 +365,10 @@ export function VibeTV3DPreview({
       cssLayer.removeChild(cssRenderer.domElement);
     };
   }, [modelFailed]);
+
+  useEffect(() => {
+    invalidateRef.current?.();
+  }, [displayFrame]);
 
   // Without WebGL the caller keeps its flat live preview on screen.
   if (modelFailed) {
