@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useWaitsForPageDialog } from "./announcement-gate";
 import { SetupDialog } from "./setup/setup-dialog";
 
 /**
@@ -28,41 +29,16 @@ export function useSystemBusyDismissal(
 }
 
 /**
- * Whether a dialog other than this one is open. The busy dialog leaves the
- * page usable, so a page's own dialog (Run setup again, a theme preview, a
- * factory reset, a delete confirmation) can open under it, or be open when it
- * comes; it waits for that one instead of covering it, and returns once it is
- * closed. The first answer is read before the first render, so the busy dialog
- * never mounts over a dialog that was already open.
+ * The computer is too starved for the usage engine to answer (#606). An
+ * announcement: it waits while a page dialog is open (#632).
  */
-function otherDialogOpen(): boolean {
-  return (
-    typeof document !== "undefined" &&
-    Array.from(
-      document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),
-    ).some((dialog) => dialog.getAttribute("data-notice-kind") !== "system-busy")
-  );
-}
-
-function useOtherDialogOpen(): boolean {
-  const [open, setOpen] = useState(otherDialogOpen);
-  useEffect(() => {
-    const check = () => setOpen(otherDialogOpen());
-    check();
-    const observer = new MutationObserver(check);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, []);
-  return open;
-}
-
-/** The computer is too starved for the usage engine to answer (#606). */
 export function SystemBusyDialog({ onClose }: { onClose: () => void }) {
-  if (useOtherDialogOpen()) {
+  if (useWaitsForPageDialog()) {
     return null;
   }
   return (
     <SetupDialog
+      announcement
       noticeKind="system-busy"
       description={systemBusyCopy.description}
       onOpenChange={(open) => {
@@ -73,7 +49,9 @@ export function SystemBusyDialog({ onClose }: { onClose: () => void }) {
       open
       primaryAction={{ label: systemBusyCopy.action, onSelect: onClose }}
       // An announcement over whatever the customer is doing: the app behind
-      // it keeps working.
+      // it keeps working, and the customer's own dialog keeps the focus when
+      // both open together (#632).
+      onOpenAutoFocus={(event) => event.preventDefault()}
       scrim={false}
       showCloseButton={false}
       title={systemBusyCopy.title}

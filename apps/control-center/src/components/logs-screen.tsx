@@ -1,8 +1,7 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
 import type { ReactNode } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { SetupDialog } from "./setup/setup-dialog";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { copyForHost } from "@/lib/customer-platform";
@@ -21,6 +20,11 @@ export type LogEvent = {
 export type LogsScreenProps = {
   events?: LogEvent[];
   diagnostics?: SupportDiagnostics | null;
+  supportReport?: SupportDiagnostics | null;
+  diagnosticsRunning?: boolean;
+  onDismissError?: () => void;
+  onCreateSupportReport?: () => void;
+  onStartSetup?: () => void;
   lastError?: {
     code: string;
     message: string;
@@ -39,6 +43,11 @@ export type LogsScreenProps = {
 export function LogsScreen({
   events = [],
   diagnostics,
+  supportReport,
+  diagnosticsRunning = false,
+  onDismissError,
+  onCreateSupportReport,
+  onStartSetup,
   lastError,
   onLoadDiagnostics,
   onRefresh,
@@ -48,8 +57,8 @@ export function LogsScreen({
   supportReportBusy = false,
   windowsHost = false,
 }: LogsScreenProps) {
-  const lastCreated = diagnostics?.generatedAt
-    ? createdWhen(diagnostics.generatedAt)
+  const lastCreated = supportReport?.generatedAt
+    ? createdWhen(supportReport.generatedAt)
     : "";
   const supportText = (value: string) =>
     copyForHost(formatCustomerSupportText(value), windowsHost);
@@ -69,8 +78,9 @@ export function LogsScreen({
         <div className="shrink-0">
           <SupportReportActions
             creating={supportReportBusy}
-            diagnostics={diagnostics}
-            onCreate={onLoadDiagnostics}
+            busyElsewhere={diagnosticsRunning}
+            diagnostics={supportReport}
+            onCreate={onCreateSupportReport}
             quiet
             size="sm"
             windowsHost={windowsHost}
@@ -79,11 +89,12 @@ export function LogsScreen({
       </div>
 
       <DiagnosticsPanel
+        busyElsewhere={supportReportBusy}
         diagnostics={diagnostics}
         onRepairUsageEngine={onRepairUsageEngine}
         onRun={onLoadDiagnostics}
         repairing={repairingUsageEngine}
-        running={supportReportBusy}
+        running={diagnosticsRunning}
         windowsHost={windowsHost}
       />
 
@@ -105,11 +116,15 @@ export function LogsScreen({
         title="Recent activity"
       >
         {lastError ? (
-          <Alert>
-            <AlertTriangle aria-hidden />
-            <AlertTitle>{supportText(lastError.message)}</AlertTitle>
-            <AlertDescription>{supportText(lastError.nextAction)}</AlertDescription>
-          </Alert>
+          <SetupDialog
+            description={supportText(lastError.nextAction)}
+            onOpenChange={(open) => { if (!open) onDismissError?.(); }}
+            open
+            primaryAction={lastError.code === "pairing_rejected"
+              ? { label: "Run setup again", onSelect: () => { onDismissError?.(); onStartSetup?.(); } }
+              : { label: "OK", onSelect: () => onDismissError?.() }}
+            title={supportText(lastError.message)}
+          />
         ) : null}
         <div className={`px-5 py-3.5 ${FRAME}`}>
           {events.length ? (
