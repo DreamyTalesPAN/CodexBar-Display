@@ -1,7 +1,6 @@
 package usb
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -349,7 +348,7 @@ func (s *Sender) ResolveControlPort(explicit, expectedDeviceID string) (string, 
 }
 
 // ResolveControlPortContext shares the caller's deadline across all probes.
-func (s *Sender) ResolveControlPortContext(ctx context.Context, explicit, expectedDeviceID string) (string, error) {
+func (s *Sender) ResolveControlPortContext(ctx context.Context, explicit, expectedDeviceID string) (path string, err error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -357,37 +356,50 @@ func (s *Sender) ResolveControlPortContext(ctx context.Context, explicit, expect
 	// gets its own short-lived sender, so the ports can be probed at once.
 	var probesMu sync.Mutex
 	probes := map[string]*Sender{}
-	readHello := func(path string) (protocol.DeviceHello, error) {
+	// A device ID is unique: once the expected VibeTV answered, the silent
+	// ports must not hold the result until the shared deadline.
+	probeCtx, found := context.WithCancel(ctx)
+	defer found()
+	readHello := func(path string) (hello protocol.DeviceHello, err error) {
+		defer func() {
+			if err == nil && expectedDeviceID != "" && controlMatch(hello.Normalize(), expectedDeviceID, true) {
+				found()
+			}
+		}()
 		if open, _ := s.openPath.Load().(string); samePort(open, path) {
-			return s.DeviceHelloContext(ctx, path)
+			return s.DeviceHelloContext(probeCtx, path)
 		}
-		probe := NewSenderWithConfig(SenderConfig{
-			Opener: s.opener, Sleep: s.sleep, SettleDuration: s.settleDuration,
-			HelloWindow: s.helloWindow, WriteTimeout: s.writeTimeout,
-			SilentResetAfter: cmp.Or(s.silentResetAfter, -1),
-		})
+		probe := &Sender{
+			opener: s.opener, sleep: s.sleep, settleDuration: s.settleDuration,
+			helloWindow: s.helloWindow, writeTimeout: s.writeTimeout,
+			silentResetAfter: s.silentResetAfter, requestRetryStep: s.requestRetryStep,
+		}
 		probesMu.Lock()
 		probes[path] = probe
 		probesMu.Unlock()
-		return probe.DeviceHelloContext(ctx, path)
+		return probe.DeviceHelloContext(probeCtx, path)
 	}
 	if err := s.openPortVanished(explicit); err != nil {
 		return "", err
 	}
 	s.resolveMu.Lock()
 	defer s.resolveMu.Unlock()
-	if path, ok := s.currentMatchingPort(explicit, expectedDeviceID, true); ok {
-		return resolveVibeTVCandidatesForControl([]string{path}, path, expectedDeviceID, readHello, true)
-	}
-	path, err := resolveVibeTVPortForControl(explicit, expectedDeviceID, readHello, true)
-	s.forgetAmbiguousPort(err)
-	for probed, probe := range probes {
-		if err == nil && probed == path {
-			s.adopt(probe)
-		} else {
-			probe.Close()
+	// Both returns below must release the probes, also when the held port
+	// closed after the match and the probe sender took over.
+	defer func() {
+		for probed, probe := range probes {
+			if err == nil && probed == path {
+				s.adopt(probe)
+			} else {
+				probe.Close()
+			}
 		}
+	}()
+	if held, ok := s.currentMatchingPort(explicit, expectedDeviceID, true); ok {
+		return resolveVibeTVCandidatesForControl([]string{held}, held, expectedDeviceID, readHello, true)
 	}
+	path, err = resolveVibeTVPortForControl(explicit, expectedDeviceID, readHello, true)
+	s.forgetAmbiguousPort(err)
 	return path, err
 }
 
