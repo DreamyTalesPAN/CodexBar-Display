@@ -538,6 +538,7 @@ fn inner_within(outer: WindowRect, frame: (u32, u32)) -> (u32, u32) {
 // used; None means "keep the previous one".
 fn remembered_after(
     current: WindowRect,
+    reported: WindowRect,
     minimized: bool,
     maximized: bool,
     previous: Option<Remembered>,
@@ -545,12 +546,43 @@ fn remembered_after(
     if minimized {
         return None;
     }
+    // The event reported another rectangle than the window has now, and the
+    // window is maximized: it was maximized after the event, so the reported
+    // one is the last normal place.
+    if maximized && reported != current {
+        return Some((Some(reported), true));
+    }
     Some(remembered_for(current, maximized, previous))
+}
+
+// What a Moved or Resized event reported, in physical pixels.
+#[derive(Clone, Copy)]
+enum Change {
+    Moved(tauri::PhysicalPosition<i32>),
+    Resized(tauri::PhysicalSize<u32>),
+}
+
+// The window as the event saw it: Moved gives the outer position, Resized the
+// inner size, which the frame (outer minus inner size) turns into the outer one.
+fn reported_rect(change: Option<Change>, current: WindowRect, frame: (u32, u32)) -> WindowRect {
+    match change {
+        None => current,
+        Some(Change::Moved(position)) => WindowRect { x: position.x, y: position.y, ..current },
+        Some(Change::Resized(size)) => WindowRect {
+            width: size.width + frame.0,
+            height: size.height + frame.1,
+            ..current
+        },
+    }
 }
 
 // Worker threads only: the getters wait for the event loop. The outer
 // rectangle is stored, so the clamp sees the caption and borders too.
-fn window_geometry(window: &tauri::WebviewWindow, previous: Option<Remembered>) -> Option<Remembered> {
+fn window_geometry(
+    window: &tauri::WebviewWindow,
+    change: Option<Change>,
+    previous: Option<Remembered>,
+) -> Option<Remembered> {
     let minimized = window.is_minimized().ok()?;
     let position = window.outer_position().ok()?;
     let size = window.outer_size().ok()?;
@@ -561,7 +593,10 @@ fn window_geometry(window: &tauri::WebviewWindow, previous: Option<Remembered>) 
         width: size.width,
         height: size.height,
     };
-    remembered_after(current, minimized, maximized, previous)
+    let inner = window.inner_size().ok()?;
+    let frame = (size.width.saturating_sub(inner.width), size.height.saturating_sub(inner.height));
+    let reported = reported_rect(change, current, frame);
+    remembered_after(current, reported, minimized, maximized, previous)
 }
 
 // The workers run unordered, so a snapshot of an older event must not replace
@@ -576,10 +611,15 @@ fn store_if_newer(slot: &mut Option<(u64, Remembered)>, seq: u64, geometry: Reme
 // Worker threads only. Called on every move and resize, so a close while the
 // window is maximized still has the last normal place (Tauri reports only the
 // maximized bounds then).
-fn remember_window_geometry(app: &AppHandle, window: &tauri::WebviewWindow, seq: u64) {
+fn remember_window_geometry(
+    app: &AppHandle,
+    window: &tauri::WebviewWindow,
+    change: Option<Change>,
+    seq: u64,
+) {
     let shell = app.state::<Shell>();
     let previous = shell.window_geometry.lock().unwrap().map(|(_, geometry)| geometry);
-    if let Some(geometry) = window_geometry(window, previous) {
+    if let Some(geometry) = window_geometry(window, change, previous) {
         store_if_newer(&mut shell.window_geometry.lock().unwrap(), seq, geometry);
     }
 }
@@ -675,11 +715,16 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
             hide_after_flush(&handle);
         }
         WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
+            let change = match event {
+                WindowEvent::Moved(position) => Change::Moved(*position),
+                WindowEvent::Resized(size) => Change::Resized(*size),
+                _ => unreachable!(),
+            };
             let handle = handle.clone();
             let window = tracked.clone();
             // Numbered here, in event order, before the worker starts.
             let seq = handle.state::<Shell>().geometry_seq.fetch_add(1, Ordering::SeqCst) + 1;
-            std::thread::spawn(move || remember_window_geometry(&handle, &window, seq));
+            std::thread::spawn(move || remember_window_geometry(&handle, &window, Some(change), seq));
         }
         // A present that came between hide_after_flush's check and the
         // destroy showed the old window just before it went away: create it
@@ -934,7 +979,7 @@ fn hide_after_flush(app: &AppHandle) {
         if close_stands(presented, presented_now) {
             // Kept for the window built next; a minimized one keeps the last.
             let seq = shell.geometry_seq.fetch_add(1, Ordering::SeqCst) + 1;
-            remember_window_geometry(&handle, &window, seq);
+            remember_window_geometry(&handle, &window, None, seq);
             // Stored as count + 1, so a release before the first present
             // (count 0) is still told apart from "no release".
             shell.released_at.store(presented + 1, Ordering::SeqCst);
@@ -1697,7 +1742,7 @@ mod tests {
     use super::{
         choose_placement, clear_loaded_theme, close_stands, fit_into, inner_within,
         label_for_generation, theme_id_from_deep_link, work_area_of_centre, Placement,
-        WindowRect, remembered_after, remembered_for, store_if_newer,
+        WindowRect, remembered_after, remembered_for, store_if_newer, reported_rect, Change,
     };
     use url::Url;
 
@@ -1902,10 +1947,10 @@ mod tests {
         let maximized_bounds = rect(0, 0, 1920, 1040);
         // Closed normal at an older place, then moved and resized, then maximized.
         let at_last_release = Some(remembered_for(released_before, false, None));
-        let after_move = remembered_after(moved, false, false, at_last_release);
-        let after_maximize = remembered_after(maximized_bounds, false, true, after_move);
+        let after_move = remembered_after(moved, moved, false, false, at_last_release);
+        let after_maximize = remembered_after(maximized_bounds, maximized_bounds, false, true, after_move);
         // Closed while maximized: the release keeps the moved place.
-        let at_close = remembered_after(maximized_bounds, false, true, after_maximize);
+        let at_close = remembered_after(maximized_bounds, maximized_bounds, false, true, after_maximize);
         assert_eq!(at_close, Some((Some(moved), true)));
     }
 
@@ -1923,10 +1968,32 @@ mod tests {
         let kept = Some((Some(before), true));
         // Restored from maximized: the new normal place is the one to keep.
         assert_eq!(
-            remembered_after(restored, false, false, kept),
+            remembered_after(restored, restored, false, false, kept),
             Some((Some(restored), false))
         );
         // Minimized: its position says nothing, nothing is stored.
-        assert_eq!(remembered_after(maximized_bounds, true, false, kept), None);
+        assert_eq!(remembered_after(maximized_bounds, maximized_bounds, true, false, kept), None);
+    }
+
+    #[test]
+    fn a_maximize_before_the_worker_runs_keeps_the_place_the_event_reported() {
+        let rect = |x, y, width, height| WindowRect { x, y, width, height };
+        let older = rect(0, 0, 1000, 700);
+        let moved = rect(100, 80, 1280, 900);
+        let maximized_bounds = rect(0, 0, 1920, 1040);
+        let previous = Some((Some(older), false));
+        // The move reported `moved`, but the worker samples the maximized window.
+        assert_eq!(
+            remembered_after(maximized_bounds, moved, false, true, previous),
+            Some((Some(moved), true))
+        );
+        // The maximize's own event reports the maximized bounds: nothing to take.
+        assert_eq!(
+            remembered_after(maximized_bounds, maximized_bounds, false, true, Some((Some(moved), false))),
+            Some((Some(moved), true))
+        );
+        // A resize reports the inner size; the frame turns it into the outer one.
+        let change = Some(Change::Resized(tauri::PhysicalSize::new(1264, 868)));
+        assert_eq!(reported_rect(change, moved, (16, 32)), moved);
     }
 }
