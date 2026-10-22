@@ -401,6 +401,20 @@ func runtimeServiceNeedsRefresh(
     return registeredVersion?.trimmingCharacters(in: .whitespacesAndNewlines) != current
 }
 
+// A customer's repair request replaces the registration even when its version
+// matches: a failed start is the evidence that the registration itself is
+// broken (issue #626). An ordinary start keeps the version check.
+func runtimeRegistrationNeedsRefresh(
+    repairRequested: Bool,
+    registeredVersion: String?,
+    currentVersion: String
+) -> Bool {
+    repairRequested || runtimeServiceNeedsRefresh(
+        registeredVersion: registeredVersion,
+        currentVersion: currentVersion
+    )
+}
+
 func runtimeBundleVersion(shortVersion: String?, buildVersion: String?) -> String {
     let short = shortVersion?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     let build = buildVersion?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -1684,6 +1698,19 @@ func installationFailure(
     }
 }
 
+// #836: a background service that stays silent right after a Mac restart is
+// fixed by the "Restart service" button. The app presses that button itself,
+// once per launch, before it shows the failure screen.
+func shouldRestartServiceAutomatically(
+    after failure: InstallationFailure,
+    alreadyRestarted: Bool,
+    repairAttempt: Bool
+) -> Bool {
+    // A CodexBar repair is never restarted here: the generic retry clears its
+    // repair flag and would report success without launching CodexBar.
+    failure == .serviceStart && !alreadyRestarted && !repairAttempt
+}
+
 func installationPreviewFailure(_ value: String) -> InstallationFailure? {
     switch value {
     case "background-approval":
@@ -2023,6 +2050,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var installationStatus: InstallationStatus?
     private var codexBarRepairRequired = false
     private var codexBarRepairRestartRequired = false
+    // Set by Restart service and vibetv://repair-runtime. The next preparation
+    // replaces the Service Management registration even when its version matches.
+    private var runtimeReregistrationRequested = false
     // A repair that arrived while another preparation already owned the
     // runtime. That task read codexBarRepairRequired before the request
     // existed, so its outcome must not answer the repair -- the completion
@@ -2070,6 +2100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     // update must not create it.
     private var updaterStarted = false
 #endif
+    // #836: the app presses "Restart service" by itself once per launch.
+    private var serviceRestartedAutomatically = false
     private var installationRequired: Bool {
         requiresApplicationInstallation(Bundle.main.bundleURL)
     }
@@ -2291,6 +2323,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             guard let self else {
                 return
             }
+            // Read before prepareCompanion can change the flag.
+            let repairAttempt = self.codexBarRepairRequired
             let outcome = await self.prepareCompanion(fromStartScreen: true)
             self.preparationTask = nil
             if self.pendingCodexBarRepairRerun {
@@ -2330,6 +2364,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 )
             case .failure(let failure):
                 self.codexBarRepairRequired = false
+                if shouldRestartServiceAutomatically(
+                    after: failure,
+                    alreadyRestarted: self.serviceRestartedAutomatically,
+                    repairAttempt: repairAttempt
+                ) {
+                    // #836: same action as the "Restart service" button.
+                    self.serviceRestartedAutomatically = true
+                    self.restartRuntimeService()
+                    return
+                }
                 self.presentInstallationFailure(failure)
             }
         }
@@ -2350,6 +2394,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         discardMismatchedPendingNativeUpdate()
         codexBarRepairRequired = false
         startRuntimePreparation()
+    }
+
+    // "Restart service" on a failed service start. Asking for it again must
+    // unregister and register the runtime, not just re-check a registration
+    // that Service Management still reports as enabled (issue #626).
+    @objc private func restartRuntimeService() {
+        runtimeReregistrationRequested = true
+        retryRuntimePreparation()
     }
 
     @objc private func openSystemSettingsLoginItems() {
@@ -3146,6 +3198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         guard preparationTask == nil else {
             return
         }
+        runtimeReregistrationRequested = true
         preparationTask = Task { [weak self] in
             guard let self else {
                 return
@@ -3723,7 +3776,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 recoveryButtons = [
                     makeNativeSetupButton(
                         title: "Restart service",
-                        action: #selector(retryRuntimePreparation),
+                        action: #selector(restartRuntimeService),
                         symbolName: "arrow.clockwise",
                         variant: .primary
                     ),
@@ -4037,6 +4090,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     private func prepareCompanion(fromStartScreen: Bool = false) async -> RuntimePreparationOutcome {
+        let repairRequested = runtimeReregistrationRequested
+        runtimeReregistrationRequested = false
         let preparationStartedAt = Date()
         guard isInstalledApplicationsBundle(Bundle.main.bundleURL) else {
             NSLog(
@@ -4176,7 +4231,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // .ready only means Service Management accepted the registration, and
         // the health gate below can still fail and unregister what it just
         // registered. Disarming here left the Mac with no Companion at all.
-        switch await ensureBundledRuntimeServiceRegistered() {
+        switch await ensureBundledRuntimeServiceRegistered(repairRequested: repairRequested) {
         case .ready:
             break
         case .requiresApproval:
@@ -4359,7 +4414,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         return .launchBlockedBySignature
     }
 
-    private func ensureBundledRuntimeServiceRegistered() async
+    private func ensureBundledRuntimeServiceRegistered(repairRequested: Bool) async
         -> RuntimeServiceRegistrationOutcome {
         if usesLocalPreviewRuntime {
             // An ad-hoc preview cannot satisfy the Developer ID launch
@@ -4379,11 +4434,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
         switch runtimeService.status {
         case .enabled:
-            if runtimeServiceNeedsRefresh(
+            if runtimeRegistrationNeedsRefresh(
+                repairRequested: repairRequested,
                 registeredVersion: registeredRuntimeBundleVersion(),
                 currentVersion: currentRuntimeBundleVersion()
             ) {
+                if repairRequested {
+                    // A repair can arrive while a VibeTV update job runs inside
+                    // the runtime. Claim the update hold first, as the CodexBar
+                    // repair does, so stopping the runtime cannot cut that job.
+                    if await runtimeShouldDeferRepairForUpdate() {
+                        return .failed
+                    }
+                }
                 guard await unregisterBundledRuntimeService() else {
+                    if repairRequested {
+                        await runtimeReleaseUpdateHold()
+                    }
                     return .failed
                 }
                 return registerBundledRuntimeService()
