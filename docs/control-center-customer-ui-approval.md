@@ -20297,3 +20297,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the card area is as tall as the window allows, so Install sits right under the cards with no page scrolling on a 1440×900 or 1280×800 window; on 1440×900 both card rows are shown in full, on 1280×800 the second row's title line sits under the fade at the bottom edge; cards keep their 200 px size and grid.
 - Scope: the max-height of the theme grid in setup-theme-screen.tsx (viewport-based instead of a fixed 440 px box).
 - What's new: none — layout only
+
+## 2026-10-22 — #7209: Setup theme step card area, corrected result
+
+- User approval: pending — the setup theme step's card area fills the window height down to Install, with the second card row in full at 1440×900 and its title line under the fade at 1280×800
+- Approved customer-visible result: Install sits right under the cards with no page scrolling at 1440×900 and 1280×800; at 1440×900 both card rows are shown in full, at 1280×800 the second row's title line sits under the fade at the bottom edge; cards keep their 200 px size and grid.
+- Scope: the max-height of the theme grid in setup-theme-screen.tsx (viewport-based), with the corrected wording of the previous block for the 1280×800 case.
+- What's new: none — layout only
