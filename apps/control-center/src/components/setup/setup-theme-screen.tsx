@@ -72,12 +72,12 @@ export function SetupThemeScreen({
         You can always switch themes later.
       </SetupWizardSubtitle>
 
-      {/* The grid scrolls inside its box, so Continue stays in view on a 1280x800 window (460 px is the chrome above and below it). */}
+      {/* The grid fills the window's height and scrolls inside its box. 278 px is the chrome above it (142 px) and below it (the 24 px gap, the 44 px button, the 68 px page bottom), so the page itself never scrolls. */}
       <ItemGroup
         aria-label="Themes"
         className={cn(
           THEME_GRID_CLASS,
-          "mt-6 max-h-[calc(100dvh-460px)] overflow-y-auto pb-6 [mask-image:linear-gradient(to_bottom,black_calc(100%_-_24px),transparent)]",
+          "mt-6 max-h-[calc(100dvh-278px)] overflow-y-auto pb-6 [mask-image:linear-gradient(to_bottom,black_calc(100%_-_24px),transparent)]",
         )}
         onKeyDown={moveAmongRadios}
         role="radiogroup"

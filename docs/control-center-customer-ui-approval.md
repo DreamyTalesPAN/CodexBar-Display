@@ -20290,3 +20290,24 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the reset text of Pace Meter, Mini Classic, Tiny Office, Claude Creature, Pixel Battery, Token Counter and Gauge's per-limit lines shows only the largest unit, rounded down; Reset Countdown keeps "3h 20m"; layout and font sizes are unchanged.
 - Scope: the usage-slot reset binding in firmware_shared/theme_spec_renderer_core.h and the live preview (usageSlotNReset, us1r/us2r, usage.N.reset now largest; new usageSlotNResetFull keeps the full countdown), the Reset Countdown pack (1.1.9, theme revision 8, requires reset-footer-v1), and their tests.
 - What's new: none — wording only
+
+## 2026-10-22 — #7209: Theme grid uses the full width
+
+- User approval: pending — the theme cards in Appearance and in the setup theme step fill the window width: as many 200 px cards per row as fit, instead of three at most
+- Approved customer-visible result: cards stay 200 px wide with 32 px gaps and unchanged fonts; the group is centred and shows as many cards per row as fit beside the sidebar (more cards per row on wide windows, same cards on narrow ones).
+- Scope: THEME_GRID_CLASS in apps/control-center/src/lib/theme-grid.ts (the 664 px width cap is gone), used by the Appearance tab and the setup theme step, with their tests.
+- What's new: none — layout only
+
+## 2026-10-22 — #7209: Setup theme grid fills the window height
+
+- User approval: pending — the theme cards of the setup theme step use the window's height down to Install, instead of a fixed box that leaves the lower part of the window empty
+- Approved customer-visible result: the card area is as tall as the window allows, so Install sits right under the cards with no page scrolling on a 1440×900 or 1280×800 window; on 1440×900 both card rows are shown in full, on 1280×800 the second row's title line sits under the fade at the bottom edge; cards keep their 200 px size and grid.
+- Scope: the max-height of the theme grid in setup-theme-screen.tsx (viewport-based instead of a fixed 440 px box).
+- What's new: none — layout only
+
+## 2026-10-22 — #7209: Setup theme step card area, corrected result
+
+- User approval: pending — the setup theme step's card area fills the window height down to Install, with the second card row in full at 1440×900 and its title line under the fade at 1280×800
+- Approved customer-visible result: Install sits right under the cards with no page scrolling at 1440×900 and 1280×800; at 1440×900 both card rows are shown in full, at 1280×800 the second row's title line sits under the fade at the bottom edge; cards keep their 200 px size and grid.
+- Scope: the max-height of the theme grid in setup-theme-screen.tsx (viewport-based), with the corrected wording of the previous block for the 1280×800 case.
+- What's new: none — layout only
