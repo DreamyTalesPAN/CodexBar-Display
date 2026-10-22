@@ -1008,7 +1008,12 @@ export function ThemeLibraryScreen({
         )}
       </section>
 
-      {failedInstallItem && hostInstallStatus?.phase === "error" ? (
+      {/* Like the page notices, a failed install waits while another page dialog is open. */}
+      {failedInstallItem &&
+      hostInstallStatus?.phase === "error" &&
+      !previewTheme &&
+      !deleteTheme &&
+      !replacingRecovery ? (
         <InstallErrorDialog
           canRetry={
             !busyAction && !preparingInstallRow && !failedInstallBlocker

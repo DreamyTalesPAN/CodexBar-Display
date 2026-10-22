@@ -11044,3 +11044,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #802 as in its own entries plus the entries merged with 1e1244fe; nothing else changes.
 - Scope: the merge of 1e1244fe and this approval record. Pull request #802 only, not merged, not released.
 - What's new: none — merge of 1e1244fe, no customer-visible change of its own
+
+## 2026-10-22 — #802: a failed install waits for an open preview or delete dialog (Codex review)
+
+- User approval: no visible change – UI approval not needed (bug fix: the install-failure dialog no longer opens on top of another page dialog; text and layout of both dialogs stay as approved)
+- Approved customer-visible result: an install that fails while the preview, delete or replace-draft dialog is open shows its existing failure dialog after that dialog closes, not over it.
+- Scope: theme-library-screen.tsx and its calm-states regression test. Pull request #802 only, not merged, not released.
+- What's new: none — dialog ordering fix, no announcement
