@@ -41,6 +41,17 @@ var dashboardProbeBudget = perProviderProbeTimeout
 // wrap a check must be at least this long.
 const ProviderCheckBudget = perProviderProbeTimeout + 5*time.Second
 
+// exactProviderProbeTimeout caps the check of the one provider a customer
+// switched on or asked to check again. A Mac whose only Claude sign-in is
+// Claude Code's Keychain item gets its answer from CodexBar's Claude CLI path,
+// which took 55 s for a customer (#786). Nobody waits on this check with a
+// request (see companionapi), so it gets more time than an unattended scan.
+const exactProviderProbeTimeout = 90 * time.Second
+
+// ExactProviderCheckBudget is the longest one exact provider check takes:
+// the 5 s inventory read plus its probe.
+const ExactProviderCheckBudget = exactProviderProbeTimeout + 5*time.Second
+
 // maxParallelProviderProbes matches Win-CodexBar's own refresh
 // (MAX_CONCURRENT_PROVIDER_FETCHES = 8), which also asks the switched-on
 // providers side by side.
@@ -185,35 +196,59 @@ func fetchDashboardUsage(ctx context.Context, providerIDs []string, fetch func(c
 
 var engineInventory engineAnswer[[]byte]
 
-// inventoryMaxAge is the longest an inventory answer is kept. Win-CodexBar
-// 0.60.3 answers with its default switches, Claude and Codex on, and exit
-// code 0 whenever it cannot read or decrypt settings.json. One answer can
-// therefore be wrong while the file is untouched; asked again, the CLI
-// corrects itself. A minute keeps that as short as the engine's own refresh
-// and still takes away most of the starts: the five readers asked every 30 s.
+// inventoryMaxAge bounds an inventory answer on the Mac, where the inventory is
+// not yet verified to come from the CodexBar config alone. Windows keeps it for
+// the life of the engine (providerProbePerProvider).
 const inventoryMaxAge = time.Minute
 
+// inventorySettingsPath is the settings file the inventory is built from:
+// Win-CodexBar's settings.json on Windows, and on the Mac the CodexBar config
+// the CLI is pointed at (the path commandEnvironment passes as CODEXBAR_CONFIG).
+func inventorySettingsPath(ctx context.Context) string {
+	if runtime.GOOS == "windows" {
+		return windowsSettingsPath()
+	}
+	if path := configPathFromContext(ctx); path != "" {
+		return path
+	}
+	path, _ := macConfigPath("")
+	return path
+}
+
 // readProviderInventory runs the inventory command with the caller's runner.
-// Where engine answers are reused (Windows, reuseEngineAnswers) it returns
-// the last answer instead for as long as the CLI and its settings.json are
-// unchanged, up to inventoryMaxAge: Win-CodexBar 0.60.3 builds the inventory
-// from those two files and nothing else. Every write to settings.json moves
-// its stamp, the CLI's own on a provider switch included, and
-// SetProviderEnabled forgets the answer as well. Only an answer that parses
-// is kept.
+// Where engine answers are reused (reuseEngineAnswers) it returns the last
+// answer instead for as long as the CLI and its settings file are unchanged.
+// On Windows that is the life of the engine process: Win-CodexBar 0.60.3 builds
+// the inventory from those two files and nothing else. On the Mac the answer is
+// kept only for inventoryMaxAge, because whether the Mac CLI takes its inventory
+// from the CodexBar config (CODEXBAR_CONFIG) alone is not yet checked on a Mac.
+// Every write to the settings file moves its stamp, the CLI's own on a
+// provider switch included, and SetProviderEnabled forgets the answer as well.
+// Only an answer that parses is kept. Win-CodexBar answers with its default
+// switches, Claude and Codex on, and exit code 0 when it cannot read
+// settings.json; such an answer stays until settings.json changes or the
+// engine restarts (#555: a minute limit read the inventory again every minute
+// with the window open).
 //
 // The check of one named provider -- "Check again" on its row, and the check
 // after it was switched on -- does not come through here; it always asks the
 // CLI (probeProviderSetup).
 func readProviderInventory(ctx context.Context, timeout time.Duration, bin string, run func(context.Context, time.Duration, string, ...string) ([]byte, error)) ([]byte, error) {
-	stamp := engineStamp(bin, windowsSettingsPath())
-	if raw, ok := engineInventory.load(stamp, inventoryMaxAge); ok {
+	stamp := engineStamp(bin, inventorySettingsPath(ctx))
+	maxAge := inventoryMaxAge
+	if providerProbePerProvider {
+		maxAge = 0
+	}
+	if raw, ok := engineInventory.load(stamp, maxAge); ok {
 		return raw, nil
 	}
+	// A forget during the run (fresh=1, a provider switch) outdates this
+	// answer: it must not be kept over the forget.
+	before := engineInventory.forgets()
 	raw, err := run(ctx, timeout, bin, providerInventoryArgs()...)
 	if stamp != "" && err == nil {
 		if _, parseErr := parseProviderSettings(raw); parseErr == nil {
-			engineInventory.store(stamp, raw)
+			engineInventory.storeUnlessForgotten(before, stamp, raw)
 		}
 	}
 	return raw, err
@@ -424,7 +459,12 @@ func (e *ProviderSettingsError) Error() string {
 	return e.Err.Error()
 }
 
-func (e *ProviderSettingsError) Unwrap() error { return e.Err }
+func (e *ProviderSettingsError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
 
 func ProviderSettingsErrorKindOf(err error) ProviderSettingsErrorKind {
 	var settingsErr *ProviderSettingsError
@@ -536,6 +576,13 @@ func fetchProviderInventory(ctx context.Context) ([]ProviderSetting, string, err
 	return settings, bin, nil
 }
 
+// ForgetProviderInventory drops the kept inventory, so the next read asks
+// CodexBar again. The Control Center sends fresh=1 once when a provider list
+// opens; that is how a plugin installed or removed while the engine ran shows.
+func ForgetProviderInventory() {
+	engineInventory.store("", nil)
+}
+
 // SetProviderEnabled validates the exact provider ID against CodexBar's live
 // inventory before invoking the CLI with separate process arguments.
 func SetProviderEnabled(ctx context.Context, providerID string, enabled bool) error {
@@ -639,6 +686,7 @@ func parseProviderSettings(raw []byte) ([]ProviderSetting, error) {
 		if label == "" {
 			label = HumanLabel(id)
 		}
+		rememberProviderDisplayName(id, label)
 		health := ProviderHealthChecking
 		if !item.Enabled {
 			health = ProviderHealthChecking
@@ -679,6 +727,7 @@ func parseProviderSettingsText(raw []byte) ([]ProviderSetting, error) {
 		if label == "" {
 			label = HumanLabel(id)
 		}
+		rememberProviderDisplayName(id, label)
 		settings = append(settings, ProviderSetting{
 			ID:             id,
 			Label:          label,

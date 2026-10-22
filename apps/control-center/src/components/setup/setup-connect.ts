@@ -34,7 +34,20 @@ export type SetupConnectSteps = {
   ) => Promise<{ from: string; to: string } | null>;
   connect: (candidate: DeviceCandidate) => Promise<ConnectedDevice>;
   installFirmware: (device: ConnectedDevice) => Promise<void>;
+  /**
+   * True once the display stream is sending frames to the VibeTV. Asked after
+   * an update that left the firmware current but the stream not yet seen, so
+   * setup can carry on by itself when the frames arrive (#826).
+   */
+  streamRecovered?: () => Promise<boolean>;
 };
+
+/** The update error that means only the stream was not seen yet. */
+export const FIRMWARE_STREAM_ATTENTION_CODE = "firmware_update_stream_attention";
+
+/** How often, and how many times, setup looks for the stream to come back. */
+export const STREAM_RECOVERY_POLL_MS = 3000;
+export const STREAM_RECOVERY_ATTEMPTS = 40;
 
 const IDLE: ConnectState = { address: "", phase: "idle" };
 
@@ -60,6 +73,19 @@ export function useSetupConnect(
   // a successful connect empties the discovered list, and the device the
   // customer is half way through updating would no longer be in it.
   const candidateRef = useRef<DeviceCandidate | null>(null);
+  // Bumped whenever the sequence starts again, is reset, or goes away, so a
+  // stream watch left over from an earlier run never finishes a newer one.
+  const runIdRef = useRef(0);
+  const stepsRef = useRef(steps);
+  useEffect(() => {
+    stepsRef.current = steps;
+  }, [steps]);
+  useEffect(
+    () => () => {
+      runIdRef.current += 1;
+    },
+    [],
+  );
 
   useEffect(() => {
     progressRef.current = firmwareProgress;
@@ -67,6 +93,7 @@ export function useSetupConnect(
 
   const run = useCallback(
     async (candidate: DeviceCandidate) => {
+      const runId = ++runIdRef.current;
       const address = candidate.target.replace(/^https?:\/\//i, "");
       const deviceLabel = candidate.deviceId
         ? `VibeTV ${candidate.deviceId}`
@@ -103,8 +130,8 @@ export function useSetupConnect(
             code: api?.code,
             description:
               api?.nextAction ||
-              "Keep VibeTV powered on, then search again.",
-            title: api?.message || "VibeTV could not connect",
+              "VibeTV answered, but the connection did not finish. Check that it is on the same WiFi, then search again.",
+            title: api?.message || "We couldn't connect to your VibeTV",
           },
           api?.message || "connection could not be completed",
         );
@@ -147,11 +174,53 @@ export function useSetupConnect(
         await steps.installFirmware(connected);
       } catch (error) {
         const api = error as ApiError;
-        if (api?.code === "firmware_update_attention") {
+        if (
+          api?.code === "firmware_update_attention" ||
+          api?.code === FIRMWARE_STREAM_ATTENTION_CODE
+        ) {
           fail(
             { kind: "firmware-attention", description: api.message },
             api.message,
           );
+          if (
+            api.code === FIRMWARE_STREAM_ATTENTION_CODE &&
+            stepsRef.current.streamRecovered
+          ) {
+            // The firmware is current and only the first frames were missing
+            // when the Companion looked. Frames that arrive afterwards mean
+            // the failure was not one, so setup carries on without the customer.
+            void (async () => {
+              for (let attempt = 0; attempt < STREAM_RECOVERY_ATTEMPTS; attempt += 1) {
+                await new Promise((resolve) =>
+                  setTimeout(resolve, STREAM_RECOVERY_POLL_MS),
+                );
+                if (runIdRef.current !== runId) {
+                  return;
+                }
+                let recovered = false;
+                try {
+                  recovered =
+                    (await stepsRef.current.streamRecovered?.()) === true;
+                } catch {
+                  recovered = false;
+                }
+                if (runIdRef.current !== runId) {
+                  return;
+                }
+                if (recovered) {
+                  setFailure(null);
+                  setState({
+                    ...base,
+                    firmwareFrom: firmware?.from,
+                    firmwareTo: firmware?.to,
+                    phase: "done",
+                  });
+                  onDone?.();
+                  return;
+                }
+              }
+            })();
+          }
           return;
         }
         const blocked = firmwareBlockedReason(api?.code);
@@ -177,6 +246,7 @@ export function useSetupConnect(
 
   const dismissFailure = useCallback(() => setFailure(null), []);
   const reset = useCallback(() => {
+    runIdRef.current += 1;
     setFailure(null);
     candidateRef.current = null;
     setState(IDLE);

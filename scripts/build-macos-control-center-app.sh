@@ -204,7 +204,7 @@ PLIST
 copy_control_center_static() {
   local target="$1"
   mkdir -p "$target"
-  if [[ -d "$CONTROL_CENTER_STATIC" ]] && find "$CONTROL_CENTER_STATIC" -mindepth 1 -maxdepth 1 | grep -q .; then
+  if [[ -d "$CONTROL_CENTER_STATIC" ]] && find "$CONTROL_CENTER_STATIC" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
     cp -R "${CONTROL_CENTER_STATIC}/." "$target/"
     return 0
   fi

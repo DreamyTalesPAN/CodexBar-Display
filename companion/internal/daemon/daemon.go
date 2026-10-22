@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar"
@@ -141,6 +142,7 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	}
 	syncCycleMode := deps.fetchProviders != nil && deps.fetchProvider == nil
 	deps = deps.withDefaults()
+	trackDeviceWriteWait(&deps)
 
 	state := initializeRuntimeState(deps.now(), opts, deps)
 	if opts.Dashboard != nil {
@@ -287,6 +289,13 @@ func startProviderCollector(ctx context.Context, opts Options, deps runtimeDeps,
 	return collector, cancel
 }
 
+// cableFirmwareTooOldRetryInterval is how long the loop leaves a Cable VibeTV
+// alone whose firmware predates USB-C (issue #616). Each resolve opens its
+// port, which restarts it, so the short retry restarted it every two seconds
+// next to a setup about to update it. Setup connects the updated VibeTV by
+// Cable, which wakes the loop at once.
+const cableFirmwareTooOldRetryInterval = time.Minute
+
 func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle func(context.Context) error) error {
 	cycleTimeout := cycleRunTimeout()
 	var lastCycleStart time.Time
@@ -320,6 +329,11 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 			}
 		}
 		if waitingForWiFi || (opts.PauseDeviceWrites != nil && opts.PauseDeviceWrites()) {
+			// Issue #832: the pause must not keep the old worker's cable port
+			// open once the target has left Cable.
+			if deps.transportName == "usb" && connectionModeChanged(deps) {
+				return ErrConnectionModeChanged
+			}
 			if !deviceWritesPaused {
 				deps.logf("runtime event=device-writes-paused reason=device-maintenance\n")
 				deps.recordEvent(timeline.Event{Component: "stream", State: "paused", Reason: "device-maintenance"})
@@ -355,6 +369,13 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 		lastCycleStart = cycleStart
 
 		err := runCycleWithTimeout(ctx, cycleTimeout, runCycle)
+		if deps.deviceWriteWaited != nil && deps.deviceWriteWaited.Swap(false) {
+			// Issue #826: a cycle that was already running when a firmware
+			// update took the device waits at the write gate until the update
+			// ends. That wait is not a sleep either, so the next gap is
+			// measured from the end of the cycle, not from its start.
+			lastCycleStart = deps.now()
+		}
 		if opts.Once {
 			return err
 		}
@@ -377,6 +398,9 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 			// keep the normal interval - retrying those faster fixes nothing.
 			if deviceUnreachableError(runtimeErr) && failureRetryInterval < waitFor {
 				waitFor = failureRetryInterval
+			}
+			if errcode.Of(runtimeErr.Err) == errcode.TransportCableFirmwareTooOld {
+				waitFor = cableFirmwareTooOldRetryInterval
 			}
 			if runtimeErr.Kind == runtimeErrorCycleTimeout {
 				deps.logf("cycle timeout: code=%s op=%s retry=%s recovery=%q err=%v\n",
@@ -503,4 +527,31 @@ func sleepWakeGapThreshold(interval time.Duration) time.Duration {
 
 func SleepWakeGapThreshold(interval time.Duration) time.Duration {
 	return sleepWakeGapThreshold(interval)
+}
+
+// deviceWriteWaitThreshold is how long a cycle may wait at the device write
+// gate before the wait counts as a pause (a firmware update holds the gate).
+const deviceWriteWaitThreshold = time.Second
+
+// trackDeviceWriteWait notes when a cycle had to wait at the device write gate,
+// so the loop does not read that wait as a sleep (issue #826).
+func trackDeviceWriteWait(deps *runtimeDeps) {
+	if deps.beginDeviceWrite == nil {
+		return
+	}
+	waited := &atomic.Bool{}
+	deps.deviceWriteWaited = waited
+	inner := deps.beginDeviceWrite
+	now := deps.now
+	if now == nil {
+		now = wallClockNow
+	}
+	deps.beginDeviceWrite = func() func() {
+		started := now()
+		release := inner()
+		if now().Sub(started) >= deviceWriteWaitThreshold {
+			waited.Store(true)
+		}
+		return release
+	}
 }

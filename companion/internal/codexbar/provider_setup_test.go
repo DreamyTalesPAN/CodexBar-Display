@@ -638,7 +638,8 @@ func TestProbeProviderSetupForProviderUsesExactAutoUsage(t *testing.T) {
 		return []byte("CodexBar 0.44.0"), nil
 	}
 	var usageArgs []string
-	runUsageCommandFn = func(_ context.Context, _ time.Duration, _ string, args ...string) ([]byte, error) {
+	var usageTimeout, usageTimeLeft time.Duration
+	runUsageCommandFn = func(ctx context.Context, timeout time.Duration, _ string, args ...string) ([]byte, error) {
 		if len(args) >= 2 && args[0] == "config" && args[1] == "providers" {
 			return []byte(`[
 				{"provider":"codex","displayName":"Codex","enabled":true},
@@ -646,6 +647,10 @@ func TestProbeProviderSetupForProviderUsesExactAutoUsage(t *testing.T) {
 			]`), nil
 		}
 		usageArgs = append([]string(nil), args...)
+		usageTimeout = timeout
+		if deadline, ok := ctx.Deadline(); ok {
+			usageTimeLeft = time.Until(deadline)
+		}
 		return []byte(`[
 			{"provider":"codex","source":"oauth","usage":{"primary":{"usedPercent":7},"secondary":{"usedPercent":13}}},
 			{"provider":"antigravity","source":"cli","usage":{"primary":{"usedPercent":17},"secondary":{"usedPercent":23},"updatedAt":"2026-07-24T08:00:00Z"}}
@@ -662,6 +667,11 @@ func TestProbeProviderSetupForProviderUsesExactAutoUsage(t *testing.T) {
 	want := []string{"usage", "--json", "--provider", "antigravity", "--source", "auto", "--web-timeout", "8"}
 	if !reflect.DeepEqual(usageArgs, want) {
 		t.Fatalf("unexpected exact usage args: got %v want %v", usageArgs, want)
+	}
+	// CodexBar's Claude CLI path answered after 55 s on a customer's Mac whose
+	// only Claude sign-in was Claude Code's Keychain item (#786).
+	if usageTimeout < time.Minute || usageTimeLeft < time.Minute {
+		t.Fatalf("exact usage call got %s with %s left, less than the 55 s Claude CLI path needs", usageTimeout, usageTimeLeft)
 	}
 }
 
@@ -846,6 +856,9 @@ func TestProbeProviderSetupReportsEveryProviderSwitchedOff(t *testing.T) {
 		if provider.Enabled == nil || *provider.Enabled {
 			t.Fatalf("a switched-off provider must say so: %+v", provider)
 		}
+		if provider.Detail != "No usable AI provider is configured yet." {
+			t.Fatalf("a switched-off provider needs no sign-in, got %q: %+v", provider.Detail, provider)
+		}
 	}
 }
 
@@ -1005,15 +1018,148 @@ func TestPermissionCopyNamesTheHostSystem(t *testing.T) {
 
 	providerCopyGOOS = "darwin"
 	mac := providerResult("claude", ProviderPermissionRequired)
-	if mac.Detail != "macOS blocked access required by this provider." ||
+	if mac.Detail != "Allow access on this computer so VibeTV can read Claude usage." ||
 		mac.NextAction != "Allow the requested macOS permission." {
 		t.Fatalf("macOS copy changed: %+v", mac)
 	}
 
 	providerCopyGOOS = "windows"
 	windows := providerResult("claude", ProviderPermissionRequired)
-	if windows.Detail != "Windows blocked access required by this provider." ||
+	if windows.Detail != "Allow access on this computer so VibeTV can read Claude usage." ||
 		windows.NextAction != "Allow the requested access." {
 		t.Fatalf("Windows copy = %+v", windows)
+	}
+}
+
+// The setup log and the Control Center popup say one sentence per state. The
+// shared fixture lists both: setup-providers-screen.test.tsx reads the same file.
+func TestSetupLogSentencesMatchThePopupFixture(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "apps", "control-center", "src", "components", "setup", "provider-setup-sentences.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries []struct {
+		State      string `json:"state"`
+		ProviderID string `json:"providerId"`
+		Label      string `json:"label"`
+		Sentence   string `json:"sentence"`
+	}
+	if err := json.Unmarshal(raw, &entries); err != nil || len(entries) == 0 {
+		t.Fatalf("fixture unreadable or empty: %v", err)
+	}
+	for _, entry := range entries {
+		status := entry.State
+		if status == "unavailable" {
+			// The popup's default presentation; the engine's own default is
+			// the status every unknown answer maps to.
+			status = ProviderEngineError
+		}
+		row := providerResult(entry.ProviderID, status)
+		if row.Label != entry.Label {
+			t.Fatalf("%s: label %q, popup says %q", entry.State, row.Label, entry.Label)
+		}
+		if row.Detail != entry.Sentence {
+			t.Errorf("%s (%s): setup log says %q, popup says %q", entry.State, entry.ProviderID, row.Detail, entry.Sentence)
+		}
+	}
+}
+
+// The provider's sentences name it as CodexBar's inventory does (the label the
+// Control Center shows); an id the inventory never named keeps the short name.
+func TestProviderDisplayNameComesFromTheInventory(t *testing.T) {
+	t.Cleanup(func() {
+		providerDisplayNamesMu.Lock()
+		defer providerDisplayNamesMu.Unlock()
+		delete(providerDisplayNames, "openai")
+	})
+	if _, err := parseProviderSettings([]byte(`[{"provider":"openai","displayName":"OpenAI API","enabled":true}]`)); err != nil {
+		t.Fatal(err)
+	}
+	if got := providerDisplayName("openai"); got != "OpenAI API" {
+		t.Fatalf("display name = %q, want OpenAI API", got)
+	}
+	row := providerResult("openai", ProviderAuthRequired)
+	if row.Label != "OpenAI API" || row.Detail != "VibeTV can't read OpenAI API until the OpenAI API app is installed and running." {
+		t.Fatalf("openai row = %+v", row)
+	}
+	if got := providerDisplayName("widgetx"); got != "Widgetx" {
+		t.Fatalf("unknown id label = %q, want humanLabel Widgetx", got)
+	}
+}
+
+// The usage service row is not a provider: its sentences stay as they were.
+func TestEngineRowKeepsItsSentences(t *testing.T) {
+	for status, want := range map[string]string{
+		ProviderTimeout:            "The provider check timed out.",
+		ProviderConfigError:        "The usage service could not save or read its provider settings.",
+		ProviderEngineIncompatible: "The usage engine is too old.",
+		ProviderEngineError:        "The usage service could not read this provider.",
+	} {
+		if got := providerResult("codexbar", status).Detail; got != want {
+			t.Fatalf("codexbar %s: %q, want %q", status, got, want)
+		}
+	}
+}
+
+// On a fresh Companion the usage call builds the row before the inventory is
+// read; the sentence must still name the provider as the inventory does.
+func TestAggregateRowSentenceUsesTheInventoryLabel(t *testing.T) {
+	t.Cleanup(func() {
+		providerDisplayNamesMu.Lock()
+		defer providerDisplayNamesMu.Unlock()
+		delete(providerDisplayNames, "openai")
+	})
+	providerDisplayNamesMu.Lock()
+	delete(providerDisplayNames, "openai")
+	providerDisplayNamesMu.Unlock()
+	original := runUsageCommandFn
+	t.Cleanup(func() { runUsageCommandFn = original })
+	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte(`[{"provider":"openai","displayName":"OpenAI API","enabled":true}]`), nil
+	}
+	rows := providersWithSwitchState(context.Background(), "codexbar-bin",
+		[]ProviderReadiness{providerResult("openai", ProviderAuthRequired)})
+	if len(rows) != 1 || rows[0].Label != "OpenAI API" ||
+		rows[0].Detail != "VibeTV can't read OpenAI API until the OpenAI API app is installed and running." {
+		t.Fatalf("aggregate row = %+v", rows)
+	}
+}
+
+// A provider row that is not configured says the popup's sentence for the same
+// state (setup_required: sign in). The setup-level sentence stays on the usage
+// engine row only.
+func TestNotConfiguredProviderRowSaysThePopupSentence(t *testing.T) {
+	if got := providerResult("claude", ProviderNotConfigured).Detail; got != "Sign in to Claude so VibeTV can read its usage." {
+		t.Fatalf("claude not configured: %q", got)
+	}
+	if got := providerResult("gemini", ProviderNotConfigured).Detail; got != "VibeTV can't read Gemini until the Gemini app is installed and running." {
+		t.Fatalf("gemini not configured: %q", got)
+	}
+	if got := providerResult("codexbar", ProviderNotConfigured).Detail; got != "No usable AI provider is configured yet." {
+		t.Fatalf("engine row not configured: %q", got)
+	}
+}
+
+// A ready provider skips the inventory call, but a failing row built before any
+// inventory read must still name the provider as the inventory does. The ready
+// answer must not gain the switched-off provider rows the inventory lists.
+func TestMixedAggregateRowNamesTheProviderWithoutAddingRows(t *testing.T) {
+	forgetName := func() {
+		providerDisplayNamesMu.Lock()
+		defer providerDisplayNamesMu.Unlock()
+		delete(providerDisplayNames, "openai")
+	}
+	forgetName()
+	t.Cleanup(forgetName)
+	original := runUsageCommandFn
+	t.Cleanup(func() { runUsageCommandFn = original })
+	runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+		return []byte(`[{"provider":"openai","displayName":"OpenAI API","enabled":true},{"provider":"gemini","displayName":"Gemini","enabled":false}]`), nil
+	}
+	rows := providersWithSwitchState(context.Background(), "codexbar-bin",
+		[]ProviderReadiness{providerResult("codex", ProviderReady), providerResult("openai", ProviderAuthRequired)})
+	if len(rows) != 2 || rows[0].Status != ProviderReady || rows[1].ID != "openai" || rows[1].Label != "OpenAI API" ||
+		rows[1].Detail != "VibeTV can't read OpenAI API until the OpenAI API app is installed and running." {
+		t.Fatalf("mixed aggregate rows = %+v", rows)
 	}
 }

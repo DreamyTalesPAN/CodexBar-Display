@@ -64,7 +64,29 @@ Companion for everything it needs.
   running VibeTV update or theme install is not an attempt: the file is
   removed and the next start tries again. The rule is `due` in `src/launch_update.rs`, tested
   alone in CI with `rustc --test`.
-  The tray item and the Updates tab still install it. There is no switch that
+  The tray item and the Updates tab still install it.
+- Update while the app runs: the Control Center opens
+  `vibetv://check-for-updates` by itself only in the Mac App, where it shows
+  Sparkle's dialog. On Windows the same link installs without a question, so
+  the WebView never opens it unasked. Instead the shell asks the update source
+  every 6 hours and installs a newer version only while its window is closed
+  (hidden in the tray; a minimized window counts as open) and no VibeTV
+  update or theme install runs, with the same limits and the same
+  once-in-24-hours file as at launch and without any message. The window is
+  checked again right before the installer starts, after the update hold is
+  claimed, under the same lock `present_window` takes: a window opened before
+  that point stops the install, one opened after it removes the relaunch note
+  so the app comes back with its window. A click on Update or the tray item during that check is not
+  dropped: the check installs at once and the app comes back with its window,
+  or, when it ends without installing, the click gets its own run with its
+  messages.
+  The installer relaunches the shell with `--after-idle-update`, and right
+  before it starts the shell writes the time to
+  `%LOCALAPPDATA%\shop.vibetv.control-center\idle-update-relaunch.txt`; a start
+  with both the argument and a note younger than 15 minutes keeps the window
+  closed and loads the Control Center in the tray. The note is removed on
+  that start, so the argument a process inherits does not hide the window
+  after a later update the customer asked for. There is no switch that
   turns the check off and no way to point a build at another update source:
   endpoint and public key are compiled in. The Microsoft Store listing
   delivers this same installer, so there is no separate Store build.
@@ -75,14 +97,16 @@ Companion for everything it needs.
   uninstall. The Companion's Windows sidecars are `codexbar-display.exe` (Go,
   built in CI) and `codexbar-cli.exe` (the unmodified pinned Win-CodexBar
   console CLI downloaded by `scripts/fetch-win-codexbar.ps1`, currently the
-  VibeTV fork release `v0.60.3-vibetv.11` with the Windows Claude probe fixes,
+  VibeTV fork release `v0.60.3-vibetv.12` with the Windows Claude probe fixes,
   Claude rate-limit and stale-token recovery, separate session and weekly rows
   from the Claude CLI source (#510), steady Claude percentages when the source
   changes between OAuth and the CLI (#531), one shared gate in front of the
   Claude OAuth usage endpoint and a CLI probe that gets past the startup
   questions of Claude Code 2.1.29x (#500), Auto asking Claude Code's login
   before the browser so a second claude.ai account in the browser cannot
-  replace it (marcus7989/Win-CodexBar#10), and a statically linked C runtime;
+  replace it (marcus7989/Win-CodexBar#10), Claude's local token history marked
+  complete after a finished scan (#820, marcus7989/Win-CodexBar#12), and a
+  statically linked C runtime;
   licence in `windows/THIRD_PARTY`). The Companion finds the CLI next to its own exe;
   `CODEXBAR_BIN` is not set.
 

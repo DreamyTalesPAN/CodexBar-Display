@@ -162,7 +162,7 @@ func TestProviderScopedWebTimeoutSecondsIsClamped(t *testing.T) {
 	}
 }
 
-func TestBrowserSignInGuidanceNamesTheSignInHost(t *testing.T) {
+func TestBrowserSignInGuidanceIsTheFixedProviderSentence(t *testing.T) {
 	cases := []struct {
 		name string
 		id   string
@@ -170,22 +170,22 @@ func TestBrowserSignInGuidanceNamesTheSignInHost(t *testing.T) {
 		want string
 	}{
 		{
-			name: "login page names the host",
+			name: "login page",
 			id:   "claude",
 			url:  "https://claude.ai/login",
-			want: "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser.",
+			want: "Sign in to Claude in your browser, then close the browser.",
 		},
 		{
-			name: "path after the host is dropped",
+			name: "path after the host",
 			id:   "claude",
 			url:  "https://claude.ai/settings/usage",
-			want: "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser.",
+			want: "Sign in to Claude in your browser, then close the browser.",
 		},
 		{
-			name: "no URL falls back to the word provider",
+			name: "no URL",
 			id:   "codex",
 			url:  "",
-			want: "Codex usage needs a signed-in provider session in your browser. Sign in to provider in your browser, close the browser.",
+			want: "Sign in to Codex in your browser, then close the browser.",
 		},
 	}
 	for _, tc := range cases {
@@ -236,5 +236,12 @@ func TestProviderSettingsErrorMessageAndUnwrap(t *testing.T) {
 	}
 	if !errors.Is(wrapped, inner) {
 		t.Fatal("errors.Is must reach the inner error through Unwrap")
+	}
+}
+
+func TestProviderSettingsErrorUnwrapNilReceiverDoesNotPanic(t *testing.T) {
+	var nilErr *ProviderSettingsError
+	if got := errors.Unwrap(nilErr); got != nil {
+		t.Fatalf("nil ProviderSettingsError must unwrap to nil, got %v", got)
 	}
 }

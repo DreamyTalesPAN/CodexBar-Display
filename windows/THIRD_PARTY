@@ -6,7 +6,7 @@ codexbar-cli.exe
 Taken unmodified from the pinned Win-CodexBar console CLI release (release
 tag and SHA-256 pinned in scripts/fetch-win-codexbar.ps1). Currently the
 VibeTV fork https://github.com/marcus7989/Win-CodexBar (branch vibetv,
-Windows Claude probe fixes on top of upstream v0.60.3) of
+Windows Claude probe and local token history fixes on top of upstream v0.60.3) of
 https://github.com/nesszer/Win-CodexBar, which is itself a fork of CodexBar
 by Peter Steinberger (https://github.com/steipete/CodexBar).
 

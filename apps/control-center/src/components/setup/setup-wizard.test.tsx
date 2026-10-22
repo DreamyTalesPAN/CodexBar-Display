@@ -196,6 +196,70 @@ describe("SetupWizard: terminal firmware attention", () => {
   });
 });
 
+describe("SetupWizard: firmware stream attention recovers by itself (#826)", () => {
+  // Windows bench, 1.0.65: the update succeeded, the first look at the stream
+  // came a moment before the first frames, and setup stopped on the dialog
+  // with no way forward. The frames arrived a few seconds later.
+  function streamAttentionProps(streamRecovered: () => Promise<boolean>) {
+    return baseProps({
+      step: "device",
+      deviceCandidates: [{ deviceId: "vibetv-1", target: "http://192.168.178.73", known: true } as DeviceCandidate],
+      connectSteps: {
+        connect: vi.fn().mockResolvedValue({ firmware: "1.0.48" }),
+        checkFirmware: vi.fn().mockResolvedValue({ from: "1.0.48", to: "1.0.49" }),
+        installFirmware: vi.fn().mockRejectedValue({
+          code: "firmware_update_stream_attention",
+          message: "Firmware is current, but the display stream still needs attention.",
+        }),
+        streamRecovered,
+      },
+    });
+  }
+
+  it("carries on when the frames arrive after the failed check", async () => {
+    vi.useFakeTimers();
+    const streamRecovered = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+    const props = streamAttentionProps(streamRecovered);
+    render(<SetupWizard {...props} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Connect" })); });
+    expect(screen.getByText("Firmware current — attention needed")).toBeTruthy();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(streamRecovered).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Firmware current — attention needed")).toBeTruthy();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(streamRecovered).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText("Firmware current — attention needed")).toBeNull();
+  });
+
+  it("keeps the dialog and stops looking when the stream never comes back", async () => {
+    vi.useFakeTimers();
+    const streamRecovered = vi.fn().mockResolvedValue(false);
+    const props = streamAttentionProps(streamRecovered);
+    render(<SetupWizard {...props} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Connect" })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10 * 60 * 1000); });
+    expect(streamRecovered).toHaveBeenCalledTimes(40);
+    expect(screen.getByText("Firmware current — attention needed")).toBeTruthy();
+  });
+
+  it("does not look for a stream after other firmware attention", async () => {
+    vi.useFakeTimers();
+    const streamRecovered = vi.fn().mockResolvedValue(true);
+    const props = streamAttentionProps(streamRecovered);
+    props.connectSteps.installFirmware = vi.fn().mockRejectedValue({
+      code: "firmware_update_attention",
+      message: "Firmware is current, but the picture could not be verified.",
+    });
+    render(<SetupWizard {...props} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Connect" })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(60 * 1000); });
+    expect(streamRecovered).not.toHaveBeenCalled();
+    expect(screen.getByText("Firmware current — attention needed")).toBeTruthy();
+  });
+});
+
 describe("SetupWizard: theme failures", () => {
   it("shows an unavailable catalog over the theme step and reloads it", () => {
     const onRetryTheme = vi.fn();
@@ -575,7 +639,7 @@ describe("SetupWizard: direct connection", () => {
     fireEvent.click(screen.getByRole("radio", { name: /cable-device/ }));
     fireEvent.click(screen.getByRole("button", { name: "Connect" }));
     await waitFor(() => expect(connect).toHaveBeenCalledWith(cable));
-    fireEvent.click(await screen.findByRole("button", { name: "Close" }));
+    fireEvent.keyDown(document, { key: "Escape" });
     rerender(<SetupWizard {...props} connectionMode="cable" connectionModeChoiceRequired={false} deviceCandidates={[wifi]} />);
     fireEvent.click(await screen.findByRole("button", { name: /Already on WiFi/ }));
     fireEvent.click(await screen.findByRole("radio", { name: /wifi-device/ }));
@@ -695,6 +759,24 @@ describe("SetupWizard: direct connection", () => {
     fireEvent.click(screen.getByRole("button", { name: /Use the cable/ }));
     await waitFor(() => expect(connect).toHaveBeenCalledWith(cable));
     expect(props.onSearchDevices).not.toHaveBeenCalled();
+  });
+
+  it("offers a newer Mac App once before the usual not-found help (#561)", () => {
+    const onUpdate = vi.fn();
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "not-found", deviceCandidates: [],
+      macAppUpdate: { onUpdate, version: "1.0.65" },
+    });
+    render(<SetupWizard {...props} />);
+    expect(screen.queryByRole("dialog", { name: "We couldn't find your VibeTV" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Update Mac App" }));
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+    const searches = vi.mocked(props.onSearchDevices).mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Scan again" }));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(searches + 1);
+    expect(screen.queryByRole("dialog", { name: "Update the Mac App first" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "We couldn't find your VibeTV" })).toBeTruthy();
   });
 
   it.each(["wifi", "cable"] as const)("offers recovery when a completed scan only finds the alternative to saved %s", (savedMode) => {
@@ -920,7 +1002,7 @@ describe("SetupWizard: direct connection", () => {
       fireEvent.click(screen.getByRole("button", { name: "Connect" }));
     } else if (entry === "failed-cable") {
       await waitFor(() => expect(connect).toHaveBeenCalledWith(cable));
-      fireEvent.click(await screen.findByRole("button", { name: "Close" }));
+      fireEvent.keyDown(document, { key: "Escape" });
       fireEvent.click(screen.getByRole("button", { name: "Use WiFi instead" }));
     } else {
       await waitFor(() => expect(props.onScanWiFiNetworks).toHaveBeenCalledOnce());
@@ -1138,7 +1220,7 @@ describe("SetupWizard: saved WiFi recovery", () => {
     });
     const { rerender } = render(<SetupWizard {...props} />);
     await screen.findByRole("button", { name: "Use WiFi instead" });
-    fireEvent.click(await screen.findByRole("button", { name: "Close" }));
+    fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.click(screen.getByRole("button", { name: "Use WiFi instead" }));
     await waitFor(() => expect(props.onSelectConnectionMode).toHaveBeenCalledWith("wifi", cable.deviceId));
     await waitFor(() => expect(onSearchDevices).toHaveBeenCalledOnce(), { timeout: 2_500 });
@@ -2172,7 +2254,7 @@ describe("SetupWizard with a broken usage service", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.keyDown(document, { key: "Escape" });
 
     expect(onDismissUsageFailure).toHaveBeenCalledTimes(1);
   });

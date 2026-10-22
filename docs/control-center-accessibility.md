@@ -49,8 +49,9 @@ What the Control Center does for them:
 ## Automated check
 
 `expectNoAxeViolations` in `apps/control-center/src/test/axe.ts` runs axe-core
-on the markup a screen test renders. It is called from the existing test file
-of each screen, with that file's own fixtures. It runs with the unit tests
+on the markup a screen test renders. It is called from the test file
+of each screen, with that file's own fixtures. A screen or dialog that had no
+test file gets a new one next to its component. It runs with the unit tests
 (`npm run test:unit`), so the unit-test job in CI runs it.
 
 To run one file:
@@ -65,15 +66,18 @@ npx vitest run src/components/usage-screen.test.tsx
 | Setup, every step in its frame | `setup/setup-wizard.test.tsx` | welcome, device, providers, display, theme, live |
 | Setup, device step | `setup/setup-device-screen.test.tsx` | found VibeTVs, connection choice, WiFi form, connecting |
 | Setup, providers step | `setup/setup-providers-screen.test.tsx` | list, no match, loading, provider message |
-| Setup dialogs | `setup/setup-device-dialogs.test.tsx`, `setup/setup-help-menu-log.test.tsx` | cable help, VibeTV not found, IP address, Help menu with the setup log |
+| Setup dialogs | `setup/setup-device-dialogs.test.tsx`, `setup/setup-help-menu-log.test.tsx`, `setup/setup-dialogs.axe.test.tsx` | cable help, VibeTV not found, IP address, Help menu with the setup log, firmware check failed, Mac App restarting, firmware update failed (also with attention needed), recovery repairing and failed, step failed with and without a retry |
 | Overview | `overview-screen.test.tsx` | connected, not connected |
 | Usage | `usage-screen.test.tsx` | usage, refreshing, unavailable limits, no provider |
 | Themes | `theme-library-screen.test.tsx`, `theme-library-screen.custom.test.tsx` | Themes, Screensavers, empty list, install running, own theme, delete question |
 | Updates | `updates-screen.test.tsx` | update offered, update running, update failed |
-| Support | `logs-screen.test.tsx`, `setup-event-log.test.tsx` | diagnostics, recent activity, error, setup log |
+| Support | `logs-screen.test.tsx`, `setup-event-log.test.tsx` | diagnostics, recent activity, error |
 | Settings | `settings-screen.test.tsx`, `settings-connection.test.tsx` | every section, factory reset question, connection question |
 | Whole app | `control-center-shell.test.tsx`, `control-center-app.display-preferences.test.tsx` | navigation with an update waiting, every tab inside the real navigation, `Run setup again?` |
 | What's new | `control-center-app.whats-new.test.tsx` | the dialog over Updates |
+| Theme Studio, first screen | `theme-studio/theme-studio.axe.test.tsx` | blank editor with no chat yet |
+| Replace your changes? | `theme-studio/replace-draft-dialog.test.tsx` | the question with Keep editing and Replace |
+| Computer is very busy | `system-busy-dialog.test.tsx` | the notice with OK |
 
 Focus has its own tests in the same files: into the factory reset question and
 back to its button, into a setup dialog and back, back to Delete from the
@@ -121,9 +125,9 @@ and use only the keyboard.
    and mode, for example `Session: 12% used`. A lane without a reading says so
    and reads no percentage.
 4. **Settings.** The brightness slider, the screensaver switch and each
-   provider switch read their name and state. Open `Reset to factory settings`:
+   provider switch read their name and state. Open `Reset…` (Factory reset):
    focus is inside the question. Press Escape: focus is back on the button.
-5. **Run setup again.** In Settings or Support, open `Run setup again` and
+5. **Run setup again.** In Settings, open `Run setup` and
    choose Cancel. Focus is back on the button.
 6. **Themes.** The themes are read as a list. Each one offers Preview, Edit
    and Install. Open a preview, close it with Escape: focus is back on its
@@ -138,6 +142,10 @@ and use only the keyboard.
    with Tab.
 10. **Reduce motion.** Switch it on in System Settings, Accessibility, Display.
     Nothing slides or fades, and the animated previews stand still.
+11. **Replace your changes?** When it opens, focus is on Keep editing. Enter
+    keeps the changes, and so does Escape. Tab reaches Replace.
+12. **Computer is very busy.** The notice takes focus, and its OK button is
+    reached with Tab. Enter closes it.
 
 ## Not yet
 

@@ -21,6 +21,15 @@ const providerSetupCacheTTL = 30 * time.Second
 // a timeout while CodexBar is still answering.
 const providerCheckTimeout = codexbar.ProviderCheckBudget + 5*time.Second
 
+// exactProviderCheckTimeout bounds one exact provider check. It runs without
+// a waiting request, so it may outlast the Control Center's 60 s (#786).
+const exactProviderCheckTimeout = codexbar.ExactProviderCheckBudget + 5*time.Second
+
+// exactProviderRetryWait is how long a retry request waits for its exact
+// check before it answers that the provider is still checking. A variable so
+// tests can run it out quickly.
+var exactProviderRetryWait = providerCheckTimeout
+
 type providerSetupResponse struct {
 	OK            bool                   `json:"ok"`
 	ProviderSetup codexbar.ProviderSetup `json:"providerSetup"`
@@ -488,8 +497,6 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), providerCheckTimeout)
-	defer cancel()
 	providerID := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("provider")))
 	// The Mac app reports here that CodexBar just read the provider's browser
 	// sign-in into its cookie cache.
@@ -498,17 +505,60 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 	if afterBrowserSignInRead && providerID != "" {
 		s.noteBrowserSignInRead(providerID, requestedAt)
 	}
-	var setup codexbar.ProviderSetup
-	label := ""
 	if providerID == "" {
-		setup = s.currentProviderSetup(ctx, true)
-	} else {
-		providerRevision := s.currentProviderRevision(providerID)
+		ctx, cancel := context.WithTimeout(r.Context(), providerCheckTimeout)
+		defer cancel()
+		setup := s.currentProviderSetup(ctx, true)
+		s.finishProviderRetry("", 0, false, requestedAt, setup)
+		writeJSON(w, http.StatusOK, providerSetupResponse{OK: true, ProviderSetup: setup})
+		return
+	}
+	providerRevision := s.currentProviderRevision(providerID)
+	// One provider's check may outlast the Control Center's 60 s request: a
+	// Mac Claude check through Claude Code took 55 s (#786). The check runs on
+	// without the request. When the wait is over, the request answers that the
+	// provider is still checking and the row shows that until the result is
+	// recorded, so the page keeps asking for it.
+	checked := make(chan codexbar.ProviderSetup, 1)
+	go func() {
+		// After a browser sign-in read the check may first wait out an older
+		// probe and then probe again; each may take a full exact check, and
+		// the fresh probe stays capped by its own budget (#805 Codex review).
+		budget := exactProviderCheckTimeout
 		if afterBrowserSignInRead {
-			setup = s.exactProviderSetupStartedAfter(ctx, providerID, requestedAt)
-		} else {
-			setup = s.currentExactProviderSetup(ctx, providerID)
+			budget = 2 * exactProviderCheckTimeout
 		}
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), budget)
+		defer cancel()
+		if afterBrowserSignInRead {
+			checked <- s.exactProviderSetupStartedAfter(ctx, providerID, requestedAt)
+		} else {
+			checked <- s.currentExactProviderSetup(ctx, providerID)
+		}
+	}()
+	wait, cancel := context.WithTimeout(r.Context(), exactProviderRetryWait)
+	defer cancel()
+	select {
+	case setup := <-checked:
+		s.finishProviderRetry(providerID, providerRevision, afterBrowserSignInRead, requestedAt, setup)
+		writeJSON(w, http.StatusOK, providerSetupResponse{OK: true, ProviderSetup: setup})
+	case <-wait.Done():
+		pinned := s.markExactProviderChecking(providerID, providerRevision)
+		go func() {
+			if pinned {
+				defer s.releaseExactChecking(providerID)
+			}
+			s.finishProviderRetry(providerID, providerRevision, afterBrowserSignInRead, requestedAt, <-checked)
+		}()
+		writeJSON(w, http.StatusOK, providerSetupResponse{OK: true, ProviderSetup: checkingProviderSetup(s.currentTime())})
+	}
+}
+
+// finishProviderRetry records what a requested check found and lets the usage
+// service follow a provider that is ready now.
+func (s *Server) finishProviderRetry(providerID string, providerRevision uint64, afterBrowserSignInRead bool, requestedAt time.Time, setup codexbar.ProviderSetup) {
+	label := ""
+	if providerID != "" {
 		s.recordExactProviderSetup(providerID, providerRevision, setup)
 		// A too-old engine puts its own row first; name the provider asked for.
 		for _, provider := range setup.Providers {
@@ -517,7 +567,42 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
+		if s.providerRetryFollowupHook != nil {
+			s.providerRetryFollowupHook()
+		}
+		// A check the customer overtook by switching the provider again is
+		// not news, and must not touch the usage service either (#805
+		// review). The revision is checked and the follow-up runs without a
+		// switch in between, see whileProviderRevision.
+		s.whileProviderRevision(providerID, providerRevision, func() {
+			s.followProviderRetry(providerID, afterBrowserSignInRead, requestedAt, setup, label)
+		})
+		return
 	}
+	s.followProviderRetry(providerID, afterBrowserSignInRead, requestedAt, setup, label)
+}
+
+// whileProviderRevision runs follow only if the provider's revision is still
+// the given one. A provider switch holds providerFollowupMu while it applies
+// the change, so a follow-up either sees the new revision and does nothing,
+// or finishes before the switch is applied at all. providerPreferences.mu is not held while follow runs,
+// because it writes the setup log. It returns false when follow did not run.
+func (s *Server) whileProviderRevision(providerID string, providerRevision uint64, follow func()) bool {
+	s.providerFollowupMu.Lock()
+	defer s.providerFollowupMu.Unlock()
+	if s.currentProviderRevision(providerID) != providerRevision {
+		return false
+	}
+	if s.providerFollowupHeldHook != nil {
+		s.providerFollowupHeldHook()
+	}
+	follow()
+	return true
+}
+
+// followProviderRetry logs what the check found and lets the usage service
+// follow a provider that is ready now.
+func (s *Server) followProviderRetry(providerID string, afterBrowserSignInRead bool, requestedAt time.Time, setup codexbar.ProviderSetup, label string) {
 	s.recordProviderSetupEvents(setup, providerID, label)
 	if setup.Status == codexbar.ProviderReady {
 		// A reading the running usage service took before CodexBar's config
@@ -544,7 +629,38 @@ func (s *Server) handleProviderRetry(w http.ResponseWriter, r *http.Request) {
 			s.wakeDisplayStream()
 		}
 	}
-	writeJSON(w, http.StatusOK, providerSetupResponse{OK: true, ProviderSetup: setup})
+}
+
+// markExactProviderChecking shows a switched-on provider as checking while its
+// exact check runs on after the request answered. The earlier result no longer
+// speaks for it, and a health scan that was already running must not replace
+// the mark before the check is recorded. A scan started after the mark is held
+// off as well, until releaseExactChecking, which the caller owes when the
+// answer is true.
+func (s *Server) markExactProviderChecking(providerID string, providerRevision uint64) bool {
+	s.providerPreferences.mu.Lock()
+	defer s.providerPreferences.mu.Unlock()
+	if s.providerPreferences.providerRev[providerID] != providerRevision {
+		return false
+	}
+	for i := range s.providerPreferences.cached {
+		setting := &s.providerPreferences.cached[i]
+		if setting.ID != providerID || !setting.Enabled {
+			continue
+		}
+		setting.Health = codexbar.ProviderHealthChecking
+		setting.Service = codexbar.ProviderServiceUnknown
+		setting.Reported = ""
+		setting.SignInURL = ""
+		s.providerPreferences.revision++
+		s.providerPreferences.at = s.currentTime().UTC()
+		s.providerReadinessMu.Lock()
+		delete(s.providerReadiness, providerID)
+		s.providerReadinessMu.Unlock()
+		s.pinExactCheckingLocked(providerID)
+		return true
+	}
+	return false
 }
 
 // requestUsageServiceReplace asks the supervisor to check the usage service.
@@ -792,12 +908,16 @@ func (s *Server) providerReadinessFor(providerID string) (providerReadinessRecor
 	return record, ok
 }
 
-func providerDiagnosticCheck(setup codexbar.ProviderSetup) diagnosticCheck {
+// providerDiagnosticCheck is the provider check for the support report (engine
+// true) and for the setup log (engine false). The customer reads the setup
+// log, so it gets each state's fixed sentence and never CodexBar's own text
+// (Paul, 16.10.; #579). The support report keeps the engine sentence (#500).
+func providerDiagnosticCheck(setup codexbar.ProviderSetup, engine bool) diagnosticCheck {
 	if setup.Status == codexbar.ProviderReady {
 		check := diagnosticCheck{Name: "provider_setup", Status: "pass", Detail: "An AI provider is delivering usage data."}
 		// One working provider must not hide another one the customer was told
 		// to report: a throttled Claude next to a working Codex is the case.
-		if others := failingProviderDiagnostics(setup.Providers); others != "" {
+		if others := failingProviderDiagnostics(setup.Providers, engine); others != "" {
 			check.Detail += " Other providers need attention: " + others
 		}
 		return check
@@ -811,14 +931,14 @@ func providerDiagnosticCheck(setup codexbar.ProviderSetup) diagnosticCheck {
 	}
 	if len(setup.Providers) > 0 {
 		provider := setup.Providers[0]
-		check.Detail = providerDiagnosticDetail(provider)
+		check.Detail = providerDiagnosticDetail(provider, engine)
 		if provider.NextAction != "" {
 			check.NextAction = provider.NextAction
 		}
 		if provider.Status != "" {
 			check.ErrorCode = provider.Status
 		}
-		if others := failingProviderDiagnostics(setup.Providers[1:]); others != "" {
+		if others := failingProviderDiagnostics(setup.Providers[1:], engine); others != "" {
 			check.Detail += " Other providers need attention: " + others
 		}
 	}
@@ -828,9 +948,9 @@ func providerDiagnosticCheck(setup codexbar.ProviderSetup) diagnosticCheck {
 // providerDiagnosticDetail is the row's own sentence plus CodexBar's. The
 // engine sentence names every source that failed; without it a support report
 // only says which category the app chose.
-func providerDiagnosticDetail(provider codexbar.ProviderReadiness) string {
+func providerDiagnosticDetail(provider codexbar.ProviderReadiness, engine bool) string {
 	detail := provider.Detail
-	if reported := reportedProviderMessage(provider.Reported); reported != "" {
+	if reported := reportedProviderMessage(provider.Reported); engine && reported != "" {
 		detail = strings.TrimSpace(detail + " Provider message: " + reported)
 	}
 	return detail
@@ -838,7 +958,7 @@ func providerDiagnosticDetail(provider codexbar.ProviderReadiness) string {
 
 // failingProviderDiagnostics lists every switched-on provider that is not
 // delivering usage, so a support report covers each of them.
-func failingProviderDiagnostics(providers []codexbar.ProviderReadiness) string {
+func failingProviderDiagnostics(providers []codexbar.ProviderReadiness, engine bool) string {
 	var parts []string
 	for _, provider := range providers {
 		if provider.Status == codexbar.ProviderReady || (provider.Enabled != nil && !*provider.Enabled) {
@@ -848,7 +968,7 @@ func failingProviderDiagnostics(providers []codexbar.ProviderReadiness) string {
 		if label == "" {
 			label = provider.ID
 		}
-		parts = append(parts, label+": "+providerDiagnosticDetail(provider))
+		parts = append(parts, label+": "+providerDiagnosticDetail(provider, engine))
 	}
 	return strings.Join(parts, " | ")
 }

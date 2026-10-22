@@ -1000,7 +1000,7 @@ func TestRunInstallUpdateCableSendsGzipImageFastWhenSupported(t *testing.T) {
 		}
 	}))
 	t.Cleanup(server.Close)
-	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+	readCableFirmwareHelloFn = func(context.Context, string) (protocol.DeviceHello, error) {
 		return protocol.DeviceHello{
 			DeviceID: "device-cable",
 			Board:    "esp8266-smalltv-st7789",
@@ -1075,7 +1075,7 @@ func TestRunInstallUpdateCableRejectsChangedIdentity(t *testing.T) {
 	if err := runtimeconfig.Save(home, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "device-cable", DeviceToken: "pair-token"}); err != nil {
 		t.Fatal(err)
 	}
-	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+	readCableFirmwareHelloFn = func(context.Context, string) (protocol.DeviceHello, error) {
 		return protocol.DeviceHello{DeviceID: "other-device", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0"}, nil
 	}
 
@@ -1108,13 +1108,13 @@ func TestRunInstallUpdateCableRejectsPostRebootVersionMismatch(t *testing.T) {
 func TestRunInstallUpdateCableRescueFlashesPreIdentityVibeTVOnAFreshSystem(t *testing.T) {
 	_, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
 	pinCableRescue(t)
-	resolveCableFirmwarePortFn = func(string, string) (string, error) {
+	resolveCableFirmwarePortFn = func(context.Context, string, string) (string, error) {
 		// Another connected VibeTV could answer a resolver; only the rescued
 		// port proves the rescued device.
 		t.Fatal("rescue verification must stay on the flashed port")
 		return "", nil
 	}
-	readCableFirmwareHelloFn = func(port string) (protocol.DeviceHello, error) {
+	readCableFirmwareHelloFn = func(_ context.Context, port string) (protocol.DeviceHello, error) {
 		if port != "/dev/mock-legacy" {
 			t.Fatalf("rescue verification read %q, want the flashed port", port)
 		}
@@ -1124,9 +1124,9 @@ func TestRunInstallUpdateCableRescueFlashesPreIdentityVibeTVOnAFreshSystem(t *te
 		return usb.CableDevice{Port: "/dev/mock-legacy", Hello: protocol.DeviceHello{Board: "esp8266-smalltv-st7789", Firmware: "1.0.0"}}, nil
 	}
 	var flashedPort, flashedImage string
-	flashCableRescueFn = func(_ context.Context, port string, image []byte, progress func(int)) error {
+	flashCableRescueFn = func(_ context.Context, port string, image []byte, opts usb.ROMFlashOptions) error {
 		flashedPort, flashedImage = port, string(image)
-		progress(50)
+		opts.Progress(50)
 		*firmwareVersion = "1.0.1"
 		return nil
 	}
@@ -1157,7 +1157,7 @@ func TestRunInstallUpdateCableRescueWritesNothingWithoutAPreIdentityVibeTV(t *te
 		probes++
 		return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
 	}
-	flashCableRescueFn = func(context.Context, string, []byte, func(int)) error {
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
 		t.Fatal("rescue flashed without a pre-identity VibeTV")
 		return nil
 	}
@@ -1181,7 +1181,7 @@ func TestRunInstallUpdateCableRescueWritesNothingWithoutAPreIdentityVibeTV(t *te
 func TestRunInstallUpdateCableRescueFindsTheVibeTVOnALaterProbe(t *testing.T) {
 	_, manifestURL, firmwareVersion := prepareCableFirmwareUpdateTest(t)
 	pinCableRescue(t)
-	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+	readCableFirmwareHelloFn = func(context.Context, string) (protocol.DeviceHello, error) {
 		return protocol.DeviceHello{DeviceID: "device-cable", Board: "esp8266-smalltv-st7789", Firmware: *firmwareVersion}, nil
 	}
 	probes := 0
@@ -1192,7 +1192,7 @@ func TestRunInstallUpdateCableRescueFindsTheVibeTVOnALaterProbe(t *testing.T) {
 		return usb.CableDevice{Port: "/dev/mock-legacy", Hello: protocol.DeviceHello{Board: "esp8266-smalltv-st7789", Firmware: "1.0.0"}}, nil
 	}
 	flashedPort := ""
-	flashCableRescueFn = func(_ context.Context, port string, _ []byte, _ func(int)) error {
+	flashCableRescueFn = func(_ context.Context, port string, _ []byte, _ usb.ROMFlashOptions) error {
 		flashedPort = port
 		*firmwareVersion = "1.0.1"
 		return nil
@@ -1217,7 +1217,7 @@ func TestRunInstallUpdateCableRescueWritesNothingOnAHashMismatch(t *testing.T) {
 	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
 		return usb.CableDevice{Port: "/dev/mock-legacy", Hello: protocol.DeviceHello{Board: "esp8266-smalltv-st7789", Firmware: "1.0.0"}}, nil
 	}
-	flashCableRescueFn = func(context.Context, string, []byte, func(int)) error {
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
 		t.Fatal("rescue flashed an image that does not match the manifest")
 		return nil
 	}
@@ -1243,9 +1243,15 @@ func pinCableRescue(t *testing.T) {
 	t.Helper()
 	previousFind := findLegacyCableVibeTVFn
 	previousFlash := flashCableRescueFn
+	previousPorts := listCablePortsFn
+	previousPause := cableRescueRetryPause
+	cableRescueRetryPause = time.Millisecond
+	listCablePortsFn = func() ([]string, error) { return nil, nil }
 	t.Cleanup(func() {
 		findLegacyCableVibeTVFn = previousFind
 		flashCableRescueFn = previousFlash
+		listCablePortsFn = previousPorts
+		cableRescueRetryPause = previousPause
 	})
 }
 
@@ -1269,13 +1275,13 @@ func prepareCableFirmwareUpdateTest(t *testing.T) (string, string, *string) {
 		releaseHTTPClient = previousHTTPClient
 	})
 	firmwareVersion := "1.0.0"
-	resolveCableFirmwarePortFn = func(explicit, expectedDeviceID string) (string, error) {
+	resolveCableFirmwarePortFn = func(_ context.Context, explicit, expectedDeviceID string) (string, error) {
 		if explicit != "" || expectedDeviceID != "device-cable" {
 			t.Fatalf("unexpected Cable resolution explicit=%q id=%q", explicit, expectedDeviceID)
 		}
 		return "/dev/mock-cable", nil
 	}
-	readCableFirmwareHelloFn = func(port string) (protocol.DeviceHello, error) {
+	readCableFirmwareHelloFn = func(_ context.Context, port string) (protocol.DeviceHello, error) {
 		if port != "/dev/mock-cable" {
 			t.Fatalf("unexpected Cable port %q", port)
 		}
@@ -3551,5 +3557,174 @@ func TestResolveRestoreImagePicksNewestBackupThenPath(t *testing.T) {
 	}
 	if want := filepath.Join(dir, "weather_backup_b.bin"); got != want {
 		t.Fatalf("resolveRestoreImage() = %q, want the newest backup with the lowest path %q", got, want)
+	}
+}
+
+// Issue #832: a firmware that boots in cable mode never answers over WiFi, so
+// the WiFi check times out although the update was accepted and installed.
+// The device here stays on 1.0.0 over WiFi after its upload is accepted.
+func prepareWiFiUpdateStuckOnOldFirmware(t *testing.T) (string, string) {
+	t.Helper()
+	useMultipartUpload(t)
+	pinNoOtherRuntimeWriter(t)
+	testenv.Home(t, t.TempDir())
+	previousHTTPClient := releaseHTTPClient
+	previousDiscover := discoverWiFiDeviceFn
+	previousWiFiTimeout := firmwareWiFiVerifyTimeout
+	previousPoll := firmwareHTTPVerifyPollInterval
+	previousRediscoveryAfter := firmwareUpdateRediscoveryAfter
+	previousRediscoveryInterval := firmwareUpdateRediscoveryInterval
+	previousCableCheck := cableCheckAfterWiFiTimeout
+	previousCablePoll := cableFirmwareVerifyPollInterval
+	previousResolve := resolveCableFirmwarePortFn
+	previousRead := readCableFirmwareHelloFn
+	t.Cleanup(func() {
+		releaseHTTPClient = previousHTTPClient
+		discoverWiFiDeviceFn = previousDiscover
+		firmwareWiFiVerifyTimeout = previousWiFiTimeout
+		firmwareHTTPVerifyPollInterval = previousPoll
+		firmwareUpdateRediscoveryAfter = previousRediscoveryAfter
+		firmwareUpdateRediscoveryInterval = previousRediscoveryInterval
+		cableCheckAfterWiFiTimeout = previousCableCheck
+		cableFirmwareVerifyPollInterval = previousCablePoll
+		resolveCableFirmwarePortFn = previousResolve
+		readCableFirmwareHelloFn = previousRead
+	})
+
+	image := "firmware image"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hello":
+			_, _ = w.Write([]byte(`{"kind":"hello","deviceId":"device-a","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.0","features":["theme"],"maxFrameBytes":1024}`))
+		case "/manifest.json":
+			_, _ = fmt.Fprintf(w, `{"schemaVersion":1,"release":"v1.0.1","artifacts":[{"firmwareEnv":"esp8266_smalltv_st7789","board":"esp8266-smalltv-st7789","firmwareVersion":"1.0.1","asset":"firmware.bin","firmwareUrl":"http://%s/firmware.bin","sha256":"%s"}]}`, r.Host, sha256String(image))
+		case "/firmware.bin":
+			_, _ = io.WriteString(w, image)
+		case "/api/pair":
+			_, _ = w.Write([]byte(`{"ok":true,"token":"pair-token"}`))
+		case "/update/firmware":
+			_, _ = w.Write([]byte("ok"))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+	releaseHTTPClient = server.Client()
+	discoverWiFiDeviceFn = func(context.Context, transportlayer.WiFiDiscoveryOptions) (transportlayer.WiFiDiscoveryResult, error) {
+		return transportlayer.WiFiDiscoveryResult{}, errors.New("no VibeTV answers on WiFi")
+	}
+	firmwareWiFiVerifyTimeout = 20 * time.Millisecond
+	firmwareHTTPVerifyPollInterval = time.Millisecond
+	firmwareUpdateRediscoveryAfter = time.Millisecond
+	firmwareUpdateRediscoveryInterval = time.Millisecond
+	cableCheckAfterWiFiTimeout = 20 * time.Millisecond
+	cableFirmwareVerifyPollInterval = time.Millisecond
+	return server.URL, server.URL + "/manifest.json"
+}
+
+func TestRunInstallUpdateWiFiTimeoutAcceptsTargetFirmwareOnCable(t *testing.T) {
+	target, manifestURL := prepareWiFiUpdateStuckOnOldFirmware(t)
+	resolveCableFirmwarePortFn = func(context.Context, string, string) (string, error) { return "/dev/mock-cable", nil }
+	readCableFirmwareHelloFn = func(context.Context, string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{DeviceID: "device-a", Board: "esp8266-smalltv-st7789", Firmware: "1.0.1"}, nil
+	}
+
+	output, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", target, "--manifest-url", manifestURL})
+	})
+	if err != nil {
+		t.Fatalf("expected the cable to confirm the update, got %v", err)
+	}
+	if !strings.Contains(output, "Done: firmware 1.0.1 installed") {
+		t.Fatalf("expected success output, got:\n%s", output)
+	}
+	// The parent verifies where the updater found the VibeTV.
+	if !strings.Contains(output, `"stage":"verifying_health"`) || !strings.Contains(output, `"target":"cable://vibetv"`) {
+		t.Fatalf("expected the verified target to be the cable, got:\n%s", output)
+	}
+}
+
+func TestRunInstallUpdateWiFiTimeoutFailsWhenCableIsSilent(t *testing.T) {
+	target, manifestURL := prepareWiFiUpdateStuckOnOldFirmware(t)
+	resolveCableFirmwarePortFn = func(context.Context, string, string) (string, error) { return "", errors.New("no cable VibeTV") }
+	readCableFirmwareHelloFn = func(context.Context, string) (protocol.DeviceHello, error) {
+		t.Fatal("a silent cable must not be read")
+		return protocol.DeviceHello{}, nil
+	}
+
+	_, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", target, "--manifest-url", manifestURL})
+	})
+	if err == nil || !strings.Contains(err.Error(), "timed out waiting for firmware 1.0.1") {
+		t.Fatalf("expected the WiFi timeout to stay the reported failure, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "no cable VibeTV") {
+		t.Fatalf("expected the cable reason next to the WiFi one, got %v", err)
+	}
+}
+
+func TestRunInstallUpdateWiFiTimeoutFailsWhenCableRunsOtherFirmware(t *testing.T) {
+	target, manifestURL := prepareWiFiUpdateStuckOnOldFirmware(t)
+	resolveCableFirmwarePortFn = func(context.Context, string, string) (string, error) { return "/dev/mock-cable", nil }
+	readCableFirmwareHelloFn = func(context.Context, string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{DeviceID: "device-a", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0"}, nil
+	}
+
+	_, err := captureStdout(t, func() error {
+		return runInstallUpdate([]string{"--target", target, "--manifest-url", manifestURL})
+	})
+	if err == nil || !strings.Contains(err.Error(), "timed out waiting for firmware 1.0.1") {
+		t.Fatalf("expected the WiFi timeout to stay the reported failure, got %v", err)
+	}
+}
+
+func TestWaitForCableFirmwareVersionBoundsEveryProbe(t *testing.T) {
+	previousResolve, previousRead := resolveCableFirmwarePortFn, readCableFirmwareHelloFn
+	t.Cleanup(func() {
+		resolveCableFirmwarePortFn, readCableFirmwareHelloFn = previousResolve, previousRead
+	})
+	for _, stage := range []string{"resolver", "hello", "rescued port"} {
+		t.Run(stage, func(t *testing.T) {
+			var resolveDeadline time.Time
+			block := func(ctx context.Context) error {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(250 * time.Millisecond):
+					return errors.New("serial probe used its own timeout")
+				}
+			}
+			resolveCableFirmwarePortFn = func(ctx context.Context, _, _ string) (string, error) {
+				resolveDeadline, _ = ctx.Deadline()
+				if stage == "resolver" {
+					return "", block(ctx)
+				}
+				return "/dev/mock-cable", nil
+			}
+			readCableFirmwareHelloFn = func(ctx context.Context, _ string) (protocol.DeviceHello, error) {
+				if stage == "resolver" {
+					t.Fatal("must not read hello after resolution failed")
+				}
+				if stage == "hello" {
+					deadline, _ := ctx.Deadline()
+					if deadline != resolveDeadline {
+						t.Fatal("resolver and final hello must share one deadline")
+					}
+				}
+				return protocol.DeviceHello{}, block(ctx)
+			}
+			port := ""
+			if stage == "rescued port" {
+				port = "/dev/mock-cable"
+			}
+			started := time.Now()
+			_, err := waitForCableFirmwareVersion(context.Background(), "1.0.47", "device-a", port, 30*time.Millisecond)
+			if elapsed := time.Since(started); elapsed > 150*time.Millisecond {
+				t.Fatalf("%s exceeded the shared 30ms budget: %s", stage, elapsed)
+			}
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("expected exhausted budget, got %v", err)
+			}
+		})
 	}
 }

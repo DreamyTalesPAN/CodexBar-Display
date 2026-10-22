@@ -133,6 +133,11 @@ func ResolveVibeTVControlPort(explicit, expectedDeviceID string) (string, error)
 	return defaultSender.ResolveControlPort(explicit, expectedDeviceID)
 }
 
+// ResolveVibeTVControlPortContext bounds all candidate probes by ctx.
+func ResolveVibeTVControlPortContext(ctx context.Context, explicit, expectedDeviceID string) (string, error) {
+	return defaultSender.ResolveControlPortContext(ctx, explicit, expectedDeviceID)
+}
+
 // OpenVibeTVPort returns the open port of an already verified VibeTV, if any.
 func OpenVibeTVPort() (string, bool) {
 	return defaultSender.OpenVibeTVPort()
@@ -233,15 +238,9 @@ func discoverVibeTVs(
 	sort.Slice(devices, func(i, j int) bool {
 		return strings.ToLower(devices[i].Hello.DeviceID) < strings.ToLower(devices[j].Hello.DeviceID)
 	})
-	if len(devices) == 0 && foreignDeviceAnswered {
-		return nil, wrapTransportError(
-			errcode.TransportForeignDevice,
-			"discover-vibetvs",
-			"",
-			"Disconnect the other serial device and connect VibeTV with a data-capable Cable.",
-			errors.New("a non-VibeTV serial device answered hello"),
-		)
-	}
+	// A pre-Cable VibeTV wins over a foreign responder: its Cable rescue
+	// (FindLegacyCableVibeTV) ignores foreign devices, so setup can still offer
+	// it (Codex review on #819).
 	if len(devices) == 0 && legacy != nil {
 		return nil, wrapTransportError(
 			errcode.TransportCableFirmwareTooOld,
@@ -249,6 +248,15 @@ func discoverVibeTVs(
 			"",
 			"Update VibeTV over WiFi first, then reconnect the Cable.",
 			legacy,
+		)
+	}
+	if len(devices) == 0 && foreignDeviceAnswered {
+		return nil, wrapTransportError(
+			errcode.TransportForeignDevice,
+			"discover-vibetvs",
+			"",
+			"Disconnect the other serial device and connect VibeTV with a data-capable Cable.",
+			errors.New("a non-VibeTV serial device answered hello"),
 		)
 	}
 	return devices, nil
@@ -305,6 +313,26 @@ func resolveVibeTVPortForControl(
 		readHello,
 		allowWiFiMode,
 	)
+}
+
+// WithoutTTYAliases drops each /dev/tty.X whose /dev/cu.X is listed too: macOS
+// exposes one USB-UART twice, and a search that compares port lists would count
+// one replugged VibeTV as two new ports (#840 bench, 21.10.2026).
+func WithoutTTYAliases(ports []string) []string {
+	callout := make(map[string]bool, len(ports))
+	for _, port := range ports {
+		if name, ok := strings.CutPrefix(strings.TrimSpace(port), "/dev/cu."); ok {
+			callout[name] = true
+		}
+	}
+	kept := make([]string, 0, len(ports))
+	for _, port := range ports {
+		if name, ok := strings.CutPrefix(strings.TrimSpace(port), "/dev/tty."); ok && callout[name] {
+			continue
+		}
+		kept = append(kept, port)
+	}
+	return kept
 }
 
 func cableSerialCandidates(ports []string, goos string) []string {

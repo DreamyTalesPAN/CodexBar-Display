@@ -16,6 +16,8 @@ TRANSFER_SRC="${ROOT_DIR}/firmware_esp8266/tests/cable_transfer_core_test.cpp"
 TRANSFER_OUT="${ROOT_DIR}/tmp/cable_transfer_core_test"
 CBA_SCALE_SRC="${ROOT_DIR}/firmware_esp8266/tests/cba_scale_policy_test.cpp"
 CBA_SCALE_OUT="${ROOT_DIR}/tmp/cba_scale_policy_test"
+IMAGE_POLICY_SRC="${ROOT_DIR}/firmware_esp8266/tests/firmware_image_policy_test.cpp"
+IMAGE_POLICY_OUT="${ROOT_DIR}/tmp/firmware_image_policy_test"
 CXX_BIN="${CXX:-c++}"
 
 bundled_theme=""
@@ -42,6 +44,9 @@ mkdir -p "${ROOT_DIR}/tmp"
 
 "${CXX_BIN}" -std=c++17 -Wall -Wextra -pedantic "${CBA_SCALE_SRC}" -o "${CBA_SCALE_OUT}"
 "${CBA_SCALE_OUT}"
+
+"${CXX_BIN}" -std=c++17 -Wall -Wextra -pedantic "${IMAGE_POLICY_SRC}" -o "${IMAGE_POLICY_OUT}"
+"${IMAGE_POLICY_OUT}" "${ROOT_DIR}/firmware_esp8266/src/main.cpp"
 
 "${CXX_BIN}" -std=c++17 -Wall -Wextra -pedantic \
   "${VALIDATOR_SRC}" \

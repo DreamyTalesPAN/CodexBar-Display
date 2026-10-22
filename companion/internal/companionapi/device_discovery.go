@@ -170,7 +170,22 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 	} else {
 		devices, err = s.searchDevices(searchCtx, cfg, explicitTarget)
 	}
-	if err != nil && len(cableDevices) == 0 {
+	// Issue #818: a rescue write that failed after the erase leaves a VibeTV
+	// that boot-loops and says no hello, so no search finds it. The rescue
+	// marker keeps it selectable for the next rescue, also when the LAN search
+	// failed: the rescue runs over the Cable only.
+	var rescueEntry *deviceSearchEntry
+	if explicitTarget == "" {
+		if entry, ok := s.halfWrittenRescueEntry(cableDevices); ok {
+			rescueEntry = &entry
+		}
+	}
+	// A pre-Cable VibeTV that answered for its first rescue is reached over the
+	// Cable only, like the marked one: the LAN error must not hide it (Codex
+	// review on #819).
+	var legacyAnswered *usb.LegacyCableFirmwareError
+	legacyOnCable := explicitTarget == "" && errors.As(cableErr, &legacyAnswered)
+	if err != nil && len(cableDevices) == 0 && rescueEntry == nil && !legacyOnCable {
 		var invalidTarget *invalidTargetError
 		if errors.As(err, &invalidTarget) {
 			writeInvalidDeviceTarget(w)
@@ -212,8 +227,13 @@ func (s *Server) handleDeviceSearch(w http.ResponseWriter, r *http.Request) {
 		// WiFi VibeTV that differs in either is another VibeTV. One that matches
 		// both may be this one: WiFi wins as before instead of a duplicate, and
 		// updating it lets the next search tell the two apart.
+		// A pending rescue marker wins over another pre-Cable VibeTV, exactly as
+		// install-update does, so the entry shown is the hardware the rescue
+		// writes to (Codex review on #819).
 		var legacy *usb.LegacyCableFirmwareError
-		if errors.As(cableErr, &legacy) && !slices.ContainsFunc(devices, func(device deviceSearchEntry) bool {
+		if rescueEntry != nil {
+			devices = append(devices, *rescueEntry)
+		} else if errors.As(cableErr, &legacy) && !slices.ContainsFunc(devices, func(device deviceSearchEntry) bool {
 			return device.Board == legacy.Board && device.Firmware == legacy.Firmware
 		}) {
 			devices = append(devices, legacyCableSearchEntry(legacy))

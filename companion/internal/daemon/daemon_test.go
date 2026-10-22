@@ -7061,6 +7061,124 @@ func TestRunDaemonLoopPausesDeviceCyclesDuringMaintenance(t *testing.T) {
 	}
 }
 
+// Issue #832: selecting WiFi while a firmware update holds the maintenance
+// pause must still end the USB worker, or it keeps the cable port open for the
+// update's own cable check.
+func TestRunDaemonLoopReleasesUSBWorkerWhenTargetLeavesCableDuringPause(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	cfg := runtimeconfig.Config{ConnectionMode: "wifi"}
+	deps := runtimeDeps{
+		transportName: "usb", homeDir: func() (string, error) { return t.TempDir(), nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		now:        time.Now, logf: func(string, ...any) {},
+		after: func(time.Duration) <-chan time.Time { return nil },
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := runDaemonLoop(ctx, Options{
+		Interval:          time.Second,
+		PauseDeviceWrites: func() bool { return true },
+	}, deps, func(context.Context) error {
+		t.Error("cycle ran during maintenance pause")
+		return nil
+	})
+	if !errors.Is(err, ErrConnectionModeChanged) {
+		t.Fatalf("paused USB worker kept running after the target left Cable: %v", err)
+	}
+}
+
+// Issue #826: a cycle that is already running when a firmware update takes the
+// device stops at the write gate for the whole update. That wait made the next
+// cycle start look like a wake from sleep, and setup judged the stream failed.
+func TestRunDaemonLoopIgnoresDeviceWriteGateWaitAsSleepWake(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	resume := make(chan time.Time, 4)
+	for i := 0; i < 4; i++ {
+		resume <- time.Now()
+	}
+	now := time.Now()
+	var cycleCalls atomic.Int32
+	var logged strings.Builder
+
+	deps := runtimeDeps{
+		now: func() time.Time { return now },
+		after: func(time.Duration) <-chan time.Time {
+			return resume
+		},
+		logf: func(format string, args ...any) {
+			logged.WriteString(fmt.Sprintf(format, args...))
+		},
+		// The write gate stays shut for 69 s, as it does during an update.
+		beginDeviceWrite: func() func() {
+			now = now.Add(69 * time.Second)
+			return func() {}
+		},
+	}
+	trackDeviceWriteWait(&deps)
+
+	err := runDaemonLoop(ctx, Options{Interval: 30 * time.Second}, deps, func(context.Context) error {
+		if cycleCalls.Add(1) == 1 {
+			deps.beginDeviceWrite()()
+		} else {
+			now = now.Add(30 * time.Second)
+		}
+		if cycleCalls.Load() == 3 {
+			cancel()
+		}
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected loop cancellation, got %v", err)
+	}
+	if strings.Contains(logged.String(), "runtime event=sleep-wake") {
+		t.Fatalf("the wait at the device write gate was logged as sleep-wake: %q", logged.String())
+	}
+}
+
+// The same long gap without a write-gate wait is still a real sleep.
+func TestRunDaemonLoopStillLogsSleepWakeWithoutGateWait(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	resume := make(chan time.Time, 4)
+	for i := 0; i < 4; i++ {
+		resume <- time.Now()
+	}
+	now := time.Now()
+	var cycleCalls atomic.Int32
+	var logged strings.Builder
+
+	deps := runtimeDeps{
+		now:   func() time.Time { return now },
+		after: func(time.Duration) <-chan time.Time { return resume },
+		logf: func(format string, args ...any) {
+			logged.WriteString(fmt.Sprintf(format, args...))
+		},
+		beginDeviceWrite: func() func() { return func() {} },
+	}
+	trackDeviceWriteWait(&deps)
+
+	err := runDaemonLoop(ctx, Options{Interval: 30 * time.Second}, deps, func(context.Context) error {
+		deps.beginDeviceWrite()()
+		now = now.Add(69 * time.Second)
+		if cycleCalls.Add(1) == 2 {
+			cancel()
+		}
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected loop cancellation, got %v", err)
+	}
+	if !strings.Contains(logged.String(), "runtime event=sleep-wake") {
+		t.Fatalf("a real gap must still be logged as sleep-wake: %q", logged.String())
+	}
+}
+
 func TestCycleRunTimeoutHonorsBounds(t *testing.T) {
 	prepareFastTestEnv(t)
 

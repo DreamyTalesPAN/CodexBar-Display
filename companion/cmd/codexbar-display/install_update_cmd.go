@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -128,6 +130,8 @@ func runInstallUpdate(args []string) (retErr error) {
 	var cablePort string
 	var deviceToken string
 	var hello protocol.DeviceHello
+	var marker firmwareupdate.RescueMarker
+	recovering := false
 	if rescueMode {
 		// Firmware from before the Cable identity contract has neither a
 		// deviceId nor Cable transfer. The ROM loader rewrites it anyway.
@@ -143,6 +147,19 @@ func runInstallUpdate(args []string) (retErr error) {
 			}
 			fmt.Printf("Cable rescue probe %d/%d failed: %v\n", probe, probes, err)
 		}
+		// Issue #818: a rescue write that failed after the erase leaves a
+		// VibeTV that boot-loops and never says hello. Its marker is the proof
+		// that the ROM loader on that port may be written again. It also wins
+		// over another pre-Cable VibeTV that does answer: rescuing that one
+		// first would overwrite and later clear the only record of this one.
+		if resumed, ok := resumableRescueMarker(home); ok &&
+			(err != nil || !strings.EqualFold(strings.TrimSpace(device.Port), strings.TrimSpace(resumed.Port))) {
+			if err == nil {
+				fmt.Printf("Cable rescue: the VibeTV on %s is left half-written; rescuing it before the one on %s\n", resumed.Port, device.Port)
+			}
+			marker, recovering, err = resumed, true, nil
+			device = usb.CableDevice{Port: marker.Port, Hello: protocol.DeviceHello{Board: marker.Board, Firmware: marker.Firmware}}
+		}
 		if err != nil {
 			return &commandError{Op: "cable-rescue-device", Code: errcode.UpgradeFlashFirmware, Err: err}
 		}
@@ -156,9 +173,9 @@ func runInstallUpdate(args []string) (retErr error) {
 			strings.TrimSpace(cfg.DeviceID) == "" || strings.TrimSpace(cfg.DeviceToken) == "" {
 			return &commandError{Op: "cable-preflight", Code: errcode.UpgradeFlashFirmware, Err: errors.New("paired Cable VibeTV is required")}
 		}
-		cablePort, err = resolveCableFirmwarePortFn("", cfg.DeviceID)
+		cablePort, err = resolveCableFirmwarePortFn(ctx, "", cfg.DeviceID)
 		if err == nil {
-			hello, err = readCableFirmwareHelloFn(cablePort)
+			hello, err = readCableFirmwareHelloFn(ctx, cablePort)
 		}
 		if err == nil && !strings.EqualFold(strings.TrimSpace(hello.DeviceID), strings.TrimSpace(cfg.DeviceID)) {
 			err = fmt.Errorf("cable VibeTV identity changed from %s to %s", strings.TrimSpace(cfg.DeviceID), strings.TrimSpace(hello.DeviceID))
@@ -194,57 +211,66 @@ func runInstallUpdate(args []string) (retErr error) {
 	fmt.Println("Checking device...")
 	fmt.Printf("Device: %s firmware %s\n", caps.Board, caps.Firmware)
 
-	fmt.Println("Checking firmware...")
-	manifest, err := fetchReleaseFirmwareManifestURL(ctx, strings.TrimSpace(*manifestURL))
-	if err != nil {
-		return &commandError{Op: "fetch-firmware-manifest", Code: errcode.UpgradeFlashFirmware, Err: err}
-	}
-	artifact, err := selectLatestFirmwareArtifactForBoard(manifest, caps.Board)
-	if err != nil {
-		return &commandError{Op: "select-firmware", Code: errcode.UpgradeVersionGuard, Err: err}
-	}
-	targetVersion := normalizeReleaseVersion(artifact.FirmwareVersion)
-
-	current, currentErr := versioning.ParseSemVer(caps.Firmware)
-	next, nextErr := versioning.ParseSemVer(targetVersion)
-	if currentErr != nil {
-		return &commandError{Op: "parse-current-firmware", Code: errcode.UpgradeVersionGuard, Err: currentErr}
-	}
-	if nextErr != nil {
-		return &commandError{Op: "parse-target-firmware", Code: errcode.UpgradeVersionGuard, Err: nextErr}
-	}
-	if current.Compare(next) >= 0 && !*force {
-		fmt.Printf("Firmware: already current (%s)\n", caps.Firmware)
-		emitFirmwareUpdateEvent(firmwareUpdateEvent{
-			Stage:             "verifying_health",
-			Phase:             "complete",
-			Outcome:           "already_current",
-			Firmware:          caps.Firmware,
-			ObservedFirmware:  caps.Firmware,
-			Target:            base,
-			DeviceID:          deviceID,
-			ArtifactValidated: true,
-			HelloVerified:     true,
-		})
-		return nil
-	}
-	fmt.Printf("Updating firmware: %s -> %s\n", caps.Firmware, targetVersion)
-	if *verbose {
-		fmt.Printf("Firmware manifest: %s\n", strings.TrimSpace(*manifestURL))
-		fmt.Printf("Firmware asset: %s\n", strings.TrimSpace(artifact.Asset))
-	}
-
-	imagePath, err := downloadManifestFirmwareArtifact(ctx, home, manifest, artifact)
-	if err != nil {
-		return &commandError{
-			Op:   "download-firmware",
-			Code: errcode.UpgradeFlashFirmware,
-			Err:  err,
-			Hint: "check network access and the manifest firmwareUrl/sha256 fields",
+	var targetVersion, imagePath string
+	var artifact releaseFirmwareArtifact
+	if recovering {
+		// The image was checked when it was downloaded for the write that
+		// failed; resuming does not need the network.
+		targetVersion, imagePath = marker.TargetFirmware, marker.ImagePath
+		fmt.Printf("Resuming firmware write: %s\n", targetVersion)
+	} else {
+		fmt.Println("Checking firmware...")
+		manifest, err := fetchReleaseFirmwareManifestURL(ctx, strings.TrimSpace(*manifestURL))
+		if err != nil {
+			return &commandError{Op: "fetch-firmware-manifest", Code: errcode.UpgradeFlashFirmware, Err: err}
 		}
-	}
-	if *verbose {
-		fmt.Printf("Firmware downloaded: %s sha256=%s\n", imagePath, strings.TrimSpace(artifact.SHA256))
+		artifact, err = selectLatestFirmwareArtifactForBoard(manifest, caps.Board)
+		if err != nil {
+			return &commandError{Op: "select-firmware", Code: errcode.UpgradeVersionGuard, Err: err}
+		}
+		targetVersion = normalizeReleaseVersion(artifact.FirmwareVersion)
+
+		current, currentErr := versioning.ParseSemVer(caps.Firmware)
+		next, nextErr := versioning.ParseSemVer(targetVersion)
+		if currentErr != nil {
+			return &commandError{Op: "parse-current-firmware", Code: errcode.UpgradeVersionGuard, Err: currentErr}
+		}
+		if nextErr != nil {
+			return &commandError{Op: "parse-target-firmware", Code: errcode.UpgradeVersionGuard, Err: nextErr}
+		}
+		if current.Compare(next) >= 0 && !*force {
+			fmt.Printf("Firmware: already current (%s)\n", caps.Firmware)
+			emitFirmwareUpdateEvent(firmwareUpdateEvent{
+				Stage:             "verifying_health",
+				Phase:             "complete",
+				Outcome:           "already_current",
+				Firmware:          caps.Firmware,
+				ObservedFirmware:  caps.Firmware,
+				Target:            base,
+				DeviceID:          deviceID,
+				ArtifactValidated: true,
+				HelloVerified:     true,
+			})
+			return nil
+		}
+		fmt.Printf("Updating firmware: %s -> %s\n", caps.Firmware, targetVersion)
+		if *verbose {
+			fmt.Printf("Firmware manifest: %s\n", strings.TrimSpace(*manifestURL))
+			fmt.Printf("Firmware asset: %s\n", strings.TrimSpace(artifact.Asset))
+		}
+
+		imagePath, err = downloadManifestFirmwareArtifact(ctx, home, manifest, artifact)
+		if err != nil {
+			return &commandError{
+				Op:   "download-firmware",
+				Code: errcode.UpgradeFlashFirmware,
+				Err:  err,
+				Hint: "check network access and the manifest firmwareUrl/sha256 fields",
+			}
+		}
+		if *verbose {
+			fmt.Printf("Firmware downloaded: %s sha256=%s\n", imagePath, strings.TrimSpace(artifact.SHA256))
+		}
 	}
 	emitFirmwareUpdateEvent(firmwareUpdateEvent{
 		Stage:             "uploading",
@@ -281,9 +307,23 @@ func runInstallUpdate(args []string) (retErr error) {
 		var image []byte
 		image, uploadErr = os.ReadFile(imagePath)
 		if uploadErr == nil {
-			uploadErr = flashCableRescueFn(ctx, cablePort, image, func(percent int) {
-				fmt.Printf("Writing firmware: %d%%\n", percent)
-			})
+			marker.Port, marker.TargetFirmware, marker.ImagePath = cablePort, targetVersion, imagePath
+			if !recovering {
+				marker.Board, marker.Firmware = caps.Board, caps.Firmware
+				// From the bytes that will be written: a second read could fail
+				// and leave a marker no resume can ever match.
+				sum := sha256.Sum256(image)
+				marker.ImageSHA256 = hex.EncodeToString(sum[:])
+			} else if !rescueImageMatchesMarker(image, marker) {
+				// The cached image was checked when the marker was picked, but
+				// it can change before this read. Only the bytes the marker
+				// names may be written; the marker stays for the next attempt
+				// (Codex review on #819).
+				uploadErr = fmt.Errorf("the cached firmware image changed since the failed write; nothing was written")
+			}
+			if uploadErr == nil {
+				uploadErr = flashCableRescueWithRetry(ctx, home, marker, image, recovering)
+			}
 		}
 	} else if cableMode {
 		// The release's gzip image is about 30% smaller, and the ESP8266
@@ -330,6 +370,9 @@ func runInstallUpdate(args []string) (retErr error) {
 		hint := "keep VibeTV powered and on the same WiFi, then retry"
 		if cableMode {
 			hint = "reconnect VibeTV with a data-capable Cable, wait for it to start, then retry once"
+			if _, halfWritten := firmwareupdate.LoadRescueMarker(home, time.Now()); rescueMode && halfWritten {
+				hint = "VibeTV was left half-written; keep it connected by Cable and update again, the next attempt rescues it automatically"
+			}
 			if uploadInterrupted {
 				emitFirmwareUpdateEvent(firmwareUpdateEvent{
 					Stage:       "uploading",
@@ -393,11 +436,19 @@ func runInstallUpdate(args []string) (retErr error) {
 		}
 		verifiedHello, helloErr = waitForCableFirmwareVersion(ctx, targetVersion, deviceID, rescuedPort, cableFirmwareVerifyTimeout)
 	} else {
-		verifiedBase, err = waitForHTTPFirmwareVersionWithDiscovery(ctx, home, base, targetVersion, deviceID, 120*time.Second)
+		verifiedBase, err = waitForHTTPFirmwareVersionWithDiscovery(ctx, home, base, targetVersion, deviceID, firmwareWiFiVerifyTimeout)
 		if err == nil {
 			verifiedHello, helloErr = fetchDeviceHelloHTTP(ctx, verifiedBase)
 		} else {
 			helloErr = err
+			// Issue #832: a firmware that boots in cable mode never answers over
+			// WiFi. One bounded cable check tells whether the update still worked;
+			// the cable target tells the parent to verify over the cable too.
+			if cableHello, cableErr := waitForCableFirmwareVersion(ctx, targetVersion, deviceID, "", cableCheckAfterWiFiTimeout); cableErr == nil {
+				verifiedBase, verifiedHello, helloErr = "cable://vibetv", cableHello, nil
+			} else {
+				helloErr = fmt.Errorf("%w; cable check: %v", err, cableErr)
+			}
 		}
 	}
 	if helloErr != nil {
@@ -433,6 +484,12 @@ func runInstallUpdate(args []string) (retErr error) {
 			Hint: "do not retry the flash; verify the saved VibeTV device identity",
 		}
 	}
+	if rescueMode {
+		// Verified on the rescued port: nothing is left half-written.
+		if err := firmwareupdate.ClearRescueMarker(home); err != nil {
+			fmt.Printf("warning: firmware updated, but clearing the rescue marker failed: %v\n", err)
+		}
+	}
 	emitFirmwareUpdateEvent(firmwareUpdateEvent{
 		Stage:             "verifying_health",
 		Phase:             "installing",
@@ -444,7 +501,7 @@ func runInstallUpdate(args []string) (retErr error) {
 		UploadAccepted:    true,
 		HelloVerified:     true,
 	})
-	if !cableMode && verifiedBase != base {
+	if !cableMode && verifiedBase != base && verifiedBase != "cable://vibetv" {
 		base = verifiedBase
 		if _, err := ensureFirmwareUpdateDeviceToken(ctx, home, base, deviceID); err != nil {
 			fmt.Printf("warning: firmware updated, but saving the rediscovered VibeTV address failed: %v\n", err)
@@ -461,19 +518,17 @@ func waitForCableFirmwareVersion(
 	port string,
 	timeout time.Duration,
 ) (protocol.DeviceHello, error) {
-	deadline := time.Now().Add(timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	var lastErr error
-	for time.Now().Before(deadline) {
-		if err := ctx.Err(); err != nil {
-			return protocol.DeviceHello{}, err
-		}
+	for ctx.Err() == nil {
 		resolved, err := port, error(nil)
 		if resolved == "" {
-			resolved, err = resolveCableFirmwarePortFn("", deviceID)
+			resolved, err = resolveCableFirmwarePortFn(ctx, "", deviceID)
 		}
 		if err == nil {
 			var hello protocol.DeviceHello
-			hello, err = readCableFirmwareHelloFn(resolved)
+			hello, err = readCableFirmwareHelloFn(ctx, resolved)
 			if err == nil {
 				if strings.TrimSpace(hello.DeviceID) == "" {
 					err = errors.New("cable VibeTV has not reported its identity yet")
@@ -489,11 +544,10 @@ func waitForCableFirmwareVersion(
 		lastErr = err
 		select {
 		case <-ctx.Done():
-			return protocol.DeviceHello{}, ctx.Err()
 		case <-time.After(cableFirmwareVerifyPollInterval):
 		}
 	}
-	return protocol.DeviceHello{}, fmt.Errorf("cable VibeTV did not report firmware %s: %v", targetVersion, lastErr)
+	return protocol.DeviceHello{}, fmt.Errorf("cable VibeTV did not report firmware %s: %v: %w", targetVersion, lastErr, ctx.Err())
 }
 
 func ensureFirmwareUpdateDeviceToken(ctx context.Context, home, base, expectedDeviceID string) (string, error) {

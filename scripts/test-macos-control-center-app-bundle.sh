@@ -555,12 +555,12 @@ with open(sys.argv[3], encoding="utf-8") as f:
 
 prepare_start = source.index("private func prepareCompanion(")
 prepare_end = source.index(
-    "private func ensureBundledRuntimeServiceRegistered()",
+    "private func ensureBundledRuntimeServiceRegistered(",
     prepare_start,
 )
 prepare_source = source[prepare_start:prepare_end]
 stop_legacy = prepare_source.index("stopLegacyLaunchAgents(legacyStates)")
-register_runtime = prepare_source.index("ensureBundledRuntimeServiceRegistered()")
+register_runtime = prepare_source.index("ensureBundledRuntimeServiceRegistered(")
 if stop_legacy > register_runtime:
     raise SystemExit(
         "native app must stop legacy display writers before registering the new LaunchAgent"
@@ -727,8 +727,14 @@ required_source = [
     'title: "VibeTV’s background service couldn’t start"',
     'detail: "Restart VibeTV’s local service to continue."',
     'title: "Restart service"',
-    "action: #selector(retryRuntimePreparation)",
+    "action: #selector(restartRuntimeService)",
+    "@objc private func restartRuntimeService()",
+    "runtimeRegistrationNeedsRefresh(",
     "kind: .serviceRestart",
+    'title: "macOS blocked VibeTV’s background service"',
+    "kind: .launchBlocked",
+    "?? runtimeStartFailure(for: health, since: preparationStartedAt)",
+    '"launchBlockedBySignatureLast24Hours": runtimeLaunchWasBlockedBySignature(',
     'title: "VibeTV update didn’t finish"',
     'detail: "The app and its background service are on different versions."',
     'title: "Restart VibeTV"',
@@ -885,7 +891,7 @@ if "loadControlCenter(cachePolicy: .reloadIgnoringLocalCacheData)" not in create
         "native app must bypass stale Control Center HTML on the first verified WebView load"
     )
 
-registration = source.find("switch await ensureBundledRuntimeServiceRegistered()")
+registration = source.find("switch await ensureBundledRuntimeServiceRegistered(")
 stop_legacy = source.find("if !stopLegacyLaunchAgents(legacyStates)")
 health_gate = source.find("var health = await waitForHealthyRuntime")
 legacy_app_migration = source.find(
@@ -901,7 +907,7 @@ if not (
         "native app must stop legacy writers, register, pass local runtime health, migrate old apps, then persist"
     )
 prepare_start = source.find("private func prepareCompanion(fromStartScreen: Bool = false) async")
-prepare_end = source.find("private func ensureBundledRuntimeServiceRegistered()", prepare_start)
+prepare_end = source.find("private func ensureBundledRuntimeServiceRegistered(", prepare_start)
 prepare_method = source[prepare_start:prepare_end]
 if "/v1/device/repair" in prepare_method or "prepareExistingDeviceConnection" in prepare_method:
     raise SystemExit(
@@ -996,7 +1002,7 @@ codexbar_restore = prepare_method.find(
     "if runtimeStoppedForCodexBarRepair,", codexbar_stopped_runtime
 )
 codexbar_registration = prepare_method.find(
-    "switch await ensureBundledRuntimeServiceRegistered()", codexbar_restore
+    "switch await ensureBundledRuntimeServiceRegistered(", codexbar_restore
 )
 # The handoff belongs AFTER the registration, not before it. Registration can
 # still come back needing approval or failing outright, and disarming the
@@ -1132,7 +1138,7 @@ if "recordCurrentRuntimeBundleVersion" in register_method:
     )
 
 ensure_method = source[
-    source.find("private func ensureBundledRuntimeServiceRegistered()"):
+    source.find("private func ensureBundledRuntimeServiceRegistered("):
     source.find("private func registerBundledRuntimeService()")
 ]
 missing_registration = ensure_method.find("case .notRegistered, .notFound:")

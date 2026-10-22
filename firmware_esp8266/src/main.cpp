@@ -17,6 +17,7 @@
 #include "cable_transfer_core.h"
 #include "connected_setup_policy.h"
 #include "device_settings.h"
+#include "firmware_image_policy.h"
 #include "standby_settings.h"
 #include "standby_state.h"
 #include "screensaver_preview.h"
@@ -377,11 +378,20 @@ uint8_t clampBrightnessPercent(int value) {
   return codexbar_display::esp8266::device_settings::ClampBrightnessPercent(value);
 }
 
+// The screensaver is not where an update is announced: screensavers have no
+// notice slot, so every phase toggle forced a full repaint of the whole
+// screensaver about every 1.5 s. Standby and the post-install preview both put
+// one on screen; the notice returns with the live theme.
+bool screensaverOwnsDisplay() {
+  return standbyState.active || screensaverPreviewState.showing;
+}
+
 // Single place that decides how bright the panel is, so entering standby,
-// waking up and editing either brightness value all go through one path.
+// waking up, showing a screensaver preview and editing either brightness value
+// all go through one path.
 void applyDeviceSettings() {
   if (renderer.SupportsBrightnessControl()) {
-    renderer.ApplyBrightnessPercent(standbyState.active
+    renderer.ApplyBrightnessPercent(screensaverOwnsDisplay()
                                         ? deviceSettings.standby.brightnessPercent
                                         : deviceSettings.brightnessPercent);
   }
@@ -973,14 +983,6 @@ void appendClockJSON(String& out) {
   out += "\",\"date\":\"";
   out += dateText;
   out += "\"},";
-}
-
-// The screensaver is not where an update is announced: screensavers have no
-// notice slot, so every phase toggle forced a full repaint of the whole
-// screensaver about every 1.5 s. Standby and the post-install preview both put
-// one on screen; the notice returns with the live theme.
-bool screensaverOwnsDisplay() {
-  return standbyState.active || screensaverPreviewState.showing;
 }
 
 void markFirmwareUpdateNoticeDirty() {
@@ -3818,6 +3820,12 @@ void maintainScreensaverPreview() {
       restoreScreensaverPreviewLiveTheme();
     }
   }
+  // Show and Restore change who owns the display, so the brightness follows
+  // them: the screensaver brightness while the preview is up, the normal one
+  // again once it hands the screen back.
+  if (action != screensaver_preview::Action::None) {
+    applyDeviceSettings();
+  }
 #endif
 }
 
@@ -3952,6 +3960,14 @@ void handleOtaUpload() {
       resetOtaUpdaterAfterFailure();
     }
   } else if (upload.status == UPLOAD_FILE_WRITE) {
+    // Issue #652: an image for another chip (e.g. the LilyGO ESP32-S3 build)
+    // passes the Updater's own checks and leaves the VibeTV dark. Decide on
+    // the first block, before any byte is staged.
+    if (otaUploadError.length() == 0 && upload.totalSize == 0 &&
+        !codexbar_display::esp8266::IsEsp8266FirmwareImageStart(upload.buf, upload.currentSize)) {
+      setOtaError("not a VibeTV firmware image");
+      resetOtaUpdaterAfterFailure();
+    }
     if (otaUploadError.length() == 0 && Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
       setOtaError(Update.getErrorString());
       resetOtaUpdaterAfterFailure();

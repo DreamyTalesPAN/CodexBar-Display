@@ -65,7 +65,6 @@ const (
 	// powered-off device reads disconnected well under two minutes.
 	deviceConnectedGraceWindow   = 75 * time.Second
 	displayVerificationAge       = 2 * time.Minute
-	displayStreamWaitTime        = 30 * time.Second
 	themeInstallStreamWaitTime   = 5 * time.Minute
 	themeInstallJobTime          = 7 * time.Minute
 	displayRenderWaitTime        = 12 * time.Second
@@ -177,10 +176,18 @@ type Server struct {
 	usageServiceRestartPending atomic.Bool
 	// A browser sign-in read asked for a fresh usage service on unchanged settings.
 	usageServiceReplacePending atomic.Bool
-	displayStreamRunning       func() bool
-	systemBusy                 func() *daemon.SystemBusy
-	firmwareUpdateActive       atomic.Bool
-	firmwareUpdateStartMu      sync.Mutex
+	// Held while a finished check's follow-up runs after its revision check, so
+	// a switch of the provider cannot slip in between (#805 Codex review).
+	providerFollowupMu sync.Mutex
+	// Test hook: runs where a finished check is about to follow up.
+	providerRetryFollowupHook func()
+	// providerFollowupHeldHook runs inside whileProviderRevision after the
+	// revision check passed, while providerFollowupMu is held (tests only).
+	providerFollowupHeldHook func()
+	displayStreamRunning     func() bool
+	systemBusy               func() *daemon.SystemBusy
+	firmwareUpdateActive     atomic.Bool
+	firmwareUpdateStartMu    sync.Mutex
 	// One shortcut press at a time: each reads the provider on screen and
 	// stores its successor, so two quick presses must not read the same one.
 	providerDisplayNextMu sync.Mutex
@@ -330,7 +337,7 @@ func New(opts Options) (*Server, error) {
 		aiThemeServer:          ai,
 		addr:                   addr,
 		home:                   home,
-		setupEvents:            setupEventLog{path: runtimepaths.Path(home, "setup-log.json"), readOnly: !displayWriter},
+		setupEvents:            setupEventLog{path: runtimepaths.Path(home, "setup-log.json"), readOnly: !displayWriter, startedAt: time.Now().UTC()},
 		timeline:               openTimeline(runtimepaths.Path(home, "timeline.json")),
 		allowedOrigins:         origins,
 		controlCenterFS:        controlCenterFS,

@@ -122,13 +122,17 @@ type preferenceAdapter interface {
 }
 
 type providerPreferencesState struct {
-	mu            sync.Mutex
-	at            time.Time
-	cached        []codexbar.ProviderSetting
-	load          func(context.Context) ([]codexbar.ProviderSetting, error)
-	set           func(context.Context, string, bool) error
-	revision      uint64
-	providerRev   map[string]uint64
+	mu          sync.Mutex
+	at          time.Time
+	cached      []codexbar.ProviderSetting
+	load        func(context.Context) ([]codexbar.ProviderSetting, error)
+	set         func(context.Context, string, bool) error
+	revision    uint64
+	providerRev map[string]uint64
+	// exactChecking counts the exact checks running per provider whose row
+	// shows checking. A health scan, whenever it started, must not replace
+	// that row; the check records its own result (#805 Codex review).
+	exactChecking map[string]int
 	healthRefresh bool
 	inventoryMu   sync.Mutex
 	inventoryAt   time.Time
@@ -161,6 +165,17 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 		return preferenceDescriptor{}, errors.New("provider preference requires boolean")
 	}
 
+	// The switch and a check follow-up exclude each other (Codex on #805): a
+	// follow-up that passed its revision check finishes before this switch is
+	// applied, and one that starts later sees the new revision and stands down.
+	// Lock order everywhere: providerFollowupMu, then providerPreferences.mu.
+	a.server.providerFollowupMu.Lock()
+	followupLocked := true
+	defer func() {
+		if followupLocked {
+			a.server.providerFollowupMu.Unlock()
+		}
+	}()
 	a.server.providerPreferences.mu.Lock()
 	settings, err := a.server.providerSettingsLocked(ctx, false)
 	if err != nil {
@@ -202,6 +217,9 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 	}
 	a.server.providerPreferences.providerRev[providerID]++
 	providerRevision := a.server.providerPreferences.providerRev[providerID]
+	if enabled {
+		a.server.pinExactCheckingLocked(providerID)
+	}
 	a.server.providerReadinessMu.Lock()
 	delete(a.server.providerReadiness, providerID)
 	a.server.providerReadinessMu.Unlock()
@@ -214,6 +232,8 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 		}
 	}
 	a.server.providerPreferences.mu.Unlock()
+	a.server.providerFollowupMu.Unlock()
+	followupLocked = false
 	if descriptor.ID == "" {
 		return preferenceDescriptor{}, errPreferenceNotFound
 	}
@@ -240,14 +260,15 @@ func (a providerPreferenceAdapter) Write(ctx context.Context, settingID string, 
 }
 
 func (s *Server) verifyEnabledProvider(providerID, label string, providerRevision uint64) {
-	ctx, cancel := context.WithTimeout(context.Background(), providerCheckTimeout)
+	defer s.releaseExactChecking(providerID)
+	ctx, cancel := context.WithTimeout(context.Background(), exactProviderCheckTimeout)
 	defer cancel()
 	setup := s.currentExactProviderSetup(ctx, providerID)
 	s.recordExactProviderSetup(providerID, providerRevision, setup)
 	// A check the customer already overtook by switching again is not news.
-	if s.currentProviderRevision(providerID) == providerRevision {
+	s.whileProviderRevision(providerID, providerRevision, func() {
 		s.recordProviderSetupEvents(setup, providerID, label)
-	}
+	})
 }
 
 func providerHealthFromReadiness(status string) codexbar.ProviderHealthState {
@@ -281,6 +302,9 @@ func (s *Server) preferenceRegistry() []preferenceAdapter {
 func (s *Server) handlePreferences(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
+	}
+	if r.URL.Query().Get("fresh") == "1" {
+		s.forgetProviderPreferences()
 	}
 	section := strings.TrimSpace(r.URL.Query().Get("section"))
 	items := make([]preferenceDescriptor, 0)
@@ -452,6 +476,16 @@ func writeInvalidPreferenceValue(w http.ResponseWriter, settingType preferenceTy
 	writeError(w, http.StatusBadRequest, "invalid_preference_value", message, nextAction)
 }
 
+// forgetProviderPreferences makes the next provider read ask CodexBar again
+// (fresh=1). The Control Center sends it once when a provider list opens; the
+// polls that follow it do not, so they keep the lifetime cache.
+func (s *Server) forgetProviderPreferences() {
+	codexbar.ForgetProviderInventory()
+	s.providerPreferences.mu.Lock()
+	s.providerPreferences.at = time.Time{}
+	s.providerPreferences.mu.Unlock()
+}
+
 func (s *Server) cachedProviderSettings(ctx context.Context, force bool) ([]codexbar.ProviderSetting, error) {
 	s.providerPreferences.mu.Lock()
 	defer s.providerPreferences.mu.Unlock()
@@ -538,6 +572,9 @@ func (s *Server) startProviderHealthRefreshLocked() bool {
 		if err != nil {
 			for i := range s.providerPreferences.cached {
 				setting := &s.providerPreferences.cached[i]
+				if s.providerPreferences.exactChecking[setting.ID] > 0 {
+					continue
+				}
 				if setting.Enabled && (setting.Health == codexbar.ProviderHealthHealthy || setting.Health == codexbar.ProviderHealthChecking) {
 					setting.Health = codexbar.ProviderHealthUnavailable
 				}
@@ -550,7 +587,8 @@ func (s *Server) startProviderHealthRefreshLocked() bool {
 		}
 		for i := range s.providerPreferences.cached {
 			current, ok := healthByID[s.providerPreferences.cached[i].ID]
-			if !ok || current.Enabled != s.providerPreferences.cached[i].Enabled {
+			if !ok || current.Enabled != s.providerPreferences.cached[i].Enabled ||
+				s.providerPreferences.exactChecking[s.providerPreferences.cached[i].ID] > 0 {
 				continue
 			}
 			s.providerPreferences.cached[i].Health = current.Health
@@ -1003,7 +1041,8 @@ func providerReadinessHealthState(status string) string {
 
 // providerCopyGOOS names the system in permission copy: Windows has no macOS
 // access to allow (#479). The two pages this server words itself, outside the
-// app's own screens, read it too (#548). A variable so tests cover both hosts.
+// app's own screens, read it too (#548), and so does the app update message
+// (#558). A variable so tests cover both hosts.
 var providerCopyGOOS = runtime.GOOS
 
 func providerReadinessMessage(status string) string {
@@ -1118,4 +1157,29 @@ func writePreferencesReadError(w http.ResponseWriter, err error) {
 
 func writePreferenceNotFound(w http.ResponseWriter) {
 	writeError(w, http.StatusNotFound, "preference_not_found", "This setting was not found.", "Refresh settings, then try again.")
+}
+
+// pinExactCheckingLocked keeps the provider's checking row out of reach of
+// health scans until releaseExactChecking. The caller holds providerPreferences.mu.
+func (s *Server) pinExactCheckingLocked(providerID string) {
+	if s.providerPreferences.exactChecking == nil {
+		s.providerPreferences.exactChecking = make(map[string]int)
+	}
+	s.providerPreferences.exactChecking[providerID]++
+}
+
+// releaseExactChecking ends a pin after the check recorded its result. The
+// revision moves on so a scan that read while the pin held, and so may carry
+// the answer from before the check, is dropped.
+func (s *Server) releaseExactChecking(providerID string) {
+	s.providerPreferences.mu.Lock()
+	defer s.providerPreferences.mu.Unlock()
+	if s.providerPreferences.exactChecking[providerID] <= 0 {
+		return
+	}
+	s.providerPreferences.exactChecking[providerID]--
+	if s.providerPreferences.exactChecking[providerID] == 0 {
+		delete(s.providerPreferences.exactChecking, providerID)
+	}
+	s.providerPreferences.revision++
 }

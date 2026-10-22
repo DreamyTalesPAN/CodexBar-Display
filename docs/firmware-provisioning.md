@@ -158,11 +158,24 @@ If only filesystem needs to be refreshed after the initial factory OTA:
 ## Factory Leftovers In Flash (#310)
 
 The WiFi flow above writes only the sketch and our filesystem. The flash
-between them still holds the GeekMagic firmware's own filesystem. Whether
-devices get a full USB erase before provisioning (option A) or a one-time wipe
-by the firmware (option B) is an open decision in
-[#310](https://github.com/DreamyTalesPAN/CodexBar-Display/issues/310). Until
-then the default flow is unchanged; both commands below are opt-in.
+between them still holds the GeekMagic firmware's own filesystem, including its
+demo pictures. Decision in
+[#310](https://github.com/DreamyTalesPAN/CodexBar-Display/issues/310)
+(2026-10-20):
+
+- **New devices:** the whole flash is erased over the USB cable before our
+  firmware is written. The supplier already flashes our firmware over USB, so
+  the erase is part of the supplier's flashing step (`esptool.py erase_flash`,
+  then write). A device provisioned only with the WiFi flow above keeps the
+  leftovers and is not shipped until it was erased over USB.
+- **Every batch:** read 2–3 unused devices with the check below before the
+  batch is accepted.
+- **Devices already sold:** stay as they are. The leftovers are never mounted
+  as long as our filesystem starts at `0x200000`, so CI keeps the flash layout
+  fixed: `scripts/check-esp8266-flash-layout.sh` fails if any ESP8266 build in
+  `firmware_esp8266/platformio.ini` uses another linker script than
+  `eagle.flash.4m2m.ld` (a bigger filesystem would start at `0x100000` and
+  mount the factory files).
 
 Check a device over the USB cable. This only reads. Quit the VibeTV app and
 its background service first so that the port is free:
@@ -186,7 +199,24 @@ Two more exit codes mean that there is no verdict: 2 is a usage or setup error
 esptool failed, or the read came back short). Only exit 1 says that factory
 leftovers were found.
 
-Full USB erase (option A), for a device that may lose everything it stores:
+Batch sample: take devices that were never connected to the app. Each must
+read `CLEAN` (exit 0), because after a full erase the supplier writes only
+`firmware.bin` below this region. `LEFTOVERS` (exit 1) rejects the batch until
+the supplier has erased and reflashed it. `NOT ERASED` (exit 3) puts the batch
+on hold: the region holds data the check does not recognize, so ask the
+supplier what they wrote there before accepting it. Exit 2 or 4 is no verdict:
+free the port and read again.
+
+`NOT ERASED` is normal on a device that has already received a firmware
+update over the cable, because the update first stores the new image just
+below `_FS_start`. Such a device is no batch sample; for it, only `LEFTOVERS`
+means factory data.
+
+The check calls esptool through PlatformIO (`pio`), so PlatformIO has to be
+installed on the computer that reads the device.
+
+Full USB erase on our own bench, for a device that may lose everything it
+stores:
 
 ```bash
 ./scripts/vibetv-provision.sh build --package-dir dist/vibetv-ota/release

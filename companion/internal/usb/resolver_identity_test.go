@@ -324,3 +324,25 @@ func TestResolveVibeTVControlCandidatesReportsPortsThatCouldNotBeOpened(t *testi
 		}
 	}
 }
+
+// A pre-Cable VibeTV next to a foreign serial responder is still reported for
+// its Cable rescue, which ignores foreign devices (Codex review on #819).
+func TestDiscoverVibeTVsReportsTheLegacyVibeTVNextToAForeignDevice(t *testing.T) {
+	legacy := cableHello("")
+	legacy.Capabilities.Transport.Mode = ""
+	legacy.Firmware = "1.0.39"
+	got, err := discoverVibeTVs(
+		[]string{"/dev/cu.usbserial-foreign", "/dev/cu.usbserial-legacy"},
+		func(path string) (protocol.DeviceHello, error) {
+			if strings.Contains(path, "foreign") {
+				return protocol.DeviceHello{Kind: "hello", Board: "foreign-board", DeviceID: "foreign"}, nil
+			}
+			return legacy, nil
+		},
+		"darwin",
+	)
+	var found *LegacyCableFirmwareError
+	if len(got) != 0 || errcode.Of(err) != errcode.TransportCableFirmwareTooOld || !errors.As(err, &found) {
+		t.Fatalf("legacy VibeTV hidden by the foreign device: devices=%+v err=%v", got, err)
+	}
+}

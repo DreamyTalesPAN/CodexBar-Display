@@ -770,6 +770,310 @@ func TestProviderRetryAfterBrowserSignInReadDoesNotJoinAnOlderProbe(t *testing.T
 	}
 }
 
+// A Mac Claude check through Claude Code took 55 s, longer than the Control
+// Center waits for its request (#786). The request answers that the provider
+// is still checking, the row shows that instead of the last failure, and the
+// check runs on after the request ended until its result lands on the row.
+func TestExactProviderRetryOutlastingTheRequestFinishesInTheBackground(t *testing.T) {
+	previousWait := exactProviderRetryWait
+	exactProviderRetryWait = 20 * time.Millisecond
+	t.Cleanup(func() { exactProviderRetryWait = previousWait })
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthUnavailable}}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	claudeState := func() string {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+		var response preferencesResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil || len(response.Items) != 1 {
+			t.Fatalf("unexpected preferences: %v %s", err, rec.Body.String())
+		}
+		return response.Items[0].Health.State
+	}
+	claudeState()
+	server.recordExactProviderSetup("claude", 0, exactSetupFixture(server.currentTime(), "claude", codexbar.ProviderTimeout))
+	if state := claudeState(); state == "checking" {
+		t.Fatalf("the earlier timeout must show before the retry, got %q", state)
+	}
+	release := make(chan struct{})
+	probeErr := make(chan error, 1)
+	server.probeExactProvider = func(ctx context.Context, _ string, providerID string) codexbar.ProviderSetup {
+		<-release
+		probeErr <- ctx.Err()
+		return exactSetupFixture(server.currentTime(), providerID, codexbar.ProviderReady)
+	}
+
+	requestCtx, endRequest := context.WithCancel(context.Background())
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=claude", nil).WithContext(requestCtx))
+	endRequest()
+	var got providerSetupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusOK || got.ProviderSetup.Status != "checking" {
+		t.Fatalf("a check that outlasts the wait must answer checking: %d %s", rec.Code, rec.Body.String())
+	}
+	if state := claudeState(); state != "checking" {
+		t.Fatalf("the row must show the running check, got %q", state)
+	}
+
+	close(release)
+	select {
+	case err := <-probeErr:
+		if err != nil {
+			t.Fatalf("the check ended with its request: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the check never finished")
+	}
+	waitForCachedProviderHealth(t, server, "claude", codexbar.ProviderHealthHealthy)
+	if state := claudeState(); state != "healthy" {
+		t.Fatalf("the finished check must land on the row, got %q", state)
+	}
+}
+
+// An exact check can outlast the preferences cache (10 s). The page keeps
+// polling, so a health scan then starts after the checking mark and reads the
+// answer from before the retry. It must not replace the checking row: only
+// the check's own result may (#805 Codex review).
+func TestHealthScanStartedAfterTheCheckingMarkLeavesTheRowChecking(t *testing.T) {
+	previousWait := exactProviderRetryWait
+	exactProviderRetryWait = 20 * time.Millisecond
+	t.Cleanup(func() { exactProviderRetryWait = previousWait })
+	server := newTestServer(t, runtimeconfig.Config{})
+	clock := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
+	var clockMu sync.Mutex
+	server.now = func() time.Time {
+		clockMu.Lock()
+		defer clockMu.Unlock()
+		return clock
+	}
+	var scans atomic.Int32
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		scans.Add(1)
+		return []codexbar.ProviderSetting{{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthUnavailable}}, nil
+	}
+	server.providerPreferences.loadInventory = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{ID: "claude", Label: "Claude", Enabled: true}}, nil
+	}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	claudeState := func() string {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/preferences?section=providers", nil))
+		var response preferencesResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil || len(response.Items) != 1 {
+			t.Fatalf("unexpected preferences: %v %s", err, rec.Body.String())
+		}
+		return response.Items[0].Health.State
+	}
+	waitForScan := func(count int32) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			server.providerPreferences.mu.Lock()
+			running := server.providerPreferences.healthRefresh
+			server.providerPreferences.mu.Unlock()
+			if scans.Load() >= count && !running {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("health scan %d never finished", count)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	claudeState()
+	waitForScan(1)
+	if state := claudeState(); state == "checking" {
+		t.Fatalf("the first scan must show the failure before the retry, got %q", state)
+	}
+
+	release := make(chan struct{})
+	server.probeExactProvider = func(ctx context.Context, _ string, providerID string) codexbar.ProviderSetup {
+		<-release
+		return exactSetupFixture(server.currentTime(), providerID, codexbar.ProviderReady)
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=claude", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"checking"`) {
+		t.Fatalf("a check that outlasts the wait must answer checking: %d %s", rec.Code, rec.Body.String())
+	}
+	if state := claudeState(); state != "checking" {
+		t.Fatalf("the row must show the running check, got %q", state)
+	}
+
+	// The check runs past the cache: the poll starts a new scan, which still
+	// reads the failure from before the retry.
+	clockMu.Lock()
+	clock = clock.Add(providerPreferenceCache + time.Second)
+	clockMu.Unlock()
+	claudeState()
+	waitForScan(2)
+	if state := claudeState(); state != "checking" {
+		t.Fatalf("a scan started after the mark replaced the running check with %q", state)
+	}
+
+	close(release)
+	waitForCachedProviderHealth(t, server, "claude", codexbar.ProviderHealthHealthy)
+	if state := claudeState(); state != "healthy" {
+		t.Fatalf("the finished check must land on the row, got %q", state)
+	}
+}
+
+// The customer can switch the provider off while its check runs on after the
+// request answered. Its result then speaks for a choice that no longer holds:
+// it must neither land in the setup log nor replace the usage service
+// (#805 Codex review).
+func TestExactProviderRetryOvertakenBySwitchingOffLeavesNoTrace(t *testing.T) {
+	previousWait := exactProviderRetryWait
+	exactProviderRetryWait = 20 * time.Millisecond
+	t.Cleanup(func() { exactProviderRetryWait = previousWait })
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthUnavailable}}, nil
+	}
+	server.providerPreferences.set = func(context.Context, string, bool) error { return nil }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	var restarts atomic.Int32
+	server.restartUsageService = func(context.Context) error { restarts.Add(1); return nil }
+	release := make(chan struct{})
+	probed := make(chan struct{})
+	server.probeExactProvider = func(_ context.Context, _ string, providerID string) codexbar.ProviderSetup {
+		<-release
+		defer close(probed)
+		return exactSetupFixture(server.currentTime(), providerID, codexbar.ProviderReady)
+	}
+	if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=claude", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"checking"`) {
+		t.Fatalf("a check that outlasts the wait must answer checking: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPatch, "/v1/preferences/codexbar.providers.claude.enabled", strings.NewReader(`{"value":false}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Claude could not be switched off: %d %s", rec.Code, rec.Body.String())
+	}
+
+	close(release)
+	select {
+	case <-probed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the check never finished")
+	}
+	time.Sleep(100 * time.Millisecond)
+	if event, ok := server.setupEvents.lastOfStage(server.currentTime(), "provider_check"); ok {
+		t.Fatalf("an overtaken check reached the setup log: %+v", event)
+	}
+	if restarts.Load() != 0 {
+		t.Fatalf("an overtaken check replaced the usage service %d times", restarts.Load())
+	}
+}
+
+// The customer can switch the provider off in the very moment between the
+// check finishing and its follow-up. The follow-up decides on the revision it
+// acts on, not on one read earlier: no event, no replacement (#805 Codex
+// review).
+func TestExactProviderRetrySwitchedOffBeforeFollowUpLeavesNoTrace(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthUnavailable}}, nil
+	}
+	server.providerPreferences.set = func(context.Context, string, bool) error { return nil }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	var restarts atomic.Int32
+	server.restartUsageService = func(context.Context) error { restarts.Add(1); return nil }
+	server.probeExactProvider = func(_ context.Context, _ string, providerID string) codexbar.ProviderSetup {
+		return exactSetupFixture(server.currentTime(), providerID, codexbar.ProviderReady)
+	}
+	if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	switchedOff := false
+	server.providerRetryFollowupHook = func() {
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPatch, "/v1/preferences/codexbar.providers.claude.enabled", strings.NewReader(`{"value":false}`)))
+		if rec.Code != http.StatusOK {
+			t.Errorf("Claude could not be switched off: %d %s", rec.Code, rec.Body.String())
+		}
+		switchedOff = true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=claude", nil))
+	if rec.Code != http.StatusOK || !switchedOff {
+		t.Fatalf("retry: status=%d switchedOff=%t body=%s", rec.Code, switchedOff, rec.Body.String())
+	}
+	time.Sleep(100 * time.Millisecond)
+	if event, ok := server.setupEvents.lastOfStage(server.currentTime(), "provider_check"); ok {
+		t.Fatalf("a check switched off before its follow-up reached the setup log: %+v", event)
+	}
+	if restarts.Load() != 0 {
+		t.Fatalf("a check switched off before its follow-up replaced the usage service %d times", restarts.Load())
+	}
+}
+
+// A switch that arrives while a follow-up runs waits until that follow-up is
+// done before it applies anything (Codex on #805).
+func TestProviderSwitchWaitsForARunningRetryFollowUp(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthUnavailable}}, nil
+	}
+	var applied atomic.Bool
+	server.providerPreferences.set = func(context.Context, string, bool) error { applied.Store(true); return nil }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
+	server.probeExactProvider = func(_ context.Context, _ string, providerID string) codexbar.ProviderSetup {
+		return exactSetupFixture(server.currentTime(), providerID, codexbar.ProviderReady)
+	}
+	if _, err := server.cachedProviderSettings(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	release := make(chan struct{})
+	switchDone := make(chan struct{})
+	var appliedDuringFollowUp atomic.Bool
+	server.restartUsageService = func(context.Context) error { return nil }
+	server.providerFollowupHeldHook = func() {
+		go func() {
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPatch, "/v1/preferences/codexbar.providers.claude.enabled", strings.NewReader(`{"value":false}`)))
+			close(switchDone)
+		}()
+		time.Sleep(150 * time.Millisecond)
+		appliedDuringFollowUp.Store(applied.Load())
+		close(release)
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/providers/retry?provider=claude", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("retry: %d %s", rec.Code, rec.Body.String())
+	}
+	select {
+	case <-release:
+	case <-time.After(5 * time.Second):
+		t.Skip("the retry did not reach the usage-service replacement in this setup")
+	}
+	select {
+	case <-switchDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the switch never finished")
+	}
+	if appliedDuringFollowUp.Load() {
+		t.Fatal("the switch was applied while the follow-up was still running")
+	}
+	if !applied.Load() {
+		t.Fatal("the switch was not applied after the follow-up")
+	}
+}
+
 func TestExactProviderRetryPreservesFreshFailureOverLastGoodUsage(t *testing.T) {
 	for _, status := range []string{
 		codexbar.ProviderAuthRequired,
@@ -932,7 +1236,7 @@ func TestProviderDiagnosticsNeverRecommendFixConnection(t *testing.T) {
 		return displayStreamInfo{Running: true, ErrorCode: "provider_setup_required", Detail: "No provider is ready."}
 	}
 	// Exercise the pure diagnostic mapping without relying on an actual device.
-	check := providerDiagnosticCheck(setupFixture(codexbar.ProviderAuthRequired))
+	check := providerDiagnosticCheck(setupFixture(codexbar.ProviderAuthRequired), true)
 	if strings.Contains(strings.ToLower(check.NextAction), "fix connection") || check.ErrorCode != codexbar.ProviderAuthRequired {
 		t.Fatalf("unexpected provider diagnostic: %+v", check)
 	}
@@ -959,7 +1263,7 @@ func TestProviderDiagnosticsReportEveryFailingProvider(t *testing.T) {
 	ready := providerDiagnosticCheck(codexbar.ProviderSetup{
 		Status:    codexbar.ProviderReady,
 		Providers: []codexbar.ProviderReadiness{working, throttled, off, signedOut},
-	})
+	}, true)
 	if ready.Status != "pass" {
 		t.Fatalf("a working provider keeps the check passing: %+v", ready)
 	}
@@ -975,12 +1279,40 @@ func TestProviderDiagnosticsReportEveryFailingProvider(t *testing.T) {
 	failing := providerDiagnosticCheck(codexbar.ProviderSetup{
 		Status:    "setup_required",
 		Providers: []codexbar.ProviderReadiness{signedOut, throttled},
-	})
+	}, true)
 	if failing.ErrorCode != codexbar.ProviderAuthRequired || !strings.HasPrefix(failing.Detail, "Sign in to Gemini.") {
 		t.Fatalf("first provider stays the headline: %+v", failing)
 	}
 	if !strings.Contains(failing.Detail, "Claude: "+throttled.Detail) || !strings.Contains(failing.Detail, "Retrying in about 198s") {
 		t.Fatalf("second failing provider missing from the report: %s", failing.Detail)
+	}
+}
+
+// The setup log is read by the customer: a failing provider's line carries
+// the fixed sentence of its state, never CodexBar's own text. The support
+// report keeps that text (#500). Paul, 16.10.; #579.
+func TestProviderSetupLogShowsTheFixedSentenceNotTheEngine(t *testing.T) {
+	const engine = "No available fetch strategy for openai."
+	server := newTestServer(t, runtimeconfig.Config{})
+	setup := codexbar.ProviderSetup{
+		Status: "setup_required",
+		Providers: []codexbar.ProviderReadiness{{
+			ID: "openai", Label: "OpenAI API", Status: codexbar.ProviderEngineError,
+			Detail: "The usage service could not read this provider.", NextAction: "Check this provider, then try again.",
+			Reported: engine,
+		}},
+	}
+	server.recordProviderSetupEvents(setup, "openai", "OpenAI API")
+	got := getSetupLog(t, server).Events
+	if len(got) != 1 || got[0].Status != "failed" ||
+		got[0].Message != "OpenAI API: The usage service could not read this provider." {
+		t.Fatalf("setup log = %+v", got)
+	}
+	if strings.Contains(got[0].Message, "fetch strategy") {
+		t.Fatalf("setup log shows the engine's own sentence: %q", got[0].Message)
+	}
+	if report := providerDiagnosticCheck(setup, true).Detail; !strings.Contains(report, engine) {
+		t.Fatalf("support report misses the engine sentence: %s", report)
 	}
 }
 
@@ -1151,5 +1483,20 @@ func TestOnlyChecksNobodyAskedForReadTheServeReading(t *testing.T) {
 	forgetCachedSetup()
 	if server.currentProviderSetup(context.Background(), false); next(setupChecks, "Run diagnostics") {
 		t.Fatal("Run diagnostics must ask the provider, not repeat the serve reading")
+	}
+}
+
+// The popup offers the sign-in only for the providers the Companion can start
+// (providerSignInLaunches); the codexbar package keeps the same list for its
+// sentences, so both must name the same providers.
+func TestSignInStartableProvidersAreTheOnesWithALaunch(t *testing.T) {
+	ids := codexbar.SignInStartableProviderIDs()
+	if len(ids) != len(providerSignInLaunches) {
+		t.Fatalf("sentence list %v, launches %d", ids, len(providerSignInLaunches))
+	}
+	for _, id := range ids {
+		if _, ok := providerSignInLaunches[id]; !ok {
+			t.Fatalf("%s is named as sign-in startable but has no launch", id)
+		}
 	}
 }
