@@ -9562,3 +9562,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; the pace bar drawing is unchanged.
 - Scope: Table-driven pace bar tests at 0, 1, 50, 99 and 100 percent used, for reserve, deficit and on pace, in used and remaining mode, with the plan clamped past 0 or 100; in the native firmware suite and the Control Center preview suite.
 - What's new: none — tests only.
+
+## 2026-10-22 — #800: approval marker after merging claude/group-usage at 57b84ca4
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (57b84ca4) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with 57b84ca4; nothing else changes.
+- Scope: the merge of 57b84ca4 and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of 57b84ca4, no customer-visible change of its own
