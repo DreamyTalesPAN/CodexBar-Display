@@ -9382,13 +9382,6 @@ issue scope, or release permission never implies UI permission.
 - Scope: control-center-runtime.ts listener and control-center-app.tsx offer state with its regression test; the Mac shell hands the version over through the existing window-event bridge.
 - What's new: none — the existing update offer learns a late update
 
-## 2026-10-21 — #892: a slow launch update check also shows the existing update offer
-
-- User approval: pending — the existing "Update Mac App" offer now also appears after a slow launch update check (also during setup hold rules of #822 and on Updates); no new text
-- Approved customer-visible result: the existing "Update Mac App" offer appears when the launch update check finishes late and finds an update, including while the setup hold rules of #822 apply and on the Updates tab; no new text or layout.
-- Scope: control-center-runtime.ts listener and control-center-app.tsx offer state with its regression test; the Mac shell hands the late version over through the existing window-event bridge.
-- What's new: none — the existing update offer learns a late update
-
 ## 2026-10-21 — #892: a late launch update reaches a page that mounts late and clears when no longer pending
 
 - User approval: no visible change – UI approval not needed (bug fix: the late offer no longer depends on the page's listener timing and ends once the update is no longer pending)
@@ -9410,9 +9403,9 @@ issue scope, or release permission never implies UI permission.
 - Scope: control-center-app.tsx offered-version order, with its regression test.
 - What's new: none — the existing update offer names the right version
 
-## 2026-10-22 — #897 test: a late-update event without a version string is ignored
+## 2026-10-21 — #892: a slow launch update check also shows the existing update offer
 
-- User approval: no visible change – UI approval not needed (test only)
-- Approved customer-visible result: none; the existing "Update Mac App" offer is unchanged.
-- Scope: control-center-runtime.test.ts, a regression case for onNativeMacAppUpdateFound; no production change.
-- What's new: none — test only
+- User approval: pending — the existing "Update Mac App" offer now also appears after a slow launch update check (also during setup hold rules of #822 and on Updates); no new text
+- Approved customer-visible result: the existing "Update Mac App" offer appears when the launch update check finishes late and finds an update, including while the setup hold rules of #822 apply and on the Updates tab; no new text or layout.
+- Scope: control-center-runtime.ts listener and control-center-app.tsx offer state with its regression test; the Mac shell hands the late version over through the existing window-event bridge.
+- What's new: none — the existing update offer learns a late update
