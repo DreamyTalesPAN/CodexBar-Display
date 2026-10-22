@@ -95,7 +95,7 @@ export function SetupDisplayModeScreen({
       onCreateSupportReport={onCreateSupportReport}
       windowsHost={windowsHost}
     >
-      <SetupWizardTitle>Display Mode</SetupWizardTitle>
+      <SetupWizardTitle>Display mode</SetupWizardTitle>
       <SetupWizardSubtitle>
         Show one or multiple AI Providers. You can change this any time.
       </SetupWizardSubtitle>
