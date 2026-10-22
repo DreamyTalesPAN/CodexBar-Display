@@ -246,6 +246,8 @@ type Server struct {
 	installJobs            map[string]*themeInstallJob
 	themeInstallActive     bool
 	nextInstallJob         uint64
+	themeInstallTailMu     sync.Mutex
+	themeInstallTail       chan struct{} // open while an Installed job still refreshes the stream (#911)
 	updateJobsMu           sync.Mutex
 	updateJobs             map[string]*firmwareUpdateJob
 	nextUpdateJob          uint64
@@ -337,7 +339,7 @@ func New(opts Options) (*Server, error) {
 		aiThemeServer:          ai,
 		addr:                   addr,
 		home:                   home,
-		setupEvents:            setupEventLog{path: runtimepaths.Path(home, "setup-log.json"), readOnly: !displayWriter},
+		setupEvents:            setupEventLog{path: runtimepaths.Path(home, "setup-log.json"), readOnly: !displayWriter, startedAt: time.Now().UTC()},
 		timeline:               openTimeline(runtimepaths.Path(home, "timeline.json")),
 		allowedOrigins:         origins,
 		controlCenterFS:        controlCenterFS,

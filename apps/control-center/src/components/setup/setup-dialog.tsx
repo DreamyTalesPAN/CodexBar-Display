@@ -22,10 +22,12 @@ export type SetupDialogAction = {
 
 type SetupDialogProps = {
   children?: ReactNode;
-  description?: string;
-  /** Stable identity for notices that yield to other dialogs. */
+  description?: ReactNode;
+  announcement?: boolean;
   noticeKind?: "system-busy" | "theme-library";
   onOpenChange: (open: boolean) => void;
+  /** Lets an announcement leave focus where it is (#632). */
+  onOpenAutoFocus?: (event: Event) => void;
   open: boolean;
   /** The single signal action. Rendered last, on the right. */
   primaryAction?: SetupDialogAction;
@@ -61,8 +63,10 @@ type SetupDialogProps = {
 export function SetupDialog({
   children,
   description,
+  announcement,
   noticeKind,
   onOpenChange,
+  onOpenAutoFocus,
   open,
   primaryAction,
   scrim = true,
@@ -89,10 +93,12 @@ export function SetupDialog({
         )}
       />
       <DialogContent
+        data-announcement={announcement ? "" : undefined}
         data-notice-kind={noticeKind}
         className={wide ? "sm:max-w-[480px]" : undefined}
         style={{ animation: "none" }}
         onInteractOutside={(event) => event.preventDefault()}
+        onOpenAutoFocus={onOpenAutoFocus}
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>

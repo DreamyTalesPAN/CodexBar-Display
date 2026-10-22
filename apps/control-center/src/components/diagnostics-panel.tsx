@@ -40,6 +40,8 @@ type Props = {
   repairing?: boolean;
   /** The app runs on Windows, where "Mac App" reads "App". */
   windowsHost?: boolean;
+  /** A support report is being created; diagnostics waits for it. */
+  busyElsewhere?: boolean;
 };
 
 export function DiagnosticsPanel({
@@ -49,6 +51,7 @@ export function DiagnosticsPanel({
   onRepairUsageEngine,
   repairing = false,
   windowsHost = false,
+  busyElsewhere = false,
 }: Props) {
   const engine = diagnosticsEngine(diagnostics);
   const engineBlock = engine?.status === "engine_incompatible";
@@ -70,7 +73,7 @@ export function DiagnosticsPanel({
           ) : null}
           <Button
             className="gap-2 px-3.5 text-sm has-data-[icon=inline-start]:pl-3.5 [&_svg:not([class*='size-'])]:size-4"
-            disabled={running || !onRun}
+            disabled={running || busyElsewhere || !onRun}
             onClick={onRun}
             size="sm"
             type="button"
