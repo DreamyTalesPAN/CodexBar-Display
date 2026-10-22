@@ -20195,3 +20195,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Claude Creature uses the same remaining wording as the other themes with unchanged font sizes; Synthwave shows the new artwork without the USAGE caption.
 - Scope: theme-packs/claude-creature (theme.json rev 13, manifest 1.4.3) and theme-packs/synthwave (theme.json rev 10, manifest 1.2.4), their rebuilt dist packs, and the pair-layout test. Tiny Office was checked and left unchanged. Branch claude/paultest-592a only, not merged, not released.
 - What's new: none — theme wording and artwork only
+
+## 2026-10-22 — build11: integration marker after merging 7f2379d6, c2381004, daca5900, paultest-592a
+
+- User approval: no visible change – UI approval not needed (integration merge for test build 9999.0.7207; every merged entry keeps its own approval, build11)
+- Approved customer-visible result: the entries of the merged branches as recorded above; nothing else changes.
+- Scope: the merge of #877 Usage mode, #858 skeleton cards, #909/#864/#894 and the 592a themes onto build9, and this approval record. Test build only, not a pull request.
+- What's new: none — integration merge, no customer-visible change of its own
