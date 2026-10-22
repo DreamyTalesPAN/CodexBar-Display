@@ -2,7 +2,7 @@
 //
 // Issue #424: the app's global shortcut for the next provider is named in
 // Settings, and a press shows up there although this page did not save it.
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -11,7 +11,7 @@ import { markWhatsNewSeen } from "@/lib/whats-new";
 import { ControlCenterApp } from "./control-center-app";
 
 const press =
-  "Press ⌃⌥⌘P in any app to show the next provider. This switches to One provider.";
+  "Press ⌃⌥⌘P in any app to show the next provider. This switches to Manual.";
 const refused =
   "The shortcut ⌃⌥⌘P for the next provider is not available: another app may already be using these keys.";
 
@@ -184,16 +184,15 @@ it("names the shortcut in Settings and shows what a press chose", async () => {
   window.dispatchEvent(new Event("vibetv:provider-display-changed"));
   await settings.wait(1);
 
-  const manual = screen.getByText("Show this provider").parentElement!;
   expect(
-    within(manual).getByRole("button", { name: "Claude" }).getAttribute("aria-pressed"),
+    screen.getByRole("button", { name: "Manual" }).getAttribute("aria-pressed"),
   ).toBe("true");
   expect(
-    within(manual).getByRole("button", { name: "Codex" }).getAttribute("aria-pressed"),
-  ).toBe("false");
+    screen.getByRole("combobox", { name: "Show this provider" }).textContent,
+  ).toContain("Claude");
   // Manual is chosen now, so the line no longer says a press switches to it.
   expect(settings.text()).toContain("Press ⌃⌥⌘P in any app to show the next provider.");
-  expect(settings.text()).not.toContain("This switches to One provider.");
+  expect(settings.text()).not.toContain("This switches to Manual.");
 });
 
 it("says in Settings when the system refused the shortcut's keys", async () => {

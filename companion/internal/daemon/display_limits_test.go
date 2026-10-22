@@ -276,13 +276,13 @@ func TestProviderDisplayKeepsThePairsLastGoodFrame(t *testing.T) {
 		t.Fatalf("Two at once dropped its own last-good frame")
 	}
 
-	// Switching to One provider makes the pair frame one VibeTV must not resend.
+	// Switching to Manual makes the pair frame one VibeTV must not resend.
 	fixed := runtimeconfig.ProviderDisplayConfig{Mode: "fixed", ProviderIDs: []string{"claude"}}
 	deps := providerDisplayTestDeps(fixed)
 	deps.logf = func(string, ...any) {}
 	invalidateLastGoodOutsideProviderDisplay(state, deps)
 	if state.hasLastGood {
-		t.Fatalf("One provider kept the pair's last-good frame")
+		t.Fatalf("Manual kept the pair's last-good frame")
 	}
 }
 

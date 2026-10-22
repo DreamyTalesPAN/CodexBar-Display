@@ -79,7 +79,7 @@ describe("the Settings section Pace", () => {
     const device: DeviceInfo = { active: true, connected: true, paired: true, ready: true, activeTheme: active, ...extra };
     return renderToStaticMarkup(
       <SettingsScreen
-        automaticPreviews={[]} brightness={70} busyAction={null} connectionMode="cable"
+        brightness={70} busyAction={null} connectionMode="cable"
         device={device} displayPreferences={displayPreferences} standby={null}
         onBrightnessChange={vi.fn()} onChooseScreensaver={vi.fn()} onConnectionModeChange={vi.fn()}
         onDismissError={vi.fn()} onResetSetup={vi.fn()} onSaveBrightness={vi.fn()}
