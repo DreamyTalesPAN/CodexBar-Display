@@ -46,9 +46,9 @@
       "id": "clippy",
       "title": "Clippy",
       "usage": "live",
-      "version": "1.2.5",
-      "themeRev": 11,
-      "themeSpecPath": "/themes/u/cp-11-820d61d9.json",
+      "version": "1.2.6",
+      "themeRev": 12,
+      "themeSpecPath": "/themes/u/cp-12-e681c449.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -61,9 +61,9 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-clippy-v1.2.5.zip",
-      "sha256": "67024fe825797745a6167df259bafe94089c8bdd20bf67d32291dc5be9f070c5",
-      "bytes": 18771,
+      "downloadAsset": "vibetv-theme-clippy-v1.2.6.zip",
+      "sha256": "33a94252887c140861e7577e894adf38ff0c745205db65d7897dc6b5978ecb12",
+      "bytes": 18696,
       "earlierThemeSpecPaths": [
         "/themes/u/clippy-1-5d86bb.json",
         "/themes/u/clippy-1-bb9192.json",
@@ -75,6 +75,7 @@
         "/themes/u/clippy-5-4f3746.json",
         "/themes/u/clippy-6-21abe3.json",
         "/themes/u/cp-10-d86e631f.json",
+        "/themes/u/cp-11-820d61d9.json",
         "/themes/u/cp-7-8e3b005e.json",
         "/themes/u/cp-8-e3fbe9a5.json",
         "/themes/u/cp-9-47bef231.json"
