@@ -114,9 +114,6 @@ export function ControlCenterShell({
         ? "Screensavers"
         : "Themes"
       : NAV_ITEMS.find((item) => item.id === activeTab)?.label || "Overview";
-  // Updates and Support: the page margin is as on Usage, 48 px growing with the
-  // window up to 96 px (7197 template points 10 and 11, 4cqw of the page area).
-  const growingMargin = activeTab === "updates" || activeTab === "logs";
   const disabledTabSet = new Set(disabledTabs);
   const isTabDisabled = (tab: ActiveTab) => disabledTabSet.has(tab);
   // The window scrolls, not the tab. A link far down one tab that opens
@@ -167,21 +164,20 @@ export function ControlCenterShell({
           <SidebarRail />
         </Sidebar>
 
-        <SidebarInset className="@container control-center-shell control-center-shell__main min-w-0">
+        <SidebarInset className="control-center-shell control-center-shell__main min-w-0">
           {themeStudioOpen ? (
             // The Studio's own row (back arrow, design name, File, Save) is the header; the title stays for screen readers.
             <h1 className="sr-only">{pageTitle}</h1>
           ) : (
-            <header
-              className={cn(
-                "control-center-shell__header mt-9 flex h-10 items-center justify-between gap-4 bg-background px-5 sm:px-7 lg:px-12",
-                growingMargin && "md:px-[clamp(48px,4cqw,96px)] lg:px-[clamp(48px,4cqw,96px)]",
-              )}
-            >
+            <header className="control-center-shell__header mt-9 flex h-10 items-center justify-between gap-4 bg-background px-5 sm:px-7 lg:px-12">
               <div className="flex min-w-0 items-center gap-3">
                 <SidebarTrigger
                   aria-label="Open navigation"
-                  className="-m-1 size-7 shrink-0 p-0 text-muted-foreground hover:bg-transparent hover:text-foreground [&_svg]:size-5"
+                  className={cn(
+                    "-m-1 size-7 shrink-0 p-0 text-muted-foreground hover:bg-transparent hover:text-foreground [&_svg]:size-5",
+                    // The template draws no toggle beside Updates and Support; a narrow window keeps it, it is the only way to the menu there.
+                    (activeTab === "updates" || activeTab === "logs") && "md:hidden",
+                  )}
                 />
                 <h1 className="truncate text-[28px] leading-none font-semibold tracking-[-0.01em] text-foreground">
                   {pageTitle}
@@ -196,7 +192,6 @@ export function ControlCenterShell({
             className={cn(
               "control-center-shell__content px-5 sm:px-7 lg:px-12",
               themeStudioOpen ? "pt-9" : "py-0",
-              growingMargin && !themeStudioOpen && "md:px-[clamp(48px,4cqw,96px)] lg:px-[clamp(48px,4cqw,96px)]",
               // Overview fills the window's height: its numbers sit at the bottom (#784 point 1).
               activeTab === "overview" && !themeStudioOpen && "flex flex-1 flex-col",
             )}
