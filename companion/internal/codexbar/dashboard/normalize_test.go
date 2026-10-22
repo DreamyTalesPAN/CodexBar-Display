@@ -27,6 +27,41 @@ func TestNormalizeClaudeWindowsPreservesEveryValidOrderedWindow(t *testing.T) {
 	}
 }
 
+// Win-CodexBar's /usage serializes UsageSnapshot with snake_case keys (shape
+// recorded in testdata/cli/win-codexbar-0.55.0/serve-usage.json, issue #951).
+func TestNormalizeKeepsNamedExtraWindowFromSnakeCaseUsage(t *testing.T) {
+	const dashboard = `{
+  "schemaVersion": 1,
+  "providers": [{
+    "id": "cursor",
+    "windows": [
+      {"kind": "session", "label": "Plan", "usedPercent": 0, "remainingPercent": 100, "resetAt": "2026-11-01T00:00:00Z"},
+      {"kind": "cursor-grok-bot", "label": "Grok Bot", "usedPercent": 42, "remainingPercent": 58, "resetAt": "2026-11-01T00:00:00Z"}
+    ],
+    "error": null,
+    "updatedAt": "2026-10-22T08:00:00Z"
+  }]
+}`
+	const usage = `[{
+  "provider": "cursor",
+  "usage": {
+    "extra_rate_windows": [{
+      "id": "cursor-grok-bot",
+      "title": "Grok Bot",
+      "window": {"is_informational": false, "resets_at": "2026-11-01T00:00:00Z", "used_percent": 42}
+    }],
+    "primary": {"is_informational": false, "resets_at": "2026-11-01T00:00:00Z", "used_percent": 0}
+  }
+}]`
+
+	result := normalizeFixture(t, dashboard, usage, "cursor")
+
+	assertWindowLabels(t, result.Windows, "Plan", "Grok Bot")
+	if result.Windows[1].UsedPercent != 42 {
+		t.Fatalf("expected Grok Bot at 42%%, got %+v", result.Windows[1])
+	}
+}
+
 func TestNormalizeAntigravityWindowsDeduplicatesStructuralAliases(t *testing.T) {
 	result := normalizeFixture(t, antigravityDashboardFixture, antigravityUsageFixture, "antigravity")
 
