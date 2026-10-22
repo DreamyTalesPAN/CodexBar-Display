@@ -9574,7 +9574,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-22 — #782: Run setup again also clears the Support report
 
-- User approval: pending — Codex P2 / Marcus review: after "Run setup again", Support kept Copy / Download for the report made before the reset; Paul decides whether the report should go with the reset
+- User approval: no visible change – UI approval not needed (Paul 2026-10-22 11:37 decided the old report stays; the clearing was removed again)
 - Approved customer-visible result: after "Run setup again", the Support report card shows "Create report" again (the existing empty state), like the diagnostics result that the reset already cleared.
 - Scope: apps/control-center/src/components/control-center-app.tsx, resetSetup clears supportReport next to supportDiagnostics. Pull request branch #782 only, not merged, not released.
 - What's new: none — no notice entry until Paul approves
@@ -9592,3 +9592,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #782 as described in those three entries, as seen in Marcus' click test on ed9a92c0; the Settings action keeps its confirmation.
 - Scope: #782 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #782 approval record only
+
+## 2026-10-22 — #782: Run setup again keeps the existing Support report (Paul)
+
+- User approval: no visible change – UI approval not needed (revert of the Support report clearing; Paul 2026-10-22 11:37 decided the old report stays)
+- Approved customer-visible result: after "Run setup again" the Support report card keeps Copy / Download for the report made before the reset, as before the Support report change of this pull request.
+- Scope: apps/control-center/src/components/control-center-app.tsx, resetSetup no longer clears supportReport. Pull request branch #782 only, not merged, not released.
+- What's new: none — reverts the clearing, no customer-visible change of its own

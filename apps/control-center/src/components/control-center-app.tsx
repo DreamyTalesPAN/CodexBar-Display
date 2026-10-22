@@ -2185,7 +2185,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setLastInstall(undefined);
       setThemeInstallStatus(null);
       setSupportDiagnostics(null);
-      setSupportReport(null);
       setFirmwareUpdate(null);
       setFirmwareUpdateStatus(null);
       setUsage(null);
