@@ -9214,20 +9214,6 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/src/components/ui/input-group.tsx`, its new test `apps/control-center/src/components/ui/input-group.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
 
-## 2026-10-20 — #817: approval marker after merging claude/group-calm-redesign
-
-- User approval: no visible change – UI approval not needed (merge commit into #817; no visible change of its own; entry: #817: approval marker after merging claude/group-calm-redesign)
-- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
-- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no customer-visible change of its own
-
-## 2026-10-20 — #817: approval marker after merging claude/group-calm-redesign at ece7b388
-
-- User approval: no visible change – UI approval not needed (merge commit into #817; no visible change of its own; entry: #817: approval marker after merging claude/group-calm-redesign at ece7b388)
-- Approved customer-visible result: #817 as in its own entries (pending, Paul reviews) plus the entries merged with ece7b388; nothing else changes.
-- Scope: the merge of ece7b388 and this approval record. Pull request branch #817 only, not merged, not released.
-- What's new: none — merge of ece7b388, no customer-visible change of its own
-
 ## 2026-10-20 — #817: red focus ring on invalid fields (Paul's correction of #817)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" (to the picture ui/817-invalid-focus/rot-close.png, question "Passt das so?"; the final #817 look is the red focus ring on every invalid field) — entry: #817: red focus ring on invalid fields (Paul's correction of #817)
@@ -9256,13 +9242,6 @@ issue scope, or release permission never implies UI permission.
 - Scope: #817 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #817 approval record only
 
-## 2026-10-20 — #817: approval marker after merging claude/group-calm-redesign at e51f999f
-
-- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (e51f999f) into #817; no visible change of its own; entry: #817: approval marker after merging claude/group-calm-redesign at e51f999f)
-- Approved customer-visible result: #817 as in its own entries (the red 2 px focus ring on invalid fields, Paul's yes of 2026-10-20 09:05) on top of the merged calm redesign with its olive ring; nothing else changes.
-- Scope: the merge of e51f999f (conflicts in the shared controls and `globals.focus-ring.test.ts` resolved by keeping the redesign's 2 px structure and #817's red-on-invalid classes, including the checked checkbox rule) and this approval record. Pull request branch #817 only, not merged, not released.
-- What's new: none — merge of e51f999f, no customer-visible change of its own
-
 ## 2026-10-20 — #817: result lines of approved entries cleaned up
 
 - User approval: no visible change – UI approval not needed (#817: result lines of approved entries cleaned up: record cleanup, wording only: entries that already carry Paul's approval no longer open their result line with an old status word)
@@ -9277,41 +9256,6 @@ issue scope, or release permission never implies UI permission.
 - Scope: #817 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #817 approval record only
 
-## 2026-10-20 — #817: approval marker after merging claude/group-calm-redesign at d748c370
-
-- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (d748c370) into #817; the own entries of #817 keep their approvals)
-- Approved customer-visible result: #817 as in its own entries plus the entries merged with d748c370; nothing else changes.
-- Scope: the merge of d748c370 and this approval record. Pull request branch #817 only, not merged, not released.
-- What's new: none — merge of d748c370, no customer-visible change of its own
-
-## 2026-10-20 — #817: approval marker after merging claude/group-calm-redesign at 79a9589b
-
-- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (79a9589b) into #817; the own entries of #817 keep their approvals)
-- Approved customer-visible result: #817 as in its own entries plus the entries merged with 79a9589b; nothing else changes.
-- Scope: the merge of 79a9589b and this approval record. Pull request branch #817 only, not merged, not released.
-- What's new: none — merge of 79a9589b, no customer-visible change of its own
-
-## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at fb30d196
-
-- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (fb30d196) into #817; the own entries of #817 keep their approvals)
-- Approved customer-visible result: #817 as in its own entries plus the entries merged with fb30d196; nothing else changes.
-- Scope: the merge of fb30d196 and this approval record. Pull request branch #817 only, not merged, not released.
-- What's new: none — merge of fb30d196, no customer-visible change of its own
-
-## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at fd9e6fb3
-
-- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (fd9e6fb3) into #817; the own entries of #817 keep their approvals)
-- Approved customer-visible result: #817 as in its own entries plus the entries merged with fd9e6fb3; nothing else changes.
-- Scope: the merge of fd9e6fb3 and this approval record. Pull request branch #817 only, not merged, not released.
-- What's new: none — merge of fd9e6fb3, no customer-visible change of its own
-
-## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at 0a599c37
-
-- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (0a599c37) into #817; the own entries of #817 keep their approvals)
-- Approved customer-visible result: #817 as in its own entries plus the entries merged with 0a599c37; nothing else changes.
-- Scope: the merge of 0a599c37 and this approval record. Pull request branch #817 only, not merged, not released.
-- What's new: none — merge of 0a599c37, no customer-visible change of its own
-
 ## 2026-10-21 — #817: redundant checkbox focus variant removed
 
 - User approval: no visible change – UI approval not needed (#817 Codex cleanup: redundant checkbox focus variant removed; the existing invalid rule already renders the red border)
@@ -9319,58 +9263,9 @@ issue scope, or release permission never implies UI permission.
 - Scope: the checkbox class list and the invalid focus ring test file. Pull request branch #817 only.
 - What's new: none — the removed variant was redundant with aria-invalid:aria-checked:border-destructive
 
-## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at b095ff2d
+## 2026-10-22 — #817: approval marker after merging main after #784
 
-- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (b095ff2d) into #817; the own entries of #817 keep their approvals)
-- Approved customer-visible result: #817 as in its own entries plus the entries merged with b095ff2d; nothing else changes.
-- Scope: the merge of b095ff2d and this approval record. Pull request branch #817 only, not merged, not released.
-- What's new: none — merge of b095ff2d, no customer-visible change of its own
-
-## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at 2d217aa5
-
-- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (2d217aa5) into #817; the own entries of #817 keep their approvals)
-- Approved customer-visible result: #817 as in its own entries plus the entries merged with 2d217aa5; nothing else changes.
-- Scope: the merge of 2d217aa5 and this approval record. Pull request branch #817 only, not merged, not released.
-- What's new: none — merge of 2d217aa5, no customer-visible change of its own
-
-## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at ff601365
-
-- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (ff601365) into #817; the own entries of #817 keep their approvals)
-- Approved customer-visible result: #817 as in its own entries plus the entries merged with ff601365; nothing else changes.
-- Scope: the merge of ff601365 and this approval record. Pull request branch #817 only, not merged, not released.
-- What's new: none — merge of ff601365, no customer-visible change of its own
-
-## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at 3caaf211
-
-- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (3caaf211) into #817; the own entries of #817 keep their approvals)
-- Approved customer-visible result: #817 as in its own entries plus the entries merged with 3caaf211; nothing else changes.
-- Scope: the merge of 3caaf211 and this approval record. Pull request branch #817 only, not merged, not released.
-- What's new: none — merge of 3caaf211, no customer-visible change of its own
-
-## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at 4371975c
-
-- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (4371975c) into #817; the own entries of #817 keep their approvals)
-- Approved customer-visible result: #817 as in its own entries plus the entries merged with 4371975c; nothing else changes.
-- Scope: the merge of 4371975c and this approval record. Pull request branch #817 only, not merged, not released.
-- What's new: none — merge of 4371975c, no customer-visible change of its own
-
-## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at 260c4843
-
-- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (260c4843) into #817; the own entries of #817 keep their approvals)
-- Approved customer-visible result: #817 as in its own entries plus the entries merged with 260c4843; nothing else changes.
-- Scope: the merge of 260c4843 and this approval record. Pull request branch #817 only, not merged, not released.
-- What's new: none — merge of 260c4843, no customer-visible change of its own
-
-## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at 035ced04
-
-- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (035ced04) into #817; the own entries of #817 keep their approvals)
-- Approved customer-visible result: #817 as in its own entries plus the entries merged with 035ced04; nothing else changes.
-- Scope: the merge of 035ced04 and this approval record. Pull request branch #817 only, not merged, not released.
-- What's new: none — merge of 035ced04, no customer-visible change of its own
-
-## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at 52397ff8
-
-- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (52397ff8) into #817; the own entries of #817 keep their approvals)
-- Approved customer-visible result: #817 as in its own entries plus the entries merged with 52397ff8; nothing else changes.
-- Scope: the merge of 52397ff8 and this approval record. Pull request branch #817 only, not merged, not released.
-- What's new: none — merge of 52397ff8, no customer-visible change of its own
+- User approval: no visible change – UI approval not needed (merge of main after #784; the code is in main, only tests remain)
+- Approved customer-visible result: as in the #817 entries above (the red focus ring on invalid fields, Paul's yes of 2026-10-20 09:05); nothing visible changes in this merge.
+- Scope: the merge of origin/main and this approval record. Pull request branch #817 only, not merged, not released.
+- What's new: none — merge of main, no customer-visible change of its own
