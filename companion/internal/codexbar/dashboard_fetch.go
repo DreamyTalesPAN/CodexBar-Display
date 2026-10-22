@@ -232,6 +232,8 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	return out, nil
 }
 
+const dashboardPaceResetTolerance = time.Minute
+
 func matchingDashboardPace(windows []dashboardusage.UsageWindow, payload map[string]any) []ProviderPace {
 	parsed := parseProviderPace(payload)
 	var matched []ProviderPace
@@ -246,7 +248,8 @@ func matchingDashboardPace(windows []dashboardusage.UsageWindow, payload map[str
 			continue
 		}
 		reset := firstRFC3339AtPaths(payload, path+"resetsAt", path+"resetAt")
-		if window.ResetAt != nil && !reset.IsZero() && !window.ResetAt.Equal(reset) {
+		// The two caches round the same reset to different seconds.
+		if window.ResetAt != nil && !reset.IsZero() && window.ResetAt.Sub(reset).Abs() > dashboardPaceResetTolerance {
 			continue
 		}
 		matched = append(matched, pace)

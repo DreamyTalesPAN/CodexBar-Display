@@ -54,9 +54,9 @@ func TestDashboardUsageCarriesCodexBarPace(t *testing.T) {
 	want := map[string][]protocol.UsagePace{
 		// "54% in deficit | Expected 16% used | Runs out in 11h 14m"
 		"codex": {pace(54, protocol.PaceDeficit, false)},
-		// Claude's recorded resets differ by one second between endpoints;
-		// those paces cannot describe the dashboard windows. Fable has none.
-		"claude": {{}, {}, {}},
+		// Claude's recorded resets differ by one second between endpoints:
+		// the same windows. Fable has no pace.
+		"claude": {pace(-39, protocol.PaceReserve, true), pace(-2, protocol.PaceReserve, true), {}},
 	}
 	for _, provider := range providers {
 		windows := provider.Frame.UsageWindows
@@ -68,7 +68,7 @@ func TestDashboardUsageCarriesCodexBarPace(t *testing.T) {
 				t.Fatalf("%s window %s pace=%+v want %+v", provider.Provider, window.ID, window.Pace, want[provider.Provider][i])
 			}
 		}
-		if (len(provider.Meta.Pace) > 0) != (provider.Provider == "codex") {
+		if len(provider.Meta.Pace) == 0 {
 			t.Fatalf("%s: API pace must match the device's measurement: %+v", provider.Provider, provider.Meta.Pace)
 		}
 	}
@@ -129,6 +129,9 @@ func TestDashboardPaceRequiresMatchingMeasurement(t *testing.T) {
 		{"different usage", "70", "2099-01-01T00:00:00Z", "2099-01-01T00:00:00Z", false},
 		{"same measurement", "20", "2099-01-01T00:00:00Z", "2099-01-01T00:00:00Z", true},
 		{"different reset", "20", "2099-01-01T00:00:00Z", "2099-01-02T00:00:00Z", false},
+		{"reset one second apart", "20", "2099-01-01T00:00:00Z", "2099-01-01T00:00:01Z", true},
+		{"reset one second earlier", "20", "2099-01-01T00:00:00Z", "2098-12-31T23:59:59Z", true},
+		{"reset two minutes apart", "20", "2099-01-01T00:00:00Z", "2099-01-01T00:02:00Z", false},
 		{"fractional mismatch", "20.1", "2099-01-01T00:00:00Z", "2099-01-01T00:00:00Z", false},
 		{"missing usage", "null", "2099-01-01T00:00:00Z", "2099-01-01T00:00:00Z", false},
 		{"missing usage reset", "20", "2099-01-01T00:00:00Z", "", true},
