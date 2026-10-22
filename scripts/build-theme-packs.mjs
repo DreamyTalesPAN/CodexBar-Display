@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertImmutableFile, writeImmutableFile } from "./immutable-publish.mjs";
+import { usesLabelBinding } from "./theme-notice-binding.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourceRoot = path.join(repoRoot, "theme-packs");
@@ -221,24 +222,6 @@ async function listPackFiles(root) {
       }
     }
   }
-}
-
-// Asks the firmware's question (ThemeSpecLiveUse in
-// firmware_shared/codexbar_display_core.h): does a primitive draw the label,
-// through its binding or a {label} placeholder? Only then does the update notice
-// render inside the theme instead of the overlay bar.
-function usesLabelBinding(specRaw) {
-  const labelKeys = new Set(["label", "providerLabel", "l"]);
-  const spec = JSON.parse(specRaw);
-  return (spec.primitives || spec.p || []).some((primitive) => {
-    const binding = primitive.binding ?? primitive.b;
-    if (typeof binding === "string") {
-      return labelKeys.has(binding);
-    }
-    const text = primitive.text ?? primitive.v;
-    return typeof text === "string" &&
-      [...text.matchAll(/\{([^{}]+)\}/g)].some((match) => labelKeys.has(match[1]));
-  });
 }
 
 async function writeCatalog(catalog) {

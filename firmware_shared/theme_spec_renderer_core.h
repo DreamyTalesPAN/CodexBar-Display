@@ -13,6 +13,7 @@ namespace codexbar_display {
 namespace themespec {
 
 using usage_window_contract::ClampPct;
+using usage_window_contract::kPaceTickOverhang;
 
 constexpr uint32_t kThemeSpecFieldProvider = 1UL << 0;
 constexpr uint32_t kThemeSpecFieldLabel = 1UL << 1;
@@ -33,6 +34,11 @@ constexpr uint32_t kThemeSpecFieldUsageSlot2 = kThemeSpecFieldUsageWindows;
 constexpr uint32_t kThemeSpecFieldProviderSlots = 1UL << 13;
 // A ticking reset must not invalidate slot-owned labels, sprites, or progress bars.
 constexpr uint32_t kThemeSpecFieldUsageWindowReset = 1UL << 14;
+// CodexBar's pace for a usage window; unlike its countdown it does not tick.
+constexpr uint32_t kThemeSpecFieldUsageWindowPace = 1UL << 15;
+// usageProviderName: the provider's label without the notice. Not the Label field,
+// which marks a primitive that shows the update notice itself.
+constexpr uint32_t kThemeSpecFieldProviderName = 1UL << 16;
 constexpr size_t kMaxThemeSpecProviderSlots = 2;
 constexpr int kThemeSpecCanvasSize = 240;
 constexpr size_t kMaxThemeSpecGifAssets = 1;
@@ -78,6 +84,7 @@ struct UsageWindowData {
   int percent = 0;
   int64_t resetSecs = 0;
   bool available = false;
+  usage_window_contract::Pace pace;
 };
 
 struct FrameData {
@@ -154,6 +161,15 @@ struct ProgressCommand {
   uint16_t fillColor = 0xFFFF;
   uint16_t borderColor = 0x7BEF;
   uint16_t bgColor = 0x0000;
+  // CodexBar's pace on a bar bound to usageSlotNPace: `percent` is the filled
+  // part up to the smaller of use and plan, the piece up to `pieceTo` the
+  // reserve or (hatched) deficit, and a 2 px tick stands at `planAt`.
+  // pieceTo <= percent: no piece. planAt < 0: no tick.
+  int pieceTo = 0;
+  int planAt = -1;
+  bool hatched = false;
+  uint16_t pieceColor = 0xFFFF;
+  uint16_t hatchGapColor = 0x0000;
 };
 
 struct GifCommand {
@@ -232,6 +248,8 @@ struct CompiledPrimitive {
   uint16_t color = 0xFFFF;
   uint16_t bg = 0x0000;
   uint16_t border = 0x7BEF;
+  uint16_t reserveColor = 0x07E0;  // pace bar: the piece of a reserve
+  uint16_t deficitColor = 0xF800;  // pace bar: the hatch of a deficit
   bool hasBg = false;
   bool fitShrink = false;
   uint8_t colorStopCount = 0;
@@ -608,6 +626,9 @@ inline const char* UsageWindowField(const char* key) {
       return key + 6 + consumed + 1;
     }
   }
+  if (const char* pace = std::strstr(key, "Pace")) {
+    return pace;
+  }
   if (std::strstr(key, "Available") != nullptr) {
     return "available";
   }
@@ -618,6 +639,20 @@ inline const char* UsageWindowField(const char* key) {
     return "reset";
   }
   return "percent";
+}
+
+// A countdown repaints whenever it moves. Compact countdowns: us1r/us2r,
+// pv1r/pv2r.
+inline bool UsageWindowKeyFollowsReset(const char* key) {
+  key = SafeText(key);
+  return std::strcmp(UsageWindowField(key), "reset") == 0 || std::strcmp(UsageWindowField(key), "PaceFooter") == 0 ||
+         (std::strlen(key) == 4 && key[3] == 'r');
+}
+
+// CodexBar's pace repaints only when the pace itself changes or its window's
+// countdown runs out, not with every tick of that countdown.
+inline bool UsageWindowKeyShowsPace(const char* key) {
+  return std::strncmp(UsageWindowField(key), "Pace", 4) == 0;
 }
 
 inline bool UsageWindowIndexSupported(int index) {
@@ -755,6 +790,72 @@ inline const char* RootResetUnavailableText(const FrameData& frame) {
   return ResetTextFor(RootResetIsIdle(frame));
 }
 
+// The pace texts behind usageSlotN<suffix>. Text: "6% reserve", "On pace",
+// "14% deficit"; Short: "6% reserve", "on pace", "14% deficit"; Lasts:
+// "lasts until reset" or "runs out" (LastsSep: the same followed by " - ");
+// RunsOut: "runs out" only. Each is empty
+// without a pace, for a window whose countdown is gone, and for a suffix it
+// does not know (the bar's own key is a plain "Pace").
+inline void FormatBoundPace(
+    const usage_window_contract::Pace& pace,
+    bool running,
+    const char* suffix,
+    char* out,
+    size_t outSize) {
+  out[0] = '\0';
+  if (pace.state == 0 || !running) {
+    return;
+  }
+  // Whole suffixes only: a misspelled one (PaceState, PaceRuns) stays empty.
+  const bool lastsSep = std::strcmp(suffix, "LastsSep") == 0;
+  const bool shortForm = std::strcmp(suffix, "Short") == 0;
+  if (shortForm || std::strcmp(suffix, "Text") == 0) {
+    const int amount = pace.delta < 0 ? -pace.delta : pace.delta;
+    if (pace.state == usage_window_contract::kPaceOnPace) {
+      std::snprintf(out, outSize, "%s", shortForm ? "on pace" : "On pace");
+    } else {
+      std::snprintf(out, outSize, "%d%% %s", ClampPct(amount),
+                    usage_window_contract::PaceState(pace.state));
+    }
+  } else if ((lastsSep || std::strcmp(suffix, "Lasts") == 0) && pace.lasts != 0) {
+    // LastsSep ends in " - " so "{usageSlot1PaceLastsSep}resets {usageSlot1Reset}" reads
+    // "lasts until reset - resets 3h 34m", and plain "resets 3h 34m" without a pace.
+    std::snprintf(out, outSize, pace.lasts == usage_window_contract::kPaceRunsOut ? "runs out%s" : "lasts until reset%s",
+                  lastsSep ? " - " : "");
+  } else if (std::strcmp(suffix, "RunsOut") == 0 && pace.lasts == usage_window_contract::kPaceRunsOut) {
+    std::snprintf(out, outSize, "runs out");
+  }
+}
+
+// usageSlotNPaceFooter: the line under a pace theme's ring. While VibeTV shows a
+// notice ("Update available") the line is the notice; else the reset sentence:
+// "lasts until reset - resets 3h 34m" with a running pace, "resets 3h 34m" without
+// one, and the idle or unavailable text when there is no countdown.
+inline void FormatPaceFooter(
+    const FrameData& frame,
+    const UsageWindowData& window,
+    const usage_window_contract::Pace& pace,
+    char* out,
+    size_t outSize) {
+  if (frame.updateAvailable && frame.showUpdateNotice && SafeText(frame.updateNotice)[0] != '\0') {
+    std::snprintf(out, outSize, "%s", frame.updateNotice);
+    return;
+  }
+  if (!window.available) {
+    out[0] = '\0';
+    return;
+  }
+  if (window.resetSecs <= 0) {
+    std::snprintf(out, outSize, "%s", ResetTextFor(ResetSecsAreIdle(window.resetSecs)));
+    return;
+  }
+  char lead[24] = {0};
+  FormatBoundPace(pace, true, "LastsSep", lead, sizeof(lead));
+  char countdown[32] = {0};
+  FormatDuration(window.resetSecs, countdown, sizeof(countdown));
+  std::snprintf(out, outSize, "%sresets %s", lead, countdown);
+}
+
 inline void BoundValue(const char* key, const FrameData& frame, char* out, size_t outSize) {
   if (out == nullptr || outSize == 0) {
     return;
@@ -768,6 +869,11 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
   }
   if (std::strcmp(key, "provider") == 0 || std::strcmp(key, "pr") == 0) {
     std::snprintf(out, outSize, "%s", SafeText(frame.provider));
+    return;
+  }
+  if (std::strcmp(key, "usageProviderName") == 0) {
+    // The provider's name as the label binding shows it, but never the notice.
+    std::snprintf(out, outSize, "%s", SafeText(frame.label));
     return;
   }
   if (std::strcmp(key, "session") == 0 || std::strcmp(key, "sessionPercent") == 0 || std::strcmp(key, "s") == 0) {
@@ -832,6 +938,9 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     const char* field = UsageWindowField(key);
     if (std::strcmp(field, "available") == 0 || std::strcmp(key, availableShort) == 0) {
       std::snprintf(out, outSize, "%s", available ? "true" : "false");
+    } else if (std::strcmp(field, "PaceFooter") == 0) {
+      // The notice shows whether or not a window exists.
+      FormatPaceFooter(frame, window, UsageWindowFor(frame, slotIndex).pace, out, outSize);
     } else if (!available) {
       out[0] = '\0';
     } else if (std::strcmp(field, "label") == 0 || std::strcmp(key, labelShort) == 0) {
@@ -842,6 +951,10 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
       } else {
         FormatDuration(window.resetSecs, out, outSize);
       }
+    } else if (std::strncmp(field, "Pace", 4) == 0) {
+      // CodexBar computed this pace for the running window; once its
+      // countdown expired or lost trust, the pace is unknown again.
+      FormatBoundPace(UsageWindowFor(frame, slotIndex).pace, window.resetSecs > 0, field + 4, out, outSize);
     } else {
       std::snprintf(out, outSize, "%d", ClampPct(window.percent));
     }
@@ -850,6 +963,12 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
 
   if (std::strcmp(key, "usageMode") == 0 || std::strcmp(key, "u") == 0) {
     std::snprintf(out, outSize, "%s", SafeText(frame.usageMode));
+    return;
+  }
+  if (std::strcmp(key, "usageModeShort") == 0) {
+    // "left" for what remains, else the mode itself ("used"): "Session left".
+    std::snprintf(out, outSize, "%s",
+                  std::strcmp(SafeText(frame.usageMode), "remaining") == 0 ? "left" : SafeText(frame.usageMode));
     return;
   }
   if (std::strcmp(key, "activity") == 0 || std::strcmp(key, "act") == 0) {
@@ -946,9 +1065,12 @@ inline const char* TemplateCountdownOnlyText(const char* raw, const FrameData& f
     // With a slot index found, a four-character key ending in "r" is one of
     // us1r, us2r, pv1r, pv2r.
     const bool isShortReset = keyLen == 4 && key[3] == 'r';
+    // PaceLastsSep leads into the reset sentence ("lasts until reset - resets 3h"),
+    // and is empty exactly when the countdown is, so it collapses with it.
     const bool isCountdown =
         ((providerSlotIndex >= 0 || usageSlotIndex >= 0) &&
-         (isShortReset || std::strcmp(UsageWindowField(key), "reset") == 0));
+         (isShortReset || std::strcmp(UsageWindowField(key), "reset") == 0)) ||
+        (usageSlotIndex >= 0 && std::strcmp(UsageWindowField(key), "PaceLastsSep") == 0);
     if (!isCountdown) {
       // Any other substitution carries its own information.
       return nullptr;
@@ -1065,6 +1187,9 @@ inline uint32_t BindingFieldMask(const char* binding) {
   if (StringEqualsAny(binding, "label", "providerLabel", "l")) {
     return kThemeSpecFieldLabel;
   }
+  if (std::strcmp(SafeText(binding), "usageProviderName") == 0) {
+    return kThemeSpecFieldProviderName;
+  }
   if (StringEqualsAny(binding, "session", "sessionPercent", "s")) {
     return kThemeSpecFieldSession;
   }
@@ -1078,11 +1203,16 @@ inline uint32_t BindingFieldMask(const char* binding) {
     return kThemeSpecFieldProviderSlots;
   }
   if (UsageWindowBindingIndex(binding) >= 0) {
-    const bool reset = std::strcmp(UsageWindowField(binding), "reset") == 0 ||
-                       StringEqualsAny(binding, "us1r", "us2r");
-    return kThemeSpecFieldUsageWindows | (reset ? kThemeSpecFieldUsageWindowReset : 0);
+    // A pace bar's plan moves with the usage mode (delta counts used percent), also
+    // when the percent itself does not.
+    return kThemeSpecFieldUsageWindows |
+           (UsageWindowKeyFollowsReset(binding) ? kThemeSpecFieldUsageWindowReset : 0) |
+           (UsageWindowKeyShowsPace(binding) ? kThemeSpecFieldUsageWindowPace : 0) |
+           (std::strcmp(UsageWindowField(binding), "Pace") == 0 ? kThemeSpecFieldUsageMode : 0) |
+           // The footer is the notice while one shows, so it is a label field too.
+           (std::strcmp(UsageWindowField(binding), "PaceFooter") == 0 ? kThemeSpecFieldLabel : 0);
   }
-  if (StringEqualsAny(binding, "usageMode", "u")) {
+  if (StringEqualsAny(binding, "usageMode", "u", "usageModeShort")) {
     return kThemeSpecFieldUsageMode;
   }
   if (StringEqualsAny(binding, "activity", "act")) {
@@ -1435,6 +1565,11 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     out.hasBg = bgColor != nullptr;
     out.bg = ParseColor(bgColor, 0x0000);
     out.liveFields |= out.binding != nullptr ? BindingFieldMask(out.binding) : TextTemplateFieldMask(out.text);
+    // Text bound to a pace key takes its colour from the pace state.
+    if (out.binding != nullptr && std::strstr(out.binding, "Pace") != nullptr &&
+        !CompileProgressColorStops(primitive, out)) {
+      return false;
+    }
     return out.size > 0;
   }
 
@@ -1469,6 +1604,8 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     out.color = ParseColor(JsonStringFor(primitive, "color", "c"), 0xFFFF);
     out.bg = ParseColor(JsonStringFor(primitive, "bgColor", "bg"), 0x0000);
     out.border = ParseColor(JsonStringFor(primitive, "borderColor", "bc"), 0x7BEF);
+    out.reserveColor = ParseColor(JsonStringFor(primitive, "reserveColor", "rc"), 0x07E0);
+    out.deficitColor = ParseColor(JsonStringFor(primitive, "deficitColor", "dc"), 0xF800);
     if (!CompileProgressColorStops(primitive, out)) {
       return false;
     }
@@ -1759,6 +1896,78 @@ inline uint16_t ResolveProgressFillColor(
   return primitive.color;
 }
 
+// Whether a binding is a usage window's pace itself (usageSlotNPace), which
+// a progress primitive draws, rather than one of its texts (usageSlotNPaceText).
+inline bool IsPaceBarBinding(const char* binding) {
+  return UsageWindowBindingIndex(binding) >= 0 && std::strcmp(UsageWindowField(binding), "Pace") == 0;
+}
+
+// The pace behind a usage window binding while its window still runs, else
+// nullptr (CodexBar sent none, or its countdown is gone).
+inline const usage_window_contract::Pace* BoundPaceFor(const char* binding, const FrameData& frame) {
+  const int slotIndex = UsageWindowBindingIndex(binding);
+  if (slotIndex < 0 || std::strncmp(UsageWindowField(binding), "Pace", 4) != 0) {
+    return nullptr;
+  }
+  const UsageWindowData& window = UsageWindowFor(frame, slotIndex);
+  return window.pace.state != 0 && window.resetSecs > 0 ? &window.pace : nullptr;
+}
+
+// A pace binding matches its colorStops against CodexBar's state instead of the
+// quota: reserve 100, on pace 50, deficit 0. Without a pace it keeps `color`.
+inline uint16_t ResolvePaceColor(const CompiledPrimitive& primitive, const FrameData& frame) {
+  const usage_window_contract::Pace* pace = BoundPaceFor(primitive.binding, frame);
+  if (pace != nullptr) {
+    const int stateStyle = (usage_window_contract::kPaceDeficit - pace->state) * 50;
+    for (uint8_t i = 0; i < primitive.colorStopCount; ++i) {
+      if (stateStyle >= primitive.colorStops[i].gte) {
+        return primitive.colorStops[i].color;
+      }
+    }
+  }
+  return primitive.color;
+}
+
+// The hatch's gaps are the track, tinted a little towards the stripe colour.
+inline uint16_t PaceHatchGapColor(uint16_t stripe, uint16_t track) {
+  const int r = ((track >> 11) & 31) + ((((stripe >> 11) & 31) - ((track >> 11) & 31)) / 12);
+  const int g = ((track >> 5) & 63) + ((((stripe >> 5) & 63) - ((track >> 5) & 63)) / 12);
+  const int b = (track & 31) + (((stripe & 31) - (track & 31)) / 12);
+  return static_cast<uint16_t>((r << 11) | (g << 5) | b);
+}
+
+// Where a pace bar stands: filled to the smaller of use and plan, the reserve
+// or deficit piece up to the larger, the tick at the plan. Delta is counted in
+// used percent, so the plan is `percent` minus it when percent counts use and
+// plus it when percent counts what remains. On pace shows the use itself and
+// no piece. Without a pace it is a plain bar: no piece, no tick.
+struct PaceBar {
+  int fillTo = 0;
+  int pieceTo = 0;
+  int planAt = -1;
+  bool hatched = false;
+  uint16_t pieceColor = 0xFFFF;
+};
+
+inline PaceBar PaceBarFor(const CompiledPrimitive& primitive, const FrameData& frame, int percent) {
+  PaceBar bar;
+  bar.fillTo = bar.pieceTo = percent;
+  const usage_window_contract::Pace* pace =
+      IsPaceBarBinding(primitive.binding) ? BoundPaceFor(primitive.binding, frame) : nullptr;
+  if (pace == nullptr) {
+    return bar;
+  }
+  const bool used = std::strcmp(SafeText(frame.usageMode), "used") == 0;
+  bar.planAt = ClampPct(percent + (used ? -pace->delta : pace->delta));
+  bar.pieceColor = pace->state == usage_window_contract::kPaceDeficit ? primitive.deficitColor : primitive.reserveColor;
+  bar.hatched = pace->state == usage_window_contract::kPaceDeficit;
+  if (pace->state != usage_window_contract::kPaceOnPace) {
+    bar.fillTo = percent < bar.planAt ? percent : bar.planAt;
+    bar.pieceTo = percent < bar.planAt ? bar.planAt : percent;
+  }
+  return bar;
+}
+
 inline bool CompileProgressColorStops(JsonObjectConst primitive, CompiledPrimitive& out) {
   JsonArrayConst stops = JsonArrayFor(primitive, "colorStops", "cs");
   if (stops.isNull() || stops.size() == 0) {
@@ -1839,32 +2048,50 @@ inline bool ArcSweepContains(const ArcVector& start, const ArcVector& end, int s
 
 // Draws the ring row by row as FillRect runs: the track over the whole sweep
 // and, from the start angle, the filled share of it. 0 % is track only, 100 %
-// is filled to the end.
-inline void DrawProgressArc(const CompiledPrimitive& primitive, int percent, uint16_t fillColor, Sink& sink) {
+// is filled to the end. A pace bar adds the piece after the filled share, solid
+// or hatched (diagonal stripes, as on a bar), and a 2 px tick across the ring
+// at the plan, which reaches kPaceTickOverhang beyond it.
+inline void DrawProgressArc(const CompiledPrimitive& primitive, const PaceBar& pace, uint16_t fillColor, Sink& sink) {
   const int start = primitive.segments;
   const int sweep = primitive.segmentGap;
-  const int filled = sweep * percent / 100;
+  const int filled = sweep * pace.fillTo / 100;
+  const int pieceEnd = sweep * pace.pieceTo / 100;
   // Distances are doubled so that a box with an even side has its centre
   // between two pixels.
   const int outer = primitive.width < primitive.height ? primitive.width : primitive.height;
   const int inner = outer - 2 * primitive.borderRadius;
   const ArcVector startEdge = ArcDirection(start);
   const ArcVector filledEdge = ArcDirection(start + filled);
+  const ArcVector pieceEdge = ArcDirection(start + pieceEnd);
   const ArcVector endEdge = ArcDirection(start + sweep);
+  const bool hasTick = pace.planAt >= 0;
+  const ArcVector planEdge = ArcDirection(start + sweep * pace.planAt / 100);
+  const int reach = hasTick ? kPaceTickOverhang : 0;
+  const uint16_t hatchGap = PaceHatchGapColor(pace.pieceColor, primitive.bg);
   RectCommand run;
   run.height = 1;
-  for (int row = 0; row < primitive.height; ++row) {
+  for (int row = -reach; row < primitive.height + reach; ++row) {
     run.y = primitive.y + row;
-    int kind = 0;  // 0 outside the arc, 1 track, 2 filled
-    for (int col = 0; col <= primitive.width; ++col) {
+    int kind = 0;  // 0 outside the arc, 1 track, 2 filled, 3 piece, 4 hatch stripe, 5 hatch gap, 6 tick
+    for (int col = -reach; col <= primitive.width + reach; ++col) {
       const ArcVector pixel = {2 * col + 1 - primitive.width, 2 * row + 1 - primitive.height};
       const int distance = pixel.x * pixel.x + pixel.y * pixel.y;
       int next = 0;
-      if (col < primitive.width && distance <= outer * outer && distance >= inner * inner) {
-        if (filled > 0 && ArcSweepContains(startEdge, filledEdge, filled, pixel)) {
-          next = 2;
-        } else if (ArcSweepContains(startEdge, endEdge, sweep, pixel)) {
-          next = 1;
+      if (col < primitive.width + reach) {
+        if (hasTick && distance <= (outer + 2 * reach) * (outer + 2 * reach) &&
+            (inner - 2 * reach <= 0 || distance >= (inner - 2 * reach) * (inner - 2 * reach)) &&
+            planEdge.x * pixel.x + planEdge.y * pixel.y > 0 &&
+            planEdge.x * pixel.y - planEdge.y * pixel.x <= 2 * 4096 &&
+            planEdge.y * pixel.x - planEdge.x * pixel.y <= 2 * 4096) {
+          next = 6;
+        } else if (distance <= outer * outer && distance >= inner * inner) {
+          if (filled > 0 && ArcSweepContains(startEdge, filledEdge, filled, pixel)) {
+            next = 2;
+          } else if (pieceEnd > filled && ArcSweepContains(filledEdge, pieceEdge, pieceEnd - filled, pixel)) {
+            next = !pace.hatched ? 3 : ((primitive.x + col + primitive.y + row) & 3) < 2 ? 4 : 5;
+          } else if (ArcSweepContains(startEdge, endEdge, sweep, pixel)) {
+            next = 1;
+          }
         }
       }
       if (next == kind) {
@@ -1872,7 +2099,11 @@ inline void DrawProgressArc(const CompiledPrimitive& primitive, int percent, uin
       }
       if (kind != 0) {
         run.width = primitive.x + col - run.x;
-        run.color = kind == 2 ? fillColor : primitive.bg;
+        run.color = kind == 1   ? primitive.bg
+                    : kind == 2 ? fillColor
+                    : kind == 5 ? hatchGap
+                    : kind == 6 ? 0xFFFF
+                                : pace.pieceColor;
         sink.FillRect(run);
       }
       run.x = primitive.x + col;
@@ -1924,6 +2155,16 @@ inline bool CompiledPrimitiveBounds(
       primitive.kind == PrimitiveKind::Pixels) {
     bounds.width = primitive.width;
     bounds.height = primitive.height;
+    if (primitive.kind == PrimitiveKind::Progress && IsPaceBarBinding(primitive.binding) && bounds.width > 0 &&
+        bounds.height > 0) {
+      // The plan tick reaches beyond the bar; repainting must clear it too.
+      const int right = bounds.x + bounds.width + kPaceTickOverhang;
+      const int bottom = bounds.y + bounds.height + kPaceTickOverhang;
+      bounds.x = bounds.x > kPaceTickOverhang ? bounds.x - kPaceTickOverhang : 0;
+      bounds.y = bounds.y > kPaceTickOverhang ? bounds.y - kPaceTickOverhang : 0;
+      bounds.width = (right < kThemeSpecCanvasSize ? right : kThemeSpecCanvasSize) - bounds.x;
+      bounds.height = (bottom < kThemeSpecCanvasSize ? bottom : kThemeSpecCanvasSize) - bounds.y;
+    }
     return bounds.width > 0 && bounds.height > 0;
   }
 
@@ -2020,7 +2261,7 @@ inline bool DrawCompiledPrimitive(
       RenderTextTemplate(primitive.text, frame, text, sizeof(text));
     }
     cmd.text = text;
-    cmd.fg = primitive.color;
+    cmd.fg = primitive.colorStopCount > 0 ? ResolvePaceColor(primitive, frame) : primitive.color;
     cmd.bg = primitive.bg;
     cmd.hasBg = primitive.hasBg;
     sink.DrawText(cmd);
@@ -2031,9 +2272,11 @@ inline bool DrawCompiledPrimitive(
     if (CompiledProgressLaneUnavailable(primitive, frame)) {
       return false;
     }
+    const int percent = CompiledProgressPercentFor(primitive, frame);
+    const PaceBar pace = PaceBarFor(primitive, frame, percent);
+    const uint16_t fillColor = ResolveProgressFillColor(primitive, percent, frame.usageMode);
     if (primitive.style == kProgressStyleArc) {
-      const int percent = CompiledProgressPercentFor(primitive, frame);
-      DrawProgressArc(primitive, percent, ResolveProgressFillColor(primitive, percent, frame.usageMode), sink);
+      DrawProgressArc(primitive, pace, fillColor, sink);
       return true;
     }
     ProgressCommand cmd;
@@ -2041,12 +2284,17 @@ inline bool DrawCompiledPrimitive(
     cmd.y = primitive.y;
     cmd.width = primitive.width;
     cmd.height = primitive.height;
-    cmd.percent = CompiledProgressPercentFor(primitive, frame);
+    cmd.percent = pace.fillTo;
+    cmd.pieceTo = pace.pieceTo;
+    cmd.planAt = pace.planAt;
+    cmd.hatched = pace.hatched;
+    cmd.pieceColor = pace.pieceColor;
+    cmd.hatchGapColor = PaceHatchGapColor(pace.pieceColor, primitive.bg);
     cmd.style = primitive.style;
     cmd.segments = primitive.segments;
     cmd.segmentGap = primitive.segmentGap;
     cmd.borderRadius = primitive.borderRadius;
-    cmd.fillColor = ResolveProgressFillColor(primitive, cmd.percent, frame.usageMode);
+    cmd.fillColor = fillColor;
     cmd.bgColor = primitive.bg;
     cmd.borderColor = primitive.border;
     if (cmd.width <= 0 || cmd.height <= 0) {

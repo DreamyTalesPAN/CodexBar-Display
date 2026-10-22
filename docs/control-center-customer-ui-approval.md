@@ -8333,880 +8333,6 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 35152cc8 and this approval record. Pull request branch #785 only, not merged, not released.
 - What's new: none — merge of 35152cc8, no customer-visible change of its own
 
-## 2026-10-18 — Calm type: 13 px text in the shared buttons, cards, labels and inputs (#713)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm type: 13 px text in the shared buttons, cards, labels and inputs (#713)
-- Approved customer-visible result: none yet; waits for Paul's yes. Proposed: text in every button, card, card title, label, input, textarea, select and alert is 13 px (was 14 px; button sizes xs 12 px, sm 12.8 px and lg 16 px become 13 px too); card titles, labels and alert titles are 600 (was 500); inputs and textareas stay 16 px on phones and are 13 px from the tablet width up (was 14 px); select group labels 13 px (was 12 px). Words, layout and colours stay the same. Not changed: the Update buttons on the Updates tab (updates-screen.tsx, size lg, own class text-base font-bold, three places) keep 16 px until Paul decides.
-- Scope: `apps/control-center/src/app/globals.css` (theme token `--text-body`), `apps/control-center/src/lib/utils.ts` (the class merge keeps the token), `apps/control-center/src/components/ui/{button,card,label,input,textarea,select,alert}.tsx`, `apps/control-center/src/components/ui/calm-type.test.tsx` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — same words, one smaller size and two weights
-
-## 2026-10-18 — Calm shell: sidebar and page header as in the approved pictures (#713)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm shell: sidebar and page header as in the approved pictures (#713)
-- Approved customer-visible result: The left sidebar is 232 px wide with no line under the brand; the brand is "VIBETV" in one colour at 16 px with "Control Center" below it. Nav entries are 34 px high with 13 px text, the active entry has the olive fill with full-strength text and the other entries are muted; the icons no longer turn lime. Hovering a nav entry shows a weaker tint of the same olive fill (not in the pictures; it is clearly weaker than the active entry). The Appearance chevron points down and turns up when open. The page title is 28 px semibold with the sidebar toggle as a muted 20 px icon above the page, 36 px from the top and 48 px from the sides on wide screens. The update dot is ink instead of lime. Same entries, order, wording, icons and behaviour.
-- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-brand.tsx` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — look only, no new capability
-
-## 2026-10-18 — Codex review fix: the hover tint of the calm shell applies to every nav entry (#713)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Codex review fix: the hover tint of the calm shell applies to every nav entry (#713)
-- Approved customer-visible result: as in the entry above; hovering an inactive entry or a subentry shows the weaker tint, not the full olive fill. No other change.
-- Scope: `apps/control-center/src/components/control-center-shell.tsx` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — a hover correction of the calm shell
-
-## 2026-10-18 — Collapsed sidebar: icons only, no label letters beside them (#758)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Collapsed sidebar: icons only, no label letters beside them (#758)
-- Approved customer-visible result: With the sidebar collapsed to icons, each nav entry shows only its icon, as the collapsed sidebar was meant to. The label stays in the page for screen readers and in the tooltip on hover. The expanded sidebar is unchanged. No new text, button or dialog.
-- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — a hidden label, no new capability
-
-## 2026-10-18 — Collapsed sidebar: no Appearance chevron, sub-items at 13 px (#758)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Collapsed sidebar: no Appearance chevron, sub-items at 13 px (#758)
-- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#713): nav entries 13 px, the Appearance chevron points down and turns up when open. The chevron stays in the expanded sidebar; in icon-only mode it is hidden because it is decorative. The sub-items use the same 13 px as the nav entries. No new text, button or dialog.
-- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — a hidden decorative icon and a text size fix
-
-## 2026-10-18 — Codex review fixes on the calm shell: active entry keeps its fill on hover; sidebar toggle hit area (#758)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Codex review fixes on the calm shell: active entry keeps its fill on hover; sidebar toggle
-- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#713): hovering an inactive entry shows the weaker tint, clearly weaker than the active entry; the active entry keeps its full fill. The sidebar toggle is a muted 20 px icon. No new text, button or dialog.
-- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — a hover correction and a larger hit area without a visible size change
-
-## 2026-10-18 — Codex review fix on the calm shell: icons centred in the icon-only pills (#758)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Codex review fix on the calm shell: icons centred in the icon-only pills (#758)
-- Approved customer-visible result: as in the collapsed-sidebar entry of 2026-10-18 (#758): icons only in the icon-only sidebar, each entry as a centred pill. No new text, button or dialog.
-- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — a centring class for the icon-only pills
-
-## 2026-10-18 — Calm shell: the page title is the open Appearance sub-page (#758)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm shell: the page title is the open Appearance sub-page (#758)
-- Approved customer-visible result: as in the approved Appearance A picture (#713): one page title, the sub-page name, in the header row next to the sidebar toggle.
-- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx`, `apps/control-center/src/components/theme-library-screen.tsx` (reports whether the Studio is open), `apps/control-center/src/components/control-center-app.tsx` (passes that flag to the shell) and this approval record. Pull request branch only, not merge or release.
-- What's new: none — the page title only
-
-## 2026-10-18 — Codex review fix on the calm shell: whats-new test finds the page title as level-1 heading (#758)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Codex review fix on the calm shell: whats-new test finds the page title as level-1 heading
-- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#758): one page title, the sub-page name, in the header row.
-- Scope: `apps/control-center/src/components/control-center-app.whats-new.test.tsx` (test query only) and this approval record. Pull request branch only, not merge or release.
-- What's new: none — a test query change without a visible change
-
-## 2026-10-18 — Calm shell complete: one page title, no sentence under it on Themes and Screensavers (#758)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm shell complete: one page title, no sentence under it on Themes and Screensavers (#758
-- Approved customer-visible result: as in the approved Appearance A picture (#713): one page title, the sub-page name, in the header row next to the sidebar toggle; no description sentence.
-- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its test `apps/control-center/src/components/theme-library-screen.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (heading waits find the header title, test file only), and this approval record. Pull request branch only, not merge or release. Touches the Themes/Screensavers page; conflicts with #754 there (Marcus resolves).
-- What's new: none — a removed duplicate title and sentence
-
-## 2026-10-18 — Codex review fix: the internal Theme Studio preview keeps the Appearance title (#758)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Codex review fix: the internal Theme Studio preview keeps the Appearance title (#758)
-- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#758): Theme Studio keeps its own "Appearance" header.
-- Scope: `apps/control-center/src/components/theme-studio/theme-studio-preview.tsx` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — a header flag in the development preview
-## 2026-10-17 — Settings calm redesign, variant A (#713)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Settings calm redesign, variant A (#713)
-- Approved customer-visible result: Settings reads top to bottom as Display mode, Brightness, Screensaver, Connection, Setup, AI providers. Section names sit in a fixed left column, controls on the right. Connection is a list of two radio rows (USB-C, WiFi) with their descriptions instead of two cards. Screensaver rows show the name on the left (Show screensaver, Show after, Brightness in screensaver) and the control beside it. Setup shows each button beside its line. Text before → after: the section heading "Display" becomes "Brightness" (the brightness slider is the only control in it); no other text changes.
-- Scope: `apps/control-center/src/components/settings-screen.tsx` (layout and classes only, same controls, same behaviour), `settings-screen.test.tsx` (pinned section order, headings and row order updated; behaviour assertions unchanged), and this approval record. Pull request branch only, not merge or release.
-- What's new: none — a re-arranged Settings page with the same settings needs no notice.
-
-## 2026-10-17 — Settings calm redesign, rows wrap at narrow widths (#713)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Settings calm redesign, rows wrap at narrow widths (#713)
-- Approved customer-visible result: as in the entry above. When the Settings column is narrower than the label column plus the control, the control moves below its label instead of being squeezed or clipped. The setup explanations wrap the same way. Brightness shows "Loading" or "Not supported" in full. No new text, button or dialog.
-- Scope: `apps/control-center/src/components/settings-screen.tsx` (wrap and width classes only), `apps/control-center/scripts/test-customer-flows.mjs` (the Settings wait now uses the "Brightness" heading), and this approval record. Pull request branch only, not merge or release.
-- What's new: none — a layout fix of the same Settings page needs no notice.
-
-## 2026-10-18 — Settings calm leftovers: 13 px descriptions and an underlined link (#748)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Settings calm leftovers: 13 px descriptions and an underlined link (#748) — before → after: none; the words stay the same.
-- Approved customer-visible result: Only the size and weight of the text named above change, so Settings reads the same words in the same places. The Connection descriptions and the shortcut line match the 13 px small text of the other calm pages. The "Show more providers" control is an ink link with an underline and regular weight, as the other links on Settings are, instead of a bold label without an underline. No new text, control or dialog.
-- Scope: `apps/control-center/src/components/settings-screen.tsx` (classes on the Connection descriptions and the shortcut line), `settings-screen.test.tsx`, `apps/control-center/src/components/setup/setup-providers-screen.tsx` (the "Show more providers" button uses the link variant, regular weight), `setup-providers-screen.test.tsx`, and this approval record. Pull request branch only, not merge or release. Not seen by Paul yet.
-- What's new: none — a size and underline fix of existing text, no new feature
-
-## 2026-10-18 — Settings remaining small text at 13 px (#748)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Settings remaining small text at 13 px (#748)
-- Approved customer-visible result: Only the size of the small grey text on Settings changes to 13 px, with the same words in the same places. That is the grey status line beside `Choose screensaver` (the installed-screensaver line), the notice above Display mode, the help texts under `Run setup again` and `Reset to factory settings`, the brightness reading next to its slider, and the `Configured` / `Not configured` status of a secret setting. The section names (Display mode, Brightness, Screensaver, Connection, Setup, AI providers) go from 14 px to 13 px, still semibold. Text before → after: none; the words stay the same. The `Choose screensaver` link and the buttons keep their size. The page title and the device-preview cards are unchanged. No new text, control or dialog.
-- Scope: `apps/control-center/src/components/settings-screen.tsx` (classes only), `apps/control-center/src/components/preference-control.tsx` (classes of the secret status text, used only on Settings), `settings-screen.test.tsx`, and this approval record. Pull request branch only, not merge or release. Not seen by Paul yet.
-- What's new: none — a size change of existing small text needs no notice.
-
-## 2026-10-18 — Settings chosen Display mode card and provider in ink, not lime (#748)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Settings chosen Display mode card and provider in ink, not lime (#748)
-- Approved customer-visible result: Only the colour of the outline around the chosen card and the chosen provider changes, to ink. Same words, same places, same size and thickness. Lime stays only for primary button fills and the switch on state. The round selection mark keeps its look. The setup wizard's Display Mode step is not changed by this entry.
-- Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` (optional ink tone for the chosen frame, default unchanged), `apps/control-center/src/components/setup/setup-display-mode-screen.tsx` (ink flag passed through `DisplayModeChoice`, only Settings sets it), `apps/control-center/src/components/settings-screen.tsx` (sets the flag), `apps/control-center/src/components/settings-screen.test.tsx` (new test for the ink frame), and this approval record. Pull request branch only, not merge or release.
-- What's new: none — a colour change of an existing outline needs no notice.
-## 2026-10-17 — Support page in the calm look, variant A (#713)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Support page in the calm look, variant A (#713)
-- Approved customer-visible result: Support page, variant A of the calm redesign (`ui/calm/updates-support/support-A.png`). Texts stay the same. The "Connected" badge becomes a Status row ("Connected" or "Not connected"). Connected VibeTV, Support report, Diagnostics, Setup log and Recent activity are sections with the heading and its note on the left, the content on the right, a line between sections. Fact rows have a line between them and no tiles. Diagnostic checks are one row each: name, detail, status. The support report buttons and Run diagnostics are smaller; Create report or Create again is the lime button. Refresh moves under the activity list as an underlined link. The Setup log keeps its frame until the setup area PR. Updates is not changed.
-- Scope: `apps/control-center/src/components/logs-screen.tsx`, `diagnostics-panel.tsx`, `support-report-actions.tsx`, its test `diagnostics-panel.test.tsx` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — look only, no new capability
-
-## 2026-10-17 — Support page calm look: narrow-width follow-up to Codex review (#713, #750)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Support page calm look: narrow-width follow-up to Codex review (#713, #750)
-- Approved customer-visible result: the same as the entry above at desktop widths. On narrow windows the section label no longer sits beside its content and the diagnostic checks no longer squeeze the detail text into a narrow column. Texts, buttons and behaviour unchanged.
-- Scope: `apps/control-center/src/components/logs-screen.tsx`, `diagnostics-panel.tsx`, the test `control-center-app.display-preferences.test.tsx` (Recent activity scope is now the section, not the card) and this approval record. Pull request branch only, not merge or release.
-- What's new: none — layout breakpoints only, no new capability
-
-## 2026-10-18 — Support: no placeholder in the Recent activity time column; Setup log fades its top edge (#750)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Support: no placeholder in the Recent activity time column; Setup log fades its top edge (
-- Approved customer-visible result: Support › Recent activity: the entry `Control Center opened` / `This session started.` shows its clock time instead of `Session`; no other text changes. Support › Setup log: the top edge of the box fades like the Setup wizard log, so no row is shown cut in half. No new text, screen, button or dialog.
-- Scope: `logs-screen.tsx`, `control-center-app.tsx` (the initial session entry only), `setup-event-log.tsx`, their tests `logs-screen.test.tsx`, `setup-event-log.test.tsx` and `control-center-app.display-preferences.test.tsx`, and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new wording
-
-## 2026-10-18 — Support Setup log: the top fade only while older entries are above the view (#750, Codex review)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Support Setup log: the top fade only while older entries are above the view (#750, Codex r
-- Approved customer-visible result: Support › Setup log: the fade at the top edge applies only while older entries are above the view. No new text, screen, button or dialog.
-- Scope: `setup-event-log.tsx`, its test `setup-event-log.test.tsx`, and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new wording
-
-## 2026-10-17 — Calm redesign of all dialogs, variant A2 with lime primary (#713)
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign of all dialogs, variant A2 with lime primary (#713)
-- Approved customer-visible result: Variant A2 (lime primary, no X, uniform 440 px after review; customer-flow scripts dismiss with Escape where the X was). Every dialog in the Control Center (setup, provider, firmware, recovery, system busy, What's new, Theme Studio, Theme library, Settings) gets the same look.
-  - The X in the top right is gone. A dialog whose only buttons are a primary action gets a ghost "Close" as its secondary button. Dialogs that already have a secondary action (Cancel, Keep WiFi, Enter IP manually, Create support report, Restart Control Center) keep only that. Info-only dialogs keep their single lime OK, Got it or Hide.
-  - Title 28 px semibold, text 13 px, 440 px wide, 32 px padding, 14 px corners, footer right-aligned with no grey band.
-  - Secondary buttons are ghost text buttons (were outlined); button labels 13 px.
-  - Every primary button is lime. Reset (factory settings), Delete local copy, Replace and Discard and continue were black or red and are now lime.
-  - "Keep your changes?" (Theme Studio): the two stacked full-width buttons are now a footer with Keep editing (ghost) and Discard and continue (lime).
-  - "Claude needs a new sign-in" (provider): ghost "Not now" beside "Sign in to <Provider>" (was: X only).
-  - "Your VibeTV is not reachable" (device picker): ghost "Not now" beside Connect (was: X only).
-  - Theme preview (Theme library): a lime "Close" button (was X only).
-  - Create with AI (Theme Studio): ghost "Not now" under the form, hidden while connecting as the X was.
-  - Kept as approved on 16.10.: the setup guide dialog keeps "OK" beside "Open setup guide" (the picture shows "Close").
-  - Texts of every dialog stay as they were, apart from the added "Close" and "Not now" above.
-  - Codex review fixes: the What's New, theme preview and delete dialogs keep the uniform 440 px width (their own wider widths are gone). The WiFi setup failed dialog keeps its single OK, no Close. Create with AI shows "Not now" on the setup panel and "Close" on the other panels.
-- Scope: `apps/control-center/src/components/ui/dialog.tsx`, `ui/alert-dialog.tsx`, `setup/setup-dialog.tsx`, `setup/setup-device-dialogs.tsx`, `setup/setup-provider-dialogs.tsx`, `setup/setup-providers-screen.tsx` and its test, `setup/setup-recovery-dialogs.tsx`, `setup/setup-wizard.test.tsx`, `setup/setup-device-dialogs.test.tsx`, `updates-screen.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (dismiss by Escape where the X was), `settings-screen.tsx`, `whats-new-dialog.tsx`, `theme-library-screen.tsx`, `theme-studio/ai-theme-studio-screen.tsx`, `theme-studio/replace-draft-dialog.tsx`, and this approval record. Pull request branch only, not merge or release.
-- What's new: none — look change of existing dialogs only (variant A2 after Codex review and CI test updates), no new capability
-
-## 2026-10-17 — Appearance (calm redesign A): Themes and Screensavers as cards
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Appearance (calm redesign A): Themes and Screensavers as cards
-- Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers each theme or screensaver is a card, up to three in a row, with its picture on top and its name below, in 13 px semibold. The page title is 28 px semibold. On a row, Edit is an underlined text link, Delete (own themes only) is an underlined text link instead of a red button, and Install is the lime primary button at the right edge. A row with nothing to install shows its status in the same slot as text, `Installed` with a check mark, or the same disabled reason as before. Words unchanged. Not as in the picture: on Screensavers, Edit stays on the name row (the picture puts it below); the install progress keeps its progress bar and notice (no process-step list yet); an update keeps the word `Update` on the button (the picture shows `Update needed`); the notice `Screensaver is turned off` with the switch stays as it is (#645 is still open).
-- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (row layout, buttons, title size, picture size) and its test `theme-library-screen.test.tsx` (the label matcher allows the check mark before the label), and this approval record. Pull request branch only, not merge or release.
-- What's new: none — layout and button variants only, no new words
-
-## 2026-10-17 — Appearance cards: three columns from 1280 px, card corner radius (Codex review fix on #754)
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Appearance cards: three columns from 1280 px, card corner radius (Codex review fix on #754
-- Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers the cards are in three columns only from 1280 px wide (before: from 1024 px), in two columns from 640 px, and in one below that. On a narrow card the name and the row's buttons stack instead of overlapping. The card corners use the card radius token (0.75 rem), as the other cards do (before: 0.875 rem). Words, buttons and states are unchanged.
-- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (grid breakpoint, row wrapping, card radius) and this approval record. Pull request branch only, not merge or release.
-- What's new: none — layout breakpoint and corner radius only
-
-## 2026-10-17 — Appearance cards: name wraps above the row's buttons at narrow widths (Codex review fix on #754)
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Appearance cards: name wraps above the row's buttons at narrow widths (Codex review fix on
-- Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers, at a narrow card width the name, and its Custom mark, get at least 11 rem, and the row's buttons move to a line of their own below the name instead of covering it (before: the name could shrink to a few pixels). Words, buttons and states are unchanged.
-- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (minimum width of the name) and this approval record. Pull request branch only, not merge or release.
-- What's new: none — layout only, no new words
-
-## 2026-10-18 — Revert of the page-title change on Appearance: the tree is back to the previous clean head (#754)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Revert of the page-title change on Appearance: the tree is back to the previous clean head
-- Approved customer-visible result: as in the approved Appearance A picture (#713), once #758 is in: one page title, the sub-page name, and no sentence under it. This branch alone keeps the earlier look.
-- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its tests, and this approval record (revert of 74cdbd62). Pull request branch only, not merge or release.
-- What's new: none — a revert without a visible change
-
-## 2026-10-18 — Theme page: unsaved-theme card and "Theme is not available" notice use the calm type and colours
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Theme page: unsaved-theme card and "Theme is not available" notice use the calm type and c
-- Approved customer-visible result: Look only, no wording, button or state change. `Continue your unsaved theme` card: its title is 13 px semibold in the ink colour (before: 16 px bold, fixed colour), its line `… was last changed …` is 13 px in the muted colour (before: 14 px, fixed colour). `Theme is not available` notice: the icon is in the muted colour (before: olive, a colour outside the theme), the title is in the ink colour (before: fixed colour, weight unchanged).
-- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (colours, size and weight of the two boxes) and this approval record. Pull request branch only, not merge or release.
-- What's new: none — colours, size and weight only, no new words
-
-## 2026-10-18 — Themes and Screensavers: errors as overlays, empty page states without a frame
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Themes and Screensavers: errors as overlays, empty page states without a frame
-- Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers, a failed theme action (`Theme action failed`, with its sentence) opens as a dialog over the page, not as a red box under the title. A storage problem (`Theme storage needs attention`, with its reason) opens the same way, not as a grey box. Both dialogs have the title and sentence as before, one button `OK`, and the X closes them too; a new failure opens the dialog again. The icon is in the muted colour (before: red). `No screensavers yet` and `Themes unavailable` are no longer in a bordered card with a round icon; they are centred 13 px text in the list area (title in the ink colour, semibold; sentence in the muted colour), with `Reload catalog` unchanged. Words are unchanged. Not changed: `Screensaver is turned off` with its switch stays as it is, and the storage line in the editor stays as it is.
-- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the two notices as overlays, the two empty states), new test `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx`, `apps/control-center/src/components/theme-library-screen.custom.test.tsx` (the screensaver error is read from the page body, because the overlay is not inside the page) and this approval record. Pull-request branch only, not merge or release.
-- What's new: none — the same sentences, now in overlays and as plain text
-
-## 2026-10-18 — Themes: a failed delete shows its error only in the delete dialog (Codex review fix on #762)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Themes: a failed delete shows its error only in the delete dialog (Codex review fix on #76
-- Approved customer-visible result: When saving the library fails while a custom theme is deleted, the error stays in the `Delete … ?` dialog as before, and no second overlay `Theme action failed` opens on the page. Words, buttons and every other state are unchanged.
-- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (one line in the delete failure path) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
-- What's new: none — no visible change, the same dialog shows the same error
-
-## 2026-10-18 — Themes: an error or storage notice waits while another page dialog is open (Codex review fix on #762)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Themes: an error or storage notice waits while another page dialog is open (Codex review f
-- Approved customer-visible result: When an action fails while the Preview or the Delete dialog of the Themes page is open, the `Theme action failed` overlay (and the storage notice) waits and is not shown on top of it. When that dialog is closed, the overlay shows with the same sentence and `OK`. Words, buttons and every other state are unchanged.
-- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the condition for the two page overlays) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
-- What's new: none — no visible change, the same dialog waits for the one open
-
-## 2026-10-18 — Themes: a failed delete reports only in the delete dialog and keeps another action's error (Codex review fix on #762)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Themes: a failed delete reports only in the delete dialog and keeps another action's error
-- Approved customer-visible result: When saving the library fails while a custom theme is deleted, the error stays in the `Delete … ?` dialog as before. The delete no longer clears or repeats an error of another action: an error that another action queued while the delete dialog was open still shows after the dialog is closed. Words, buttons and every other state are unchanged.
-- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the delete save writes and reports its own failure) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
-- What's new: none — no visible change, the same dialogs
-
-## 2026-10-18 — Themes: an error or storage notice waits while a row's install-failure dialog is open (Codex review fix on #762)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Themes: an error or storage notice waits while a row's install-failure dialog is open (Cod
-- Approved customer-visible result: When an action fails while the install-failure dialog of a theme row is open, the `Theme action failed` overlay (and the storage notice) waits and is not shown on top of it. When that dialog is closed, the overlay shows with the same sentence and `OK`. Words, buttons and every other state are unchanged.
-- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the install-failure open state is reported to the page, which waits for it) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
-- What's new: none — no visible change, the same dialog waits for the one open
-
-## 2026-10-18 — Themes: page errors wait while any install-failure dialog of the page is open (Codex review fix on #762)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Themes: page errors wait while any install-failure dialog of the page is open (Codex revie
-- Approved customer-visible result: When two theme rows that share an id both show an install-failure dialog, the `Theme action failed` overlay (and the storage notice) waits until both are closed. Words, buttons and every other state are unchanged.
-- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (each row reports its own install-failure dialog; the page keeps the list of open ones) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
-- What's new: none — no visible change, the same dialogs wait for each other
-
-## 2026-10-18 — Themes: a companion-unreachable install failure does not hold back page errors (Codex review fix on #762)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Themes: a companion-unreachable install failure does not hold back page errors (Codex revi
-- Approved customer-visible result: When a theme install fails because the VibeTV Companion is unreachable, that failure draws no dialog, as before, and it no longer holds back a `Theme action failed` overlay or the storage notice. Words, buttons and every other state are unchanged.
-- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the condition for an open install-failure dialog uses the same predicate as the dialog itself) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
-- What's new: none — no visible change
-
-## 2026-10-18 — Themes: page notices follow one rule (Codex review fixes on #762)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Themes: page notices follow one rule (Codex review fixes on #762)
-- Approved customer-visible result: `Theme action failed` and `Theme storage needs attention` are shown only while no other dialog is open on the page. A failure that happens while another dialog is open is kept and shows when that dialog closes. When both are pending, `Theme action failed` is shown first and `Theme storage needs attention` after it is closed. `OK` or the X closes the notice and clears it. Words, buttons and every other state are unchanged.
-- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (one rule for the two notices instead of per-dialog conditions) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (tests for the rule), and this approval record. Pull-request branch only, not merge or release.
-- What's new: none — no visible change in text or controls
-
-## 2026-10-18 — Themes: the busy announcement and the page notices do not wait on each other (Codex review fix on #762)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Themes: the busy announcement and the page notices do not wait on each other (Codex review
-- Approved customer-visible result: When a page notice (`Theme action failed` or `Theme storage needs attention`) and the busy announcement both become due, the notice is shown and the busy announcement waits for it. Before, the two could take turns opening and closing. Words, buttons and every other state are unchanged.
-- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the page notices do not count the busy announcement as another dialog) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
-- What's new: none — no visible change
-
-## 2026-10-17 — Overview: centered 3D VibeTV, no tiles, not-found dialog (#713)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: centered 3D VibeTV, no tiles, not-found dialog (#713)
-- Approved customer-visible result: Overview shows only the VibeTV as a 3D model, centered, under the status line "VibeTV is connected" (or "VibeTV status", "VibeTV is restarting" as before). The Mac App, VibeTV, Display and firmware tiles and the "Connected" badge are removed. When VibeTV is not found, a dialog "We couldn't find your VibeTV" with "Check that VibeTV is plugged in and on the same WiFi as this Mac." (computer on Windows), the lime "Run setup again" and "Not now", and no close button, is shown over the page.
-- Scope: `apps/control-center/src/components/overview-screen.tsx`, `vibetv-3d-preview.tsx` (new, three.js case from #465), `live-vibetv-preview.tsx` (`screenOnly`), `control-center-app.tsx` (one callback), the `/models/` route in the companion, and this approval record. Pull request branch only, not merge or release.
-- What's new: none — the Overview look only; the 3D case is shipped as the look of this page
-
-
-## 2026-10-17 — Overview: Codex review fixes for the not-found dialog (#755)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: Codex review fixes for the not-found dialog (#755)
-- Approved customer-visible result: none beyond the approved picture. The not-found dialog is no longer shown during a firmware update, and it waits behind the other dialogs, like What's new does. Text, buttons and layout stay the same.
-- Scope: `apps/control-center/src/components/vibetv-not-found-dialog.tsx` (new), `overview-screen.tsx` (dialog removed from the page), `control-center-app.tsx` (dialog in the app dialog order), the tests for them, and this approval record. Pull request branch only, not merge or release.
-- What's new: none — the fix changes no new content
-
-## 2026-10-17 — Overview: What's New waits for the Run setup again confirmation (#755)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: What's New waits for the Run setup again confirmation (#755)
-- Approved customer-visible result: none. What's New no longer opens while the "Run setup again?" confirmation is open, so only one dialog shows at a time.
-- Scope: `apps/control-center/src/components/control-center-app.tsx` (one condition in the dialog order) and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new content
-
-## 2026-10-17 — Overview: Codex review fixes for the setup confirmation and the sway delay (#755)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: Codex review fixes for the setup confirmation and the sway delay (#755)
-- Approved customer-visible result: none. Only one dialog shows at a time, and a freshly opened Overview starts still for 2.5 s before it sways.
-- Scope: `apps/control-center/src/components/control-center-app.tsx` (one condition) and `apps/control-center/src/components/vibetv-3d-preview.tsx` (one timer start), and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new content
-
-## 2026-10-18 — Overview: customer-flow checks follow the calm Overview (#755)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: customer-flow checks follow the calm Overview (#755)
-- Approved customer-visible result: none. The test script changes what the flows wait for, not what the customer sees.
-- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new content
-
-## 2026-10-18 — Overview: 3D case loads after first paint, flat preview otherwise (#755)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: 3D case loads after first paint, flat preview otherwise (#755)
-- Approved customer-visible result: none beyond the approved picture. The 3D VibeTV replaces the flat preview a moment after the page opens, on machines with a real GPU.
-- Scope: `apps/control-center/src/components/overview-screen.tsx`, `vibetv-3d-preview.tsx`, `vibetv-3d-support.ts` (new), their tests and `apps/control-center/scripts/test-customer-flows.mjs` (wait targets), and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new content
-
-## 2026-10-18 — Overview: 3D stage centered when it replaces the flat preview (#755)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: 3D stage centered when it replaces the flat preview (#755)
-- Approved customer-visible result: none beyond the approved picture. The 3D VibeTV stays centered on wide windows when it replaces the flat preview.
-- Scope: `apps/control-center/src/components/overview-screen.tsx` (centering wrapper) and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new content
-
-## 2026-10-18 — Overview: flat preview stays until the 3D screen has its theme (#755)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: flat preview stays until the 3D screen has its theme (#755)
-- Approved customer-visible result: none. The handover from the flat preview to the 3D VibeTV no longer passes through a loading state.
-- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new content
-
-## 2026-10-18 — Overview: stable handover callback; not-found waits for the busy dialog (#755)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: stable handover callback; not-found waits for the busy dialog (#755)
-- Approved customer-visible result: none. The 3D VibeTV replaces the flat preview as before; only one dialog shows at a time.
-- Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/control-center-app.tsx` (one condition), and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new content
-
-## 2026-10-18 — Overview: Windows flow waits for the heading, not the removed app tile (#755)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: Windows flow waits for the heading, not the removed app tile (#755)
-- Approved customer-visible result: none. The test script changes what it waits for, not what the customer sees.
-- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new content
-
-
-## 2026-10-18 — Overview: 3D case shows in disconnected states; hidden 3D is inert (#755)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: 3D case shows in disconnected states; hidden 3D is inert (#755)
-- Approved customer-visible result: the flat preview is replaced by the 3D case as soon as its model is drawn, also when VibeTV has no live frame. Screen readers get only the visible preview (the hidden 3D is aria-hidden and inert until it is shown). No other text changes.
-- Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/vibetv-3d-preview.tsx`, `apps/control-center/src/components/overview-screen.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (provider-state flow waits for the rendered theme instead of the offline placeholder disappearing), and this approval record. Codex review fixes on PR #755 only; not merge or release.
-- What's new: none — no new content
-
-## 2026-10-18 — Overview: Windows Basic Render Driver keeps the flat preview (#755)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: Windows Basic Render Driver keeps the flat preview (#755)
-- Approved customer-visible result: on Windows without a GPU the Overview shows the flat VibeTV preview (no 3D case). No text changes.
-- Scope: `apps/control-center/src/components/vibetv-3d-support.ts`, `apps/control-center/src/components/vibetv-3d-support.test.ts`, and this approval record. Codex review fix on PR #755 only; not merge or release.
-- What's new: none — no new content
-
-## 2026-10-18 — Customer flow: Overview check no longer waits for the removed tiles (#755)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Customer flow: Overview check no longer waits for the removed tiles (#755)
-- Approved customer-visible result: none. The test script changes what it waits for, not what the customer sees.
-- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new content
-
-## 2026-10-17 — Lime text on light surfaces becomes the design-system olive
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Lime text on light surfaces becomes the design-system olive
-
-- Approved customer-visible result: On the welcome and Mac App download screens the wordmark reads "VIBE" in ink and "TV" in olive (was lime). Hovering "Choose screensaver" in Settings turns the link olive (was lime). Nothing else changes.
-
-- Scope: `apps/control-center/src/components/control-center-brand.tsx`, `settings-screen.tsx`, `ui/field.tsx`, `ui/item.tsx`, `ui/empty.tsx`, `ui/badge.tsx`, their tests (`control-center-brand.test.tsx`, `settings-screen.test.tsx`, `ui/light-surface-links.test.tsx`) and this approval record. Pull-request branch only, not merge or release.
-
-- What's new: none — colour of existing text only, no new wording or control
-
-## 2026-10-18 — Overview: weak WiFi and theme notices as overlay dialogs (option on #755)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: weak WiFi and theme notices as overlay dialogs (option on #755)
-- Approved customer-visible result: none yet. Proposed for Paul's decision: when VibeTV is connected and reports a weak WiFi signal, the Overview shows a dialog "Weak WiFi signal" with "Move VibeTV closer to your router." and "Not now". When the Companion names a theme the VibeTV cannot draw, it shows "Theme not shown" with "VibeTV can't show this theme. Choose another theme." and "Not now". Neither dialog has a close button, and neither has a lime button, because the Overview performs no action for them. One notice at a time, and never while another dialog is open on the page; a closed notice stays closed until it goes away and comes back. The other former notices stay off the Overview (waiting for usage and the screensaver are shown by the 3D screen, the update by the sidebar and Updates, the firmware version by Support and Updates).
-- Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/overview-screen.notices.test.tsx`, and this approval record. Option stacked on PR #755; not merge or release.
-- What's new: none — no new content
-
-## 2026-10-18 — Overview notices: the app keeps the closed state and the busy notice goes first (#772)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview notices: the app keeps the closed state and the busy notice goes first (#772)
-- Approved customer-visible result: none beyond the entry above. A closed notice now stays closed when the customer switches tabs and comes back. When both notices are due, the theme notice shows once the WiFi notice is closed. Both notices wait while the low-memory notice is due, so the two never block each other.
-- Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/overview-screen.notices.test.tsx`, `apps/control-center/src/components/control-center-app.tsx` (state and props for the Overview notice only), and this approval record. Option stacked on PR #755; not merge or release.
-- What's new: none — no new content
-
-
-## 2026-10-18 — Option: keyboard focus ring in ink instead of lime (app-wide)
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Option: keyboard focus ring in ink instead of lime (app-wide)
-- Approved customer-visible result: Not decided; this is an option for Paul. The keyboard focus ring becomes the ink colour (`#1B1B1B` on light, `#EDEDED` on dark) instead of olive-lime (`#506600` light, `#CCFF00` dark), at full opacity instead of 40 % or 50 %. Look unchanged except: focus rings of buttons, inputs, textareas, selects, checkboxes, switches, tabs, toggles, badges, list items, the Settings links, and the border and ring of the selected setup card change from `#506600` to `#1B1B1B`, and their opacity from 40 % or 50 % to 100 %. The primary button fill and the switch on-state stay lime. Contrast of the ring against the page: 16.4:1 light, 14.7:1 dark (old lime 6.2:1 light).
-- Scope: `apps/control-center/src/app/globals.css` (`--ring` in both themes), `apps/control-center/src/app/globals.focus-ring.test.ts` (new), the focus classes in `settings-screen.tsx` and `components/ui/{badge,button,checkbox,input,item,select,switch,tabs,textarea,toggle}.tsx`, the internal UI kit swatch value in `vibetv-ui-kit.tsx`, and this approval record. Not merged, not released.
-- What's new: none — no new text, screen or control; only the focus ring colour and strength change
-
-## 2026-10-18 — Option follow-up: sidebar focus ring and AI Theme Studio name field (#776)
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Option follow-up: sidebar focus ring and AI Theme Studio name field (#776)
-- Approved customer-visible result: Not decided; this extends the option above. The sidebar focus ring (menu items and sidebar buttons, which stay on the dark sidebar in both themes) changes from lime `#CCFF00` to light ink `#EDEDED`, in both themes. The focus ring of the name field in AI Theme Studio goes from 40 % to 100 % opacity, the same colour as the other focus rings. Look unchanged except: the sidebar focus ring `#CCFF00` → `#EDEDED`, and the AI Theme Studio name field focus ring 40 % → 100 %. Contrast of the sidebar ring against the sidebar: 14.7:1.
-- Scope: `apps/control-center/src/app/globals.css` (`--sidebar-ring` in both themes), `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` (one class), `apps/control-center/src/app/globals.focus-ring.test.ts` (sidebar assertions added), and this approval record. Not merged, not released.
-- What's new: none — no new text, screen or control; only focus ring colour and strength change
-
-## 2026-10-18 — Option follow-up 2: focus rings at full strength on destructive buttons, invalid fields, sliders and input groups (#776)
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Option follow-up 2: focus rings at full strength on destructive buttons, invalid fields, s
-- Approved customer-visible result: Not decided; this extends the option above after the Codex review. Look unchanged except: the keyboard focus ring of destructive buttons (for example `Reset to factory settings`, `Delete theme`) and destructive badges changes from a faint red `#7D2633` at 20 % to the ink `#1B1B1B` (light) or `#EDEDED` (dark) at 100 %; the keyboard focus ring of an invalid input (for example the IP address field in the setup dialog) changes from a faint red at 20 % to the ink at 100 %; the keyboard focus ring of the brightness sliders in Settings changes from 40 % to 100 % ink, and so does the thumb halo on hover and press, which used the same colour; the keyboard focus ring of Theme Studio colour fields (input group) goes from 50 % to 100 % ink. The red border of invalid fields, the destructive colours and the lime primary button stay as they are. Contrast of the ink ring: 16.4:1 light, 14.7:1 dark.
-- Scope: `apps/control-center/src/components/ui/{button,badge,input,input-group,slider}.tsx` (one class each, `input.tsx` adds one class for invalid and focused), `apps/control-center/src/app/globals.focus-ring.test.ts` (scan of every component class for faint focus rings, new), and this approval record. Not merged, not released.
-- What's new: none — no new text, screen or control; only focus ring colour and strength change
-
-## 2026-10-19 — Option follow-up 3: default outline of native controls at full strength (#776)
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Option follow-up 3: default outline of native controls at full strength (#776)
-- Approved customer-visible result: Not decided; this extends the option above after the Codex review. Look unchanged except: the default keyboard outline of native controls that do not use the shared UI primitives (for example the Theme Studio select fields, the colour swatch and the consent checkbox) changes from ink at 50 % to ink at 100 %. The colour stays the ink of each theme. Nothing else changes.
-- Scope: `apps/control-center/src/app/globals.css` (base outline rule), `apps/control-center/src/app/globals.focus-ring.test.ts` (outline assertion added), and this approval record. Not merged, not released.
-- What's new: none — no new text, screen or control; only focus ring colour and strength change
-
-## 2026-10-19 — Option follow-up 4: invalid inputs keep the ink focus ring in dark mode; internal UI kit Support swatch (#776)
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Option follow-up 4: invalid inputs keep the ink focus ring in dark mode; internal UI kit S
-- Approved customer-visible result: Not decided; this extends the option above after the Codex review. Look unchanged except: in dark mode, an input that is marked invalid and has keyboard focus (for example the IP address field in the setup dialog) keeps the ink focus ring `#EDEDED` at full strength instead of the translucent red ring. The light theme already did this. The internal UI kit page (not customer-facing) keeps its `Support` swatch on the support colour `#506600`, as on main. Nothing else changes.
-- Scope: `apps/control-center/src/components/ui/input.tsx` (one dark variant class), `apps/control-center/src/components/vibetv-ui-kit.tsx` (internal swatch restored to the support token), `apps/control-center/src/app/globals.focus-ring.test.ts` (dark invalid assertion added), and this approval record. Not merged, not released.
-- What's new: none — no new text, screen or control; only focus ring colour and strength change
-
-## 2026-10-19 — Option exact result: selected setup card and keyboard focus ring (#776 review)
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Option exact result: selected setup card and keyboard focus ring (#776 review)
-- Approved customer-visible result: Not decided. Exact rendered result of this option: a selected setup card has an ink border (`#1B1B1B` light, `#EDEDED` dark) and a soft 20 % ink halo (before: 20 % olive `#506600` light, 20 % lime `#CCFF00` dark). The selected card is not changed to a full-strength ring in this option; that is the topic of option #775. Keyboard focus is a full-strength ink ring (`#1B1B1B` light, `#EDEDED` dark).
-- Scope: this approval record only. No code change to `setup-selectable-card.tsx` in this commit. Not merged, not released.
-- What's new: none — no new text, screen or control; only the colour of the selected card border and halo and of the keyboard focus ring change
-
-## 2026-10-19 — Group: Calm redesign, shell and tabs (#763 #758 #748 #750 #753 #754 #759 #762 #755 #710 #761, options #772 #775 #776)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Group: Calm redesign, shell and tabs (#763 #758 #748 #750 #753 #754 #759 #762 #755 #710 #7
-- Approved customer-visible result: none yet; waits for Paul's yes. See the entries of the parts above.
-- Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` (ink focus ring at full strength) and this approval record. Pull request branch only, not merge or release.
-- What's new: none — a merge fix between #748 and #776
-
-## 2026-10-19 — Group: Calm redesign matched to the approved master "Calm Redesign - alle Screens" (#784)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Group: Calm redesign matched to the approved master "Calm Redesign - alle Screens" (#784)
-- Approved customer-visible result: none yet; waits for Paul's yes. Not built here (waiting for Paul or a separate feature PR): Support "Connected VibeTV" table and Setup log stay; wordmark colour stays; Appearance segment switch, search, filters, tags, merged page, single Create; "n of 6 passed" and "Fix" on Support; "Last created today at …" on the Support report; Theme Studio AI key row; the Screensaver-off line with a Settings link; Updates (own PR).
-- Scope: `apps/control-center/src/components/{overview-screen,settings-screen,logs-screen,diagnostics-panel,support-report-actions,theme-library-screen,vibetv-3d-preview,preference-control,control-center-app}.tsx` and their tests, `apps/control-center/scripts/test-customer-flows.mjs` (Overview figures, "Run setup", Support "Create new"), and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new content
-
-## 2026-10-19 — Calm redesign matched to the master: review and CI fixes (#784)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign matched to the master: review and CI fixes (#784)
-- Approved customer-visible result: none yet; waits for Paul's yes. See the entry above.
-- Scope: `apps/control-center/src/components/logs-screen.tsx`, `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new content
-
-## 2026-10-19 — Calm redesign matched to the master: CI fix 2, selected theme card keeps its tint (#784)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign matched to the master: CI fix 2, selected theme card keeps its tint (#784)
-- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
-- Scope: `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new content
-
-## 2026-10-19 — Calm redesign matched to the master: Support without the table and the Setup log, lime TV wordmark (#784, Paul's answers 19.10.)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign matched to the master: Support without the table and the Setup log, lime TV 
-- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
-- Scope: `apps/control-center/src/components/{logs-screen,overview-screen,control-center-app,control-center-brand}.tsx` and their tests, `docs/control-center-accessibility.md` (wording of the manual checks), and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new content
-
-## 2026-10-19 — Calm redesign matched to the master: Codex fixes for Overview update lines and Recent activity (#784)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign matched to the master: Codex fixes for Overview update lines and Recent acti
-- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
-- Scope: `apps/control-center/src/components/{overview-screen,logs-screen,control-center-app}.tsx`, `apps/control-center/src/components/overview-screen.test.tsx` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new content
-
-## 2026-10-19 — Calm redesign matched to the master: Overview names a catalog theme by its title (#784, Codex fix)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign matched to the master: Overview names a catalog theme by its title (#784, Co — before → after: "Synthwave" → "Synthwave Shop" only where the two differ).
-- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
-- Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/overview-screen.theme-name.test.tsx` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new content
-
-## 2026-10-19 — Calm redesign matched to the master: weak WiFi notice and What's new never together (#784, Codex fix for option #772)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign matched to the master: weak WiFi notice and What's new never together (#784,
-- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
-- Scope: `apps/control-center/src/components/control-center-app.tsx` (one condition), `apps/control-center/src/components/control-center-app.whats-new.test.tsx` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new content
-
-## 2026-10-19 — Calm redesign matched to the master: the 3D VibeTV replaces the flat one only once its screen has its theme (#784, Codex fix)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign matched to the master: the 3D VibeTV replaces the flat one only once its scr
-- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
-- Scope: `apps/control-center/src/components/live-vibetv-preview.tsx` (one callback), `apps/control-center/src/components/vibetv-3d-preview.tsx`, `apps/control-center/src/components/live-vibetv-preview.recovery.test.tsx` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new content
-
-## 2026-10-19 — Calm redesign: the "Turn on in Settings" link from #645 gets the ink focus ring (#784, CI fix after merging main)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign: the "Turn on in Settings" link from #645 gets the ink focus ring (#784, CI 
-- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged except: with keyboard focus the link shows the full ink focus ring (option #776) instead of a 40 % ring; mouse users see no change.
-- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (one class) and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-19 — Calm redesign: every remaining difference to the approved template "Calm Redesign - alle Screens" fixed (#784, design QA 19.10.)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign: every remaining difference to the approved template "Calm Redesign - alle S — before → after: (1) sidebar: the Appearance entry shows the palette icon → before a four-square grid icon; (2) Settings: the space between the page title and the first section is 24 px → before 16 px; (3) Settings: "Display mode" and "Connection" stand level with the first radio → before 8 px lower; (4) Settings: every row (Show screensaver, Show after, Brightness in screensaver, Choose screensaver, brightness slider) is 36 px high → before 28 px, so the sections are a little taller; (5) Settings: the sliders have a 16 px round handle with a ring and a track in a light ink tint → before a 12 px handle and a grey track; (6) Settings: "Choose screensaver" is 13 px → before 14 px; (7) Settings: "Run setup again" and "Factory reset" sit 16 px above and below their divider with a 2 px gap between name and line → before 20 px and none; "Reset…" is the template's red → before the darker red; (8) Settings: the line "Press … in any app to show the next provider." sits 16 px under the selector → before 20 px; (9) all outline buttons (Run setup, Reset…, Create new) have a darker border, 22 % ink → before a very light border; (10) AI providers list in Settings: search field 40 px high, rows 48 px high, "Show more providers" at the left edge → before 44 px, 53 px and centred; provider names are 13 px semibold in Settings and in Setup → before 14 px medium; (11) Support: the Usage engine table (Status, Version, Required version, Source) is gone; an engine that is too old shows its one line and the Repair button as before → before the table was always shown; (12) Support: the report card says "Last created today at 16:42." once a report exists, and its buttons Copy, Download and Create new are 36 px high, 14 px, Copy and Download in dark ink → before no time line, 32 px high, 13 px, grey; (13) Support: "Run diagnostics" is 36 px high and 14 px → before 32 px and 13 px; (14) Support: the first check is called "App" → before "Mac App"; (15) Themes and Screensavers cards: Edit, Install and the status text sit in a 28 px row, Edit and the status ("Installed", "Update needed") in normal weight, and 28 px between card rows → before 36 px row, semibold, 24 px; (16) all dialogs: no icon beside the title, and a soft shadow around the dialog → before an icon in front of the title (red circle, triangle, cable, refresh, lock) and no shadow; (17) dialog "We couldn't find your VibeTV" and "Connect the USB cable" are 480 px wide → before 440 px; the two ways out in "We couldn't find your VibeTV" are plain rows with a chevron, divided by hairlines → before two framed cards with icons; (18) dialog "Connect the USB cable": the steps are numbered 1, 2, 3 in plain muted figures → before grey circles; (19) dialog "We couldn't connect to your VibeTV": when VibeTV gives no message of its own, the title is "We couldn't connect to your VibeTV" and the text "VibeTV answered, but the connection did not finish. Check that it is on the same WiFi, then search again." → before "VibeTV could not connect" and "Keep VibeTV powered on, then search again."; messages VibeTV sends itself are shown as before; (20) Screensavers page: when the screensaver is off, one muted line "Screensaver is off. Turn it on in Settings." with "Settings" as the underlined link → before a grey box "Screensaver is off." with the link "Turn on in Settings" at its right.
-- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
-- Scope: `apps/control-center/src/components/{control-center-shell,settings-screen,logs-screen,diagnostics-panel,support-report-actions,theme-library-screen,updates-screen,vibetv-not-found-dialog}.tsx`, `apps/control-center/src/components/setup/{setup-dialog,setup-device-dialogs,setup-firmware-dialogs,setup-provider-dialogs,setup-provider-row,setup-providers-screen,setup-recovery-dialogs,setup-preview-gallery}.tsx`, `apps/control-center/src/components/setup/setup-connect.ts`, `apps/control-center/src/components/ui/{button,dialog,alert-dialog,slider}.tsx`, `apps/control-center/src/components/{diagnostics-panel,logs-screen,theme-library-screen,screensaver-switches,control-center-app.display-preferences}.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (one locator) and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new content
-
-## 2026-10-19 — Calm redesign: merge of main (f2e8904c) into #784, the template wins where main's look differed (no new look)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign: merge of main (f2e8904c) into #784, the template wins where main's look dif
-- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
-- Scope: `apps/control-center/src/components/{control-center-shell,diagnostics-panel,theme-library-screen}.tsx`, `apps/control-center/src/components/ui/slider.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/{control-center-shell,diagnostics-panel}.test.tsx` and this approval record. Pull request branch only, not merge or release.
-- What's new: none — no new content
-
-## 2026-10-19 — #784: approval marker after merging main (f2e8904c)
-
-- User approval: no visible change – UI approval not needed (merge commit into #784; no visible change of its own; entry: #784: approval marker after merging main (f2e8904c))
-- Approved customer-visible result: none yet; waits for Paul's yes. See this branch's entries above, in particular the two entries of 2026-10-19 "every remaining difference to the approved template" and "merge of main (f2e8904c)".
-- Scope: the merge of main into this branch and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no customer-visible change of its own
-
-## 2026-10-19 — Calm redesign: the slider handle gets the full-strength focus ring (#784, Codex fix after merging main)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign: the slider handle gets the full-strength focus ring (#784, Codex fix after 
-- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged except: with keyboard focus the brightness slider handle shows the full-strength ink focus ring instead of a 40 % ring; mouse users see no change.
-- Scope: `apps/control-center/src/components/ui/slider.tsx` (one class) and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-19 — Calm redesign: customer-flow check follows the one-line screensaver notice (#784, CI fix)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign: customer-flow check follows the one-line screensaver notice (#784, CI fix)
-- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged; the one-line notice "Screensaver is off. Turn it on in Settings." is in the entry above.
-- Scope: `apps/control-center/scripts/test-customer-flows.mjs` (two locators) and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-19 — #784: approval marker after merging main (v1.0.65 + #638), Theme Studio key dialog without close X
-
-- User approval: no visible change – UI approval not needed (merge commit into #784; no visible change of its own; entry: #784: approval marker after merging main (v1.0.65 + #638), Theme Studio key dialog without)
-- Approved customer-visible result: as in this branch's entries and main's entries; the key dialog in Settings has no X (calm A2 dialogs have none).
-- Scope: the merge of main, `apps/control-center/src/components/theme-studio/openai-key-form.tsx` (one prop), `apps/control-center/src/components/settings-screen.test.tsx` (7 sections incl. Theme Studio AI) and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no customer-visible change of its own
-
-## 2026-10-19 — #784: Support page matched to the template (build 2 QA)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Support page matched to the template (build 2 QA) — before → after: (1) the text on Support has 21 px lines → before 20 px, so the report card is 4 px taller and each check row is 46 px high → before 45 px; (2) the buttons Copy, Download, Create new and Run diagnostics have 14 px sides (Run diagnostics: icon 16 px, 8 px gap) → before 12 px sides, so each is 4 to 10 px wider now; (3) Create new and Refresh are 14 px → before 13 px.
-- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
-- Scope: `apps/control-center/src/components/logs-screen.tsx`, `apps/control-center/src/components/support-report-actions.tsx`, `apps/control-center/src/components/diagnostics-panel.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-19 — #784: What's new dialog matched to the template (build 2 QA)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: What's new dialog matched to the template (build 2 QA) — before → after: (1) the dialog is 520 px wide → before 440 px; (2) "Version 1.0.64" sits as a muted line under the title "What's new" → before a small green capital line above the title (VERSION 1.0.64); (3) the entries have no icon square in front → before a green square with an icon; (4) the entries stand 24 px apart → before 16 px.
-- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
-- Scope: `apps/control-center/src/components/whats-new-dialog.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-19 — #784: Support buttons spacing matched to the template (build 2 QA)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Support buttons spacing matched to the template (build 2 QA) — before → after: Copy, Download and Create new stand 4 px apart → before 12 px.
-- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
-- Scope: `apps/control-center/src/components/support-report-actions.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-19 — #784: Control Center needs attention dialog matched to the template (build 2 QA)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Control Center needs attention dialog matched to the template (build 2 QA) — before → after: the dialog "VibeTV Control Center needs attention" is 480 px wide, so Restart Control Center and Try automatic repair again stand side by side → before 440 px wide with the two buttons one under the other.
-- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
-- Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-19 — #784: open Theme Studio shows one header row (build 2 QA)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: open Theme Studio shows one header row (build 2 QA) — before → after: while the Theme Studio is open, the window shows one header row — the Studio's own (back arrow, design name, File, undo and redo, status line, Save, Send to VibeTV) — with the sidebar open → before a second row "Appearance" with the sidebar button sat above it; the page title "Appearance" stays for screen readers.
-- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
-- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-19 — #784: dialogs 32, 33, 39 and 47 follow the template (build 2 decision)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: dialogs 32, 33, 39 and 47 follow the template (build 2 decision) — before → after: (1) the dialogs "Repairing VibeTV Control Center" and "VibeTV Control Center needs attention" dim the screen behind them with the grey backdrop like every other dialog → before no backdrop, the page stayed bright and clickable; (2) the provider dialog for a provider that needs its own app has the title "<Provider> needs its own app" (e.g. "Ollama needs its own app") and the buttons Close and Open setup guide → before the title was only the provider's name and the buttons were OK and Open setup guide (the sentence below the title is unchanged; the other provider messages keep the provider's name as title and OK); (3) the dialog for a lost VibeTV has the title "Your VibeTV is not reachable" and the line "Choose it to connect again." → before the title "Choose your VibeTV" and the line "Your VibeTV is not reachable. Choose it to connect again." (a failed connect still shows its own message as the title).
-- Approved customer-visible result: the four dialogs look as drawn in frames 32, 33, 39 and 47 of "Calm Redesign - alle Screens".
-- Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/setup/setup-providers-screen.tsx`, their tests (`setup-device-dialogs.test.tsx`, `setup-providers-screen.test.tsx`) and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-19 — #784: Codex fix, grey backdrop of the outage and busy dialogs stays visual
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Codex fix, grey backdrop of the outage and busy dialogs stays visual
-- Approved customer-visible result: grey backdrop as in the template; the page behind stays usable as approved before.
-- Scope: `apps/control-center/src/components/setup/setup-dialog.tsx`, the new test `apps/control-center/src/components/setup/setup-dialog.test.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-19 — #784: customer flow follows the Theme Studio's own header row
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: customer flow follows the Theme Studio's own header row
-- Approved customer-visible result: none; the test only.
-- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-20 — #784: own-app provider dialog uses the template sentence (build 2 decision)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: own-app provider dialog uses the template sentence (build 2 decision) — before → after: "VibeTV can't read Ollama until the Ollama app is installed and running." (with the provider's own name) → before "VibeTV reads Ollama usage from Ollama's own app, so make sure it is installed and signed in on this computer."
-- Approved customer-visible result: the dialog reads as drawn in frame 39 of "Calm Redesign - alle Screens", title "<Provider> needs its own app", sentence as above.
-- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, `apps/control-center/src/components/setup/setup-providers-screen.test.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-19 — #784: type fix, the dialog's description is optional
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: type fix, the dialog's description is optional
-- Approved customer-visible result: none; no visible change.
-- Scope: `apps/control-center/src/components/setup/setup-dialog.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-19 — #784: Codex/CI fix, the outage dialogs' grey backdrop takes no clicks
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Codex/CI fix, the outage dialogs' grey backdrop takes no clicks
-- Approved customer-visible result: none; no visible change.
-- Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.test.tsx`, the comment in `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-20 — #784: build 2b QA, the 3D VibeTV on Overview is turned like the template (frame 1)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: build 2b QA, the 3D VibeTV on Overview is turned like the template (frame 1) — before → after: the 3D VibeTV seen from the right and nearly from the front at rest (camera about 24 degrees off the front, a little higher) and its sway began mid-swing, which at the first look showed it turned even further to the front → the device rests turned about 27 degrees off the front, seen a little from below as drawn in the template, and the sway starts from that resting angle.
-- Approved customer-visible result: the Overview picture of the VibeTV shows the device at the angle of frame 1 of "Calm Redesign - alle Screens".
-- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-20 — #784: build 2b QA, no sidebar toggle beside the title of Updates and Support (frames 10, 11)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: build 2b QA, no sidebar toggle beside the title of Updates and Support (frames 10, 1 — before → after: the sidebar-toggle icon stood left of the title "Updates" and "Support" → those two pages show the title alone, as drawn in the template; every other page keeps the icon, and a narrow window keeps it on all pages because it is the only way to the menu there.
-- Approved customer-visible result: Updates and Support start with their title, as in frames 10 and 11.
-- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-20 — #784: build 2b QA, "Your VibeTV is not reachable" lists plain radio rows (frame 47)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: build 2b QA, "Your VibeTV is not reachable" lists plain radio rows (frame 47) — before → after: the dialog showed the setup device cards (thumbnail, WiFi and "Previously connected" chips, ring, check mark) → it shows plain radio rows between hairlines as drawn in frame 47: round radio, "VibeTV 4F2A", "192.168.178.163 · Firmware 1.4.2" below, "WiFi · Previously connected" (or "Cable") at the right; the dialog is 480 px wide as drawn. The words are unchanged.
-- Approved customer-visible result: the picker dialog looks like frame 47 of "Calm Redesign - alle Screens".
-- Scope: `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.test.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-20 — #784: build 2b QA, the 3D VibeTV on Overview has the template's size (frame 1), replaces the angle entry above
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: build 2b QA, the 3D VibeTV on Overview has the template's size (frame 1), replaces t — before → after: the 3D VibeTV filled a stage up to 900 x 580 px, so the device was about 15 % larger than in the template and pushed the four facts (Mac App, VibeTV, Display, Firmware) about 190 px lower than drawn; its sway started mid-swing, so the first look showed it turned further to the front than the template; it was seen from a little higher → the device is framed as in frame 1 (about 240 px wide screen on a 1200 px window, seen a little from below, turned about 25 degrees off the front), the facts sit where the template draws them, and the sway starts from that resting angle. Dragging and the sway are unchanged.
-- Approved customer-visible result: the Overview picture of the VibeTV and the line of facts below it look like frame 1 of "Calm Redesign - alle Screens".
-- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx`, `apps/control-center/src/components/overview-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-20 — #784: build 2b QA, the keyboard focus ring of a device-picker row has rounded corners
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: build 2b QA, the keyboard focus ring of a device-picker row has rounded corners — before → after: the focus ring around the row you reach with Tab in "Your VibeTV is not reachable" had square corners → it has rounded corners like the other rings of the dialog. Nothing else changes.
-- Approved customer-visible result: the picker row shows a rounded focus ring when reached by keyboard.
-- Scope: `apps/control-center/src/components/setup/setup-device-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-20 — #784: build 2b QA, lime buttons fill their whole box and "What's new" spaces its entries as drawn
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: build 2b QA, lime buttons fill their whole box and "What's new" spaces its entries a — before → after: every lime button (Create, Install, Connect, Continue, Got it, Run diagnostics and so on) showed a 1 px frame of the page colour inside its box, so it looked 2 px lower and narrower than drawn → the lime fills the whole box (the same size, 36 px or 44 px high, as in the template); in "What's new" the entries were 24 px apart and "Show me in Themes / Settings" sat 2 px too close to the sentence above it and 6 px too far from the next entry → the entries are 20 px apart and the link sits 4 px under the sentence, as in frame 37. Nothing else changes.
-- Approved customer-visible result: lime buttons and the "What's new" dialog look like frames 5, 13, 24 and 37 of "Calm Redesign - alle Screens".
-- Scope: `apps/control-center/src/components/ui/button.tsx`, `apps/control-center/src/components/whats-new-dialog.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-20 — #784: build 2b QA, the Settings buttons "Run setup" and "Reset…" have the template's width (frame 3)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: build 2b QA, the Settings buttons "Run setup" and "Reset…" have the template's width — before → after: "Run setup" and "Reset…" in Settings were 4 px narrower than drawn (12 px of side space) → they have 14 px of side space, like the other outline buttons (89 → 93 px for "Run setup", 71 → 75 px for "Reset…"). Nothing else changes.
-- Approved customer-visible result: the Settings buttons look like frame 3 of "Calm Redesign - alle Screens".
-- Scope: `apps/control-center/src/components/settings-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-20 — #784: build 2b QA, a lime button with another fill (the round Send button) keeps no lime frame
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: build 2b QA, a lime button with another fill (the round Send button) keeps no lime f — before → after: the entry above filled the lime buttons with a lime border; this change fills them by letting the fill run under the border instead, so a lime-variant button that is given another fill (the round grey/black "Send" button in the Theme Studio) shows no thin lime ring. The lime buttons look as in the entry above. Nothing else changes.
-- Approved customer-visible result: lime buttons fill their whole box; the round Send button in the Theme Studio is a plain circle as in frames 7-9 of "Calm Redesign - alle Screens".
-- Scope: `apps/control-center/src/components/ui/button.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-20 — #784: the 3D VibeTV on the Overview waits for the theme pack also after an earlier settled screen (Codex review)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: the 3D VibeTV on the Overview waits for the theme pack also after an earlier settled — before → after: when the Overview first showed a settled screen (no VibeTV yet) and a VibeTV with its frame arrived later, the 3D VibeTV could replace the flat preview while its screen still said "Loading preview" → the 3D waits until the theme pack is in, as it already did when the VibeTV was connected from the start. Nothing else changes.
-- Approved customer-visible result: the 3D VibeTV appears only with its theme drawn, as in frame 1 of "Calm Redesign - alle Screens".
-- Scope: `apps/control-center/src/components/live-vibetv-preview.tsx`, `apps/control-center/src/components/vibetv-3d-preview.tsx`, the recovery test and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no new content
-
-## 2026-10-20 — #784: approval marker after merging main
-
-- User approval: no visible change – UI approval not needed (merge commit into #784; no visible change of its own; entry: #784: approval marker after merging main)
-- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
-- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — no customer-visible change of its own
-
-## 2026-10-20 — #784: focus ring on open — a dialog's first control shows no focus ring until the keyboard is used
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: focus ring on open — a dialog's first control shows no focus ring until the keyboard — Before → after: #784 focus ring on open: "Restart Control Center", What's new "Got it", "Close" on the setup dialogs and the device picker rows showed the black focus ring on their first control as the dialog opened → #784 focus ring on open: the dialog takes focus itself without a ring; one Tab puts the ring on the first control, and a dialog opened with the keyboard still focuses its first control.
-- Approved customer-visible result: #784 focus ring on open: a dialog that opens shows no black ring on any button or row until the customer presses Tab; the ring when tabbing is as drawn in "Calm Redesign - alle Screens".
-- Scope: #784 focus ring on open: `apps/control-center/src/components/ui/dialog.tsx`, `apps/control-center/src/components/ui/alert-dialog.tsx`, `apps/control-center/src/components/whats-new-dialog.tsx`, the two confirmation dialogs that set `autoFocus`, their tests, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — #784 focus ring on open: no new content
-
-## 2026-10-20 — #784: Overview fills the window's height (7197 template point 1)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Overview fills the window's height (7197 template point 1) — Before → after: #784 point 1: the Overview was a block under the title, with the four numbers right below the VibeTV and a 392 px VibeTV → #784 point 1: the page fills the window's height, the four numbers sit at the bottom (32 px below them), "VibeTV is connected" and the VibeTV are centred as one group in the space above, and the VibeTV image is 440 px wide.
-- Approved customer-visible result: #784 point 1: Overview as in frame `#overview` of "Calm Redesign - alle Screens" (picture 01, right side), in a large and in a small window.
-- Scope: #784 point 1: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/control-center-shell.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — #784 point 1: no new content, the same page laid out differently
-
-## 2026-10-20 — #784: keyboard focus ring and invalid ring are 2 px (7197 template point 4)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: keyboard focus ring and invalid ring are 2 px (7197 template point 4) — Before → after: #784 point 4: the keyboard focus ring on input, select, button, checkbox, switch and tab was a 1 px border plus a 2 px or 3 px halo → #784 point 4: border plus a 1 px ring in the ring colour, 2 px in total; an invalid field (aria-invalid) shows the same 2 px, in red, also under the keyboard (consistent with #817). Still shown for keyboard focus only, not when a dialog opens.
-- Approved customer-visible result: #784 point 4: focus and error rings as in frame `#controls-focus` of "Calm Redesign - alle Screens" (picture 04, right side).
-- Scope: #784 point 4: the shared controls in `apps/control-center/src/components/ui/` (input, textarea, select, checkbox, switch, button, tabs, input-group, badge, item, toggle), the two row buttons in `settings-screen.tsx` and `setup/setup-device-dialogs.tsx`, `globals.focus-ring.test.ts`, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — #784 point 4: no new content, a thinner ring
-
-## 2026-10-20 — #784: own dropdown instead of the native select (7197 template point 5)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: own dropdown instead of the native select (7197 template point 5) — Before → after: #784 point 5: the Theme Studio's three dropdowns (Live information to show, Reset for, Reading to show) opened the system menu with a blue chosen item, and the shared dropdown list used a different look → #784 point 5: every dropdown a customer sees is our own list below the field: the chosen item is bolder with a grey background and a check mark, the item under the pointer a lighter grey, nothing blue; the field shows the 2 px focus ring while open.
-- Approved customer-visible result: #784 point 5: dropdown as in frames `#settings-dropdown` and `#controls-focus` of "Calm Redesign - alle Screens" (picture 05, right side).
-- Scope: #784 point 5: `apps/control-center/src/components/ui/select.tsx`, `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, the two browser test scripts that drive those dropdowns, the select test, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — #784 point 5: no new content, the same choices in a different list
-
-## 2026-10-20 — #784: Overview numbers span the window and the dropdown list is as wide as its field (7197 points 1 and 5, picture check)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Overview numbers span the window and the dropdown list is as wide as its field (7197 — Before → after: #784 point 1 (picture check): the four numbers were capped at 1180 px width and went to two columns below 1024 px window width → they span the page width as in the template and stay in four columns from 960 px; #784 point 5 (picture check): the dropdown list was 12 px wider than its field → it is exactly as wide as the field.
-- Approved customer-visible result: #784 points 1 and 5: as in the frames `#overview` and `#settings-dropdown` of "Calm Redesign - alle Screens" at 1920 × 1080 and about 1000 × 700.
-- Scope: #784 points 1 and 5: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/ui/select.tsx` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — #784 points 1 and 5 (picture check): no new content
-
-## 2026-10-20 — #784: the keyboard focus ring is the template's olive
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: the keyboard focus ring is the template's olive — Before → after: #784 the 2 px keyboard focus ring was ink (#1B1B1B light, #EDEDED dark) → #784 the template's olive (#506600 light, #CCFF00 dark); the red ring on invalid fields (#817) stays.
-- Approved customer-visible result: #784 every keyboard focus ring (input, select, button, checkbox, switch, tab) in the template's --ring colour, 2 px, keyboard-only.
-- Scope: #784 `apps/control-center/src/app/globals.css` (--ring), its test `globals.focus-ring.test.ts`, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — #784 focus ring colour not announced
-
-## 2026-10-20 — #784: the Copilot popup heading says it needs a GitHub sign-in
-
-- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #784: the Copilot popup heading says it needs a GitHub sign-in — Before → after: #784 the Copilot popup in setup said "GitHub Copilot needs its own app" above a text about a GitHub sign-in → #784 "GitHub Copilot needs a GitHub sign-in".
-- Approved customer-visible result: #784 the Copilot popup heading matches its sentence; every other provider keeps "<Provider> needs its own app" or its name.
-- Scope: #784 `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
-- What's new: none — #784 Copilot heading not announced
-
-## 2026-10-20 — #784: Paul's approval of build 7198 recorded
-
-- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" — #784 approval record for build 7198 (everything except the Appearance cards #802); the #784 entries above now carry it, merge markers are marked as no visible change, entries added after build 7198 stay pending.
-- Approved customer-visible result: #784 as described in its entries above, as seen in build 7198.
-- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
-- What's new: none — #784 approval record only
-
-## 2026-10-20 — #784: result lines of approved entries cleaned up
-
-- User approval: no visible change – UI approval not needed (#784: result lines of approved entries cleaned up: record cleanup, wording only: entries that already carry Paul's approval no longer open their result line with an old status word)
-- Approved customer-visible result: #784 unchanged; only the wording of the approval record.
-- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
-- What's new: none — #784 record cleanup
-
-## 2026-10-20 — #784: approval lines rewritten to the two accepted forms
-
-- User approval: no visible change – UI approval not needed (#784 record rewrite for the gate in #823; no customer-visible change)
-- Approved customer-visible result: #784 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
-- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
-- What's new: none — #784 approval record only
-
-## 2026-10-20 — #784: Copilot sign-in heading only on its sign-in dialog
-
-- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #784: Copilot sign-in heading only on its sign-in dialog
-- Approved customer-visible result: #784 the Copilot sign-in dialog is headed "GitHub Copilot needs a GitHub sign-in"; the timed-out Copilot dialog is headed "GitHub Copilot", as before commit 9c129d1c.
-- Scope: #784 Setup Wizard provider dialog heading only. Pull request branch only, not merged, not released.
-- What's new: none — #784 dialog heading scope only
-
-## 2026-10-20 — #784: approval marker after merging main at 4b0831d7
-
-- User approval: no visible change – UI approval not needed (merge of main (4b0831d7) into #784; the own entries of #784 keep their approvals)
-- Approved customer-visible result: #784 as in its own entries plus the entries merged with 4b0831d7; nothing else changes.
-- Scope: the merge of 4b0831d7 and this approval record. Pull request branch #784 only, not merged, not released.
-- What's new: none — merge of 4b0831d7, no customer-visible change of its own
-
-## 2026-10-20 — #784: approval marker after merging main at 5f09bf54
-
-- User approval: no visible change – UI approval not needed (merge of main (5f09bf54) into #784; the own entries of #784 keep their approvals)
-- Approved customer-visible result: #784 as in its own entries plus the entries merged with 5f09bf54; nothing else changes.
-- Scope: the merge of 5f09bf54 and this approval record. Pull request branch #784 only, not merged, not released.
-- What's new: none — merge of 5f09bf54, no customer-visible change of its own
-
-## 2026-10-21 — #784: approval marker after merging main at 12504ca6
-
-- User approval: no visible change – UI approval not needed (merge of main (12504ca6) into #784; the own entries of #784 keep their approvals)
-- Approved customer-visible result: #784 as in its own entries plus the entries merged with 12504ca6; nothing else changes.
-- Scope: the merge of 12504ca6 and this approval record. Pull request branch #784 only, not merged, not released.
-- What's new: none — merge of 12504ca6, no customer-visible change of its own
-
-## 2026-10-21 — #784: Paul's approval of build 7200 recorded
-
-- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #784 approval record for build 7200; the #784 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 stay pending.
-- Approved customer-visible result: #784 as described in its entries above, as seen in build 7200.
-- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
-- What's new: none — #784 approval record only
-
-## 2026-10-21 — #784: approval marker after merging main at e3503bda
-
-- User approval: no visible change – UI approval not needed (merge of main (e3503bda) into #784; the own entries of #784 keep their approvals)
-- Approved customer-visible result: #784 as in its own entries plus the entries merged with e3503bda; nothing else changes.
-- Scope: the merge of e3503bda and this approval record. Pull request branch #784 only, not merged, not released.
-- What's new: none — merge of e3503bda, no customer-visible change of its own
-
-## 2026-10-21 — #784: Theme Studio progress bar without a binding (Codex review)
-
-- User approval: pending — #784 Theme Studio: a progress bar without a reading no longer lists an empty "Current reading" entry under "Reading to show" (the panel crashed on it); the other entries and wording stay the same
-- Approved customer-visible result: "Reading to show" offers the same four readings as before. A progress bar that has no reading yet shows no extra "Current reading" entry any more, so the details panel no longer breaks for it. Nothing else changes.
-- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` (new exported `progressReadingOptions`), its new test `progress-reading-options.test.ts`, and this approval record. Pull-request branch #784 only, not merged, not released.
-- What's new: none — crash fix of the Theme Studio details panel, no new text
-
-## 2026-10-21 — #784: Slider thumb ring grey on hover and drag, olive only for keyboard focus (Codex review)
-
-- User approval: approved by Paul in the communicator chat, 2026-10-21 12:28: "rest passt so" (build 7201 review) — entry: #784 slider thumb: mouse hover/drag shows a neutral grey ring, the olive ring only for keyboard focus (Paul decided 21.10. "Maus grau, Tastatur oliv"; not yet seen in a build)
-- Approved customer-visible result: the slider thumb shows a grey ring while the mouse hovers over it or drags it; the olive ring appears only when the thumb has keyboard focus. Nothing else changes.
-- Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb ring classes), its new test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull-request branch #784 only, not merged, not released.
-- What's new: none — ring colour of the slider thumb, no new text
-
-## 2026-10-21 — #784: approval marker after merging main at 41bf10cf
-
-- User approval: no visible change – UI approval not needed (merge of main (41bf10cf) into #784; the own entries of #784 keep their approvals)
-- Approved customer-visible result: #784 as in its own entries plus the entries merged with 41bf10cf; nothing else changes.
-- Scope: the merge of 41bf10cf and this approval record. Pull request branch #784 only, not merged, not released.
-- What's new: none — merge of 41bf10cf, no customer-visible change of its own
-
-## 2026-10-21 — #784: slider neutral ring scoped to hover and drag
-
-- User approval: no visible change – UI approval not needed (#784 Codex fix: slider neutral ring scoped to hover/drag so the shared focus-ring check passes; same look as the pending slider entry)
-- Approved customer-visible result: the slider thumb looks as in the pending #784 slider entry: grey ring on hover and drag, olive ring only for keyboard focus. Nothing else changes.
-- Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb ring classes), its test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull request branch #784 only, not merged, not released.
-- What's new: none — ring colour classes of the slider thumb, no new text
-
-## 2026-10-21 — #784: approval marker after merging main at f314106c
-
-- User approval: no visible change – UI approval not needed (merge of main (f314106c) into #784; the own entries of #784 keep their approvals)
-- Approved customer-visible result: #784 as in its own entries plus the entries merged with f314106c; nothing else changes.
-- Scope: the merge of f314106c and this approval record. Pull request branch #784 only, not merged, not released.
-- What's new: none — merge of f314106c, no customer-visible change of its own
-
-## 2026-10-21 — #784: slider keyboard focus ring 2 px olive
-
-- User approval: no visible change – UI approval not needed (#784 slider keyboard focus ring 3px → the shared 2px olive ring decided earlier; token-only)
-- Approved customer-visible result: the slider thumb looks as before for hover and drag; the keyboard focus ring is the shared 2 px olive ring (border plus 1 px ring) like buttons and inputs. Nothing else changes.
-- Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb focus classes), its test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull request branch #784 only, not merged, not released.
-- What's new: none — focus ring classes of the slider thumb, no new text
-
-## 2026-10-21 — #784: Paul's approval of build 7201 recorded
-
-- User approval: approved by Paul in the communicator chat, 2026-10-21 12:28: "rest passt so" (build 7201 review) — #784 approval record for build 7201; only the 7201 point of #784 now carries it, everything else stays as it was.
-- Approved customer-visible result: #784 as described in that entry, as seen in build 7201.
-- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
-- What's new: none — #784 approval record only
-
-## 2026-10-21 — #784: approval marker after merging main at 467fd7fb
-
-- User approval: no visible change – UI approval not needed (merge of main (467fd7fb) into #784; the own entries of #784 keep their approvals)
-- Approved customer-visible result: #784 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
-- Scope: the merge of 467fd7fb and this approval record. Pull request branch #784 only, not merged, not released.
-- What's new: none — merge of 467fd7fb, no customer-visible change of its own
-
-## 2026-10-21 — #784: Mac App up to date only with a known installed version
-
-- User approval: no visible change – UI approval not needed (bug fix: without a known installed version the Mac App is no longer called up to date)
-- Approved customer-visible result: #784 as before; the Mac App line says "Up to date" only when its installed version was compared, otherwise it stays as it was without a check.
-- Scope: Overview Mac App line in control-center-app.tsx and its test. Pull request branch #784 only, not merged, not released.
-- What's new: none — bug fix, no new text
-
-## 2026-10-21 — #784: approval marker after merging main at 35152cc8
-
-- User approval: no visible change – UI approval not needed (merge of main (35152cc8) into #784; the own entries of #784 keep their approvals)
-- Approved customer-visible result: #784 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
-- Scope: the merge of 35152cc8 and this approval record. Pull request branch #784 only, not merged, not released.
-- What's new: none — merge of 35152cc8, no customer-visible change of its own
-
-## 2026-10-21 — #784: approval marker after merging main at 3dc0a15b
-
-- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #784; the own entries of #784 keep their approvals)
-- Approved customer-visible result: #784 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
-- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #784 only, not merged, not released.
-- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
-
-## 2026-10-21 — #784: Overview 3D sway stops and pauses while hidden
-
-- User approval: pending — the Overview 3D VibeTV sways once and then stands still (as approved for setup in 7202), paused while the window is hidden
-- Approved customer-visible result: the Overview follows the one-cycle sway from #780, approved in build 7202: after 2.5 seconds without a touch it sways once and settles; a drag starts one more cycle. Hidden windows pause that cycle, and reduced motion stays still. Text and layout remain unchanged.
-- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and its animation regression tests; adapted from #780 commit 65352daf4412c41df5041baea327f079b92c1dff with visibility handling and event-driven rendering. Pull request #784 only, not merged, not released.
-- What's new: none — performance fix to the existing Overview preview
-
-## 2026-10-21 — #784: identify library and busy notices by data attributes
-
-- User approval: no visible change – UI approval not needed (#784 P3a replaces notice mount counters and title matching with stable dialog data attributes)
-- Approved customer-visible result: page notices still wait for other dialogs and take priority over the busy announcement; wording, layout and dismissal remain unchanged.
-- Scope: `theme-library-screen.tsx`, `system-busy-dialog.tsx`, the `SetupDialog` notice attribute, and library notice regression tests. Pull request #784 only, not merged, not released.
-- What's new: none — internal notice identification only
-
-## 2026-10-21 — #784: cache saved theme names between Overview polls
-
-- User approval: no visible change – UI approval not needed (#784 P3b reads the saved theme library once per Overview visit or storage change instead of every status poll)
-- Approved customer-visible result: Overview keeps showing the current theme name, including the customer's saved names and live theme during standby; returning from Theme Studio and changes from another window refresh those names.
-- Scope: `overview-screen.tsx` and its theme-name regression tests. Pull request #784 only, not merged, not released.
-- What's new: none — avoid repeated localStorage JSON parsing
-
 - User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
 - User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change))
 - User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
@@ -10107,6 +9233,1217 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none new; the Usage page already shows the Codex tile with Sign in needed and no numbers.
 - Scope: one regression test in usage-screen.test.tsx. Pull request branch #783 only, not merged, not released.
 - What's new: none — test only
+
+## 2026-10-19 — Pace on Usage (#789, stacked on #783)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Paul reviews (pace on Usage per the approved master + 19.10. decisions)
+- Approved customer-visible result: none yet, pending Paul's review. New: in the lane bars of Claude and Codex (session and weekly), a thin tick marks where CodexBar expects the use to be; the gap between the bar and the tick is a green piece for a reserve and a red hatched piece for a deficit; one 13 px line under the bar says "6% in reserve", "12% in deficit", or "On pace", with CodexBar's run-out time after it when CodexBar gives one ("12% in deficit · runs out in 2d 15h"; before: a red "Runs out in 2d 15h" line on its own). The words follow CodexBar: "ahead of plan" is a deficit, "behind plan" is a reserve; "ahead" and "behind" are never printed. A lane CodexBar sends no pace for (for example "Fable only", and every lane where the engine sends none, such as today's Windows engine) shows no tick, no piece and no line.
+- Scope: `usage-pace.tsx` and `usage-pace.test.tsx` (new), `usage-screen.tsx`, `usage-screen.test.tsx` (the bar sits in a wrapper; the run-out line is now bold), `control-center-types.ts`, `globals.css` (two pace colours), the Companion usage window fields (`usage.go`, `usage_pace_test.go`), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — pace in the bars is the feature itself, no new notice
+
+## 2026-10-19 — Pace on Usage: Codex review fix (#789)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Paul reviews (pace on Usage per the approved master + 19.10. decisions); this entry restates the entry above after a Codex review fix.
+- Approved customer-visible result: none yet, pending Paul's review. Visible result unchanged from the entry above, except one edge: when CodexBar sends a stage but not its gap or expected-use number, the lane shows no tick, no piece and no line (before this fix the tick would sit at 0%). Not seen by Paul.
+- Scope: `usage-pace.tsx` and `usage-pace.test.tsx`, plus Companion files (`parse.go`, `types.go`, `usage.go` and their tests) that are not screens, and this approval record.
+- What's new: none — edge case of the pace feature, no new notice
+
+## 2026-10-19 — Approval record for the merge of claude/group-usage into claude/usage-pace (no visible change)
+
+- User approval: none needed for this entry; it records only the merge of `claude/group-usage` (and main) into `claude/usage-pace`, no visible change of its own. The pace line already is 13 px, 600 for reserve and deficit and 400 for "On pace", as in the master. The visible changes of the branch are in the entries above, all pending Paul's review.
+- Approved customer-visible result: as recorded in the entries above; nothing else changed.
+- Scope: the merge of the base branch into this branch and this approval record. Pull request branch only, not merge or release.
+- What's new: none — merge of the base branch, no customer-visible change of its own
+
+## 2026-10-19 — #800: approval marker after merging the Usage group (with main)
+
+- User approval: no visible change – UI approval not needed (#800: approval marker after merging the Usage group (with main): Merge of #783 (which brought main) into Pace; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and the merged entries; nothing else changes.
+- Scope: the merge of `claude/group-usage` into this branch and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #800: approval marker after merging claude/group-usage (v1.0.65 release round + #638)
+
+- User approval: no visible change – UI approval not needed (#800: approval marker after merging claude/group-usage (v1.0.65 release round + #638): Merge of claude/group-usage into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — Pace on the VibeTV, step 1: capability handling (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Paul reviews (scope decided by Paul and the communicator, 19.10.: one Pace PR; pace themes per the approved page "Pace – alle Themes"). Not seen by Paul as running UI.
+- Approved customer-visible result: none yet, pending Paul's review. New: a theme that needs the new firmware capability `usage-pace-v1` is offered like every other theme that needs a firmware capability: on a VibeTV whose firmware lacks it, the theme library shows the existing "firmware update needed" state for it and the active-theme upgrade asks for the firmware update; no other theme is flagged. No new text and no new screen; no pace theme exists in this step. Also on Usage, no pace is shown for a stale reading or for a window whose reset has passed since CodexBar collected it (before: the Usage page drew it).
+- Scope: `control-center-types.ts` (capability field), `theme-library-screen.tsx` (capability blocker), `theme-studio-capabilities.ts` (type field only), `active-theme-upgrade.ts` and its test, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — capability handling for the Pace themes that follow, no customer-visible notice of its own
+
+## 2026-10-19 — Pace themes, 1: new theme Pace Meter (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Pace themes, 1: new theme Pace Meter (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. The What's new sentence of this entry is not on that page and is not seen by Paul. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator. The What's new sentence below is not on that page and is not yet seen by Paul.
+- Approved customer-visible result: Before: no such theme. After: the Themes list offers a live theme `Pace Meter` for one provider, drawn as on the approved page. Two lanes, session above weekly. Top left the provider name in grey; per lane the percentage large on the left, `Session left` / `Weekly left` (`used` when the app shows use) and `resets 3h 34m` on the right, a full-width bar, and under it the pace line. In reserve: the bar fills to the plan, a green piece runs to the use, a 2 px white tick stands on the plan, the line reads `6% in reserve` in green. In deficit: the bar fills to the use, a red hatched piece runs to the plan, the tick stands on the plan, the line reads `14% in deficit` in red, and `runs out` stands at the right when CodexBar says the quota runs out. On pace: the tick and the line `On pace`, no piece. Without pace (Windows today, or a lane CodexBar sends none for): percentage, label, countdown and a plain bar, no tick, no piece, no pace line. The second provider variant of the page is not built (#811). Differences from the page: the tick of the on-pace picture stands on the plan, which the app draws at the use (the page draws it at the reserve value of the other state); the font is the device font; `Session left` follows the usage mode. The theme needs the new firmware (1.0.50); an older VibeTV shows the existing "Firmware update needed" state for it. The What's new notice gets one entry: title `New theme: Pace Meter`, text `Session and weekly use against your plan: a tick marks where you should be, in reserve or in deficit.`
+- Scope: new `theme-packs/pace-meter/`, its built ZIP, render packs and catalog entry in `dist/theme-packs/`, `lib/whats-new.ts` and its tests (`whats-new.test.ts`, `control-center-app.whats-new.test.tsx`), `theme-packs/pace-themes.test.ts`, and this approval record. Pull request branch only, not merged, not released; checked with unit tests and the Control Center preview, not on a device.
+- What's new: `theme-pace-meter`
+
+## 2026-10-19 — Pace themes, 2: Gauge becomes Gauge 2.0 (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Pace themes, 2: Gauge becomes Gauge 2.0 (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator.
+- Approved customer-visible result: Before: a half ring from 9 to 3 o'clock in traffic-light colours, the provider name on top, the percentage in the opening, `Session remaining`, a small `Weekly 87%` and `Reset in 3h 34m` at the bottom. After: a ring open at the bottom (270 degrees, a little smaller), light fill on a dark track, the provider name large inside the ring above the number, `Session left` under the number, nothing on top. Under the ring the pace line (`6% in reserve` green, `14% in deficit` red, `On pace`) and `lasts until reset - resets 3h 34m` / `runs out - resets 1h 12m`, then a divider and `Weekly 87%` with its pace line on the right. In reserve the ring fills to the plan with a green piece to the use; in deficit a red hatched piece runs from the use to the plan; a 2 px white tick crosses the ring at the plan. Without pace: ring with the percentage inside, `Session left`, `resets 3h 34m` and `Weekly 87%`; no tick, piece or pace line. Differences from the page: the separator in the reset line is ` - ` (the device font has no middle dot); the number is the device's large font; the notice texts of the provider line (`Update available`) may run over the ring for a moment.
+- Scope: `theme-packs/gauge/` (new version 0.2.0, revision 3), its built ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts`, and this approval record. Pull request branch only; needs firmware 1.0.50; unit tests and preview only.
+- What's new: none — an existing theme changes its look, no new notice
+
+## 2026-10-19 — Pace themes, 3: Claude Creature and Mini Classic show the pace as a short text (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-19 00:00: "hatte bisher keinen Balken, bekommt auch jetzt keinen" (time unknown) — entry: Pace themes, 3: Claude Creature and Mini Classic show the pace as a short text (#800) — Paul's own comment on Claude Creature and Mini Classic in his edit of the page "Pace - alle Themes", which he approved on 2026-10-19 (the entry records it as said on that date)
+- Approved customer-visible result: Before: under `remaining` of each of the two usage windows nothing. After: under `remaining` the pace as a short text: `6% reserve` (green), `14% deficit` (red), `on pace` (grey in Mini Classic, light in Claude Creature); no bar, no tick. Without pace the screen is as before. Difference from the page: the text is the device's small 8 px font, because the larger one would run into the animation in the middle (the page draws 13 px).
+- Scope: `theme-packs/claude-creature/` (1.4.0, revision 10) and `theme-packs/mini-classic/` (1.3.0, revision 10) with their ZIPs, render packs, catalog entries and `theme-legibility.test.ts`, and this approval record. Needs firmware 1.0.50.
+- What's new: none — existing themes get a line, no new notice
+
+## 2026-10-19 — Pace themes, 4: Clippy, Pixel Battery, Synthwave and Tiny Office show reserve and deficit on their bars (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Pace themes, 4: Clippy, Pixel Battery, Synthwave and Tiny Office show reserve and deficit on their bars (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator.
+- Approved customer-visible result: Before: bars without any mark of the plan. After: each bar has a 2 px white tick on the plan; in reserve a green piece runs from the plan to the use, in deficit a red hatched piece from the use to the plan, on pace the tick only. Clippy: the blocks fill dark blue (before green); the label row reads `Session` / `Weekly` (before `Session remaining`) with the pace sentence on the right (`6% in reserve`, `14% in deficit`, `On pace`). Pixel Battery: the segments keep their traffic-light colours by what is left; the label row reads `Session` / `Weekly` with the sentence on the right. Synthwave: the neon bars are 16 px high (before 20), the sentence stands under each bar in neon green, neon red or the bar's colour. Tiny Office: the thin segment bars are 7 px high (before 5), with tick and piece, and no sentence. Without pace each theme shows its bars and numbers as before, in the new label wording and bar height, with no tick, piece or sentence. Differences from the page: the tick stands on the plan in the on-pace state (the page draws it at the reserve value); the font is the device font; a hatched piece in Pixel Battery and Tiny Office is shown in whole segments.
+- Scope: `theme-packs/{clippy,pixel-battery,synthwave,tiny-office}/` (1.2.0, 1.17.0, 1.2.0, 0.7.0) with ZIPs, render packs, catalog entries and `theme-packs/tiny-office-theme.test.ts`, and this approval record. Needs firmware 1.0.50.
+- What's new: none — existing themes change their look, no new notice
+
+## 2026-10-19 — Pace themes, 5: the previews and Theme Studio draw pace like VibeTV (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Pace themes, 5: the previews and Theme Studio draw pace like VibeTV (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator. No screen of its own: this is what the previews of the themes above show.
+- Approved customer-visible result: Before: a pace theme could not be previewed. After: on Overview, in the Themes list and in Theme Studio the preview of a pace theme draws the tick, the piece, the hatch and the pace sentences exactly as VibeTV does; the Themes list previews show a reserve on the session and a deficit on the weekly window of the example data. Theme Studio keeps `reserveColor` / `deficitColor` of a pace bar when it opens and saves a pack, accepts colour stops on text bound to a pace key, and asks for `usage-pace-v1` and firmware 1.0.50 for a pack that uses pace. No new control.
+- Scope: `components/live-vibetv-preview.tsx` and its test, `lib/theme-studio.ts`, `lib/theme-studio-capabilities.ts`, `components/theme-library-screen.test.tsx` (an app that does not know a capability blocks only that pack), and this approval record.
+- What's new: none — previews of the themes above, no new notice
+
+## 2026-10-19 — Settings: the section Pace under Display mode (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Settings: the section Pace under Display mode (#800): Paul approved his own edited page "Pace - alle Themes" on 2026-10-19 (communicator), but this entry holds no verbatim quote of his words, so it has no accepted form 1. Earlier wording: Paul, 19.10.2026: approved page "Pace - alle Themes" in Claude Design (his own edit) via the communicator (the Settings frame of that page).
+- Approved customer-visible result: Before: no such section. After: directly under `Display mode` a section `Pace` (label on the left, a divider like the other sections) with one row, `Show reserve or deficit` and a switch, on by default. While the switch is on and the active catalog theme has no place for pace, one muted line under it: `<Theme name> has no place for it. Pace Meter shows it.` (for example `Token Counter has no place for it. Pace Meter shows it.`). Off: VibeTV is sent no pace, so no pace theme shows tick, piece or sentence; Usage keeps its pace. The section is not shown when the usage engine sends no pace (today's Windows engine). The page's example line names Mini Classic, which now has a place for pace after this PR; the line follows the active theme.
+- Scope: `components/settings-pace.tsx` (new), one block in `components/settings-screen.tsx`, `components/settings-pace.test.tsx`, the Companion preference `vibetv.display.showPace` (`runtimeconfig` `hidePace`, `display_preferences.go`, `daemon/send.go`) with tests, and this approval record.
+- What's new: none — a setting for the Pace themes, no new notice
+
+## 2026-10-19 — Pace themes: Codex review fix, the preview reads every spelling of a pace binding (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Pace themes: Codex review fix, the preview reads every spelling of a pace binding (#800): Codex review fix that changes what the preview of a custom theme shows (pace instead of empty text); Paul has not seen it. Earlier wording: Codex review fix, no visible change of the approved Pace themes; not seen by Paul. The look of the entries above stands as approved on the page "Pace - alle Themes".
+- Approved customer-visible result: Unchanged for the shipped themes. A custom theme that binds pace as `us1PaceText`, `us1Pace` or `usage.0.PaceText` is previewed with its pace, as VibeTV draws it (before: the preview showed empty text and a plain bar for those spellings).
+- Scope: `components/live-vibetv-preview.tsx` and its test, the firmware repaint rules (not screens), and this approval record.
+- What's new: none — a preview correction, no new notice
+
+## 2026-10-19 — Pace themes: Codex review fix, Theme Studio treats usageModeShort as a pace capability (#800)
+
+- User approval: no visible change – UI approval not needed (Pace themes: Codex review fix, Theme Studio treats usageModeShort as a pace capability (#800): Codex review fix, manifest correction only (capability and firmware version named in the exported pack), no visible change; not seen by Paul)
+- Approved customer-visible result: Unchanged. A pack that Theme Studio exports and that uses only `usageModeShort` now asks for `usage-pace-v1` and firmware 1.0.50, as the Companion already requires (before: the manifest named no such capability).
+- Scope: `lib/theme-studio.ts` and its test, and this approval record.
+- What's new: none — a manifest correction, no new notice
+
+## 2026-10-19 — Pace themes: Codex review fix, preview and device drop pace of a stale reading (#800)
+
+- User approval: no visible change – UI approval not needed (Pace themes: Codex review fix, preview and device drop pace of a stale reading (#800): Codex review fix, no visible change of the approved Pace themes (the entry itself states it): while the reading is fresh nothing changes, only stale data stops showing an old pace; not seen by Paul)
+- Approved customer-visible result: Unchanged while the reading is fresh. When a collection failed or the reset trust has run out, VibeTV and its preview show no reserve or deficit (before: the preview, and a retained last-good frame on the device, kept the old pace), like Usage.
+- Scope: `components/live-vibetv-preview.tsx` and its test, the Companion frame (`daemon/send.go`, not a screen), and this approval record.
+- What's new: none — a stale-data correction, no new notice
+
+## 2026-10-19 — Usage pace: Codex review fix, a lane's pace goes when its reset countdown has run out (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Usage pace: Codex review fix, a lane's pace goes when its reset countdown has run out (#800): Codex review fix that makes a lane's tick, piece and pace line disappear when its reset has passed; the entry does not state no visible change and Paul has not seen it. Earlier wording: Codex review fix to the Usage pace of the entries above; not seen by Paul.
+- Approved customer-visible result: Unchanged while the lane's reset is ahead. When the reset time of a lane has passed since the reading (the countdown of the page reaches zero before the next poll), its tick, piece and pace line go with it instead of staying until the next reading.
+- Scope: `components/usage-screen.tsx`, `components/usage-pace.test.tsx`, and this approval record.
+- What's new: none — a stale-data correction, no new notice
+
+## 2026-10-19 — Settings Pace: Codex review fix, the note names the live theme during standby (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Settings Pace: Codex review fix, the note names the live theme during standby (#800): Codex review fix that changes the muted note under the Pace switch during standby; Paul has not seen it. Earlier wording: Codex review fix to the Settings section Pace above; not seen by Paul.
+- Approved customer-visible result: Unchanged. While VibeTV shows its screensaver, the muted line under the switch is worked out from the customer's live theme, not from the screensaver (before: a screensaver could be named as "has no place for it").
+- Scope: `components/settings-screen.tsx`, `components/settings-pace.test.tsx`, and this approval record.
+- What's new: none — a correction, no new notice
+
+## 2026-10-19 — Pace themes: Gauge 2.0 keeps the update notice inside the ring; shorter What's new text (#800)
+
+- User approval: communicator decision on the Gauge notice (the notice must never run over the ring); the What's new text is the communicator's wording, pending Paul's yes. Not seen by Paul.
+- Approved customer-visible result: Gauge 2.0 (replaces its look in the entry above). Before: the provider name stood in 18 px type at the top of the ring and the notice that replaces it (`Update available`, `Open VibeTV Mac App`) ran over the ring. After: the provider name (and the notice in its place) is in the small device type lower in the ring, so `Update available` and `Open VibeTV Mac App` stay inside the opening of the ring; the percentage is in the 32 px device font (before 52 px) below it, then `Session left`, the pace line and the reset line as before. The separator in the reset line stays ` - `: the device font used there has only the characters 32 to 127, so it has no middle dot. The What's new entry of Pace Meter now reads: title `New theme: Pace Meter`, text `New: Pace shows whether your session and weekly limits will last – in reserve, on pace or in deficit.` (before: `Session and weekly use against your plan: a tick marks where you should be, in reserve or in deficit.`)
+- Scope: `theme-packs/gauge/` (revision 5, version 0.2.0 unchanged, still unpublished) with its ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts`, `lib/whats-new.ts`, `components/control-center-app.whats-new.test.tsx`, and this approval record.
+- What's new: none — corrects the entry `theme-pace-meter` above
+
+## 2026-10-19 — Gauge 2.0: more room for the update notice, revision 5 (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Gauge 2.0: more room for the update notice, revision 5 (#800): Gauge 2.0 layout correction decided by the communicator; Paul has not seen it as running UI. Earlier wording: communicator decision on the Gauge notice (see the entry above); not seen by Paul.
+- Approved customer-visible result: As in the entry above, with the provider name and the notice 4 px lower and the percentage and `Session left` 4 and 3 px lower, so that `Open VibeTV Mac App` keeps about 3 px clear of the ring on both sides (before: under 1 px). Pictures: `review-1016/ui/pace-vs-vorlage/gauge.png`.
+- Scope: `theme-packs/gauge/` (revision 5), its ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts`, and this approval record.
+- What's new: none — layout correction of an unpublished theme
+
+## 2026-10-19 — Gauge 2.0: percentage and provider name back at the approved size and place; the notice is cut inside the ring (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Gauge 2.0: percentage and provider name back at the approved size and place; the notice is cut inside the ring (#800): Gauge 2.0 layout correction decided by the communicator; Paul has not seen it as running UI. Earlier wording: communicator correction (the approved look of the percentage must not change); not seen by Paul as running UI.
+- Approved customer-visible result: Gauge 2.0 (replaces the two Gauge entries above). The percentage is back in the large device font (digits about 33 px high, 29 px on the page) at the place of the page, the provider name stands above it in the device font 2, and `Session left` below as on the page; the layout of the first Gauge entry, with the name 2 px higher so that it clears the number. The update notice (`Update available`, `Open VibeTV Mac App`) replaces the provider name, as it does in every theme. VibeTV cannot show it outside the ring while the name stays in the ring: the firmware has no text that names the provider without the notice, and a second label-bound text would show the provider twice. So the name box lies inside the opening of the ring (90 px wide) and VibeTV clips a longer text at the box: the notice appears cut (`Update availab`, `Open VibeTV M`) and never touches the ring. A binding for the plain provider name would allow the notice at the bottom edge; that needs new firmware.
+- Scope: `theme-packs/gauge/` (revision 8, version 0.2.0 unchanged, unpublished), its ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts` (the ring-fit test now checks the clip box), and this approval record. Firmware and the firmware requirement (1.0.50) are unchanged.
+- What's new: none — layout correction of an unpublished theme
+
+## 2026-10-19 — Gauge 2.0: provider name in the ring as on the page, the update notice under the ring (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Gauge 2.0: provider name in the ring as on the page, the update notice under the ring (#800): Gauge 2.0 layout correction decided by the communicator; Paul has not seen it as running UI. Earlier wording: communicator decision (Paul would reject a clipped notice; the approved look of the number and the name stands); not seen by Paul as running UI.
+- Approved customer-visible result: Gauge 2.0, replacing the Gauge entries above. The percentage and the provider name stand in the ring exactly as in the entry of the approved page (name in the device font above the large number, `Session left` below). New firmware text `usageProviderName` (the provider's name without the notice) keeps the name in the ring while a notice shows. While VibeTV shows a notice (`Update available`, `Open VibeTV Mac App`) it stands whole, centred, in place of the reset line under the ring and outside it; the reset line is not drawn while the notice shows and comes back with it gone. Nothing is cut and nothing touches the ring. Without a notice the screen is as in the approved pictures. The preview draws the same when it knows a notice.
+- Scope: `theme-packs/gauge/` (revision 9, version 0.2.0 unchanged, unpublished) with ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts`, `components/live-vibetv-preview.tsx` and its test (the new bindings), `lib/theme-studio.ts` (usage-pace-v1 for `usageProviderName`), the firmware bindings `usageProviderName` and `usageSlotNPaceFooter` and the repaint fix after a sleep (not screens), `scripts/build-theme-packs.mjs` (the footer binding counts as showing the notice), and this approval record.
+- What's new: none — layout correction of an unpublished theme
+
+## 2026-10-19 — Gauge 2.0: the notice also shows when there is no usage window (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Gauge 2.0: the notice also shows when there is no usage window (#800): Codex review fix to Gauge 2.0: the notice now shows in the footer when no usage window exists; Paul has not seen it. Earlier wording: Codex review fix to the Gauge entry above; no visible change in the normal states; not seen by Paul.
+- Approved customer-visible result: As in the entry above. New: while no usage window exists (startup, provider error) and VibeTV shows a notice, the notice stands in the footer line under the ring (before: it would not have been visible at all). `usageProviderName` no longer counts as a text that shows the notice, so VibeTV draws the notice on the footer, not over the name.
+- Scope: `theme-packs/gauge/` (revision 10), its ZIP, render packs and catalog entry, `theme-packs/gauge-theme.test.ts`, the firmware field for the provider name (not a screen), and this approval record.
+- What's new: none — correction of an unpublished theme
+
+## 2026-10-19 — Pace bars: Codex review fix, the piece follows the rounded bar in VibeTV and in the preview (#800)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Pace bars: Codex review fix, the piece follows the rounded bar in VibeTV and in the preview (#800): Codex review fix that changes how the pace piece is drawn at rounded bar ends; Paul has not seen it. Earlier wording: Codex review fix to the Pace themes above; not seen by Paul.
+- Approved customer-visible result: A reserve or deficit piece that reaches an end of a bar with rounded corners (Pace Meter at the very end of the track) is cut to the rounded interior, on VibeTV and in the previews, instead of ending square over the corner. Segmented pace bars keep the rounding of every segment, also the paced ones. No other change.
+- Scope: `components/live-vibetv-preview.tsx` and its test, the firmware bar drawing (not a screen), and this approval record.
+- What's new: none — a drawing correction, no new notice
+
+## 2026-10-20 — #800: approval marker after merging main
+
+- User approval: no visible change – UI approval not needed (#800: approval marker after merging main: Merge of main into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #800: approval marker after merging claude/group-usage (7197 review points 2 and 3)
+
+- User approval: no visible change – UI approval not needed (#800: approval marker after merging claude/group-usage (7197 review points 2 and 3): Merge of claude/group-usage (#783) into this branch, which brings the #783 entries "Usage spacing" (7197 point 2) and "Usage page margin and 428 px provider cards" (7197 point 3); no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in the merged #783 entries of 7197 points 2 and 3 (pending, Paul reviews); the pace rows of #800 sit inside the 428 px provider cards.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #800: approval marker commit for the merge of claude/group-usage (7197 review points 2 and 3)
+
+- User approval: no visible change – UI approval not needed (#800: approval marker commit for the merge of claude/group-usage (7197 review points 2 and 3): Merge of claude/group-usage (#783) into this branch (7197 review points 2 and 3, #783 entries); no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in the merged #783 entries of 7197 points 2 and 3 (pending, Paul reviews); nothing else changes.
+- Scope: this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #800: approval marker after merging claude/group-usage (4cqw margin, 7197 review point 3)
+
+- User approval: no visible change – UI approval not needed (#800: approval marker after merging claude/group-usage (4cqw margin, 7197 review point 3): Merge of claude/group-usage (#783) into this branch, which brings the #783 entry "Usage page margin is 4cqw of the page area" (7197 point 3, margin expression); no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in the merged #783 entry of 7197 point 3 (pending, Paul reviews); nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #800: approval marker commit for the merge of claude/group-usage (4cqw margin, 7197 review point 3)
+
+- User approval: no visible change – UI approval not needed (#800: approval marker commit for the merge of claude/group-usage (4cqw margin, 7197 review point 3): Merge of claude/group-usage (#783) into this branch (7197 point 3, margin expression, #783 entry); no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in the merged #783 entry of 7197 point 3 (pending, Paul reviews); nothing else changes.
+- Scope: this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #800: approval marker commit for the merge 54194585 of claude/group-usage (Codex fixes c89aa649)
+
+- User approval: pending — merge 54194585 of claude/group-usage into #800; no visible change of its own; Paul reviews the visible changes of #783 before merge.
+- Approved customer-visible result: #800 merge 54194585 as in the #783 entry "two Codex fixes on the Usage overlay button and narrow windows"; nothing else changes.
+- Scope: #800 merge 54194585 and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #800 merge 54194585 has no customer-visible change of its own
+
+## 2026-10-20 — #800: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#800 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #800 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #800 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #800 approval record only
+
+## 2026-10-20 — #800: approval marker after merging claude/group-usage at e20a5a93
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (e20a5a93) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with e20a5a93; nothing else changes.
+- Scope: the merge of e20a5a93 and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of e20a5a93, no customer-visible change of its own
+
+## 2026-10-20 — #800: approval marker after merging claude/group-usage at 467940ee
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (467940ee) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with 467940ee; nothing else changes.
+- Scope: the merge of 467940ee and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of 467940ee, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at bb879b1d
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (bb879b1d) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with bb879b1d; nothing else changes.
+- Scope: the merge of bb879b1d and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of bb879b1d, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at bae9ab1e
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (bae9ab1e) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with bae9ab1e; nothing else changes.
+- Scope: the merge of bae9ab1e and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of bae9ab1e, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at a5b256b4
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (a5b256b4) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with a5b256b4; nothing else changes.
+- Scope: the merge of a5b256b4 and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of a5b256b4, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at e927aefb
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (e927aefb) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with e927aefb; nothing else changes.
+- Scope: the merge of e927aefb and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of e927aefb, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at f563a07e
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (f563a07e) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with f563a07e; nothing else changes.
+- Scope: the merge of f563a07e and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of f563a07e, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at f3cb1c10
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (f3cb1c10) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with f3cb1c10; nothing else changes.
+- Scope: the merge of f3cb1c10 and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of f3cb1c10, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at 4715951a
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (4715951a) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with 4715951a; nothing else changes.
+- Scope: the merge of 4715951a and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of 4715951a, no customer-visible change of its own
+
+## 2026-10-21 — #800: Paul's approval of build 7202 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — #800 approval record for build 7202; only the 16 listed 7202 entries of #800 now carry it, everything else stays as it was.
+- Approved customer-visible result: #800 as described in those entries, as seen in build 7202.
+- Scope: #800 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #800 approval record only
+
+## 2026-10-21 — #800: retain the Pace setting and reject unavailable pace values
+
+- User approval: no visible change – UI approval not needed (bug fix: keep Pace settings during stale collections and suppress missing or out-of-range deltas)
+- Approved customer-visible result: the existing Pace setting stays available during a collection outage; invalid pace data no longer appears as a valid reading, with no new copy or layout.
+- Scope: Settings Pace visibility, Usage pace validation, and regression tests for #800; theme-pack notice validation accepts the firmware's existing footer spellings.
+- What's new: none — corrections to the existing pace behavior only
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at 3af4b175
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (3af4b175) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with 3af4b175; nothing else changes.
+- Scope: the merge of 3af4b175 and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of 3af4b175, no customer-visible change of its own
+
+## 2026-10-21 — #800: expire preview reset countdowns with their trust
+
+- User approval: no visible change – UI approval not needed (bug fix: stop the preview reset countdown when its measurement trust expires, matching the device)
+- Approved customer-visible result: the existing Gauge footer and reset bindings show Reset unavailable once reset trust expires, with no new copy or layout.
+- Scope: shared reset countdown calculation in live-vibetv-preview and its 60-second trust regression test; pre-review P3 for #800.
+- What's new: none — correction to existing preview and device parity only
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at ba55b31f
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (ba55b31f) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with ba55b31f; nothing else changes.
+- Scope: the merge of ba55b31f and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of ba55b31f, no customer-visible change of its own
+
+## 2026-10-21 — #800: approval marker after merging claude/group-usage at 1b03f96d
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (1b03f96d) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with 1b03f96d; nothing else changes.
+- Scope: the merge of 1b03f96d and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of 1b03f96d, no customer-visible change of its own
+
+## 2026-10-21 — #800: exact Pace segments and shorter reserve/deficit labels
+
+- User approval: pending — Paul asked on 2026-10-21 22:40: hatched part as long as the deficit, '40% deficit' / '6% reserve' without 'in', all themes; result not yet seen by him
+- Approved customer-visible result: 96% used with 40% deficit fills normally to 56% and hatches 56–96%; reserve spans its stated percentage, including partial segments; labels read “40% deficit” and “6% reserve”, with “On pace” unchanged.
+- Scope: shared firmware and Control Center/Theme Studio preview rendering for Pace Meter, Gauge, Clippy, Pixel Battery, Synthwave and Tiny Office; shared text bindings also cover Claude Creature and Mini Classic; Usage page labels and regression tests. No Two-at-once header or overlap changes; no hardware rehearsal in this worker.
+- What's new: none — correction to existing Pace rendering and wording.
+
+## 2026-10-21 — #800: Pace bar table tests
+
+- User approval: no visible change – UI approval not needed (test-only: pace bar segment table in firmware and preview)
+- Approved customer-visible result: none; the pace bar drawing is unchanged.
+- Scope: Table-driven pace bar tests at 0, 1, 50, 99 and 100 percent used, for reserve, deficit and on pace, in used and remaining mode, with the plan clamped past 0 or 100; in the native firmware suite and the Control Center preview suite.
+- What's new: none — tests only.
+
+## 2026-10-22 — #800: approval marker after merging claude/group-usage at 57b84ca4
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-usage (57b84ca4) into #800; the own entries of #800 keep their approvals)
+- Approved customer-visible result: #800 as in its own entries plus the entries merged with 57b84ca4; nothing else changes.
+- Scope: the merge of 57b84ca4 and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — merge of 57b84ca4, no customer-visible change of its own
+
+## 2026-10-18 — Calm type: 13 px text in the shared buttons, cards, labels and inputs (#713)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm type: 13 px text in the shared buttons, cards, labels and inputs (#713)
+- Approved customer-visible result: none yet; waits for Paul's yes. Proposed: text in every button, card, card title, label, input, textarea, select and alert is 13 px (was 14 px; button sizes xs 12 px, sm 12.8 px and lg 16 px become 13 px too); card titles, labels and alert titles are 600 (was 500); inputs and textareas stay 16 px on phones and are 13 px from the tablet width up (was 14 px); select group labels 13 px (was 12 px). Words, layout and colours stay the same. Not changed: the Update buttons on the Updates tab (updates-screen.tsx, size lg, own class text-base font-bold, three places) keep 16 px until Paul decides.
+- Scope: `apps/control-center/src/app/globals.css` (theme token `--text-body`), `apps/control-center/src/lib/utils.ts` (the class merge keeps the token), `apps/control-center/src/components/ui/{button,card,label,input,textarea,select,alert}.tsx`, `apps/control-center/src/components/ui/calm-type.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — same words, one smaller size and two weights
+
+## 2026-10-18 — Calm shell: sidebar and page header as in the approved pictures (#713)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm shell: sidebar and page header as in the approved pictures (#713)
+- Approved customer-visible result: The left sidebar is 232 px wide with no line under the brand; the brand is "VIBETV" in one colour at 16 px with "Control Center" below it. Nav entries are 34 px high with 13 px text, the active entry has the olive fill with full-strength text and the other entries are muted; the icons no longer turn lime. Hovering a nav entry shows a weaker tint of the same olive fill (not in the pictures; it is clearly weaker than the active entry). The Appearance chevron points down and turns up when open. The page title is 28 px semibold with the sidebar toggle as a muted 20 px icon above the page, 36 px from the top and 48 px from the sides on wide screens. The update dot is ink instead of lime. Same entries, order, wording, icons and behaviour.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-brand.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look only, no new capability
+
+## 2026-10-18 — Codex review fix: the hover tint of the calm shell applies to every nav entry (#713)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Codex review fix: the hover tint of the calm shell applies to every nav entry (#713)
+- Approved customer-visible result: as in the entry above; hovering an inactive entry or a subentry shows the weaker tint, not the full olive fill. No other change.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a hover correction of the calm shell
+
+## 2026-10-18 — Collapsed sidebar: icons only, no label letters beside them (#758)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Collapsed sidebar: icons only, no label letters beside them (#758)
+- Approved customer-visible result: With the sidebar collapsed to icons, each nav entry shows only its icon, as the collapsed sidebar was meant to. The label stays in the page for screen readers and in the tooltip on hover. The expanded sidebar is unchanged. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a hidden label, no new capability
+
+## 2026-10-18 — Collapsed sidebar: no Appearance chevron, sub-items at 13 px (#758)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Collapsed sidebar: no Appearance chevron, sub-items at 13 px (#758)
+- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#713): nav entries 13 px, the Appearance chevron points down and turns up when open. The chevron stays in the expanded sidebar; in icon-only mode it is hidden because it is decorative. The sub-items use the same 13 px as the nav entries. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a hidden decorative icon and a text size fix
+
+## 2026-10-18 — Codex review fixes on the calm shell: active entry keeps its fill on hover; sidebar toggle hit area (#758)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Codex review fixes on the calm shell: active entry keeps its fill on hover; sidebar toggle
+- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#713): hovering an inactive entry shows the weaker tint, clearly weaker than the active entry; the active entry keeps its full fill. The sidebar toggle is a muted 20 px icon. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a hover correction and a larger hit area without a visible size change
+
+## 2026-10-18 — Codex review fix on the calm shell: icons centred in the icon-only pills (#758)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Codex review fix on the calm shell: icons centred in the icon-only pills (#758)
+- Approved customer-visible result: as in the collapsed-sidebar entry of 2026-10-18 (#758): icons only in the icon-only sidebar, each entry as a centred pill. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a centring class for the icon-only pills
+
+## 2026-10-18 — Calm shell: the page title is the open Appearance sub-page (#758)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm shell: the page title is the open Appearance sub-page (#758)
+- Approved customer-visible result: as in the approved Appearance A picture (#713): one page title, the sub-page name, in the header row next to the sidebar toggle.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, its test `apps/control-center/src/components/control-center-shell.test.tsx`, `apps/control-center/src/components/theme-library-screen.tsx` (reports whether the Studio is open), `apps/control-center/src/components/control-center-app.tsx` (passes that flag to the shell) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the page title only
+
+## 2026-10-18 — Codex review fix on the calm shell: whats-new test finds the page title as level-1 heading (#758)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Codex review fix on the calm shell: whats-new test finds the page title as level-1 heading
+- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#758): one page title, the sub-page name, in the header row.
+- Scope: `apps/control-center/src/components/control-center-app.whats-new.test.tsx` (test query only) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a test query change without a visible change
+
+## 2026-10-18 — Calm shell complete: one page title, no sentence under it on Themes and Screensavers (#758)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm shell complete: one page title, no sentence under it on Themes and Screensavers (#758
+- Approved customer-visible result: as in the approved Appearance A picture (#713): one page title, the sub-page name, in the header row next to the sidebar toggle; no description sentence.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its test `apps/control-center/src/components/theme-library-screen.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (heading waits find the header title, test file only), and this approval record. Pull request branch only, not merge or release. Touches the Themes/Screensavers page; conflicts with #754 there (Marcus resolves).
+- What's new: none — a removed duplicate title and sentence
+
+## 2026-10-18 — Codex review fix: the internal Theme Studio preview keeps the Appearance title (#758)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Codex review fix: the internal Theme Studio preview keeps the Appearance title (#758)
+- Approved customer-visible result: as in the calm shell entry of 2026-10-18 (#758): Theme Studio keeps its own "Appearance" header.
+- Scope: `apps/control-center/src/components/theme-studio/theme-studio-preview.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a header flag in the development preview
+## 2026-10-17 — Settings calm redesign, variant A (#713)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Settings calm redesign, variant A (#713)
+- Approved customer-visible result: Settings reads top to bottom as Display mode, Brightness, Screensaver, Connection, Setup, AI providers. Section names sit in a fixed left column, controls on the right. Connection is a list of two radio rows (USB-C, WiFi) with their descriptions instead of two cards. Screensaver rows show the name on the left (Show screensaver, Show after, Brightness in screensaver) and the control beside it. Setup shows each button beside its line. Text before → after: the section heading "Display" becomes "Brightness" (the brightness slider is the only control in it); no other text changes.
+- Scope: `apps/control-center/src/components/settings-screen.tsx` (layout and classes only, same controls, same behaviour), `settings-screen.test.tsx` (pinned section order, headings and row order updated; behaviour assertions unchanged), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a re-arranged Settings page with the same settings needs no notice.
+
+## 2026-10-17 — Settings calm redesign, rows wrap at narrow widths (#713)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Settings calm redesign, rows wrap at narrow widths (#713)
+- Approved customer-visible result: as in the entry above. When the Settings column is narrower than the label column plus the control, the control moves below its label instead of being squeezed or clipped. The setup explanations wrap the same way. Brightness shows "Loading" or "Not supported" in full. No new text, button or dialog.
+- Scope: `apps/control-center/src/components/settings-screen.tsx` (wrap and width classes only), `apps/control-center/scripts/test-customer-flows.mjs` (the Settings wait now uses the "Brightness" heading), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a layout fix of the same Settings page needs no notice.
+
+## 2026-10-18 — Settings calm leftovers: 13 px descriptions and an underlined link (#748)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Settings calm leftovers: 13 px descriptions and an underlined link (#748) — before → after: none; the words stay the same.
+- Approved customer-visible result: Only the size and weight of the text named above change, so Settings reads the same words in the same places. The Connection descriptions and the shortcut line match the 13 px small text of the other calm pages. The "Show more providers" control is an ink link with an underline and regular weight, as the other links on Settings are, instead of a bold label without an underline. No new text, control or dialog.
+- Scope: `apps/control-center/src/components/settings-screen.tsx` (classes on the Connection descriptions and the shortcut line), `settings-screen.test.tsx`, `apps/control-center/src/components/setup/setup-providers-screen.tsx` (the "Show more providers" button uses the link variant, regular weight), `setup-providers-screen.test.tsx`, and this approval record. Pull request branch only, not merge or release. Not seen by Paul yet.
+- What's new: none — a size and underline fix of existing text, no new feature
+
+## 2026-10-18 — Settings remaining small text at 13 px (#748)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Settings remaining small text at 13 px (#748)
+- Approved customer-visible result: Only the size of the small grey text on Settings changes to 13 px, with the same words in the same places. That is the grey status line beside `Choose screensaver` (the installed-screensaver line), the notice above Display mode, the help texts under `Run setup again` and `Reset to factory settings`, the brightness reading next to its slider, and the `Configured` / `Not configured` status of a secret setting. The section names (Display mode, Brightness, Screensaver, Connection, Setup, AI providers) go from 14 px to 13 px, still semibold. Text before → after: none; the words stay the same. The `Choose screensaver` link and the buttons keep their size. The page title and the device-preview cards are unchanged. No new text, control or dialog.
+- Scope: `apps/control-center/src/components/settings-screen.tsx` (classes only), `apps/control-center/src/components/preference-control.tsx` (classes of the secret status text, used only on Settings), `settings-screen.test.tsx`, and this approval record. Pull request branch only, not merge or release. Not seen by Paul yet.
+- What's new: none — a size change of existing small text needs no notice.
+
+## 2026-10-18 — Settings chosen Display mode card and provider in ink, not lime (#748)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Settings chosen Display mode card and provider in ink, not lime (#748)
+- Approved customer-visible result: Only the colour of the outline around the chosen card and the chosen provider changes, to ink. Same words, same places, same size and thickness. Lime stays only for primary button fills and the switch on state. The round selection mark keeps its look. The setup wizard's Display Mode step is not changed by this entry.
+- Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` (optional ink tone for the chosen frame, default unchanged), `apps/control-center/src/components/setup/setup-display-mode-screen.tsx` (ink flag passed through `DisplayModeChoice`, only Settings sets it), `apps/control-center/src/components/settings-screen.tsx` (sets the flag), `apps/control-center/src/components/settings-screen.test.tsx` (new test for the ink frame), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a colour change of an existing outline needs no notice.
+## 2026-10-17 — Support page in the calm look, variant A (#713)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Support page in the calm look, variant A (#713)
+- Approved customer-visible result: Support page, variant A of the calm redesign (`ui/calm/updates-support/support-A.png`). Texts stay the same. The "Connected" badge becomes a Status row ("Connected" or "Not connected"). Connected VibeTV, Support report, Diagnostics, Setup log and Recent activity are sections with the heading and its note on the left, the content on the right, a line between sections. Fact rows have a line between them and no tiles. Diagnostic checks are one row each: name, detail, status. The support report buttons and Run diagnostics are smaller; Create report or Create again is the lime button. Refresh moves under the activity list as an underlined link. The Setup log keeps its frame until the setup area PR. Updates is not changed.
+- Scope: `apps/control-center/src/components/logs-screen.tsx`, `diagnostics-panel.tsx`, `support-report-actions.tsx`, its test `diagnostics-panel.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look only, no new capability
+
+## 2026-10-17 — Support page calm look: narrow-width follow-up to Codex review (#713, #750)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Support page calm look: narrow-width follow-up to Codex review (#713, #750)
+- Approved customer-visible result: the same as the entry above at desktop widths. On narrow windows the section label no longer sits beside its content and the diagnostic checks no longer squeeze the detail text into a narrow column. Texts, buttons and behaviour unchanged.
+- Scope: `apps/control-center/src/components/logs-screen.tsx`, `diagnostics-panel.tsx`, the test `control-center-app.display-preferences.test.tsx` (Recent activity scope is now the section, not the card) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — layout breakpoints only, no new capability
+
+## 2026-10-18 — Support: no placeholder in the Recent activity time column; Setup log fades its top edge (#750)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Support: no placeholder in the Recent activity time column; Setup log fades its top edge (
+- Approved customer-visible result: Support › Recent activity: the entry `Control Center opened` / `This session started.` shows its clock time instead of `Session`; no other text changes. Support › Setup log: the top edge of the box fades like the Setup wizard log, so no row is shown cut in half. No new text, screen, button or dialog.
+- Scope: `logs-screen.tsx`, `control-center-app.tsx` (the initial session entry only), `setup-event-log.tsx`, their tests `logs-screen.test.tsx`, `setup-event-log.test.tsx` and `control-center-app.display-preferences.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new wording
+
+## 2026-10-18 — Support Setup log: the top fade only while older entries are above the view (#750, Codex review)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Support Setup log: the top fade only while older entries are above the view (#750, Codex r
+- Approved customer-visible result: Support › Setup log: the fade at the top edge applies only while older entries are above the view. No new text, screen, button or dialog.
+- Scope: `setup-event-log.tsx`, its test `setup-event-log.test.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new wording
+
+## 2026-10-17 — Calm redesign of all dialogs, variant A2 with lime primary (#713)
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign of all dialogs, variant A2 with lime primary (#713)
+- Approved customer-visible result: Variant A2 (lime primary, no X, uniform 440 px after review; customer-flow scripts dismiss with Escape where the X was). Every dialog in the Control Center (setup, provider, firmware, recovery, system busy, What's new, Theme Studio, Theme library, Settings) gets the same look.
+  - The X in the top right is gone. A dialog whose only buttons are a primary action gets a ghost "Close" as its secondary button. Dialogs that already have a secondary action (Cancel, Keep WiFi, Enter IP manually, Create support report, Restart Control Center) keep only that. Info-only dialogs keep their single lime OK, Got it or Hide.
+  - Title 28 px semibold, text 13 px, 440 px wide, 32 px padding, 14 px corners, footer right-aligned with no grey band.
+  - Secondary buttons are ghost text buttons (were outlined); button labels 13 px.
+  - Every primary button is lime. Reset (factory settings), Delete local copy, Replace and Discard and continue were black or red and are now lime.
+  - "Keep your changes?" (Theme Studio): the two stacked full-width buttons are now a footer with Keep editing (ghost) and Discard and continue (lime).
+  - "Claude needs a new sign-in" (provider): ghost "Not now" beside "Sign in to <Provider>" (was: X only).
+  - "Your VibeTV is not reachable" (device picker): ghost "Not now" beside Connect (was: X only).
+  - Theme preview (Theme library): a lime "Close" button (was X only).
+  - Create with AI (Theme Studio): ghost "Not now" under the form, hidden while connecting as the X was.
+  - Kept as approved on 16.10.: the setup guide dialog keeps "OK" beside "Open setup guide" (the picture shows "Close").
+  - Texts of every dialog stay as they were, apart from the added "Close" and "Not now" above.
+  - Codex review fixes: the What's New, theme preview and delete dialogs keep the uniform 440 px width (their own wider widths are gone). The WiFi setup failed dialog keeps its single OK, no Close. Create with AI shows "Not now" on the setup panel and "Close" on the other panels.
+- Scope: `apps/control-center/src/components/ui/dialog.tsx`, `ui/alert-dialog.tsx`, `setup/setup-dialog.tsx`, `setup/setup-device-dialogs.tsx`, `setup/setup-provider-dialogs.tsx`, `setup/setup-providers-screen.tsx` and its test, `setup/setup-recovery-dialogs.tsx`, `setup/setup-wizard.test.tsx`, `setup/setup-device-dialogs.test.tsx`, `updates-screen.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (dismiss by Escape where the X was), `settings-screen.tsx`, `whats-new-dialog.tsx`, `theme-library-screen.tsx`, `theme-studio/ai-theme-studio-screen.tsx`, `theme-studio/replace-draft-dialog.tsx`, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — look change of existing dialogs only (variant A2 after Codex review and CI test updates), no new capability
+
+## 2026-10-17 — Appearance (calm redesign A): Themes and Screensavers as cards
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Appearance (calm redesign A): Themes and Screensavers as cards
+- Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers each theme or screensaver is a card, up to three in a row, with its picture on top and its name below, in 13 px semibold. The page title is 28 px semibold. On a row, Edit is an underlined text link, Delete (own themes only) is an underlined text link instead of a red button, and Install is the lime primary button at the right edge. A row with nothing to install shows its status in the same slot as text, `Installed` with a check mark, or the same disabled reason as before. Words unchanged. Not as in the picture: on Screensavers, Edit stays on the name row (the picture puts it below); the install progress keeps its progress bar and notice (no process-step list yet); an update keeps the word `Update` on the button (the picture shows `Update needed`); the notice `Screensaver is turned off` with the switch stays as it is (#645 is still open).
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (row layout, buttons, title size, picture size) and its test `theme-library-screen.test.tsx` (the label matcher allows the check mark before the label), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — layout and button variants only, no new words
+
+## 2026-10-17 — Appearance cards: three columns from 1280 px, card corner radius (Codex review fix on #754)
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Appearance cards: three columns from 1280 px, card corner radius (Codex review fix on #754
+- Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers the cards are in three columns only from 1280 px wide (before: from 1024 px), in two columns from 640 px, and in one below that. On a narrow card the name and the row's buttons stack instead of overlapping. The card corners use the card radius token (0.75 rem), as the other cards do (before: 0.875 rem). Words, buttons and states are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (grid breakpoint, row wrapping, card radius) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — layout breakpoint and corner radius only
+
+## 2026-10-17 — Appearance cards: name wraps above the row's buttons at narrow widths (Codex review fix on #754)
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Appearance cards: name wraps above the row's buttons at narrow widths (Codex review fix on
+- Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers, at a narrow card width the name, and its Custom mark, get at least 11 rem, and the row's buttons move to a line of their own below the name instead of covering it (before: the name could shrink to a few pixels). Words, buttons and states are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (minimum width of the name) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — layout only, no new words
+
+## 2026-10-18 — Revert of the page-title change on Appearance: the tree is back to the previous clean head (#754)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Revert of the page-title change on Appearance: the tree is back to the previous clean head
+- Approved customer-visible result: as in the approved Appearance A picture (#713), once #758 is in: one page title, the sub-page name, and no sentence under it. This branch alone keeps the earlier look.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx`, its tests, and this approval record (revert of 74cdbd62). Pull request branch only, not merge or release.
+- What's new: none — a revert without a visible change
+
+## 2026-10-18 — Theme page: unsaved-theme card and "Theme is not available" notice use the calm type and colours
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Theme page: unsaved-theme card and "Theme is not available" notice use the calm type and c
+- Approved customer-visible result: Look only, no wording, button or state change. `Continue your unsaved theme` card: its title is 13 px semibold in the ink colour (before: 16 px bold, fixed colour), its line `… was last changed …` is 13 px in the muted colour (before: 14 px, fixed colour). `Theme is not available` notice: the icon is in the muted colour (before: olive, a colour outside the theme), the title is in the ink colour (before: fixed colour, weight unchanged).
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (colours, size and weight of the two boxes) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — colours, size and weight only, no new words
+
+## 2026-10-18 — Themes and Screensavers: errors as overlays, empty page states without a frame
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Themes and Screensavers: errors as overlays, empty page states without a frame
+- Approved customer-visible result: On Appearance › Themes and Appearance › Screensavers, a failed theme action (`Theme action failed`, with its sentence) opens as a dialog over the page, not as a red box under the title. A storage problem (`Theme storage needs attention`, with its reason) opens the same way, not as a grey box. Both dialogs have the title and sentence as before, one button `OK`, and the X closes them too; a new failure opens the dialog again. The icon is in the muted colour (before: red). `No screensavers yet` and `Themes unavailable` are no longer in a bordered card with a round icon; they are centred 13 px text in the list area (title in the ink colour, semibold; sentence in the muted colour), with `Reload catalog` unchanged. Words are unchanged. Not changed: `Screensaver is turned off` with its switch stays as it is, and the storage line in the editor stays as it is.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the two notices as overlays, the two empty states), new test `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx`, `apps/control-center/src/components/theme-library-screen.custom.test.tsx` (the screensaver error is read from the page body, because the overlay is not inside the page) and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — the same sentences, now in overlays and as plain text
+
+## 2026-10-18 — Themes: a failed delete shows its error only in the delete dialog (Codex review fix on #762)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Themes: a failed delete shows its error only in the delete dialog (Codex review fix on #76
+- Approved customer-visible result: When saving the library fails while a custom theme is deleted, the error stays in the `Delete … ?` dialog as before, and no second overlay `Theme action failed` opens on the page. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (one line in the delete failure path) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change, the same dialog shows the same error
+
+## 2026-10-18 — Themes: an error or storage notice waits while another page dialog is open (Codex review fix on #762)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Themes: an error or storage notice waits while another page dialog is open (Codex review f
+- Approved customer-visible result: When an action fails while the Preview or the Delete dialog of the Themes page is open, the `Theme action failed` overlay (and the storage notice) waits and is not shown on top of it. When that dialog is closed, the overlay shows with the same sentence and `OK`. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the condition for the two page overlays) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change, the same dialog waits for the one open
+
+## 2026-10-18 — Themes: a failed delete reports only in the delete dialog and keeps another action's error (Codex review fix on #762)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Themes: a failed delete reports only in the delete dialog and keeps another action's error
+- Approved customer-visible result: When saving the library fails while a custom theme is deleted, the error stays in the `Delete … ?` dialog as before. The delete no longer clears or repeats an error of another action: an error that another action queued while the delete dialog was open still shows after the dialog is closed. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the delete save writes and reports its own failure) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change, the same dialogs
+
+## 2026-10-18 — Themes: an error or storage notice waits while a row's install-failure dialog is open (Codex review fix on #762)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Themes: an error or storage notice waits while a row's install-failure dialog is open (Cod
+- Approved customer-visible result: When an action fails while the install-failure dialog of a theme row is open, the `Theme action failed` overlay (and the storage notice) waits and is not shown on top of it. When that dialog is closed, the overlay shows with the same sentence and `OK`. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the install-failure open state is reported to the page, which waits for it) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change, the same dialog waits for the one open
+
+## 2026-10-18 — Themes: page errors wait while any install-failure dialog of the page is open (Codex review fix on #762)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Themes: page errors wait while any install-failure dialog of the page is open (Codex revie
+- Approved customer-visible result: When two theme rows that share an id both show an install-failure dialog, the `Theme action failed` overlay (and the storage notice) waits until both are closed. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (each row reports its own install-failure dialog; the page keeps the list of open ones) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change, the same dialogs wait for each other
+
+## 2026-10-18 — Themes: a companion-unreachable install failure does not hold back page errors (Codex review fix on #762)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Themes: a companion-unreachable install failure does not hold back page errors (Codex revi
+- Approved customer-visible result: When a theme install fails because the VibeTV Companion is unreachable, that failure draws no dialog, as before, and it no longer holds back a `Theme action failed` overlay or the storage notice. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the condition for an open install-failure dialog uses the same predicate as the dialog itself) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change
+
+## 2026-10-18 — Themes: page notices follow one rule (Codex review fixes on #762)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Themes: page notices follow one rule (Codex review fixes on #762)
+- Approved customer-visible result: `Theme action failed` and `Theme storage needs attention` are shown only while no other dialog is open on the page. A failure that happens while another dialog is open is kept and shows when that dialog closes. When both are pending, `Theme action failed` is shown first and `Theme storage needs attention` after it is closed. `OK` or the X closes the notice and clears it. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (one rule for the two notices instead of per-dialog conditions) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (tests for the rule), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change in text or controls
+
+## 2026-10-18 — Themes: the busy announcement and the page notices do not wait on each other (Codex review fix on #762)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Themes: the busy announcement and the page notices do not wait on each other (Codex review
+- Approved customer-visible result: When a page notice (`Theme action failed` or `Theme storage needs attention`) and the busy announcement both become due, the notice is shown and the busy announcement waits for it. Before, the two could take turns opening and closing. Words, buttons and every other state are unchanged.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (the page notices do not count the busy announcement as another dialog) and `apps/control-center/src/components/theme-library-screen.calm-states.test.tsx` (one regression test), and this approval record. Pull-request branch only, not merge or release.
+- What's new: none — no visible change
+
+## 2026-10-17 — Overview: centered 3D VibeTV, no tiles, not-found dialog (#713)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: centered 3D VibeTV, no tiles, not-found dialog (#713)
+- Approved customer-visible result: Overview shows only the VibeTV as a 3D model, centered, under the status line "VibeTV is connected" (or "VibeTV status", "VibeTV is restarting" as before). The Mac App, VibeTV, Display and firmware tiles and the "Connected" badge are removed. When VibeTV is not found, a dialog "We couldn't find your VibeTV" with "Check that VibeTV is plugged in and on the same WiFi as this Mac." (computer on Windows), the lime "Run setup again" and "Not now", and no close button, is shown over the page.
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `vibetv-3d-preview.tsx` (new, three.js case from #465), `live-vibetv-preview.tsx` (`screenOnly`), `control-center-app.tsx` (one callback), the `/models/` route in the companion, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the Overview look only; the 3D case is shipped as the look of this page
+
+
+## 2026-10-17 — Overview: Codex review fixes for the not-found dialog (#755)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: Codex review fixes for the not-found dialog (#755)
+- Approved customer-visible result: none beyond the approved picture. The not-found dialog is no longer shown during a firmware update, and it waits behind the other dialogs, like What's new does. Text, buttons and layout stay the same.
+- Scope: `apps/control-center/src/components/vibetv-not-found-dialog.tsx` (new), `overview-screen.tsx` (dialog removed from the page), `control-center-app.tsx` (dialog in the app dialog order), the tests for them, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the fix changes no new content
+
+## 2026-10-17 — Overview: What's New waits for the Run setup again confirmation (#755)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: What's New waits for the Run setup again confirmation (#755)
+- Approved customer-visible result: none. What's New no longer opens while the "Run setup again?" confirmation is open, so only one dialog shows at a time.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (one condition in the dialog order) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-17 — Overview: Codex review fixes for the setup confirmation and the sway delay (#755)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: Codex review fixes for the setup confirmation and the sway delay (#755)
+- Approved customer-visible result: none. Only one dialog shows at a time, and a freshly opened Overview starts still for 2.5 s before it sways.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (one condition) and `apps/control-center/src/components/vibetv-3d-preview.tsx` (one timer start), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-18 — Overview: customer-flow checks follow the calm Overview (#755)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: customer-flow checks follow the calm Overview (#755)
+- Approved customer-visible result: none. The test script changes what the flows wait for, not what the customer sees.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-18 — Overview: 3D case loads after first paint, flat preview otherwise (#755)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: 3D case loads after first paint, flat preview otherwise (#755)
+- Approved customer-visible result: none beyond the approved picture. The 3D VibeTV replaces the flat preview a moment after the page opens, on machines with a real GPU.
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `vibetv-3d-preview.tsx`, `vibetv-3d-support.ts` (new), their tests and `apps/control-center/scripts/test-customer-flows.mjs` (wait targets), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-18 — Overview: 3D stage centered when it replaces the flat preview (#755)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: 3D stage centered when it replaces the flat preview (#755)
+- Approved customer-visible result: none beyond the approved picture. The 3D VibeTV stays centered on wide windows when it replaces the flat preview.
+- Scope: `apps/control-center/src/components/overview-screen.tsx` (centering wrapper) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-18 — Overview: flat preview stays until the 3D screen has its theme (#755)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: flat preview stays until the 3D screen has its theme (#755)
+- Approved customer-visible result: none. The handover from the flat preview to the 3D VibeTV no longer passes through a loading state.
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-18 — Overview: stable handover callback; not-found waits for the busy dialog (#755)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: stable handover callback; not-found waits for the busy dialog (#755)
+- Approved customer-visible result: none. The 3D VibeTV replaces the flat preview as before; only one dialog shows at a time.
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/control-center-app.tsx` (one condition), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-18 — Overview: Windows flow waits for the heading, not the removed app tile (#755)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: Windows flow waits for the heading, not the removed app tile (#755)
+- Approved customer-visible result: none. The test script changes what it waits for, not what the customer sees.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+
+## 2026-10-18 — Overview: 3D case shows in disconnected states; hidden 3D is inert (#755)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: 3D case shows in disconnected states; hidden 3D is inert (#755)
+- Approved customer-visible result: the flat preview is replaced by the 3D case as soon as its model is drawn, also when VibeTV has no live frame. Screen readers get only the visible preview (the hidden 3D is aria-hidden and inert until it is shown). No other text changes.
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/vibetv-3d-preview.tsx`, `apps/control-center/src/components/overview-screen.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (provider-state flow waits for the rendered theme instead of the offline placeholder disappearing), and this approval record. Codex review fixes on PR #755 only; not merge or release.
+- What's new: none — no new content
+
+## 2026-10-18 — Overview: Windows Basic Render Driver keeps the flat preview (#755)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: Windows Basic Render Driver keeps the flat preview (#755)
+- Approved customer-visible result: on Windows without a GPU the Overview shows the flat VibeTV preview (no 3D case). No text changes.
+- Scope: `apps/control-center/src/components/vibetv-3d-support.ts`, `apps/control-center/src/components/vibetv-3d-support.test.ts`, and this approval record. Codex review fix on PR #755 only; not merge or release.
+- What's new: none — no new content
+
+## 2026-10-18 — Customer flow: Overview check no longer waits for the removed tiles (#755)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Customer flow: Overview check no longer waits for the removed tiles (#755)
+- Approved customer-visible result: none. The test script changes what it waits for, not what the customer sees.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-17 — Lime text on light surfaces becomes the design-system olive
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Lime text on light surfaces becomes the design-system olive
+
+- Approved customer-visible result: On the welcome and Mac App download screens the wordmark reads "VIBE" in ink and "TV" in olive (was lime). Hovering "Choose screensaver" in Settings turns the link olive (was lime). Nothing else changes.
+
+- Scope: `apps/control-center/src/components/control-center-brand.tsx`, `settings-screen.tsx`, `ui/field.tsx`, `ui/item.tsx`, `ui/empty.tsx`, `ui/badge.tsx`, their tests (`control-center-brand.test.tsx`, `settings-screen.test.tsx`, `ui/light-surface-links.test.tsx`) and this approval record. Pull-request branch only, not merge or release.
+
+- What's new: none — colour of existing text only, no new wording or control
+
+## 2026-10-18 — Overview: weak WiFi and theme notices as overlay dialogs (option on #755)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview: weak WiFi and theme notices as overlay dialogs (option on #755)
+- Approved customer-visible result: none yet. Proposed for Paul's decision: when VibeTV is connected and reports a weak WiFi signal, the Overview shows a dialog "Weak WiFi signal" with "Move VibeTV closer to your router." and "Not now". When the Companion names a theme the VibeTV cannot draw, it shows "Theme not shown" with "VibeTV can't show this theme. Choose another theme." and "Not now". Neither dialog has a close button, and neither has a lime button, because the Overview performs no action for them. One notice at a time, and never while another dialog is open on the page; a closed notice stays closed until it goes away and comes back. The other former notices stay off the Overview (waiting for usage and the screensaver are shown by the 3D screen, the update by the sidebar and Updates, the firmware version by Support and Updates).
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/overview-screen.notices.test.tsx`, and this approval record. Option stacked on PR #755; not merge or release.
+- What's new: none — no new content
+
+## 2026-10-18 — Overview notices: the app keeps the closed state and the busy notice goes first (#772)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Overview notices: the app keeps the closed state and the busy notice goes first (#772)
+- Approved customer-visible result: none beyond the entry above. A closed notice now stays closed when the customer switches tabs and comes back. When both notices are due, the theme notice shows once the WiFi notice is closed. Both notices wait while the low-memory notice is due, so the two never block each other.
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/overview-screen.notices.test.tsx`, `apps/control-center/src/components/control-center-app.tsx` (state and props for the Overview notice only), and this approval record. Option stacked on PR #755; not merge or release.
+- What's new: none — no new content
+
+
+## 2026-10-18 — Option: keyboard focus ring in ink instead of lime (app-wide)
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Option: keyboard focus ring in ink instead of lime (app-wide)
+- Approved customer-visible result: Not decided; this is an option for Paul. The keyboard focus ring becomes the ink colour (`#1B1B1B` on light, `#EDEDED` on dark) instead of olive-lime (`#506600` light, `#CCFF00` dark), at full opacity instead of 40 % or 50 %. Look unchanged except: focus rings of buttons, inputs, textareas, selects, checkboxes, switches, tabs, toggles, badges, list items, the Settings links, and the border and ring of the selected setup card change from `#506600` to `#1B1B1B`, and their opacity from 40 % or 50 % to 100 %. The primary button fill and the switch on-state stay lime. Contrast of the ring against the page: 16.4:1 light, 14.7:1 dark (old lime 6.2:1 light).
+- Scope: `apps/control-center/src/app/globals.css` (`--ring` in both themes), `apps/control-center/src/app/globals.focus-ring.test.ts` (new), the focus classes in `settings-screen.tsx` and `components/ui/{badge,button,checkbox,input,item,select,switch,tabs,textarea,toggle}.tsx`, the internal UI kit swatch value in `vibetv-ui-kit.tsx`, and this approval record. Not merged, not released.
+- What's new: none — no new text, screen or control; only the focus ring colour and strength change
+
+## 2026-10-18 — Option follow-up: sidebar focus ring and AI Theme Studio name field (#776)
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Option follow-up: sidebar focus ring and AI Theme Studio name field (#776)
+- Approved customer-visible result: Not decided; this extends the option above. The sidebar focus ring (menu items and sidebar buttons, which stay on the dark sidebar in both themes) changes from lime `#CCFF00` to light ink `#EDEDED`, in both themes. The focus ring of the name field in AI Theme Studio goes from 40 % to 100 % opacity, the same colour as the other focus rings. Look unchanged except: the sidebar focus ring `#CCFF00` → `#EDEDED`, and the AI Theme Studio name field focus ring 40 % → 100 %. Contrast of the sidebar ring against the sidebar: 14.7:1.
+- Scope: `apps/control-center/src/app/globals.css` (`--sidebar-ring` in both themes), `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` (one class), `apps/control-center/src/app/globals.focus-ring.test.ts` (sidebar assertions added), and this approval record. Not merged, not released.
+- What's new: none — no new text, screen or control; only focus ring colour and strength change
+
+## 2026-10-18 — Option follow-up 2: focus rings at full strength on destructive buttons, invalid fields, sliders and input groups (#776)
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Option follow-up 2: focus rings at full strength on destructive buttons, invalid fields, s
+- Approved customer-visible result: Not decided; this extends the option above after the Codex review. Look unchanged except: the keyboard focus ring of destructive buttons (for example `Reset to factory settings`, `Delete theme`) and destructive badges changes from a faint red `#7D2633` at 20 % to the ink `#1B1B1B` (light) or `#EDEDED` (dark) at 100 %; the keyboard focus ring of an invalid input (for example the IP address field in the setup dialog) changes from a faint red at 20 % to the ink at 100 %; the keyboard focus ring of the brightness sliders in Settings changes from 40 % to 100 % ink, and so does the thumb halo on hover and press, which used the same colour; the keyboard focus ring of Theme Studio colour fields (input group) goes from 50 % to 100 % ink. The red border of invalid fields, the destructive colours and the lime primary button stay as they are. Contrast of the ink ring: 16.4:1 light, 14.7:1 dark.
+- Scope: `apps/control-center/src/components/ui/{button,badge,input,input-group,slider}.tsx` (one class each, `input.tsx` adds one class for invalid and focused), `apps/control-center/src/app/globals.focus-ring.test.ts` (scan of every component class for faint focus rings, new), and this approval record. Not merged, not released.
+- What's new: none — no new text, screen or control; only focus ring colour and strength change
+
+## 2026-10-19 — Option follow-up 3: default outline of native controls at full strength (#776)
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Option follow-up 3: default outline of native controls at full strength (#776)
+- Approved customer-visible result: Not decided; this extends the option above after the Codex review. Look unchanged except: the default keyboard outline of native controls that do not use the shared UI primitives (for example the Theme Studio select fields, the colour swatch and the consent checkbox) changes from ink at 50 % to ink at 100 %. The colour stays the ink of each theme. Nothing else changes.
+- Scope: `apps/control-center/src/app/globals.css` (base outline rule), `apps/control-center/src/app/globals.focus-ring.test.ts` (outline assertion added), and this approval record. Not merged, not released.
+- What's new: none — no new text, screen or control; only focus ring colour and strength change
+
+## 2026-10-19 — Option follow-up 4: invalid inputs keep the ink focus ring in dark mode; internal UI kit Support swatch (#776)
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Option follow-up 4: invalid inputs keep the ink focus ring in dark mode; internal UI kit S
+- Approved customer-visible result: Not decided; this extends the option above after the Codex review. Look unchanged except: in dark mode, an input that is marked invalid and has keyboard focus (for example the IP address field in the setup dialog) keeps the ink focus ring `#EDEDED` at full strength instead of the translucent red ring. The light theme already did this. The internal UI kit page (not customer-facing) keeps its `Support` swatch on the support colour `#506600`, as on main. Nothing else changes.
+- Scope: `apps/control-center/src/components/ui/input.tsx` (one dark variant class), `apps/control-center/src/components/vibetv-ui-kit.tsx` (internal swatch restored to the support token), `apps/control-center/src/app/globals.focus-ring.test.ts` (dark invalid assertion added), and this approval record. Not merged, not released.
+- What's new: none — no new text, screen or control; only focus ring colour and strength change
+
+## 2026-10-19 — Option exact result: selected setup card and keyboard focus ring (#776 review)
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Option exact result: selected setup card and keyboard focus ring (#776 review)
+- Approved customer-visible result: Not decided. Exact rendered result of this option: a selected setup card has an ink border (`#1B1B1B` light, `#EDEDED` dark) and a soft 20 % ink halo (before: 20 % olive `#506600` light, 20 % lime `#CCFF00` dark). The selected card is not changed to a full-strength ring in this option; that is the topic of option #775. Keyboard focus is a full-strength ink ring (`#1B1B1B` light, `#EDEDED` dark).
+- Scope: this approval record only. No code change to `setup-selectable-card.tsx` in this commit. Not merged, not released.
+- What's new: none — no new text, screen or control; only the colour of the selected card border and halo and of the keyboard focus ring change
+
+## 2026-10-19 — Group: Calm redesign, shell and tabs (#763 #758 #748 #750 #753 #754 #759 #762 #755 #710 #761, options #772 #775 #776)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Group: Calm redesign, shell and tabs (#763 #758 #748 #750 #753 #754 #759 #762 #755 #710 #7
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries of the parts above.
+- Scope: `apps/control-center/src/components/setup/setup-selectable-card.tsx` (ink focus ring at full strength) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — a merge fix between #748 and #776
+
+## 2026-10-19 — Group: Calm redesign matched to the approved master "Calm Redesign - alle Screens" (#784)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Group: Calm redesign matched to the approved master "Calm Redesign - alle Screens" (#784)
+- Approved customer-visible result: none yet; waits for Paul's yes. Not built here (waiting for Paul or a separate feature PR): Support "Connected VibeTV" table and Setup log stay; wordmark colour stays; Appearance segment switch, search, filters, tags, merged page, single Create; "n of 6 passed" and "Fix" on Support; "Last created today at …" on the Support report; Theme Studio AI key row; the Screensaver-off line with a Settings link; Updates (own PR).
+- Scope: `apps/control-center/src/components/{overview-screen,settings-screen,logs-screen,diagnostics-panel,support-report-actions,theme-library-screen,vibetv-3d-preview,preference-control,control-center-app}.tsx` and their tests, `apps/control-center/scripts/test-customer-flows.mjs` (Overview figures, "Run setup", Support "Create new"), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-19 — Calm redesign matched to the master: review and CI fixes (#784)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign matched to the master: review and CI fixes (#784)
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entry above.
+- Scope: `apps/control-center/src/components/logs-screen.tsx`, `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-19 — Calm redesign matched to the master: CI fix 2, selected theme card keeps its tint (#784)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign matched to the master: CI fix 2, selected theme card keeps its tint (#784)
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-19 — Calm redesign matched to the master: Support without the table and the Setup log, lime TV wordmark (#784, Paul's answers 19.10.)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign matched to the master: Support without the table and the Setup log, lime TV 
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/{logs-screen,overview-screen,control-center-app,control-center-brand}.tsx` and their tests, `docs/control-center-accessibility.md` (wording of the manual checks), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-19 — Calm redesign matched to the master: Codex fixes for Overview update lines and Recent activity (#784)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign matched to the master: Codex fixes for Overview update lines and Recent acti
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/{overview-screen,logs-screen,control-center-app}.tsx`, `apps/control-center/src/components/overview-screen.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-19 — Calm redesign matched to the master: Overview names a catalog theme by its title (#784, Codex fix)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign matched to the master: Overview names a catalog theme by its title (#784, Co — before → after: "Synthwave" → "Synthwave Shop" only where the two differ).
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/overview-screen.theme-name.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-19 — Calm redesign matched to the master: weak WiFi notice and What's new never together (#784, Codex fix for option #772)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign matched to the master: weak WiFi notice and What's new never together (#784,
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (one condition), `apps/control-center/src/components/control-center-app.whats-new.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-19 — Calm redesign matched to the master: the 3D VibeTV replaces the flat one only once its screen has its theme (#784, Codex fix)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign matched to the master: the 3D VibeTV replaces the flat one only once its scr
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/live-vibetv-preview.tsx` (one callback), `apps/control-center/src/components/vibetv-3d-preview.tsx`, `apps/control-center/src/components/live-vibetv-preview.recovery.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-19 — Calm redesign: the "Turn on in Settings" link from #645 gets the ink focus ring (#784, CI fix after merging main)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign: the "Turn on in Settings" link from #645 gets the ink focus ring (#784, CI 
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged except: with keyboard focus the link shows the full ink focus ring (option #776) instead of a 40 % ring; mouse users see no change.
+- Scope: `apps/control-center/src/components/theme-library-screen.tsx` (one class) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — Calm redesign: every remaining difference to the approved template "Calm Redesign - alle Screens" fixed (#784, design QA 19.10.)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign: every remaining difference to the approved template "Calm Redesign - alle S — before → after: (1) sidebar: the Appearance entry shows the palette icon → before a four-square grid icon; (2) Settings: the space between the page title and the first section is 24 px → before 16 px; (3) Settings: "Display mode" and "Connection" stand level with the first radio → before 8 px lower; (4) Settings: every row (Show screensaver, Show after, Brightness in screensaver, Choose screensaver, brightness slider) is 36 px high → before 28 px, so the sections are a little taller; (5) Settings: the sliders have a 16 px round handle with a ring and a track in a light ink tint → before a 12 px handle and a grey track; (6) Settings: "Choose screensaver" is 13 px → before 14 px; (7) Settings: "Run setup again" and "Factory reset" sit 16 px above and below their divider with a 2 px gap between name and line → before 20 px and none; "Reset…" is the template's red → before the darker red; (8) Settings: the line "Press … in any app to show the next provider." sits 16 px under the selector → before 20 px; (9) all outline buttons (Run setup, Reset…, Create new) have a darker border, 22 % ink → before a very light border; (10) AI providers list in Settings: search field 40 px high, rows 48 px high, "Show more providers" at the left edge → before 44 px, 53 px and centred; provider names are 13 px semibold in Settings and in Setup → before 14 px medium; (11) Support: the Usage engine table (Status, Version, Required version, Source) is gone; an engine that is too old shows its one line and the Repair button as before → before the table was always shown; (12) Support: the report card says "Last created today at 16:42." once a report exists, and its buttons Copy, Download and Create new are 36 px high, 14 px, Copy and Download in dark ink → before no time line, 32 px high, 13 px, grey; (13) Support: "Run diagnostics" is 36 px high and 14 px → before 32 px and 13 px; (14) Support: the first check is called "App" → before "Mac App"; (15) Themes and Screensavers cards: Edit, Install and the status text sit in a 28 px row, Edit and the status ("Installed", "Update needed") in normal weight, and 28 px between card rows → before 36 px row, semibold, 24 px; (16) all dialogs: no icon beside the title, and a soft shadow around the dialog → before an icon in front of the title (red circle, triangle, cable, refresh, lock) and no shadow; (17) dialog "We couldn't find your VibeTV" and "Connect the USB cable" are 480 px wide → before 440 px; the two ways out in "We couldn't find your VibeTV" are plain rows with a chevron, divided by hairlines → before two framed cards with icons; (18) dialog "Connect the USB cable": the steps are numbered 1, 2, 3 in plain muted figures → before grey circles; (19) dialog "We couldn't connect to your VibeTV": when VibeTV gives no message of its own, the title is "We couldn't connect to your VibeTV" and the text "VibeTV answered, but the connection did not finish. Check that it is on the same WiFi, then search again." → before "VibeTV could not connect" and "Keep VibeTV powered on, then search again."; messages VibeTV sends itself are shown as before; (20) Screensavers page: when the screensaver is off, one muted line "Screensaver is off. Turn it on in Settings." with "Settings" as the underlined link → before a grey box "Screensaver is off." with the link "Turn on in Settings" at its right.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/{control-center-shell,settings-screen,logs-screen,diagnostics-panel,support-report-actions,theme-library-screen,updates-screen,vibetv-not-found-dialog}.tsx`, `apps/control-center/src/components/setup/{setup-dialog,setup-device-dialogs,setup-firmware-dialogs,setup-provider-dialogs,setup-provider-row,setup-providers-screen,setup-recovery-dialogs,setup-preview-gallery}.tsx`, `apps/control-center/src/components/setup/setup-connect.ts`, `apps/control-center/src/components/ui/{button,dialog,alert-dialog,slider}.tsx`, `apps/control-center/src/components/{diagnostics-panel,logs-screen,theme-library-screen,screensaver-switches,control-center-app.display-preferences}.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (one locator) and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-19 — Calm redesign: merge of main (f2e8904c) into #784, the template wins where main's look differed (no new look)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign: merge of main (f2e8904c) into #784, the template wins where main's look dif
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/{control-center-shell,diagnostics-panel,theme-library-screen}.tsx`, `apps/control-center/src/components/ui/slider.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/{control-center-shell,diagnostics-panel}.test.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — no new content
+
+## 2026-10-19 — #784: approval marker after merging main (f2e8904c)
+
+- User approval: no visible change – UI approval not needed (merge commit into #784; no visible change of its own; entry: #784: approval marker after merging main (f2e8904c))
+- Approved customer-visible result: none yet; waits for Paul's yes. See this branch's entries above, in particular the two entries of 2026-10-19 "every remaining difference to the approved template" and "merge of main (f2e8904c)".
+- Scope: the merge of main into this branch and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — Calm redesign: the slider handle gets the full-strength focus ring (#784, Codex fix after merging main)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign: the slider handle gets the full-strength focus ring (#784, Codex fix after 
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged except: with keyboard focus the brightness slider handle shows the full-strength ink focus ring instead of a 40 % ring; mouse users see no change.
+- Scope: `apps/control-center/src/components/ui/slider.tsx` (one class) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — Calm redesign: customer-flow check follows the one-line screensaver notice (#784, CI fix)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm redesign: customer-flow check follows the one-line screensaver notice (#784, CI fix)
+- Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged; the one-line notice "Screensaver is off. Turn it on in Settings." is in the entry above.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` (two locators) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #784: approval marker after merging main (v1.0.65 + #638), Theme Studio key dialog without close X
+
+- User approval: no visible change – UI approval not needed (merge commit into #784; no visible change of its own; entry: #784: approval marker after merging main (v1.0.65 + #638), Theme Studio key dialog without)
+- Approved customer-visible result: as in this branch's entries and main's entries; the key dialog in Settings has no X (calm A2 dialogs have none).
+- Scope: the merge of main, `apps/control-center/src/components/theme-studio/openai-key-form.tsx` (one prop), `apps/control-center/src/components/settings-screen.test.tsx` (7 sections incl. Theme Studio AI) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-19 — #784: Support page matched to the template (build 2 QA)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Support page matched to the template (build 2 QA) — before → after: (1) the text on Support has 21 px lines → before 20 px, so the report card is 4 px taller and each check row is 46 px high → before 45 px; (2) the buttons Copy, Download, Create new and Run diagnostics have 14 px sides (Run diagnostics: icon 16 px, 8 px gap) → before 12 px sides, so each is 4 to 10 px wider now; (3) Create new and Refresh are 14 px → before 13 px.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/logs-screen.tsx`, `apps/control-center/src/components/support-report-actions.tsx`, `apps/control-center/src/components/diagnostics-panel.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #784: What's new dialog matched to the template (build 2 QA)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: What's new dialog matched to the template (build 2 QA) — before → after: (1) the dialog is 520 px wide → before 440 px; (2) "Version 1.0.64" sits as a muted line under the title "What's new" → before a small green capital line above the title (VERSION 1.0.64); (3) the entries have no icon square in front → before a green square with an icon; (4) the entries stand 24 px apart → before 16 px.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/whats-new-dialog.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #784: Support buttons spacing matched to the template (build 2 QA)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Support buttons spacing matched to the template (build 2 QA) — before → after: Copy, Download and Create new stand 4 px apart → before 12 px.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/support-report-actions.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #784: Control Center needs attention dialog matched to the template (build 2 QA)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Control Center needs attention dialog matched to the template (build 2 QA) — before → after: the dialog "VibeTV Control Center needs attention" is 480 px wide, so Restart Control Center and Try automatic repair again stand side by side → before 440 px wide with the two buttons one under the other.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #784: open Theme Studio shows one header row (build 2 QA)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: open Theme Studio shows one header row (build 2 QA) — before → after: while the Theme Studio is open, the window shows one header row — the Studio's own (back arrow, design name, File, undo and redo, status line, Save, Send to VibeTV) — with the sidebar open → before a second row "Appearance" with the sidebar button sat above it; the page title "Appearance" stays for screen readers.
+- Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #784: dialogs 32, 33, 39 and 47 follow the template (build 2 decision)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: dialogs 32, 33, 39 and 47 follow the template (build 2 decision) — before → after: (1) the dialogs "Repairing VibeTV Control Center" and "VibeTV Control Center needs attention" dim the screen behind them with the grey backdrop like every other dialog → before no backdrop, the page stayed bright and clickable; (2) the provider dialog for a provider that needs its own app has the title "<Provider> needs its own app" (e.g. "Ollama needs its own app") and the buttons Close and Open setup guide → before the title was only the provider's name and the buttons were OK and Open setup guide (the sentence below the title is unchanged; the other provider messages keep the provider's name as title and OK); (3) the dialog for a lost VibeTV has the title "Your VibeTV is not reachable" and the line "Choose it to connect again." → before the title "Choose your VibeTV" and the line "Your VibeTV is not reachable. Choose it to connect again." (a failed connect still shows its own message as the title).
+- Approved customer-visible result: the four dialogs look as drawn in frames 32, 33, 39 and 47 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/setup/setup-providers-screen.tsx`, their tests (`setup-device-dialogs.test.tsx`, `setup-providers-screen.test.tsx`) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #784: Codex fix, grey backdrop of the outage and busy dialogs stays visual
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Codex fix, grey backdrop of the outage and busy dialogs stays visual
+- Approved customer-visible result: grey backdrop as in the template; the page behind stays usable as approved before.
+- Scope: `apps/control-center/src/components/setup/setup-dialog.tsx`, the new test `apps/control-center/src/components/setup/setup-dialog.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #784: customer flow follows the Theme Studio's own header row
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: customer flow follows the Theme Studio's own header row
+- Approved customer-visible result: none; the test only.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: own-app provider dialog uses the template sentence (build 2 decision)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: own-app provider dialog uses the template sentence (build 2 decision) — before → after: "VibeTV can't read Ollama until the Ollama app is installed and running." (with the provider's own name) → before "VibeTV reads Ollama usage from Ollama's own app, so make sure it is installed and signed in on this computer."
+- Approved customer-visible result: the dialog reads as drawn in frame 39 of "Calm Redesign - alle Screens", title "<Provider> needs its own app", sentence as above.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, `apps/control-center/src/components/setup/setup-providers-screen.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #784: type fix, the dialog's description is optional
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: type fix, the dialog's description is optional
+- Approved customer-visible result: none; no visible change.
+- Scope: `apps/control-center/src/components/setup/setup-dialog.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-19 — #784: Codex/CI fix, the outage dialogs' grey backdrop takes no clicks
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Codex/CI fix, the outage dialogs' grey backdrop takes no clicks
+- Approved customer-visible result: none; no visible change.
+- Scope: `apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.test.tsx`, the comment in `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, the 3D VibeTV on Overview is turned like the template (frame 1)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: build 2b QA, the 3D VibeTV on Overview is turned like the template (frame 1) — before → after: the 3D VibeTV seen from the right and nearly from the front at rest (camera about 24 degrees off the front, a little higher) and its sway began mid-swing, which at the first look showed it turned even further to the front → the device rests turned about 27 degrees off the front, seen a little from below as drawn in the template, and the sway starts from that resting angle.
+- Approved customer-visible result: the Overview picture of the VibeTV shows the device at the angle of frame 1 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, no sidebar toggle beside the title of Updates and Support (frames 10, 11)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: build 2b QA, no sidebar toggle beside the title of Updates and Support (frames 10, 1 — before → after: the sidebar-toggle icon stood left of the title "Updates" and "Support" → those two pages show the title alone, as drawn in the template; every other page keeps the icon, and a narrow window keeps it on all pages because it is the only way to the menu there.
+- Approved customer-visible result: Updates and Support start with their title, as in frames 10 and 11.
+- Scope: `apps/control-center/src/components/control-center-shell.tsx`, `apps/control-center/src/components/control-center-shell.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, "Your VibeTV is not reachable" lists plain radio rows (frame 47)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: build 2b QA, "Your VibeTV is not reachable" lists plain radio rows (frame 47) — before → after: the dialog showed the setup device cards (thumbnail, WiFi and "Previously connected" chips, ring, check mark) → it shows plain radio rows between hairlines as drawn in frame 47: round radio, "VibeTV 4F2A", "192.168.178.163 · Firmware 1.4.2" below, "WiFi · Previously connected" (or "Cable") at the right; the dialog is 480 px wide as drawn. The words are unchanged.
+- Approved customer-visible result: the picker dialog looks like frame 47 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, the 3D VibeTV on Overview has the template's size (frame 1), replaces the angle entry above
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: build 2b QA, the 3D VibeTV on Overview has the template's size (frame 1), replaces t — before → after: the 3D VibeTV filled a stage up to 900 x 580 px, so the device was about 15 % larger than in the template and pushed the four facts (Mac App, VibeTV, Display, Firmware) about 190 px lower than drawn; its sway started mid-swing, so the first look showed it turned further to the front than the template; it was seen from a little higher → the device is framed as in frame 1 (about 240 px wide screen on a 1200 px window, seen a little from below, turned about 25 degrees off the front), the facts sit where the template draws them, and the sway starts from that resting angle. Dragging and the sway are unchanged.
+- Approved customer-visible result: the Overview picture of the VibeTV and the line of facts below it look like frame 1 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx`, `apps/control-center/src/components/overview-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, the keyboard focus ring of a device-picker row has rounded corners
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: build 2b QA, the keyboard focus ring of a device-picker row has rounded corners — before → after: the focus ring around the row you reach with Tab in "Your VibeTV is not reachable" had square corners → it has rounded corners like the other rings of the dialog. Nothing else changes.
+- Approved customer-visible result: the picker row shows a rounded focus ring when reached by keyboard.
+- Scope: `apps/control-center/src/components/setup/setup-device-dialogs.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, lime buttons fill their whole box and "What's new" spaces its entries as drawn
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: build 2b QA, lime buttons fill their whole box and "What's new" spaces its entries a — before → after: every lime button (Create, Install, Connect, Continue, Got it, Run diagnostics and so on) showed a 1 px frame of the page colour inside its box, so it looked 2 px lower and narrower than drawn → the lime fills the whole box (the same size, 36 px or 44 px high, as in the template); in "What's new" the entries were 24 px apart and "Show me in Themes / Settings" sat 2 px too close to the sentence above it and 6 px too far from the next entry → the entries are 20 px apart and the link sits 4 px under the sentence, as in frame 37. Nothing else changes.
+- Approved customer-visible result: lime buttons and the "What's new" dialog look like frames 5, 13, 24 and 37 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/ui/button.tsx`, `apps/control-center/src/components/whats-new-dialog.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, the Settings buttons "Run setup" and "Reset…" have the template's width (frame 3)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: build 2b QA, the Settings buttons "Run setup" and "Reset…" have the template's width — before → after: "Run setup" and "Reset…" in Settings were 4 px narrower than drawn (12 px of side space) → they have 14 px of side space, like the other outline buttons (89 → 93 px for "Run setup", 71 → 75 px for "Reset…"). Nothing else changes.
+- Approved customer-visible result: the Settings buttons look like frame 3 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/settings-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: build 2b QA, a lime button with another fill (the round Send button) keeps no lime frame
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: build 2b QA, a lime button with another fill (the round Send button) keeps no lime f — before → after: the entry above filled the lime buttons with a lime border; this change fills them by letting the fill run under the border instead, so a lime-variant button that is given another fill (the round grey/black "Send" button in the Theme Studio) shows no thin lime ring. The lime buttons look as in the entry above. Nothing else changes.
+- Approved customer-visible result: lime buttons fill their whole box; the round Send button in the Theme Studio is a plain circle as in frames 7-9 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/ui/button.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: the 3D VibeTV on the Overview waits for the theme pack also after an earlier settled screen (Codex review)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: the 3D VibeTV on the Overview waits for the theme pack also after an earlier settled — before → after: when the Overview first showed a settled screen (no VibeTV yet) and a VibeTV with its frame arrived later, the 3D VibeTV could replace the flat preview while its screen still said "Loading preview" → the 3D waits until the theme pack is in, as it already did when the VibeTV was connected from the start. Nothing else changes.
+- Approved customer-visible result: the 3D VibeTV appears only with its theme drawn, as in frame 1 of "Calm Redesign - alle Screens".
+- Scope: `apps/control-center/src/components/live-vibetv-preview.tsx`, `apps/control-center/src/components/vibetv-3d-preview.tsx`, the recovery test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #784: approval marker after merging main
+
+- User approval: no visible change – UI approval not needed (merge commit into #784; no visible change of its own; entry: #784: approval marker after merging main)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #784: focus ring on open — a dialog's first control shows no focus ring until the keyboard is used
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: focus ring on open — a dialog's first control shows no focus ring until the keyboard — Before → after: #784 focus ring on open: "Restart Control Center", What's new "Got it", "Close" on the setup dialogs and the device picker rows showed the black focus ring on their first control as the dialog opened → #784 focus ring on open: the dialog takes focus itself without a ring; one Tab puts the ring on the first control, and a dialog opened with the keyboard still focuses its first control.
+- Approved customer-visible result: #784 focus ring on open: a dialog that opens shows no black ring on any button or row until the customer presses Tab; the ring when tabbing is as drawn in "Calm Redesign - alle Screens".
+- Scope: #784 focus ring on open: `apps/control-center/src/components/ui/dialog.tsx`, `apps/control-center/src/components/ui/alert-dialog.tsx`, `apps/control-center/src/components/whats-new-dialog.tsx`, the two confirmation dialogs that set `autoFocus`, their tests, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 focus ring on open: no new content
+
+## 2026-10-20 — #784: Overview fills the window's height (7197 template point 1)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Overview fills the window's height (7197 template point 1) — Before → after: #784 point 1: the Overview was a block under the title, with the four numbers right below the VibeTV and a 392 px VibeTV → #784 point 1: the page fills the window's height, the four numbers sit at the bottom (32 px below them), "VibeTV is connected" and the VibeTV are centred as one group in the space above, and the VibeTV image is 440 px wide.
+- Approved customer-visible result: #784 point 1: Overview as in frame `#overview` of "Calm Redesign - alle Screens" (picture 01, right side), in a large and in a small window.
+- Scope: #784 point 1: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/control-center-shell.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 point 1: no new content, the same page laid out differently
+
+## 2026-10-20 — #784: keyboard focus ring and invalid ring are 2 px (7197 template point 4)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: keyboard focus ring and invalid ring are 2 px (7197 template point 4) — Before → after: #784 point 4: the keyboard focus ring on input, select, button, checkbox, switch and tab was a 1 px border plus a 2 px or 3 px halo → #784 point 4: border plus a 1 px ring in the ring colour, 2 px in total; an invalid field (aria-invalid) shows the same 2 px, in red, also under the keyboard (consistent with #817). Still shown for keyboard focus only, not when a dialog opens.
+- Approved customer-visible result: #784 point 4: focus and error rings as in frame `#controls-focus` of "Calm Redesign - alle Screens" (picture 04, right side).
+- Scope: #784 point 4: the shared controls in `apps/control-center/src/components/ui/` (input, textarea, select, checkbox, switch, button, tabs, input-group, badge, item, toggle), the two row buttons in `settings-screen.tsx` and `setup/setup-device-dialogs.tsx`, `globals.focus-ring.test.ts`, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 point 4: no new content, a thinner ring
+
+## 2026-10-20 — #784: own dropdown instead of the native select (7197 template point 5)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: own dropdown instead of the native select (7197 template point 5) — Before → after: #784 point 5: the Theme Studio's three dropdowns (Live information to show, Reset for, Reading to show) opened the system menu with a blue chosen item, and the shared dropdown list used a different look → #784 point 5: every dropdown a customer sees is our own list below the field: the chosen item is bolder with a grey background and a check mark, the item under the pointer a lighter grey, nothing blue; the field shows the 2 px focus ring while open.
+- Approved customer-visible result: #784 point 5: dropdown as in frames `#settings-dropdown` and `#controls-focus` of "Calm Redesign - alle Screens" (picture 05, right side).
+- Scope: #784 point 5: `apps/control-center/src/components/ui/select.tsx`, `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx`, the two browser test scripts that drive those dropdowns, the select test, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 point 5: no new content, the same choices in a different list
+
+## 2026-10-20 — #784: Overview numbers span the window and the dropdown list is as wide as its field (7197 points 1 and 5, picture check)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: Overview numbers span the window and the dropdown list is as wide as its field (7197 — Before → after: #784 point 1 (picture check): the four numbers were capped at 1180 px width and went to two columns below 1024 px window width → they span the page width as in the template and stay in four columns from 960 px; #784 point 5 (picture check): the dropdown list was 12 px wider than its field → it is exactly as wide as the field.
+- Approved customer-visible result: #784 points 1 and 5: as in the frames `#overview` and `#settings-dropdown` of "Calm Redesign - alle Screens" at 1920 × 1080 and about 1000 × 700.
+- Scope: #784 points 1 and 5: `apps/control-center/src/components/overview-screen.tsx`, `apps/control-center/src/components/ui/select.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 points 1 and 5 (picture check): no new content
+
+## 2026-10-20 — #784: the keyboard focus ring is the template's olive
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #784: the keyboard focus ring is the template's olive — Before → after: #784 the 2 px keyboard focus ring was ink (#1B1B1B light, #EDEDED dark) → #784 the template's olive (#506600 light, #CCFF00 dark); the red ring on invalid fields (#817) stays.
+- Approved customer-visible result: #784 every keyboard focus ring (input, select, button, checkbox, switch, tab) in the template's --ring colour, 2 px, keyboard-only.
+- Scope: #784 `apps/control-center/src/app/globals.css` (--ring), its test `globals.focus-ring.test.ts`, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 focus ring colour not announced
+
+## 2026-10-20 — #784: the Copilot popup heading says it needs a GitHub sign-in
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #784: the Copilot popup heading says it needs a GitHub sign-in — Before → after: #784 the Copilot popup in setup said "GitHub Copilot needs its own app" above a text about a GitHub sign-in → #784 "GitHub Copilot needs a GitHub sign-in".
+- Approved customer-visible result: #784 the Copilot popup heading matches its sentence; every other provider keeps "<Provider> needs its own app" or its name.
+- Scope: #784 `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #784 Copilot heading not announced
+
+## 2026-10-20 — #784: Paul's approval of build 7198 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" — #784 approval record for build 7198 (everything except the Appearance cards #802); the #784 entries above now carry it, merge markers are marked as no visible change, entries added after build 7198 stay pending.
+- Approved customer-visible result: #784 as described in its entries above, as seen in build 7198.
+- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #784 approval record only
+
+## 2026-10-20 — #784: result lines of approved entries cleaned up
+
+- User approval: no visible change – UI approval not needed (#784: result lines of approved entries cleaned up: record cleanup, wording only: entries that already carry Paul's approval no longer open their result line with an old status word)
+- Approved customer-visible result: #784 unchanged; only the wording of the approval record.
+- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #784 record cleanup
+
+## 2026-10-20 — #784: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#784 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #784 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #784 approval record only
+
+## 2026-10-20 — #784: Copilot sign-in heading only on its sign-in dialog
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #784: Copilot sign-in heading only on its sign-in dialog
+- Approved customer-visible result: #784 the Copilot sign-in dialog is headed "GitHub Copilot needs a GitHub sign-in"; the timed-out Copilot dialog is headed "GitHub Copilot", as before commit 9c129d1c.
+- Scope: #784 Setup Wizard provider dialog heading only. Pull request branch only, not merged, not released.
+- What's new: none — #784 dialog heading scope only
+
+## 2026-10-20 — #784: approval marker after merging main at 4b0831d7
+
+- User approval: no visible change – UI approval not needed (merge of main (4b0831d7) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 4b0831d7; nothing else changes.
+- Scope: the merge of 4b0831d7 and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 4b0831d7, no customer-visible change of its own
+
+## 2026-10-20 — #784: approval marker after merging main at 5f09bf54
+
+- User approval: no visible change – UI approval not needed (merge of main (5f09bf54) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 5f09bf54; nothing else changes.
+- Scope: the merge of 5f09bf54 and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 5f09bf54, no customer-visible change of its own
+
+## 2026-10-21 — #784: approval marker after merging main at 12504ca6
+
+- User approval: no visible change – UI approval not needed (merge of main (12504ca6) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 12504ca6; nothing else changes.
+- Scope: the merge of 12504ca6 and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 12504ca6, no customer-visible change of its own
+
+## 2026-10-21 — #784: Paul's approval of build 7200 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #784 approval record for build 7200; the #784 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 stay pending.
+- Approved customer-visible result: #784 as described in its entries above, as seen in build 7200.
+- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #784 approval record only
+
+## 2026-10-21 — #784: approval marker after merging main at e3503bda
+
+- User approval: no visible change – UI approval not needed (merge of main (e3503bda) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with e3503bda; nothing else changes.
+- Scope: the merge of e3503bda and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of e3503bda, no customer-visible change of its own
+
+## 2026-10-21 — #784: Theme Studio progress bar without a binding (Codex review)
+
+- User approval: pending — #784 Theme Studio: a progress bar without a reading no longer lists an empty "Current reading" entry under "Reading to show" (the panel crashed on it); the other entries and wording stay the same
+- Approved customer-visible result: "Reading to show" offers the same four readings as before. A progress bar that has no reading yet shows no extra "Current reading" entry any more, so the details panel no longer breaks for it. Nothing else changes.
+- Scope: `apps/control-center/src/components/theme-studio/ai-theme-studio-screen.tsx` (new exported `progressReadingOptions`), its new test `progress-reading-options.test.ts`, and this approval record. Pull-request branch #784 only, not merged, not released.
+- What's new: none — crash fix of the Theme Studio details panel, no new text
+
+## 2026-10-21 — #784: Slider thumb ring grey on hover and drag, olive only for keyboard focus (Codex review)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 12:28: "rest passt so" (build 7201 review) — entry: #784 slider thumb: mouse hover/drag shows a neutral grey ring, the olive ring only for keyboard focus (Paul decided 21.10. "Maus grau, Tastatur oliv"; not yet seen in a build)
+- Approved customer-visible result: the slider thumb shows a grey ring while the mouse hovers over it or drags it; the olive ring appears only when the thumb has keyboard focus. Nothing else changes.
+- Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb ring classes), its new test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull-request branch #784 only, not merged, not released.
+- What's new: none — ring colour of the slider thumb, no new text
+
+## 2026-10-21 — #784: approval marker after merging main at 41bf10cf
+
+- User approval: no visible change – UI approval not needed (merge of main (41bf10cf) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 41bf10cf; nothing else changes.
+- Scope: the merge of 41bf10cf and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 41bf10cf, no customer-visible change of its own
+
+## 2026-10-21 — #784: slider neutral ring scoped to hover and drag
+
+- User approval: no visible change – UI approval not needed (#784 Codex fix: slider neutral ring scoped to hover/drag so the shared focus-ring check passes; same look as the pending slider entry)
+- Approved customer-visible result: the slider thumb looks as in the pending #784 slider entry: grey ring on hover and drag, olive ring only for keyboard focus. Nothing else changes.
+- Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb ring classes), its test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — ring colour classes of the slider thumb, no new text
+
+## 2026-10-21 — #784: approval marker after merging main at f314106c
+
+- User approval: no visible change – UI approval not needed (merge of main (f314106c) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with f314106c; nothing else changes.
+- Scope: the merge of f314106c and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of f314106c, no customer-visible change of its own
+
+## 2026-10-21 — #784: slider keyboard focus ring 2 px olive
+
+- User approval: no visible change – UI approval not needed (#784 slider keyboard focus ring 3px → the shared 2px olive ring decided earlier; token-only)
+- Approved customer-visible result: the slider thumb looks as before for hover and drag; the keyboard focus ring is the shared 2 px olive ring (border plus 1 px ring) like buttons and inputs. Nothing else changes.
+- Scope: `apps/control-center/src/components/ui/slider.tsx` (thumb focus classes), its test `apps/control-center/src/components/ui/slider.focus-ring.test.tsx`, and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — focus ring classes of the slider thumb, no new text
+
+## 2026-10-21 — #784: Paul's approval of build 7201 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 12:28: "rest passt so" (build 7201 review) — #784 approval record for build 7201; only the 7201 point of #784 now carries it, everything else stays as it was.
+- Approved customer-visible result: #784 as described in that entry, as seen in build 7201.
+- Scope: #784 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #784 approval record only
+
+## 2026-10-21 — #784: approval marker after merging main at 467fd7fb
+
+- User approval: no visible change – UI approval not needed (merge of main (467fd7fb) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
+- Scope: the merge of 467fd7fb and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 467fd7fb, no customer-visible change of its own
+
+## 2026-10-21 — #784: Mac App up to date only with a known installed version
+
+- User approval: no visible change – UI approval not needed (bug fix: without a known installed version the Mac App is no longer called up to date)
+- Approved customer-visible result: #784 as before; the Mac App line says "Up to date" only when its installed version was compared, otherwise it stays as it was without a check.
+- Scope: Overview Mac App line in control-center-app.tsx and its test. Pull request branch #784 only, not merged, not released.
+- What's new: none — bug fix, no new text
+
+## 2026-10-21 — #784: approval marker after merging main at 35152cc8
+
+- User approval: no visible change – UI approval not needed (merge of main (35152cc8) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
+- Scope: the merge of 35152cc8 and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 35152cc8, no customer-visible change of its own
+
+## 2026-10-21 — #784: approval marker after merging main at 3dc0a15b
+
+- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
+- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
+
+## 2026-10-21 — #784: Overview 3D sway stops and pauses while hidden
+
+- User approval: pending — the Overview 3D VibeTV sways once and then stands still (as approved for setup in 7202), paused while the window is hidden
+- Approved customer-visible result: the Overview follows the one-cycle sway from #780, approved in build 7202: after 2.5 seconds without a touch it sways once and settles; a drag starts one more cycle. Hidden windows pause that cycle, and reduced motion stays still. Text and layout remain unchanged.
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and its animation regression tests; adapted from #780 commit 65352daf4412c41df5041baea327f079b92c1dff with visibility handling and event-driven rendering. Pull request #784 only, not merged, not released.
+- What's new: none — performance fix to the existing Overview preview
+
+## 2026-10-21 — #784: identify library and busy notices by data attributes
+
+- User approval: no visible change – UI approval not needed (#784 P3a replaces notice mount counters and title matching with stable dialog data attributes)
+- Approved customer-visible result: page notices still wait for other dialogs and take priority over the busy announcement; wording, layout and dismissal remain unchanged.
+- Scope: `theme-library-screen.tsx`, `system-busy-dialog.tsx`, the `SetupDialog` notice attribute, and library notice regression tests. Pull request #784 only, not merged, not released.
+- What's new: none — internal notice identification only
+
+## 2026-10-21 — #784: cache saved theme names between Overview polls
+
+- User approval: no visible change – UI approval not needed (#784 P3b reads the saved theme library once per Overview visit or storage change instead of every status poll)
+- Approved customer-visible result: Overview keeps showing the current theme name, including the customer's saved names and live theme during standby; returning from Theme Studio and changes from another window refresh those names.
+- Scope: `overview-screen.tsx` and its theme-name regression tests. Pull request #784 only, not merged, not released.
+- What's new: none — avoid repeated localStorage JSON parsing
+
 
 ## 2026-10-22 — #783: merge main after #784
 

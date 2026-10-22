@@ -1732,6 +1732,55 @@ func TestDisplayRotatePreferenceStoresTheIntervalAndSurvivesProviderDisplayWrite
 	}
 }
 
+func TestShowPacePreferenceIsOnByDefaultAndStoresHidePace(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	renders := 0
+	server.renderDisplayStream = func() { renders++ }
+	request := func(method, path, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(method, path, bytes.NewBufferString(body)))
+		return recorder
+	}
+	read := func() preferenceDescriptor {
+		t.Helper()
+		var response preferencesResponse
+		recorder := request(http.MethodGet, "/v1/preferences?section=display", "")
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || recorder.Code != http.StatusOK {
+			t.Fatalf("list display preferences: %d %s", recorder.Code, recorder.Body.String())
+		}
+		for _, item := range response.Items {
+			if item.ID == displayPacePreferenceID {
+				return item
+			}
+		}
+		t.Fatalf("pace preference is not listed: %s", recorder.Body.String())
+		return preferenceDescriptor{}
+	}
+
+	if item := read(); item.Label != "Show reserve or deficit" || item.Type != preferenceTypeBoolean || item.Value != true || !item.Writable {
+		t.Fatalf("unexpected pace descriptor: %#v", item)
+	}
+	path := "/v1/preferences/" + displayPacePreferenceID
+	if recorder := request(http.MethodPatch, path, `{"value":false}`); recorder.Code != http.StatusOK {
+		t.Fatalf("patch off: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if cfg, _ := server.config(); !cfg.HidePace || read().Value != false || renders != 1 {
+		t.Fatalf("hidePace was not stored and rendered: %+v renders=%d", cfg, renders)
+	}
+	for _, invalid := range []string{`"no"`, `0`, `null`} {
+		if recorder := request(http.MethodPatch, path, `{"value":`+invalid+`}`); recorder.Code != http.StatusBadRequest {
+			t.Fatalf("value %s was accepted: %d %s", invalid, recorder.Code, recorder.Body.String())
+		}
+	}
+	if recorder := request(http.MethodPatch, path, `{"value":true}`); recorder.Code != http.StatusOK {
+		t.Fatalf("patch on: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if cfg, _ := server.config(); cfg.HidePace || read().Value != true {
+		t.Fatalf("hidePace was not cleared: %+v", cfg)
+	}
+}
+
 func TestPreferenceRegistryRejectsInvalidEnumRangeAndDefault(t *testing.T) {
 	minimum := int64(30)
 	maximum := int64(120)
