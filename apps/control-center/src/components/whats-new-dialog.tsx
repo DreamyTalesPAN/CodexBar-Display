@@ -12,11 +12,13 @@ import {
   openedWithKeyboard,
 } from "@/components/ui/dialog";
 import { catalogThemeRowId, type WhatsNewEntry } from "@/lib/whats-new";
+import { pageDialogOpen, useWaitsForPageDialog } from "./announcement-gate";
 import { providerShortcutKeys } from "./settings-screen";
 
 /**
  * What changed in the app: told once on Overview after an update, and again
- * on request under Updates. Every way of closing it is `onClose`.
+ * on request under Updates. Every way of closing it is `onClose`. An
+ * announcement: it waits while a page dialog is open (#632).
  */
 export function WhatsNewDialog({
   appVersion,
@@ -33,6 +35,9 @@ export function WhatsNewDialog({
   windowsHost: boolean;
 }) {
   const gotIt = useRef<HTMLButtonElement>(null);
+  if (useWaitsForPageDialog()) {
+    return null;
+  }
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
@@ -40,13 +45,17 @@ export function WhatsNewDialog({
         // In a short window only the list scrolls: the title stays on top and
         // `Got it` stays in view below it.
         className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-[520px]"
+        data-announcement=""
         onOpenAutoFocus={(event) => {
           // Opened by the keyboard: Enter closes the notice, as the first
           // control would open Settings. Otherwise no control shows a ring
           // until the customer tabs (the dialog takes focus itself).
           if (!openedWithKeyboard(document.activeElement)) return;
           event.preventDefault();
-          gotIt.current?.focus();
+          // Opened together with a page dialog, the page dialog keeps the focus.
+          if (!pageDialogOpen()) {
+            gotIt.current?.focus();
+          }
         }}
       >
         <DialogHeader className="gap-1">
