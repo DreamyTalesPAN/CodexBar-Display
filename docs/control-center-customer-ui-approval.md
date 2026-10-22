@@ -9627,3 +9627,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the dialogs look and behave exactly as before.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` only (`assertDialogContrast`). Pull request #902 only, not merged, not released.
 - What's new: none — test-only accessibility check
+
+## 2026-10-22 — #917: Run setup again during Create new keeps the existing Support report
+
+- User approval: no visible change – UI approval not needed (bug fix: Paul 2026-10-22 11:37 decided the old report stays after Run setup again; this applies it when Create new is still collecting)
+- Approved customer-visible result: when "Run setup again" completes while Create new is still collecting, the Support report card keeps Copy / Download for the earlier report, as after any other "Run setup again". A collection that fails still behaves as before.
+- Scope: apps/control-center/src/components/control-center-app.tsx, createSupportReport only replaces supportReport when the collection returns a report or an error; its test in control-center-app.support-report-card.test.tsx. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, no customer-visible change of its own
