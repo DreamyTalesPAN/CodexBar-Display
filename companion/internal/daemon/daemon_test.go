@@ -6480,6 +6480,64 @@ func TestProviderCollectorStartupWithoutDashboardSnapshotDoesNotUseFallback(t *t
 	}
 }
 
+// Replacing a working usage engine for a fresh reading (#918) leaves a few
+// seconds without one. Collections in that gap keep the values live, up to a
+// fixed bound, so a replacement that never answers still turns them stale.
+// An engine that stopped on its own turns them stale at once.
+func TestProviderCollectorKeepsValuesLiveWhileTheCompanionReplacesTheServe(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	start := time.Date(2026, 10, 22, 10, 28, 0, 0, time.UTC)
+	newCollector := func(current *time.Time, info *codexbar.DashboardServeInfo) *providerCollector {
+		collector := &providerCollector{
+			now:             func() time.Time { return *current },
+			logf:            func(string, ...any) {},
+			order:           []string{"codex"},
+			interval:        30 * time.Second,
+			snapshotMaxAge:  10 * time.Minute,
+			persistInterval: time.Minute,
+			providers:       make(map[string]providerSnapshot),
+			dashboard:       dashboardServeFunc(func() codexbar.DashboardServeInfo { return *info }),
+			fetchDashboard: func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error) {
+				frame := dashboardParsedFrame("codex", "Session", "Weekly", 12, 34)
+				frame.CollectedAt = *current
+				return []codexbar.ParsedFrame{frame}, nil
+			},
+		}
+		collector.collectOnce(context.Background())
+		if snapshot, ok := collector.providers["codex"]; !ok || snapshot.Retained {
+			t.Fatalf("setup: expected a live Codex reading, got %+v", collector.providers)
+		}
+		return collector
+	}
+
+	current := start
+	info := testDashboardServeInfo(1001)
+	collector := newCollector(&current, &info)
+	// The Companion stopped the engine; the new one does not answer yet.
+	info = codexbar.DashboardServeInfo{ReplaceStartedAt: start.Add(time.Second)}
+	current = start.Add(6 * time.Second)
+	collector.collectOnce(context.Background())
+	if snapshot := collector.providers["codex"]; snapshot.Retained || collector.lastFetchErr != nil {
+		t.Fatalf("a replacement still starting must keep the values live, got %+v err=%v", snapshot, collector.lastFetchErr)
+	}
+	current = info.ReplaceStartedAt.Add(serveReplaceGrace)
+	collector.collectOnce(context.Background())
+	if snapshot := collector.providers["codex"]; !snapshot.Retained || collector.lastFetchErr == nil {
+		t.Fatalf("a replacement that does not answer within %s must turn the values stale, got %+v", serveReplaceGrace, snapshot)
+	}
+
+	current = start
+	info = testDashboardServeInfo(1002)
+	collector = newCollector(&current, &info)
+	info = codexbar.DashboardServeInfo{}
+	current = start.Add(6 * time.Second)
+	collector.collectOnce(context.Background())
+	if snapshot := collector.providers["codex"]; !snapshot.Retained {
+		t.Fatalf("an engine that stopped on its own must turn the values stale at once, got %+v", snapshot)
+	}
+}
+
 func TestProviderCollectorDashboardOutagePreservesProviderIsolationAndRecovers(t *testing.T) {
 	prepareFastTestEnv(t)
 

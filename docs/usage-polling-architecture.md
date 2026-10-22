@@ -80,6 +80,15 @@ request made while one is still waiting keeps the first request's time and only
 wakes the collector, so the reading that answers the first also answers the
 second.
 
+Replacing serve leaves a few seconds without one. A collection in that gap
+fails like an outage and used to mark every reading stale, so the cards showed
+"Usage limits are stale." for several seconds after a click (Mac test,
+22.10.2026). The supervisor records when the Companion itself replaced serve
+(`ReplaceStartedAt`, also set by the #607 replacement after a browser sign-in),
+and for 15 s after that the collector keeps the readings as they were when serve
+does not answer. A replacement that takes longer, or a serve that stopped on its
+own, turns them stale as before.
+
 `/v1/usage` reports:
 
 - `refreshing`: the requested collection has not completed; usable last-good
