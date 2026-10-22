@@ -94,6 +94,10 @@ type Result struct {
 	ActivePath        string `json:"activePath"`
 	ThemeRevision     int    `json:"themeRev"`
 	CapabilitiesKnown bool   `json:"capabilitiesKnown"`
+	// LiveFrameShown: VibeTV confirmed the new theme while it drew a real usage
+	// frame, so the customer already sees the theme with their usage (#911).
+	// False without a ready provider and on the Cable path.
+	LiveFrameShown bool `json:"-"`
 }
 
 type InstallError struct {
@@ -354,9 +358,10 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 		fmt.Fprintf(out, "Uploaded theme spec: %s bytes=%d\n", pack.ThemeSpecFile.Entry.Path, len(pack.ThemeSpecRaw))
 	}
 
+	liveFrameShown := false
 	if live {
 		fmt.Fprintln(out, "Activating theme...")
-		if err := activateAndVerifyTheme(
+		shown, err := activateAndVerifyTheme(
 			ctx,
 			wifi,
 			&resolvedTarget,
@@ -366,7 +371,8 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 			opts.PairTokenStore,
 			opts.FetchLiveFrame,
 			out,
-		); err != nil {
+		)
+		if err != nil {
 			op := "theme-pack/activate"
 			hint := "keep VibeTV powered and on the same WiFi, then retry theme install"
 			var phaseErr *themeActivationError
@@ -384,6 +390,7 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 				Hint: hint,
 			}
 		}
+		liveFrameShown = shown
 	} else {
 		// Selecting the screensaver only records a reference on the device, so
 		// there is nothing rendered to verify and nothing to retry against.
@@ -423,6 +430,7 @@ func Install(ctx context.Context, opts Options) (result Result, retErr error) {
 		ActivePath:        pack.ThemeSpecFile.Entry.Path,
 		ThemeRevision:     pack.ThemeSpec.ThemeRev,
 		CapabilitiesKnown: caps.Known,
+		LiveFrameShown:    liveFrameShown,
 	}, nil
 }
 
@@ -760,6 +768,8 @@ func (e *themeActivationError) Unwrap() error {
 	return e.err
 }
 
+// activateAndVerifyTheme reports whether the confirmed render was drawn with a
+// real usage frame.
 func activateAndVerifyTheme(
 	ctx context.Context,
 	wifi transportlayer.WiFiTransport,
@@ -770,7 +780,7 @@ func activateAndVerifyTheme(
 	store PairTokenStore,
 	fetchFrame func(context.Context) (protocol.Frame, error),
 	out io.Writer,
-) error {
+) (bool, error) {
 	attempts := activationAttempts
 	if attempts < 1 {
 		attempts = 1
@@ -785,36 +795,37 @@ func activateAndVerifyTheme(
 			lastErr = err
 			lastOp = "theme-pack/activate"
 			if !themeActivationRetryableError(err) || attempt == attempts {
-				return &themeActivationError{op: lastOp, err: lastErr}
+				return false, &themeActivationError{op: lastOp, err: lastErr}
 			}
 			fmt.Fprintln(out, "Theme activation interrupted, retrying...")
 			if err := sleepContext(ctx, activationRetryDelay); err != nil {
-				return &themeActivationError{op: lastOp, err: err}
+				return false, &themeActivationError{op: lastOp, err: err}
 			}
 			continue
 		}
 
-		sendLiveThemeFrameWithPairRetry(ctx, wifi, target, caps, store, fetchFrame, out)
+		frameShown := sendLiveThemeFrameWithPairRetry(ctx, wifi, target, caps, store, fetchFrame, out)
 		if err := verifyThemeInstallHealth(ctx, wifi, *target, activePath, gifAssets); err != nil {
 			lastErr = err
 			lastOp = "theme-pack/render-health"
 			if attempt == attempts {
-				return &themeActivationError{op: lastOp, err: lastErr}
+				return false, &themeActivationError{op: lastOp, err: lastErr}
 			}
 			fmt.Fprintln(out, "Theme activation did not settle, retrying...")
 			if err := sleepContext(ctx, activationRetryDelay); err != nil {
-				return &themeActivationError{op: lastOp, err: err}
+				return false, &themeActivationError{op: lastOp, err: err}
 			}
 			continue
 		}
-		return nil
+		return frameShown, nil
 	}
 	if lastErr == nil {
 		lastErr = errors.New("theme activation did not complete")
 	}
-	return &themeActivationError{op: lastOp, err: lastErr}
+	return false, &themeActivationError{op: lastOp, err: lastErr}
 }
 
+// sendLiveThemeFrameWithPairRetry reports whether VibeTV accepted the frame.
 func sendLiveThemeFrameWithPairRetry(
 	ctx context.Context,
 	wifi transportlayer.WiFiTransport,
@@ -823,7 +834,7 @@ func sendLiveThemeFrameWithPairRetry(
 	store PairTokenStore,
 	fetchFrame func(context.Context) (protocol.Frame, error),
 	out io.Writer,
-) {
+) bool {
 	err := sendLiveThemeFrame(ctx, wifi, *target, caps, fetchFrame)
 	if err != nil && authRequired(err) {
 		pairedTarget, pairErr := pairThemeInstallTarget(wifi, *target, store)
@@ -836,9 +847,10 @@ func sendLiveThemeFrameWithPairRetry(
 	}
 	if err != nil {
 		fmt.Fprintf(out, "Live usage frame: skipped (%v)\n", err)
-		return
+		return false
 	}
 	fmt.Fprintln(out, "Live usage frame: refreshed")
+	return true
 }
 
 func sendClearThemeSpecFrameWithPairRetry(
