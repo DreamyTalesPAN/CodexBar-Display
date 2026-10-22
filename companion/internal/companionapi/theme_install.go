@@ -21,6 +21,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
 )
 
 type themeInstallRequest struct {
@@ -686,9 +687,11 @@ func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runti
 			s.endThemeInstallTail()
 			// The job already reported Installed. A stream refresh that fails
 			// afterwards is kept for support and shows in the device status.
+			// The setup log already says Installed, so it gets no "failed"
+			// line after it (#939).
 			if err != nil {
 				_, apiErr := themeInstallErrorPayload(req.Slot, err)
-				s.recordSetupEvent(setupEvent{Stage: stage, Status: "failed", Message: apiErr.Message, Code: apiErr.Code, NextAction: apiErr.NextAction})
+				s.recordTimeline(timeline.Event{Component: stage, State: "failed", Reason: apiErr.Code})
 			}
 			return
 		}
