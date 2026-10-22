@@ -265,6 +265,33 @@ func TestCableRescueMarkerIsFlaggedUntilTheChipIsRead(t *testing.T) {
 	}
 }
 
+// Issue #842: the hello probe that finds a stale marker leaves the default
+// sender's port open, so the loader found it busy on both write attempts.
+func TestCableRescueClosesTheProbePortBeforeWriting(t *testing.T) {
+	prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousClose := closeCableSenderFn
+	t.Cleanup(func() { closeCableSenderFn = previousClose })
+	var events []string
+	closeCableSenderFn = func() { events = append(events, "close") }
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+		events = append(events, "write")
+		return nil
+	}
+	marker := firmwareupdate.RescueMarker{Port: "COM4", Board: rescueTestBoard, Firmware: "1.0.0", TargetFirmware: "1.0.1",
+		ImagePath: filepath.Join(t.TempDir(), "firmware.bin")}
+	if err := flashCableRescueWithRetry(context.Background(), home, marker, []byte("cable firmware"), false); err != nil {
+		t.Fatalf("rescue write: %v", err)
+	}
+	if strings.Join(events, ",") != "close,write" {
+		t.Fatalf("events = %v, want the probe port closed before the write", events)
+	}
+}
+
 // Codex on #840: a resume on a port the VibeTV seems to have moved to keeps the
 // marker on its first port until the ROM loader confirms the recorded chip.
 // An unrelated silent adapter on the new port must not take the marker over.

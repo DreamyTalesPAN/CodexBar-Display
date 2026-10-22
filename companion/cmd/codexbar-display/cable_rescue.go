@@ -68,6 +68,9 @@ func flashCableRescueWithRetry(ctx context.Context, home string, marker firmware
 		marker.ChipMAC, marker.ChipNotRead = chip, false
 		return firmwareupdate.SaveRescueMarker(home, marker)
 	}
+	// The hello and chip probes before this run keep the default sender's port
+	// open; the loader would find it busy (#842).
+	closeCableSenderFn()
 	started := false
 	// Only a failure known to come before any flash command proves the old
 	// firmware is untouched; a lost FLASH_BEGIN reply may already have erased.

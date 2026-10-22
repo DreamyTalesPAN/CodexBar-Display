@@ -61,6 +61,7 @@ var (
 	transferCableFirmwareFn                            = usb.TransferFirmware
 	findLegacyCableVibeTVFn                            = usb.FindLegacyCableVibeTV
 	flashCableRescueFn                                 = usb.FlashESP8266AppImageWithOptions
+	closeCableSenderFn                                 = usb.CloseDefaultSender
 	listCablePortsFn                                   = usb.ListPorts
 	cableRescueRetryPause                              = 3 * time.Second
 	cableFirmwareVerifyTimeout                         = 120 * time.Second
