@@ -89,20 +89,18 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	frame = applyDeviceUsageWindowLimit(frame, caps)
 	frame.FooterWindow = ""
 	cfg, configLoaded := loadRuntimeConfig(deps)
-	if caps.SupportsResetFooterV1 {
-		if configLoaded {
-			// Pair windows prefix the engine id with the provider. Keep the
-			// exact id on the wire; never infer a kind from a label or duration.
-			windows := frame.UsageWindows
-			if len(windows) == 0 {
-				windows = frame.UsageSlots
-			}
-			for _, window := range windows {
-				_, kind, paired := strings.Cut(window.ID, ":")
-				if window.ID == cfg.FooterReset || paired && kind == cfg.FooterReset {
-					frame.FooterWindow = window.ID
-					break
-				}
+	if caps.SupportsResetFooterV1 && configLoaded {
+		// Pair windows prefix the engine id with the provider. Keep the
+		// exact id on the wire; never infer a kind from a label or duration.
+		windows := frame.UsageWindows
+		if len(windows) == 0 {
+			windows = frame.UsageSlots
+		}
+		for _, window := range windows {
+			_, kind, paired := strings.Cut(window.ID, ":")
+			if window.ID == cfg.FooterReset || paired && kind == cfg.FooterReset {
+				frame.FooterWindow = window.ID
+				break
 			}
 		}
 	}

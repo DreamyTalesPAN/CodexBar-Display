@@ -9728,3 +9728,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Retain the existing #864 Update needed behavior and the footer selection.
 - Scope: Merge current #864 settings, tests, helper and both approval histories.
 - What's new: none — integration only.
+
+## 2026-10-22 — Reset footer: Reuse shared Update needed pattern
+- User approval: pending — Reset in footer uses the same Update needed. Update VibeTV to use this. note as Pace and Two at once
+- Approved customer-visible result: The disabled Reset in footer row uses the existing firmware update wording; offline devices do not claim an update is needed.
+- Scope: Reuse #864 deviceLacks and UPDATE_NEEDED_NOTE for the footer setting.
+- What's new: none — one consistent hint for firmware-dependent settings.

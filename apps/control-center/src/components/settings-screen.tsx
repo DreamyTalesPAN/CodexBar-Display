@@ -61,7 +61,7 @@ import {
 
 const standbyTimeoutOptions = [1, 5, 10, 15, 30, 60];
 
-// Shown on a Pace or Two at once option that this VibeTV firmware cannot draw.
+// Shown on an option that this VibeTV firmware cannot draw.
 const UPDATE_NEEDED_NOTE = "Update needed. Update VibeTV to use this.";
 
 export function standbyTimeoutLabel(minutes: number): string {
@@ -242,8 +242,10 @@ export function SettingsScreen({
   const activeTheme = useActiveThemeLimits(device);
   const providerError =
     providerPicker.preferencesError || providerPicker.displayError;
-  const footerReset = displayPreferences.find(item => item.id === "vibetv.display.footerReset");
-  const footerNeedsUpdate = deviceIsReady(device) && Boolean(device?.firmware) && device?.capabilities?.theme?.supportsResetFooterV1 !== true;
+  const footerReset = displayPreferences.find(
+    (item) => item.id === "vibetv.display.footerReset",
+  );
+  const footerNeedsUpdate = deviceLacks(device, "footer");
   const rotation = displayPreferences.find(
     (item) => item.id === "vibetv.display.rotateSeconds",
   );
@@ -502,12 +504,18 @@ export function SettingsScreen({
           theme={activeTheme}
           usage={providerPicker.usage}
         />
-        {footerReset ? <>
-          <PreferenceRow descriptor={footerReset}
-            disabled={localActionBusy || device?.capabilities?.theme?.supportsResetFooterV1 !== true}
-            onChange={onDisplayPreferenceChange} />
-          {footerNeedsUpdate ? <p className="text-sm text-muted-foreground">Update needed<br />Update VibeTV to use this.</p> : null}
-        </> : null}
+        {footerReset ? (
+          <>
+            <PreferenceRow
+              descriptor={footerReset}
+              disabled={localActionBusy || device?.capabilities?.theme?.supportsResetFooterV1 !== true}
+              onChange={onDisplayPreferenceChange}
+            />
+            {footerNeedsUpdate ? (
+              <p className="text-sm text-muted-foreground">{UPDATE_NEEDED_NOTE}</p>
+            ) : null}
+          </>
+        ) : null}
       </SettingsSection>
 
       {standbySupport ? (
