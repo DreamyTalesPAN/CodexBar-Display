@@ -942,6 +942,54 @@ test_no_visible_change_does_not_cover_earlier_ui() {
   export GIT_COMMITTER_DATE="2026-10-18T07:00:00Z"
 }
 
+# Nor does it hide the UI an earlier approval commit changed without naming it
+# (Paul's review of #823 at 96571e7d).
+test_no_visible_change_keeps_earlier_unscoped_approval_ui_due() {
+  local repo="${TMP_ROOT}/no-visible-change-after-unscoped-approval"
+  setup_repo "$repo"
+  export GIT_COMMITTER_DATE="2026-10-23T07:00:00Z"
+  printf 'export const A = 1;\n' > "$repo/apps/control-center/src/components/a.tsx"
+  approval_entry "Component A" >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add .
+  git -C "$repo" commit -q -m "Add a.tsx with an entry that does not name it"
+  expect_gate_due "$repo"
+  mkdir -p "$repo/companion"
+  printf 'package main\n' > "$repo/companion/fix.go"
+  printf '\n## Companion fix\n\n%s\n- Approved customer-visible result: No screen differs.\n- Scope: companion/fix.go and this approval record.\n%s\n' \
+    "$NO_CHANGE_LINE" "$WHATS_NEW_NONE" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add .
+  git -C "$repo" commit -q -m "Companion fix, recorded as no visible change"
+  expect_gate_due "$repo"
+  assert_contains "$(run_gate "$repo")" "apps/control-center/src/components/a.tsx"
+  export GIT_COMMITTER_DATE="2026-10-18T07:00:00Z"
+}
+
+# UI files the branch takes from its base with an unrecorded merge of main are
+# approved there: a later no-visible-change entry need not name them.
+test_no_visible_change_after_merge_of_base_ui_passes() {
+  local repo="${TMP_ROOT}/no-visible-change-after-base-merge"
+  setup_repo "$repo"
+  export GIT_COMMITTER_DATE="2026-10-23T07:00:00Z"
+  local base main_tip
+  base="$(git -C "$repo" rev-parse HEAD)"
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "UI change on main"
+  main_tip="$(git -C "$repo" rev-parse HEAD)"
+  git -C "$repo" update-ref refs/remotes/origin/main "$main_tip"
+  git -C "$repo" reset -q --hard "$base"
+  commit_file "$repo" "companion/other.go" "Branch work"
+  git -C "$repo" merge -q --no-ff --no-edit -m "Merge main" "$main_tip"
+  commit_file "$repo" "companion/fix.go" "Companion fix"
+  printf '\n## Companion fix\n\n%s\n- Approved customer-visible result: No screen differs.\n- Scope: companion/fix.go and this approval record.\n%s\n' \
+    "$NO_CHANGE_LINE" "$WHATS_NEW_NONE" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Record the companion fix"
+  expect_gate_success "$repo"
+  export GIT_COMMITTER_DATE="2026-10-18T07:00:00Z"
+}
+
 # An approval entry that a later commit removes again approves nothing (Codex
 # review of #823): the UI change before it is due again.
 test_removed_approval_entry_does_not_cover_ui() {
@@ -1245,6 +1293,8 @@ test_approved_by_paul_may_be_followed_by_text
 test_no_visible_change_ends_after_its_reason
 test_removed_approval_entry_does_not_cover_ui
 test_no_visible_change_does_not_cover_earlier_ui
+test_no_visible_change_keeps_earlier_unscoped_approval_ui_due
+test_no_visible_change_after_merge_of_base_ui_passes
 test_pending_and_draft_stay_due_next_to_the_new_forms
 test_unrecognized_approval_value_is_due
 test_every_added_entry_needs_all_four_fields

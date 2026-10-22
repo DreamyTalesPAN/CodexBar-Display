@@ -74,6 +74,13 @@ const uiFilePatterns = [
   /^apps\/control-center\/scripts\/test-customer-flows\.mjs$/,
 ];
 
+// These are asked again and again for the same commit (per UI file and per
+// merge level); without a cache a branch with many merges of main takes minutes.
+latestApprovalCommit = cached(latestApprovalCommit);
+uncoveredApprovalCommitUiFiles = cached(uncoveredApprovalCommitUiFiles);
+noVisibleChangeUncoveredUiFiles = cached(noVisibleChangeUncoveredUiFiles);
+unapprovedUiFilesAt = cached(unapprovedUiFilesAt);
+
 const analysisRef = analysisHeadRef();
 const approvalCommit = latestApprovalCommit(analysisRef);
 const workingTreeChangedFiles = changedFilesInWorkingTree();
@@ -265,6 +272,7 @@ function noVisibleChangeUncoveredUiFiles(commit) {
       .filter(isUiFile)
       .filter((file) => !branchFiles || branchFiles.includes(file))
       .filter((file) => !namesPath(entryText, file)),
+    ...(previous ? uncoveredApprovalCommitUiFiles(previous) : []),
     ...noVisibleChangeUncoveredUiFiles(previous),
   ]);
 }
@@ -638,4 +646,14 @@ function lines(value) {
 
 function unique(values) {
   return [...new Set(values)];
+}
+
+function cached(fn) {
+  const results = new Map();
+  return (key) => {
+    if (!results.has(key)) {
+      results.set(key, fn(key));
+    }
+    return results.get(key);
+  };
 }
