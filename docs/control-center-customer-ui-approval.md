@@ -8690,3 +8690,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the pairing-rejection dialog on Settings and Support/Logs starts setup directly when "Run setup again" is clicked; the Settings and Support page actions keep their confirmation.
 - Scope: route the running app's connect-dialog button to the existing setup start handler and cover both dialog entry points and the Settings row with tests. Pull request branch #782 only, not merged, not released.
 - What's new: none — no notice entry until Paul approves the direct setup action above
+
+## 2026-10-22 — #782: customer-flow test follows the connect dialog
+
+- User approval: no visible change – UI approval not needed (test only: the pairing-recovery customer flow clicks the dialog's "Run setup again" instead of the removed "OK")
+- Approved customer-visible result: nothing changes in the app; the flow now matches the connect dialog of the two entries above.
+- Scope: apps/control-center/scripts/test-customer-flows.mjs, testEnteredControlCenterOpensPairingRecovery only. Pull request branch #782 only, not merged, not released.
+- What's new: none — test only, no customer-visible change
