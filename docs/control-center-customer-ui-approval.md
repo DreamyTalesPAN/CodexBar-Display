@@ -18184,3 +18184,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the pace line under each usage slot is larger and easier to read in both layouts; the sprite, labels and reset line stay where they were.
 - Scope: theme-packs/claude-creature (theme.json rev 12, manifest 1.4.2) and its rebuilt dist packs, one legibility test revision pin. Branch claude/paultest-592a only, not merged, not released.
 - What's new: none — the pace text is a theme size change only; the Theme Library shows no new text
+
+## 2026-10-22 — #592: Gauge ring larger, Tiny Office names on their own line
+
+- User approval: pending — Gauge ring is 216 px instead of 190 px with larger inner texts and the second limit moved into the open bottom of the ring; Tiny Office shows each limit name on its own line above its bar and percentage
+- Approved customer-visible result: the Gauge ring fills the screen and its texts are larger in one-provider and Two at once; Tiny Office names are readable at normal size and no longer share a line with the percentage.
+- Scope: theme-packs/gauge (theme.json rev 14, manifest 0.2.4) and theme-packs/tiny-office (theme.json rev 11, manifest 0.7.3), their rebuilt dist packs, and the matching theme tests. Branch claude/paultest-592a only, not merged, not released.
+- What's new: none — layout change only

@@ -85,17 +85,12 @@ describe("Tiny Office theme pack", () => {
     expect(primitives.filter((p) => primitiveUsageSlotVisible(p, unavailable))).toHaveLength(5);
   });
 
-  it("centers the shrunken Spark label alongside the full-size percentage", () => {
+  it("gives the Spark label its own line above the percentage", () => {
     const data = frame("coding", [slots[0], { id: "codex-spark", label: "Codex Spark 5-hour", percent: 0, resetSecs: 60 }]);
     const label = primitives.find((p) => p.v === "{usageSlot2Label}")!;
     const percent = primitives.find((p) => p.v === "{usageSlot2Percent}%")!;
-    const centers = [label, percent].map((p) => {
-      const size = themeTextFittedSize(text(p, data), p.f!, p.s!, p.w!, true);
-      const height = 16 * size; // TFT_eSPI font 2 height.
-      return themeTextAlignedY(p.y ?? 0, p.h!, height, p.va) + height / 2;
-    });
-    expect(themeTextFittedSize(text(label, data), label.f!, label.s!, label.w!, true)).toBe(1);
-    expect(centers).toEqual([186, 186]);
+    expect(label.y! + label.h!).toBeLessThanOrEqual(percent.y!);
+    expect(themeFirmwareTextMetrics(text(label, data), label.f!, label.s!)!.width).toBeLessThanOrEqual(label.w!);
     const manifest = JSON.parse(readFileSync(path.join(root, "theme-packs/tiny-office/manifest.json"), "utf8"));
     // The first firmware that ships usage-pace-v1.
     expect(manifest.minFirmware).toBe("1.0.50");

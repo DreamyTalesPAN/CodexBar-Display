@@ -79,9 +79,9 @@
       "id": "gauge",
       "title": "Gauge",
       "usage": "live",
-      "version": "0.2.3",
-      "themeRev": 13,
-      "themeSpecPath": "/themes/u/ga-13-37b7873e.json",
+      "version": "0.2.4",
+      "themeRev": 14,
+      "themeSpecPath": "/themes/u/ga-14-e0dae764.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -92,13 +92,14 @@
       "tags": [
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-gauge-v0.2.3.zip",
-      "sha256": "484ecc322fdb2ccce4e4752338a108b7894eba0d75fe1bd8d1cc0bb2980f086b",
-      "bytes": 943,
+      "downloadAsset": "vibetv-theme-gauge-v0.2.4.zip",
+      "sha256": "7ee4da40067496ca7bbce1adc580cd1db260fcc139d2789ec8ba61093adb126c",
+      "bytes": 966,
       "earlierThemeSpecPaths": [
         "/themes/u/ga-10-317f5a1b.json",
         "/themes/u/ga-11-a3246430.json",
         "/themes/u/ga-12-bfa31611.json",
+        "/themes/u/ga-13-37b7873e.json",
         "/themes/u/ga-2-ad19500f.json"
       ]
     },
@@ -272,9 +273,9 @@
       "id": "tiny-office",
       "title": "Tiny Office",
       "usage": "live",
-      "version": "0.7.2",
-      "themeRev": 10,
-      "themeSpecPath": "/themes/u/to-10-53728b81.json",
+      "version": "0.7.3",
+      "themeRev": 11,
+      "themeSpecPath": "/themes/u/to-11-98ef389a.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -286,10 +287,11 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-tiny-office-v0.7.2.zip",
-      "sha256": "275780b8e96927e4dfde06854782f1fe6599ccef6f7d4b680487a21df7202e66",
-      "bytes": 8107,
+      "downloadAsset": "vibetv-theme-tiny-office-v0.7.3.zip",
+      "sha256": "879add0f0f15f667886a92ec34f5027ff6f082bb0c71fe062bc0b8e4e42ea325",
+      "bytes": 8109,
       "earlierThemeSpecPaths": [
+        "/themes/u/to-10-53728b81.json",
         "/themes/u/to-6-6eed22ed.json",
         "/themes/u/to-7-d7799cec.json",
         "/themes/u/to-8-fdeaccda.json",
