@@ -9695,3 +9695,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: on VibeTV firmware without usage-pace-v1 the Pace switch shows off and is disabled; without usage-windows-v1 or room for two windows the Two at once card is disabled. Both show "Update needed. Update VibeTV to use this." instead of their usual line. Offline or unknown devices and capable firmware are unchanged.
 - Scope: Settings Pace and Display mode Two at once (settings-screen.tsx, settings-pace.tsx tests, deviceLacks in control-center-types.ts, DisplayModeChoice pairNote prop). The setup wizard is unchanged. Pull request branch #864 only, not merged, not released.
 - What's new: none — a notice that these settings need a VibeTV update; nothing new to use
+
+## 2026-10-22 — #864: approval marker after merging claude/usage-pace at dd826fe5
+
+- User approval: no visible change – UI approval not needed (merge of claude/usage-pace (dd826fe5) into #864; the own entries of #864 keep their approvals)
+- Approved customer-visible result: #864 as in its own entries plus the entries merged with dd826fe5; nothing else changes.
+- Scope: the merge of dd826fe5 and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge of dd826fe5, no customer-visible change of its own
