@@ -9476,7 +9476,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-21 — #782: a closed connect error stays closed across status polls (Codex review)
 
-- User approval: pending — #782 closed connect error stays closed across status polls; no new wording; not seen by Paul. Before → after: #782 the "VibeTV could not connect." dialog, closed with OK, reopened on the next status poll → #782 it stays closed while the same error stays active.
+- User approval: approved by Paul in the communicator chat, 2026-10-22 11:18: "Ja, Marcus' Test reicht" — Marcus' click test on ed9a92c0 (app 99.0.1321, Mac + VibeTV over the cable). [closed connect error]
 - Approved customer-visible result: #782 unchanged texts and layout; the connect dialog closed with OK stays closed while the error stays active.
 - Scope: #782 `apps/control-center/src/components/control-center-errors.ts` (sameActiveError), `apps/control-center/src/components/control-center-app.tsx` (two pairing-rejection call sites), `apps/control-center/src/components/control-center-app.lost-device.test.tsx` (test), and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #782 Codex fix not announced
@@ -9553,15 +9553,15 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-21 — #782: connect dialog offers "Run setup again" (Paul)
 
-- User approval: pending — Paul (21.10. 17:15): "Knopf „Run setup again“ im Dialog": the connect dialog in the running app says "VibeTV no longer accepts this computer. Run setup again to connect it." and has one button "Run setup again"; Paul sees it in the next build
+- User approval: approved by Paul in the communicator chat, 2026-10-22 11:18: "Ja, Marcus' Test reicht" — Marcus' click test on ed9a92c0 (app 99.0.1321, Mac + VibeTV over the cable). [Run setup again]
 - Approved customer-visible result: the connect dialog ("VibeTV could not connect.") on Settings and Support/Logs shows "VibeTV no longer accepts this computer. Run setup again to connect it." with one button "Run setup again" that starts setup; no OK and no "Press Connect again" sentence. The setup wizard's own connect-step dialog is unchanged.
 - Scope: the running app's pairing-rejection dialog only (pairingRejectionForDevice, code pairing_rejected, and the Settings and Logs dialog buttons). Pull request branch #782 only, not merged, not released.
 - What's new: none — no notice entry until Paul approves the dialog above
 
 ## 2026-10-21 — #782: connect dialog starts setup without a second question
 
-- User approval: pending — the connect dialog's "Run setup again" starts setup directly (no second question), as Paul asked ("startet Setup direkt"); Paul sees it in the next build
-- Approved customer-visible result: the pairing-rejection dialog on Settings and Support/Logs starts setup directly when "Run setup again" is clicked; the Settings and Support page actions keep their confirmation.
+- User approval: approved by Paul in the communicator chat, 2026-10-22 11:18: "Ja, Marcus' Test reicht" — Marcus' click test on ed9a92c0 (app 99.0.1321, Mac + VibeTV over the cable). [setup without second question]
+- Approved customer-visible result: the pairing-rejection dialog on Settings and Support/Logs starts setup directly when "Run setup again" is clicked; the Settings action keeps its confirmation.
 - Scope: route the running app's connect-dialog button to the existing setup start handler and cover both dialog entry points and the Settings row with tests. Pull request branch #782 only, not merged, not released.
 - What's new: none — no notice entry until Paul approves the direct setup action above
 
@@ -9585,3 +9585,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Main's calm redesign with only #782's existing behaviour retained.
 - Scope: Conflict resolution on PR #782; no release or hardware changes.
 - What's new: none — merge of main, no new customer-visible behaviour
+
+## 2026-10-22 — #782: Paul's approval of the three dialog entries recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-22 11:18: "Ja, Marcus' Test reicht" — #782 approval record for the three dialog entries above (closed connect error, Run setup again, setup without second question); Marcus' click test on ed9a92c0 (app 99.0.1321, Mac + VibeTV over the cable).
+- Approved customer-visible result: #782 as described in those three entries, as seen in Marcus' click test on ed9a92c0; the Settings action keeps its confirmation.
+- Scope: #782 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #782 approval record only
