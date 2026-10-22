@@ -822,6 +822,57 @@ func TestInstallReactivatesWhenHealthStillShowsPreviousTheme(t *testing.T) {
 	}
 }
 
+// Issue #911: a usage frame VibeTV accepted on the first attempt still counts
+// when the retry cannot resend it but the render then settles.
+func TestInstallKeepsLiveFrameShownFromEarlierActivationAttempt(t *testing.T) {
+	withFastActivationRetries(t)
+	packDir := writeMinimalThemePack(t)
+	const activePath = "/themes/u/synth.json"
+	var activationAttempts int
+	currentActivePath := "/themes/u/claude.json"
+	server := themeInstallDeviceServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/theme/active":
+			activationAttempts++
+			if activationAttempts >= 2 {
+				currentActivePath = activePath
+			}
+			w.WriteHeader(http.StatusOK)
+		case "/health":
+			writeThemeHealth(t, w, currentActivePath)
+		}
+	})
+	defer server.Close()
+
+	var out bytes.Buffer
+	result, err := Install(context.Background(), Options{
+		PackURL:            packDir,
+		Target:             server.URL,
+		SkipFirmwareUpdate: true,
+		Out:                &out,
+		HTTPClient:         server.Client(),
+		UploadSettleDelay:  -1,
+		FetchLiveFrame: func(ctx context.Context) (protocol.Frame, error) {
+			if activationAttempts >= 2 {
+				return protocol.Frame{}, errors.New("usage unavailable")
+			}
+			return testLiveFrame(ctx)
+		},
+	})
+	if err != nil {
+		t.Fatalf("Install returned error: %v\nlogs:\n%s", err, out.String())
+	}
+	if activationAttempts != 2 {
+		t.Fatalf("expected activation to be retried after stale health, got attempts=%d", activationAttempts)
+	}
+	if !strings.Contains(out.String(), "Live usage frame: skipped") {
+		t.Fatalf("expected the retry to skip the frame:\n%s", out.String())
+	}
+	if !result.LiveFrameShown {
+		t.Fatalf("the frame accepted on the first attempt must still count: %+v", result)
+	}
+}
+
 func TestInstallEnforcesGIFLZWCapabilityBeforeUpload(t *testing.T) {
 	packDir := writeGIFThemePack(t, makeTwelveBitGIF(t))
 

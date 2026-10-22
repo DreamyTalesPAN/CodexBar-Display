@@ -787,6 +787,9 @@ func activateAndVerifyTheme(
 	}
 	var lastErr error
 	lastOp := "theme-pack/activate"
+	// A frame VibeTV accepted on an earlier attempt still counts when a later
+	// resend fails but the render then settles.
+	frameShown := false
 	for attempt := 1; attempt <= attempts; attempt++ {
 		if attempt > 1 {
 			fmt.Fprintf(out, "Theme activation retry %d/%d.\n", attempt, attempts)
@@ -804,7 +807,7 @@ func activateAndVerifyTheme(
 			continue
 		}
 
-		frameShown := sendLiveThemeFrameWithPairRetry(ctx, wifi, target, caps, store, fetchFrame, out)
+		frameShown = sendLiveThemeFrameWithPairRetry(ctx, wifi, target, caps, store, fetchFrame, out) || frameShown
 		if err := verifyThemeInstallHealth(ctx, wifi, *target, activePath, gifAssets); err != nil {
 			lastErr = err
 			lastOp = "theme-pack/render-health"
