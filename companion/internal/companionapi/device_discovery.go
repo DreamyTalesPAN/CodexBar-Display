@@ -345,7 +345,7 @@ func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (
 	results := s.probeCandidates(ctx, candidates, cfg.DeviceToken)
 
 	var lastErr error
-	var matches []probeResult
+	var matches []candidateProbeResult
 	for res := range results {
 		if res.err == nil {
 			res.target = normalizeTarget(res.target)
@@ -376,7 +376,7 @@ func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (
 	return "", protocol.DeviceHello{}, lastErr
 }
 
-type probeResult struct {
+type candidateProbeResult struct {
 	target  string
 	hello   protocol.DeviceHello
 	err     error
@@ -386,13 +386,13 @@ type probeResult struct {
 // probeCandidates probes every candidate through GET /hello with at most
 // subnetProbeLimit probes in flight. The channel closes once all probes are
 // done or ctx is cancelled; the caller owns ctx and cancels it to stop early.
-func (s *Server) probeCandidates(ctx context.Context, candidates []string, token string) <-chan probeResult {
+func (s *Server) probeCandidates(ctx context.Context, candidates []string, token string) <-chan candidateProbeResult {
 	workers := subnetProbeLimit
 	if len(candidates) < workers {
 		workers = len(candidates)
 	}
 	jobs := make(chan string)
-	results := make(chan probeResult, len(candidates))
+	results := make(chan candidateProbeResult, len(candidates))
 	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
@@ -402,7 +402,7 @@ func (s *Server) probeCandidates(ctx context.Context, candidates []string, token
 				started := time.Now()
 				hello, err := s.getHelloProbe(ctx, candidate, token, subnetProbeTime)
 				select {
-				case results <- probeResult{target: candidate, hello: hello, err: err, elapsed: time.Since(started)}:
+				case results <- candidateProbeResult{target: candidate, hello: hello, err: err, elapsed: time.Since(started)}:
 				case <-ctx.Done():
 					return
 				}
