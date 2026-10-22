@@ -34,4 +34,16 @@ func TestThemeInstallDeviceNoAnswerIsPlainText(t *testing.T) {
 	if _, got := themeInstallErrorPayload("live", upload); got.Code == want.Code || got.Message == want.Message {
 		t.Fatalf("an upload failure must not read as no answer, got %+v", got)
 	}
+
+	// A VibeTV that rejects a stale token did answer. Moving it nearer the
+	// WiFi cannot help, so the check keeps its earlier wording (PR #943 review).
+	rejected := &themeinstall.InstallError{
+		Op:   "theme-pack/check-device",
+		Code: errcode.UpgradeFlashFirmware,
+		Err:  fmt.Errorf("VibeTV is not reachable at http://192.168.178.189: %w", errors.New(`get device hello: status=401 body="unauthorized"`)),
+		Hint: "check VibeTV power/WiFi or pass --target http://<device-ip>",
+	}
+	if _, got := themeInstallErrorPayload("live", rejected); got.Code == want.Code || got.Message == want.Message {
+		t.Fatalf("a rejected token must not read as no answer, got %+v", got)
+	}
 }
