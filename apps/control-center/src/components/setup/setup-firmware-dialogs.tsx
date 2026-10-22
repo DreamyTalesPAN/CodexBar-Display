@@ -1,6 +1,5 @@
 "use client";
 
-import { CircleAlert, RefreshCw } from "lucide-react";
 import { copyForHost } from "@/lib/customer-platform";
 import { SetupDialog } from "./setup-dialog";
 
@@ -64,12 +63,10 @@ export function SetupFirmwareBlockedDialog({
   return (
     <SetupDialog
       description={copyForHost(copy.description, windowsHost)}
-      icon={RefreshCw}
       onOpenChange={onOpenChange}
       open={open}
       primaryAction={{ busy, label: copy.action, onSelect: onResolve }}
       title={copyForHost(copy.title, windowsHost)}
-      tone="error"
     />
   );
 }
@@ -98,7 +95,6 @@ export function SetupFirmwareUpdateFailedDialog({
         attentionMessage ||
         "Unplug VibeTV from power, plug it back in, then try again."
       }
-      icon={CircleAlert}
       onOpenChange={onOpenChange}
       open={open}
       primaryAction={
