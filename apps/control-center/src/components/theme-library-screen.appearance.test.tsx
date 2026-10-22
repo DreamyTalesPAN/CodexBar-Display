@@ -180,6 +180,21 @@ it("shows the screensaver-off notice, with a link to Settings, only under Screen
   expect(onOpenScreensaverSettings).toHaveBeenCalledTimes(1);
 });
 
+it("keeps the Active marker off the preview picture, in the title row", () => {
+  render(
+    <Page
+      device={{ connected: true, paired: true, ready: true, activeTheme: "clippy" }}
+      selectedThemeId="clippy"
+      themes={plain}
+    />,
+  );
+  const pill = within(document.getElementById("catalog-theme-clippy")!).getByTestId("theme-status-pill");
+  expect(pill.textContent).toBe("Active");
+  // The picture is the preview's own area: a marker inside it covers the preview's title.
+  expect(pill.closest('[data-slot="item-media"]')).toBeNull();
+  expect(pill.closest('[data-slot="item-title"]')).not.toBeNull();
+});
+
 it("marks only a verifiably enabled, device-installed screensaver Active", () => {
   const night = product("night-clock", "Night Clock", "screensaver", {
     themeSpecPath: "/themes/s/night.json",

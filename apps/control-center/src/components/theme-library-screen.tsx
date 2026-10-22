@@ -1489,6 +1489,21 @@ function ThemeListItem({
     };
   }, [filtersRef]);
 
+  const pill = statusPill ? (
+    <span
+      className={cn(
+        "inline-flex h-6 shrink-0 items-center rounded-full px-3 text-[14px] leading-none font-semibold",
+        statusPill === "Active"
+          ? "bg-primary text-black"
+          : "bg-card text-foreground shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_14%,transparent)]",
+      )}
+      data-testid="theme-status-pill"
+      title={rowInstalled ? title : undefined}
+    >
+      {statusPill}
+    </span>
+  ) : null;
+
   return (
     <Item
       ref={cardRef}
@@ -1510,20 +1525,9 @@ function ThemeListItem({
         >
           <ThemePreview onPack={setPublishedPack} theme={item} />
         </Button>
-        {/* A pill on the picture says what the row is: Active (lime, black text) for the theme VibeTV shows, Installed (light) for the others on VibeTV. */}
-        {statusPill ? (
-          <span
-            className={cn(
-              "pointer-events-none absolute top-2 right-2 inline-flex h-6 items-center rounded-full px-3 text-[14px] leading-none font-semibold",
-              statusPill === "Active"
-                ? "bg-primary text-black"
-                : "bg-card text-foreground shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_14%,transparent)]",
-            )}
-            data-testid="theme-status-pill"
-            title={rowInstalled ? title : undefined}
-          >
-            {statusPill}
-          </span>
+        {/* Installed (light) for the others on VibeTV sits on the picture. Active is in the title row: a pill on the picture would cover the preview's title. */}
+        {statusPill === "Installed" ? (
+          <span className="pointer-events-none absolute top-2 right-2 flex">{pill}</span>
         ) : null}
       </ItemMedia>
       <ItemContent className="basis-full gap-0.5 px-0.5">
@@ -1531,6 +1535,7 @@ function ThemeListItem({
           <ItemTitle className="min-w-0 text-[13px] font-semibold">
             <span className={THEME_CARD_TITLE_CLASS}>{item.title}</span>
             {isCustom ? <Badge variant="secondary">Custom</Badge> : null}
+            {statusPill === "Active" ? pill : null}
           </ItemTitle>
           <span className="shrink-0 text-[12px] font-normal text-muted-foreground">
             {item.usage === "screensaver" ? "Screensaver" : "Theme"}

@@ -20276,3 +20276,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: "<Limit> reset 3d" is shown at the theme's original font when it fits, otherwise "Reset 3d" at the same font, in every theme, with one limit or several (Gauge's 130 px line with "Weekly (Sonnet)" shows "Reset 3d"); the old "Resets 3d" wording is gone.
 - Scope: the footer fallback chain in firmware_shared/theme_spec_renderer_core.h and the matching live preview (displayedResetFooter), with their tests.
 - What's new: none — wording only
+
+## 2026-10-22 — #7208: Active marker leaves the preview picture
+
+- User approval: no visible change – UI approval not needed (bug fix: Active badge no longer covers the preview title)
+- Approved customer-visible result: the Active marker sits in the card's title row next to the theme name instead of on the preview picture, so it no longer covers the preview's title; Installed stays on the picture.
+- Scope: theme-library-screen.tsx (Active pill moved from the picture into the title row, one shared pill element) and its test in theme-library-screen.appearance.test.tsx.
+- What's new: none — bug fix only
