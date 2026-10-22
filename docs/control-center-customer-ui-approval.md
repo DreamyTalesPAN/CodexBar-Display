@@ -9214,13 +9214,6 @@ issue scope, or release permission never implies UI permission.
 - Scope: `setup-device-dialogs.tsx` and its regression tests; issue #887 item 2 only, not merged, not released.
 - What's new: none — accessibility association for an existing error
 
-## 2026-10-21 — #887: stop marking an unchecked replacement OpenAI key invalid
-
-- User approval: pending — #887 item 1 removes the wrong red invalid ring from the replacement OpenAI key input after a failed connection or disconnect, including while typing a new unchecked key
-- Approved customer-visible result: a connection or disconnect failure keeps its existing message in the existing position, but no longer marks the cleared or replacement key input invalid. No new text or layout is introduced.
-- Scope: `openai-key-form.tsx` and its regression tests; remove the operation-error-to-field-invalid mapping because no current field validation result is available and connection attempts clear the input. Issue #887 item 1 only; item 3 remains untouched, not merged, not released.
-- What's new: none — correct a misleading invalid-field indicator
-
 ## 2026-10-21 — #888: append-only full-path scope record
 
 - User approval: no visible change – UI approval not needed (scope record: lists the full paths changed by #888)
@@ -9228,9 +9221,16 @@ issue scope, or release permission never implies UI permission.
 - Scope: docs/control-center-customer-ui-approval.md only; the existing #888 records cover `apps/control-center/src/components/setup/setup-device-dialogs.test.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/theme-studio/openai-key-form.test.tsx`, `apps/control-center/src/components/theme-studio/openai-key-form.tsx` at 5b4747bf70f86a066acc9a3b6f96638b7277082e. These full paths supplement the existing scope; all original entries are preserved.
 - What's new: none — documentation-only scope correction; no product change or announcement.
 
-## 2026-10-21 — #887: explain an invalid Theme Studio color
+## 2026-10-22 — #887: no new error text for an invalid Theme Studio color (item 3 out of scope)
 
-- User approval: pending — new error text for an invalid Theme Studio color; Paul has not seen it
-- Approved customer-visible result: none yet. Proposed text under an invalid color field (Theme Studio editor, ColorField): "Use a 6-digit hex color, like #FFAA00." The field is linked to this text via aria-describedby; the text disappears when the draft is valid or the field is reverted on blur.
-- Scope: `editor-fields.tsx` and its new regression test `editor-fields.test.tsx`; issue #887 item 3 only, not merged, not released.
-- What's new: none — the error text is not approved yet, so it is not announced
+- User approval: no visible change – UI approval not needed (bug fix: removes the unapproved item-3 error text added earlier on this branch; the Theme Studio color field shows nothing new)
+- Approved customer-visible result: none; the Theme Studio color field is as before this PR and shows no new text for an invalid value.
+- Scope: theme-studio/editor-fields.tsx restored and its new test removed; issue #887 item 3 is not in this PR.
+- What's new: none — removes an unapproved change, no announcement
+
+## 2026-10-21 — #887: stop marking an unchecked replacement OpenAI key invalid
+
+- User approval: pending — #887 item 1 removes the wrong red invalid ring from the replacement OpenAI key input after a failed connection or disconnect, including while typing a new unchecked key
+- Approved customer-visible result: a connection or disconnect failure keeps its existing message in the existing position, but no longer marks the cleared or replacement key input invalid. No new text or layout is introduced.
+- Scope: `openai-key-form.tsx` and its regression tests; remove the operation-error-to-field-invalid mapping because no current field validation result is available and connection attempts clear the input. Issue #887 item 1 only; item 3 remains untouched, not merged, not released.
+- What's new: none — correct a misleading invalid-field indicator

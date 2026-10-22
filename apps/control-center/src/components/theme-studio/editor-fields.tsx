@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   InputGroup,
@@ -75,7 +75,6 @@ export function ColorField({
       <FieldLabel htmlFor={`${id}-text`}>{label}</FieldLabel>
       <InputGroup className="h-11 rounded-[var(--radius-control)]">
         <InputGroupInput
-          aria-describedby={draftValid ? undefined : `${id}-error`}
           aria-invalid={!draftValid}
           className="font-mono"
           onBlur={commitDraft}
@@ -108,11 +107,6 @@ export function ColorField({
           />
         </InputGroupAddon>
       </InputGroup>
-      {draftValid ? null : (
-        <FieldError id={`${id}-error`}>
-          Use a 6-digit hex color, like #FFAA00.
-        </FieldError>
-      )}
     </Field>
   );
 }
