@@ -36,7 +36,7 @@ describe("UpdatesScreen VibeTV update card", () => {
     expect(screen.queryByRole("progressbar")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Create report" }));
     expect(report).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.keyDown(document, { key: "Escape" });
     view.rerender(<UpdatesScreen {...props} updateStatus={{ ...props.updateStatus }} />);
     expect(screen.queryByRole("dialog")).toBeNull();
     view.rerender(<UpdatesScreen {...props} updateStatus={{ ...props.updateStatus, startedAt: "2026-09-10T10:02:00Z" }} />);

@@ -71,7 +71,7 @@ npx vitest run src/components/usage-screen.test.tsx
 | Usage | `usage-screen.test.tsx` | usage, refreshing, unavailable limits, no provider |
 | Themes | `theme-library-screen.test.tsx`, `theme-library-screen.custom.test.tsx` | Themes, Screensavers, empty list, install running, own theme, delete question |
 | Updates | `updates-screen.test.tsx` | update offered, update running, update failed |
-| Support | `logs-screen.test.tsx`, `setup-event-log.test.tsx` | diagnostics, recent activity, error, setup log |
+| Support | `logs-screen.test.tsx`, `setup-event-log.test.tsx` | diagnostics, recent activity, error |
 | Settings | `settings-screen.test.tsx`, `settings-connection.test.tsx` | every section, factory reset question, connection question |
 | Whole app | `control-center-shell.test.tsx`, `control-center-app.display-preferences.test.tsx` | navigation with an update waiting, every tab inside the real navigation, `Run setup again?` |
 | What's new | `control-center-app.whats-new.test.tsx` | the dialog over Updates |
@@ -125,9 +125,9 @@ and use only the keyboard.
    and mode, for example `Session: 12% used`. A lane without a reading says so
    and reads no percentage.
 4. **Settings.** The brightness slider, the screensaver switch and each
-   provider switch read their name and state. Open `Reset to factory settings`:
+   provider switch read their name and state. Open `Reset…` (Factory reset):
    focus is inside the question. Press Escape: focus is back on the button.
-5. **Run setup again.** In Settings or Support, open `Run setup again` and
+5. **Run setup again.** In Settings, open `Run setup` and
    choose Cancel. Focus is back on the button.
 6. **Themes.** The themes are read as a list. Each one offers Preview, Edit
    and Install. Open a preview, close it with Escape: focus is back on its

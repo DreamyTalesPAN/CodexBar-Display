@@ -5,7 +5,6 @@ import {
   Monitor,
   RefreshCw,
   ShieldCheck,
-  TriangleAlert,
 } from "lucide-react";
 import {
   Alert,
@@ -508,7 +507,6 @@ function InlineUpdateProgress({
     return (
       <SetupDialog
         description={status.error || "Update was not installed."}
-        icon={TriangleAlert}
         onOpenChange={(open) => setErrorDismissed(!open)}
         open
         primaryAction={status.retryAllowed !== false ? {
