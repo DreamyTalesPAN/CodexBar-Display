@@ -9,6 +9,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createBlankThemeSpec } from "@/lib/theme-studio";
 import type { ThemeProduct } from "@/lib/themes";
 import { ThemeLibraryScreen, type ThemeLibraryScreenProps } from "./theme-library-screen";
+import { SetupDialog } from "./setup/setup-dialog";
 import { SystemBusyDialog, systemBusyCopy } from "./system-busy-dialog";
 
 const stored = vi.hoisted(() => ({
@@ -95,37 +96,34 @@ function deferFetches() {
 const driftRow = () =>
   screen.getAllByRole("listitem").find((row) => within(row).queryByText("Drift"))!;
 
-it("recognises the busy announcement independently of its wording", async () => {
+it("waits for a dialog the customer asked for, and shows once it has closed", async () => {
   stored.storageError = "Saved themes contain invalid data.";
-  const busy = document.createElement("div");
-  busy.setAttribute("role", "dialog");
-  busy.dataset.noticeKind = "system-busy";
-  busy.textContent = "A different busy announcement title";
-  document.body.appendChild(busy);
-  try {
-    renderLibrary();
-    expect(await screen.findByRole("dialog", { name: "Theme storage needs attention" })).toBeTruthy();
-  } finally {
-    busy.remove();
-  }
-});
+  const page = (asked: boolean) => (
+    <>
+      {asked ? (
+        <SetupDialog description="Sure?" onOpenChange={() => {}} open title="Run setup again?" />
+      ) : null}
+      <ThemeLibraryScreen
+        busyAction={null}
+        companionStatus="online"
+        device={null}
+        onInstallCustomTheme={async () => false}
+        onInstallTheme={vi.fn()}
+        onSelectTheme={vi.fn()}
+        selectedThemeId=""
+        storefrontConfigured={false}
+        themeInstallEnabled={false}
+        themes={[]}
+      />
+    </>
+  );
+  const { rerender } = render(page(true));
+  await act(async () => {});
+  expect(screen.queryByRole("dialog", { name: "Run setup again?" })).not.toBeNull();
+  expect(screen.queryByRole("dialog", { name: "Theme storage needs attention" })).toBeNull();
 
-it("waits for an ordinary dialog even when its contents quote the busy title", async () => {
-  stored.storageError = "Saved themes contain invalid data.";
-  const other = document.createElement("div");
-  other.setAttribute("role", "dialog");
-  other.textContent = `Help for: ${systemBusyCopy.title}`;
-  document.body.appendChild(other);
-  try {
-    renderLibrary();
-    render(<SystemBusyDialog onClose={() => {}} />);
-    await act(async () => {});
-    expect(screen.queryAllByRole("dialog")).toEqual([other]);
-    act(() => other.remove());
-    expect(await screen.findByRole("dialog", { name: "Theme storage needs attention" })).toBeTruthy();
-  } finally {
-    other.remove();
-  }
+  await act(async () => rerender(page(false)));
+  expect(screen.queryByRole("dialog", { name: "Theme storage needs attention" })).not.toBeNull();
 });
 
 it("a failed theme action opens as an overlay dialog, not as an inline alert", async () => {

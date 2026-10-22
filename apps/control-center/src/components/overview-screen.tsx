@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type {
   CompanionStatus,
   DeviceInfo,
@@ -21,6 +21,7 @@ import {
   deviceIsReady,
   deviceUsesCable,
 } from "./control-center-types";
+import { useWaitsForDialog } from "./dialog-stack";
 import { SetupDialog } from "./setup/setup-dialog";
 import {
   LiveVibeTVPreview,
@@ -47,8 +48,6 @@ const NOTICE_COPY: Record<OverviewNotice, { description: string; title: string }
     title: "Theme not shown",
   },
 };
-
-const DIALOGS = '[role="dialog"], [role="alertdialog"]';
 
 // Issue #498: the Companion names a theme the VibeTV cannot draw.
 // Issue #265: the Mac App names a WiFi signal too weak for reliable updates.
@@ -163,31 +162,9 @@ export function OverviewScreen({
     return () => window.clearTimeout(timer);
   }, []);
 
-  // The notice waits while another dialog is open on the page. Its own dialog
-  // is one of the open dialogs, so it is counted out with the ref. The first
-  // answer is read before the first render, so it never opens over a dialog
-  // that is already there.
-  const [otherDialogOpen, setOtherDialogOpen] = useState(
-    () =>
-      typeof document !== "undefined" &&
-      document.querySelectorAll(DIALOGS).length > 0,
-  );
-  const noticeOpen = notice !== null && !otherDialogOpen;
-  const noticeOpenRef = useRef(false);
-  useLayoutEffect(() => {
-    noticeOpenRef.current = noticeOpen;
-  });
-  useLayoutEffect(() => {
-    const check = () =>
-      setOtherDialogOpen(
-        document.querySelectorAll(DIALOGS).length >
-          (noticeOpenRef.current ? 1 : 0),
-      );
-    check();
-    const observer = new MutationObserver(check);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, []);
+  // The notice waits while a dialog the customer asked for is open.
+  const noticeWaits = useWaitsForDialog("notice");
+  const noticeOpen = notice !== null && !noticeWaits;
 
   return (
     <div className="flex w-full flex-1 flex-col pb-8">
@@ -303,6 +280,7 @@ export function OverviewScreen({
             if (!open) onCloseNotice?.(notice);
           }}
           open={noticeOpen}
+          rank="notice"
           secondaryAction={{
             label: "Not now",
             onSelect: () => onCloseNotice?.(notice),

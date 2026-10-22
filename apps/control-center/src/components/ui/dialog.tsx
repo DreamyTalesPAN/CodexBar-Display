@@ -5,6 +5,7 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { DialogSlot, type DialogRank } from "@/components/dialog-stack"
 
 /**
  * True when the focused element, the one that opens the dialog, shows keyboard
@@ -85,12 +86,16 @@ function DialogOverlay({
 }
 
 function DialogContent({
+  rank = "question",
   className,
   children,
   onOpenAutoFocus,
   onCloseAutoFocus,
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Content>) {
+}: React.ComponentProps<typeof DialogPrimitive.Content> & {
+  /** Which dialogs this one waits for (see dialog-stack). */
+  rank?: DialogRank
+}) {
   // Radix hands focus back only to a Dialog.Trigger, and the dialogs here open
   // from state. Without this, closing one drops focus to the top of the window.
   // Only then: focus that is already in the next dialog or in a field the
@@ -124,6 +129,7 @@ function DialogContent({
         }}
         {...props}
       >
+        <DialogSlot rank={rank} />
         {children}
       </DialogPrimitive.Content>
     </DialogPortal>

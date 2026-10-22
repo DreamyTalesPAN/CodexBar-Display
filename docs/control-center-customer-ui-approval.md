@@ -9781,3 +9781,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #919 as in its #883 entry plus the entries merged with 3babd786; nothing else changes.
 - Scope: the merge of 3babd786 and this approval record. Pull request #919 only, not merged, not released.
 - What's new: none — merge of 3babd786, no customer-visible change of its own
+
+## 2026-10-22 — #632: one shared dialog stack
+
+- User approval: pending — one edge case changes order: a page notice (Overview notice, Themes error or storage notice) that appears while an announcement (AI usage notice, What's new, busy computer notice) is already open now shows first, the announcement steps aside and returns after it closes. Before, the notice waited behind the announcement.
+- Approved customer-visible result: no text, layout or focus change of any dialog. A dialog the customer asked for still comes before everything; announcements still wait for every other dialog and never take its focus, also when both open in the same render.
+- Scope: apps/control-center/src/components dialog-stack.ts (replaces announcement-gate.ts), ui/dialog.tsx, ui/alert-dialog.tsx, setup/setup-dialog.tsx, setup/setup-usage-dialog.tsx, system-busy-dialog.tsx, whats-new-dialog.tsx, overview-screen.tsx, theme-library-screen.tsx and their tests. Pull request for #632 only, not merged, not released.
+- What's new: none — ordering of existing dialogs in one edge case, no new feature
