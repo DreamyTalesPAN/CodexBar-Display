@@ -427,7 +427,7 @@ describe("UsageScreen", () => {
     expect(reversed.series.map((item) => item.color)).toEqual(["var(--chart-3)", "var(--chart-1)"]);
   });
 
-  it("says Refreshing only on the Refresh button while a manual refresh waits, with nothing above the title (#918)", () => {
+  it("marks a manual refresh that waits on the Refresh button alone, with nothing above the title (#918)", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
@@ -442,9 +442,9 @@ describe("UsageScreen", () => {
     );
 
     expect(html).not.toContain('data-testid="usage-refresh-pending"');
-    expect(html.match(/Refreshing/g)).toHaveLength(1);
-    expect(html).toContain("Refreshing</button>");
-    expect(html).not.toContain("Refreshing usage");
+    // The calm Refresh button is an icon: its spinner is the only mark.
+    expect(html).not.toContain("Refreshing");
+    expect(html.match(/<button[^>]*aria-label="Refresh"[^>]*>/)?.[0]).toContain('aria-busy="true"');
     expect(html).not.toContain("Current values stay visible");
     expect(html).toContain("Codex");
   });

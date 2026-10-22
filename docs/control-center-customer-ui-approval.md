@@ -10672,3 +10672,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #783 as in its own entries plus the entries merged with 1e1244fe; where main and #783 differ, main's calm shell, wordings, busy-computer announcement and the Refresh button as the only Refreshing mark win, and #783's Usage behaviour stays on top.
 - Scope: the merge of 1e1244fe and this approval record. Pull request branch #783 only, not merged, not released.
 - What's new: none — merge of 1e1244fe, no customer-visible change of its own
+
+## 2026-10-22 — #783: the #918 Refreshing test follows the icon Refresh button
+
+- User approval: no visible change – UI approval not needed (test only: main's #918 test expected the text "Refreshing" on the button; #783's calm Refresh button is an icon, so the test checks its busy state instead)
+- Approved customer-visible result: none new; a refresh that waits shows only the spinning Refresh button, with nothing above the token total.
+- Scope: one test in usage-screen.test.tsx and this approval record. Pull request branch #783 only, not merged, not released.
+- What's new: none — test only
