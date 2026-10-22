@@ -22,7 +22,7 @@ export type SetupDialogAction = {
 
 type SetupDialogProps = {
   children?: ReactNode;
-  description?: ReactNode;
+  description?: string;
   /** Stable identity for notices that yield to other dialogs. */
   noticeKind?: "system-busy" | "theme-library";
   onOpenChange: (open: boolean) => void;

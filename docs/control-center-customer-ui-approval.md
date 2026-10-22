@@ -9179,6 +9179,34 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 35152cc8 and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of 35152cc8, no customer-visible change of its own
 
+## 2026-10-21 — #784: approval marker after merging main at 3dc0a15b
+
+- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #784; the own entries of #784 keep their approvals)
+- Approved customer-visible result: #784 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
+- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #784 only, not merged, not released.
+- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
+
+## 2026-10-21 — #784: Overview 3D sway stops and pauses while hidden
+
+- User approval: pending — the Overview 3D VibeTV sways once and then stands still (as approved for setup in 7202), paused while the window is hidden
+- Approved customer-visible result: the Overview follows the one-cycle sway from #780, approved in build 7202: after 2.5 seconds without a touch it sways once and settles; a drag starts one more cycle. Hidden windows pause that cycle, and reduced motion stays still. Text and layout remain unchanged.
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and its animation regression tests; adapted from #780 commit 65352daf4412c41df5041baea327f079b92c1dff with visibility handling and event-driven rendering. Pull request #784 only, not merged, not released.
+- What's new: none — performance fix to the existing Overview preview
+
+## 2026-10-21 — #784: identify library and busy notices by data attributes
+
+- User approval: no visible change – UI approval not needed (#784 P3a replaces notice mount counters and title matching with stable dialog data attributes)
+- Approved customer-visible result: page notices still wait for other dialogs and take priority over the busy announcement; wording, layout and dismissal remain unchanged.
+- Scope: `theme-library-screen.tsx`, `system-busy-dialog.tsx`, the `SetupDialog` notice attribute, and library notice regression tests. Pull request #784 only, not merged, not released.
+- What's new: none — internal notice identification only
+
+## 2026-10-21 — #784: cache saved theme names between Overview polls
+
+- User approval: no visible change – UI approval not needed (#784 P3b reads the saved theme library once per Overview visit or storage change instead of every status poll)
+- Approved customer-visible result: Overview keeps showing the current theme name, including the customer's saved names and live theme during standby; returning from Theme Studio and changes from another window refresh those names.
+- Scope: `overview-screen.tsx` and its theme-name regression tests. Pull request #784 only, not merged, not released.
+- What's new: none — avoid repeated localStorage JSON parsing
+
 ## 2026-10-20 — #561 update offer: the Mac App update is offered in its own calm dialog when no VibeTV is found
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 08:55: "Ja" (to "Soll das so rein?" about the picture ui/561-update-hint/01-no-vibetv-found-newer-app.png, in the new dialog style) — entry: #561 update offer: the Mac App update is offered in its own calm dialog when no VibeTV is  — Before → after: #561 update offer: when no VibeTV was found, setup showed only the usual not-found help, even if the Mac App was older than the newest release and an old app can be the reason → #561 update offer: on a Mac, when the Mac App is older than the newest release and no VibeTV is found, the dialog "Update the Mac App first" appears first.
@@ -9319,40 +9347,12 @@ issue scope, or release permission never implies UI permission.
 - Scope: apps/control-center setup wizard offer condition and its test. Pull request branch #822 only, not merged, not released.
 - What's new: none — bug fix, the offer no longer appears in that case
 
-## 2026-10-21 — #784: approval marker after merging main at 3dc0a15b
-
-- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #784; the own entries of #784 keep their approvals)
-- Approved customer-visible result: #784 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
-- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #784 only, not merged, not released.
-- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
-
 ## 2026-10-21 — #822: approval marker after merging claude/group-calm-redesign at 035ced04
 
 - User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (035ced04) into #822; the own entries of both sides keep their approvals; the Mac App update hold during setup from #822 combined with main's rule that the Windows App never gets the native prompt; #822's Windows-setup prompt test was removed)
 - Approved customer-visible result: #822 as in its own entries plus the entries merged with 035ced04; nothing else changes.
 - Scope: the merge of 035ced04 and this approval record. Pull request branch #822 only, not merged, not released.
 - What's new: none — merge of 035ced04, no customer-visible change of its own
-
-## 2026-10-21 — #784: Overview 3D sway stops and pauses while hidden
-
-- User approval: pending — the Overview 3D VibeTV sways once and then stands still (as approved for setup in 7202), paused while the window is hidden
-- Approved customer-visible result: the Overview follows the one-cycle sway from #780, approved in build 7202: after 2.5 seconds without a touch it sways once and settles; a drag starts one more cycle. Hidden windows pause that cycle, and reduced motion stays still. Text and layout remain unchanged.
-- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx` and its animation regression tests; adapted from #780 commit 65352daf4412c41df5041baea327f079b92c1dff with visibility handling and event-driven rendering. Pull request #784 only, not merged, not released.
-- What's new: none — performance fix to the existing Overview preview
-
-## 2026-10-21 — #784: identify library and busy notices by data attributes
-
-- User approval: no visible change – UI approval not needed (#784 P3a replaces notice mount counters and title matching with stable dialog data attributes)
-- Approved customer-visible result: page notices still wait for other dialogs and take priority over the busy announcement; wording, layout and dismissal remain unchanged.
-- Scope: `theme-library-screen.tsx`, `system-busy-dialog.tsx`, the `SetupDialog` notice attribute, and library notice regression tests. Pull request #784 only, not merged, not released.
-- What's new: none — internal notice identification only
-
-## 2026-10-21 — #784: cache saved theme names between Overview polls
-
-- User approval: no visible change – UI approval not needed (#784 P3b reads the saved theme library once per Overview visit or storage change instead of every status poll)
-- Approved customer-visible result: Overview keeps showing the current theme name, including the customer's saved names and live theme during standby; returning from Theme Studio and changes from another window refresh those names.
-- Scope: `overview-screen.tsx` and its theme-name regression tests. Pull request #784 only, not merged, not released.
-- What's new: none — avoid repeated localStorage JSON parsing
 
 ## 2026-10-21 — #822: preserve update descriptions and stable notice identity through base merge
 
@@ -9381,3 +9381,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: dismissing the existing setup offer does not immediately reopen the same update in Sparkle after setup; a later version can still be offered.
 - Scope: setup-wizard.tsx, control-center-app.tsx and their dismissal regression tests; no text or layout changes.
 - What's new: none — remove a duplicate update prompt
+
+## 2026-10-22 — #822: main merge after #784
+
+- User approval: no visible change – UI approval not needed (merge of main after #784 into #822)
+- Approved customer-visible result: Preserve main's dialog contract and the PR's setup update offer.
+- Scope: main merge conflict resolution and this approval record.
+- What's new: none — integration only
