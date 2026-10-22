@@ -4647,6 +4647,21 @@ void testFrameWithoutAnyDeadlineStaysStaleUnlessTheHostSaysLive() {
   TEST_ASSERT_EQUAL_STRING("Reset unavailable", rootResetTextFor(state, 2000));
 }
 
+void testFooterWithARowBelowKeepsItsOwnBinding() {
+  FrameData frame;
+  frame.usageSlot1Label = "Session";
+  frame.usageSlot1ResetSecs = 360000;
+  frame.usageSlot1Available = true;
+  // The reset line sits above a usage row, so it is a per-limit line, not the footer.
+  const char* spec = R"JSON({"v":1,"id":"footer","rev":1,"p":[
+    {"t":"tx","y":204,"sl":1,"v":"{usageSlot1Label}"},
+    {"t":"tx","y":100,"sl":1,"v":"Reset in {usageSlot1Reset}"}
+  ]})JSON";
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Reset in 4d 4h", sink.commands.back().text.c_str());
+}
+
 }  // namespace
 
 // Defined in test_device_clock.cpp.
@@ -4668,6 +4683,7 @@ int main() {
   RUN_TEST(testPairFooterNeverClips);
   RUN_TEST(testIdleFooterStillShrinksToFit);
   RUN_TEST(testFooterWordingTable);
+  RUN_TEST(testFooterWithARowBelowKeepsItsOwnBinding);
   RUN_TEST(testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix);
   RUN_TEST(testIdleCountdownCollapsesForCompactResetAliases);
   RUN_TEST(testStaleCountdownKeepsTheUnavailableWordingWhileIdleDoesNot);
