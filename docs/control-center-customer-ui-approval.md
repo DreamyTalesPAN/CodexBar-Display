@@ -8395,3 +8395,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; Show shows the mode CodexBar delivers, as the percentages already did.
 - Scope: control-center-app.tsx (the usage poll in Settings re-reads the display settings) and its test; pull request branch #877 only.
 - What's new: none — bug fix, no customer-visible text or layout change
+
+## 2026-10-22 — #906: Only a Used / Remaining change invalidates a running usage read
+
+- User approval: no visible change – UI approval not needed (bug fix: saving an unrelated Settings preference no longer drops a manual usage refresh that is still running; no new text or layout)
+- Approved customer-visible result: none; the refresh the customer asked for shows its result as before.
+- Scope: control-center-app.tsx (the save path of display preferences) and its test; pull request branch #877 only.
+- What's new: none — bug fix, no customer-visible text or layout change

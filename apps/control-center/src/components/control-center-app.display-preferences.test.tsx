@@ -269,6 +269,7 @@ function startWindow(themes: unknown[] = []) {
         const found = {
           ok: true,
           usageMode: mode,
+          tokenUsageReady: true,
           providers: companion.providers.map(({ providerId, label }) => ({
             id: providerId, label, session: mode === "used" ? 12 : 88,
             weekly: mode === "used" ? 34 : 66, resetSecs: 0, usageMode: mode,
@@ -1387,4 +1388,47 @@ it("follows a change made in CodexBar itself while Settings stays open", async (
   window.companion.usageMode = { ...usageModePreference, value: "false", effectiveValue: "false" };
   await window.wait(70);
   expect(screen.getByRole("combobox", { name: "Show" }).textContent).toBe("Remaining");
+});
+
+// #906: saving an unrelated Settings preference must not drop a manual usage
+// refresh that is still running. Only a Used / Remaining change retires it.
+it("keeps a running manual usage refresh when an unrelated preference is saved", async () => {
+  const window = startWindow();
+  window.companion.providers = [claude];
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+  await window.wait(1);
+  expect(window.text()).toContain("12%");
+
+  // CodexBar now shows Remaining; the manual refresh is the read that carries it.
+  // Every read from here on waits, so only the refresh can show Remaining.
+  const waiting = () => {
+    let answer = () => {};
+    window.companion.holdUsageRead = new Promise<void>((resolve) => { answer = resolve; });
+    return answer;
+  };
+  window.companion.usageMode = { ...usageModePreference, value: "false", effectiveValue: "false" };
+  const answerRefresh = waiting();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
+  await window.wait(1);
+  const answerSettings = waiting();
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  const answerSave = waiting();
+  await window.choose("Every 30 seconds");
+  expect(window.rotation().textContent).toBe("Every 30 seconds");
+
+  answerRefresh();
+  await window.wait(1);
+  const answerNavigation = waiting();
+  fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+  await window.wait(1);
+  expect(window.text()).toContain("88%");
+  expect(window.text()).not.toContain("12%");
+  answerSettings();
+  answerSave();
+  answerNavigation();
+  await window.wait(1);
 });

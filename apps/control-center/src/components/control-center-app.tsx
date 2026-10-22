@@ -3707,10 +3707,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             }.`,
             tone: "ready",
           });
-          // A usage read started before this save still carries the old
-          // display mode. Retire it and ask once with the stored preference.
-          usageReadRevisionRef.current += 1;
-          quietUsageReadRef.current = null;
+          // A usage read started before a Used / Remaining save still carries
+          // the old display mode. Retire it and ask once with the stored
+          // preference; other saves leave a running manual refresh alone (#906).
+          if (item.id === "codexbar.usageBarsShowUsed") {
+            usageReadRevisionRef.current += 1;
+            quietUsageReadRef.current = null;
+          }
           void refreshUsage({ quiet: true });
         } catch (error) {
           const normalized = normalizeCaughtError(
