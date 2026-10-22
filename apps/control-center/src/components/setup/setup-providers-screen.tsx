@@ -4,7 +4,7 @@ import type {
   SupportDiagnostics,
   UsageSnapshot,
 } from "../control-center-types";
-import { Search, SearchX, TriangleAlert } from "lucide-react";
+import { Search, SearchX } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -120,8 +120,8 @@ export function setupProviderOffersSignIn(
 /**
  * The prerequisite notice for a signed-out provider the app cannot sign in
  * itself: CodexBar reads its usage from the provider's own app, so that app
- * has to be installed and signed in on this computer. Not for "setup_required"
- * (#860): an API-key provider has no app to install, only a key to finish.
+ * has to be installed and running. Not for "setup_required" (#860): an
+ * API-key provider has no app to install, only a key to finish.
  */
 function setupProviderNeedsOwnApp(
   provider: Pick<ProviderItem, "health" | "providerId">,
@@ -132,6 +132,12 @@ function setupProviderNeedsOwnApp(
     !SIGN_IN_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase())
   );
 }
+
+/**
+ * Copilot has no app of its own: CodexBar reads it with a GitHub sign-in
+ * (#591). VibeTV cannot start that sign-in yet, so its popup says so.
+ */
+const GITHUB_SIGN_IN_PROVIDER_IDS = ["copilot"];
 
 /**
  * The one sentence the provider dialog says, fixed per state the row shows
@@ -147,8 +153,12 @@ export function setupProviderDialogSentence(
   const variant = setupProviderRowVariant(state);
   if (variant === "toggle" || variant === "checking") return null;
   if (variant === "sign_in") {
+    // CodexBar's inventory names it "Copilot" (0.75.0), so name GitHub here.
+    if (GITHUB_SIGN_IN_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase())) {
+      return "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.";
+    }
     if (setupProviderNeedsOwnApp(provider)) {
-      return `VibeTV reads ${label} usage from ${label}'s own app, so make sure it is installed and signed in on this computer.`;
+      return `VibeTV can't read ${label} until the ${label} app is installed and running.`;
     }
     // #860: "setup_required" without a sign-in the app can start (API key
     // missing) gets the generic setup line, never the app install.
@@ -318,9 +328,17 @@ export function ProviderList({
         // guide beside OK, or OK alone (Paul, 16.10.).
         <SetupDialog
           open
-          title={issue.provider.label}
+          title={
+            setupProviderNeedsOwnApp(issue.provider)
+              // Copilot has no app of its own: CodexBar reads it with a GitHub
+              // sign-in (decided 20.10.2026, matches its #782 sentence). Only
+              // this dialog changes; a timed-out Copilot keeps its plain name.
+              ? issue.provider.providerId.trim().toLowerCase() === "copilot"
+                ? "GitHub Copilot needs a GitHub sign-in"
+                : `${issue.provider.label} needs its own app`
+              : issue.provider.label
+          }
           description={issue.message}
-          icon={TriangleAlert}
           onOpenChange={(open) => { if (!open) dismissIssue(); }}
           primaryAction={issueSignIn ? {
             label: `Sign in to ${issueSignIn.label}`,
@@ -335,9 +353,11 @@ export function ProviderList({
               setupGuide();
             },
           } : { label: "OK", onSelect: dismissIssue }}
-          secondaryAction={!issueSignIn && setupGuide
-            ? { label: "OK", onSelect: dismissIssue }
-            : undefined}
+          secondaryAction={issueSignIn
+            ? { label: "Not now", onSelect: dismissIssue }
+            : setupGuide ? { label: "Close", onSelect: dismissIssue } : undefined}
+          // Close, Not now or OK is the way out here (Paul, 16.10.: at most two actions).
+          showCloseButton={false}
         />
       ) : null}
       {showIntro ? (
@@ -418,11 +438,11 @@ export function ProviderList({
 
       {remaining > 0 ? (
         <Button
-          className="mt-3 self-center"
+          className="mt-3 self-center font-normal"
           onClick={() => setShown((count) => count + PROVIDER_PAGE_SIZE)}
           size="sm"
           type="button"
-          variant="ghost"
+          variant="link"
         >
           <span>{`Show more providers (${remaining} left)`}</span>
         </Button>

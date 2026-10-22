@@ -111,12 +111,12 @@ func (s *Server) macAppReleaseInfo(ctx context.Context) companionReleaseInfo {
 		Status:           "check_failed",
 		InstalledVersion: installedVersion,
 		UpdateAvailable:  false,
-		Message:          "Mac App check failed.",
+		Message:          macAppReleaseName() + " check failed.",
 	}
 
 	if macAppReleaseCheckDisabled() {
 		info.Status = "disabled"
-		info.Message = "Mac App update check is disabled."
+		info.Message = macAppReleaseName() + " update check is disabled."
 		s.cacheMacAppReleaseInfo(now, info)
 		return info
 	}
@@ -149,10 +149,10 @@ func (s *Server) macAppReleaseInfo(ctx context.Context) companionReleaseInfo {
 		LatestVersion:    latestVersion,
 		InstalledVersion: installedVersion,
 		UpdateAvailable:  updateAvailable,
-		Message:          "Mac App is up to date.",
+		Message:          macAppReleaseName() + " is up to date.",
 	}
 	if updateAvailable {
-		info.Message = "Mac App update is available."
+		info.Message = macAppReleaseName() + " update is available."
 	}
 	s.cacheMacAppReleaseInfo(now, info)
 	return info
@@ -164,6 +164,15 @@ func (s *Server) cacheMacAppReleaseInfo(checkedAt time.Time, info companionRelea
 	s.macAppReleaseChecked = true
 	s.macAppReleaseCheckedAt = checkedAt
 	s.macAppReleaseCache = info
+}
+
+// macAppReleaseName names the app in its update message. The Windows app is
+// "App" in customer copy (#558), the same switch as the other server-worded text.
+func macAppReleaseName() string {
+	if providerCopyGOOS == "windows" {
+		return "App"
+	}
+	return "Mac App"
 }
 
 func macAppReleaseCheckDisabled() bool {

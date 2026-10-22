@@ -11,6 +11,7 @@ import {
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
+import sharedSetupSentences from "./provider-setup-sentences.json";
 import type { PreferenceHealthState, UsageSnapshot } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import {
@@ -172,7 +173,7 @@ describe("SetupProvidersScreen", () => {
     const { rerender } = renderDom(<SetupProvidersScreen {...props} />);
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(within(screen.getByRole("dialog")).getByText(
-      "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer.",
+      "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.",
     )).toBeTruthy();
     expect(screen.queryByText(failed.health.reported)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
@@ -186,7 +187,7 @@ describe("SetupProvidersScreen", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     rerender(<SetupProvidersScreen {...props} />);
     expect(screen.getByRole("dialog")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
     fireEvent.click(screen.getByRole("switch", { name: "GitHub Copilot" }));
     expect(onToggle).toHaveBeenCalledWith(failed, false);
     rerender(<SetupProvidersScreen {...props} providers={[claude, { ...failed, value: false }]} />);
@@ -320,7 +321,7 @@ describe("SetupProvidersScreen", () => {
   it("says one fixed sentence per state, without engine text or a copy action", () => {
     const engine = "No available fetch strategy for openai.";
     const cases: [PreferenceHealthState, string][] = [
-      ["auth_required", "VibeTV reads OpenAI usage from OpenAI's own app, so make sure it is installed and signed in on this computer."],
+      ["auth_required", "VibeTV can't read OpenAI until the OpenAI app is installed and running."],
       ["setup_required", "Finish setup for this provider."],
       ["browser_sign_in_required", "Sign in to OpenAI in your browser, then close the browser."],
       ["permission_required", "Allow access on this computer so VibeTV can read OpenAI usage."],
@@ -349,7 +350,7 @@ describe("SetupProvidersScreen", () => {
       expect(within(dialog).getByText(sentence)).toBeTruthy();
       expect(dialog.textContent).not.toMatch(/fetch strategy|No usage reading|Check again|check again/);
       expect(within(dialog).getAllByRole("button").map((button) => button.textContent))
-        .toEqual(["OK", "Close"]);
+        .toEqual(["OK"]);
       unmount();
     }
     for (const state of ["healthy", "checking", "disabled"]) {
@@ -362,6 +363,15 @@ describe("SetupProvidersScreen", () => {
     expect(setupProviderDialogSentence({ ...claudeOut,
       health: { ...claudeOut.health, state: "stale", signInState: "auth_required" } }))
       .toBe("Sign in to Claude so VibeTV can read its usage.");
+  });
+
+  // The setup log reads the same fixture (companion/internal/codexbar,
+  // provider_setup_sentences_test.go): one sentence per state on both sides.
+  it("says the shared fixture sentence per state, as the setup log does", () => {
+    for (const entry of sharedSetupSentences) {
+      const item = provider({ providerId: entry.providerId, label: entry.label, health: entry.state });
+      expect(setupProviderDialogSentence(item), entry.state).toBe(entry.sentence);
+    }
   });
 
   it("offers the sign-in on a stale row whose live check waits for one", () => {
@@ -391,13 +401,13 @@ describe("SetupProvidersScreen", () => {
       onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
       pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
-    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot")).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot needs a GitHub sign-in")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
     expect(within(screen.getByRole("dialog")).getByText("OpenAI")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show provider message for GitHub Copilot" }));
-    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot")).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot needs a GitHub sign-in")).toBeTruthy();
   });
 
   // #860: an API-key provider CodexBar reports as not set up ("API key is not
@@ -414,9 +424,9 @@ describe("SetupProvidersScreen", () => {
         pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
       const dialog = within(screen.getByRole("dialog"));
       expect(dialog.getByText("Finish setup for this provider.")).toBeTruthy();
-      expect(dialog.queryByText(/own app/)).toBeNull();
+      expect(dialog.queryByText(/app is installed/)).toBeNull();
       expect(dialog.getAllByRole("button").map((button) => button.textContent))
-        .toEqual(["OK", "Close"]);
+        .toEqual(["OK"]);
       unmount();
     }
     const claude = provider({ providerId: "claude", label: "Claude", health: "setup_required" });
@@ -435,10 +445,26 @@ describe("SetupProvidersScreen", () => {
     ]);
   });
 
+  // Copilot has no app of its own: CodexBar reads it with a GitHub sign-in,
+  // so the sentence names that sign-in. Every other provider that has no
+  // sign-in in the app keeps the own-app sentence (#591).
+  it("names the GitHub sign-in for Copilot and keeps the own-app sentence for other providers", () => {
+    // CodexBar 0.75.0 names the provider "Copilot" in its inventory.
+    const copilotSignedOut = provider({ providerId: "copilot", label: "Copilot",
+      health: "setup_required", message: "No available fetch strategy for copilot." });
+    const openaiSignedOut = provider({ providerId: "openai", label: "OpenAI",
+      health: "auth_required", message: "No available fetch strategy for openai." });
+    expect(setupProviderDialogSentence(copilotSignedOut))
+      .toBe("GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.");
+    expect(setupProviderDialogSentence(openaiSignedOut)).toBe(
+      "VibeTV can't read OpenAI until the OpenAI app is installed and running.",
+    );
+  });
+
   // A signed-out provider the app cannot sign in says what the customer has
-  // to do (its own app, installed and signed in) and offers the setup guide
-  // as its signal action beside OK.
-  it("tells a signed-out provider without a sign-in to use its own app", () => {
+  // to do and offers the setup guide as its signal action beside OK. Copilot
+  // has no own app: its sentence names the GitHub sign-in (#591).
+  it("tells a signed-out Copilot that its GitHub sign-in cannot start yet, and keeps the setup guide beside OK", () => {
     const onOpenSetupGuide = vi.fn();
     const failed = { ...copilot, value: true,
       health: { ...copilot.health, reported: "No available fetch strategy for copilot." } };
@@ -448,12 +474,14 @@ describe("SetupProvidersScreen", () => {
       pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
     const dialog = within(screen.getByRole("dialog"));
     expect(dialog.getByText(
-      "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer.",
+      "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.",
     )).toBeTruthy();
     expect(dialog.queryByText("No available fetch strategy for copilot.")).toBeNull();
     expect(dialog.queryByRole("button", { name: /Copy provider message/ })).toBeNull();
     expect(dialog.getAllByRole("button").map((button) => button.textContent))
-      .toEqual(["OK", "Open setup guide", "Close"]);
+      .toEqual(["Close", "Open setup guide"]);
+    // Frame 39 of the template: "<Provider> needs its own app", Close beside the guide.
+    expect(dialog.getByRole("heading", { name: "GitHub Copilot needs a GitHub sign-in" })).toBeTruthy();
     fireEvent.click(dialog.getByRole("button", { name: "Open setup guide" }));
     expect(onOpenSetupGuide).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -465,16 +493,18 @@ describe("SetupProvidersScreen", () => {
     const timedOut = provider({ providerId: "copilot", label: "GitHub Copilot",
       health: "timeout", message: "The provider check timed out." });
     const signedOut = { ...copilot, value: true };
-    for (const [item, guide, sentence] of [
-      [claudeSignedOut, vi.fn(), "Sign in to Claude so VibeTV can read its usage."],
-      [timedOut, vi.fn(), "GitHub Copilot did not answer in time, and VibeTV tries again by itself."],
-      [signedOut, undefined, "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer."],
+    for (const [item, guide, sentence, title] of [
+      [claudeSignedOut, vi.fn(), "Sign in to Claude so VibeTV can read its usage.", "Claude"],
+      // Only the own-app case is drawn in the template; the others keep the provider's name.
+      [timedOut, vi.fn(), "GitHub Copilot did not answer in time, and VibeTV tries again by itself.", "GitHub Copilot"],
+      [signedOut, undefined, "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.", "GitHub Copilot needs a GitHub sign-in"],
     ] as const) {
       const { unmount } = renderDom(<SetupProvidersScreen usage={usage} providers={[item]}
         onOpenSetupGuide={guide} onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
         pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
       const dialog = within(screen.getByRole("dialog"));
       expect(dialog.getByText(sentence)).toBeTruthy();
+      expect(dialog.getByRole("heading", { name: title })).toBeTruthy();
       expect(dialog.queryByRole("button", { name: "Open setup guide" })).toBeNull();
       unmount();
     }
@@ -681,6 +711,24 @@ describe("SetupProvidersScreen", () => {
     expect(html).toContain("Provider 9");
     expect(html).not.toContain("Provider 10");
     expect(html).toContain("Show more providers (4 left)");
+  });
+
+  // Calm rule: a link is ink with an underline, like the other links in Settings.
+  it("shows the more-providers control as an underlined link", () => {
+    const many = Array.from({ length: 14 }, (_, index) =>
+      provider({
+        health: "healthy",
+        label: `Provider ${index}`,
+        providerId: `p${index}`,
+      }),
+    );
+    const html = render({ providers: many });
+    const control = html.match(/<button[^>]*>(?:(?!<\/button>)[\s\S])*Show more providers/)?.[0] ?? "";
+    const opening = control.slice(0, control.indexOf(">"));
+
+    expect(opening).toContain("underline");
+    expect(opening).toContain("font-normal");
+    expect(opening).not.toContain("font-semibold");
   });
 
   it("does not offer more when everything already fits", () => {
