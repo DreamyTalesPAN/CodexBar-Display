@@ -23,6 +23,10 @@ const PRINCIPLES_FILE = "docs/control-center-ui-principles.md";
 // behaviour, so open pull requests whose approval commits predate it do not
 // start failing with this change.
 const APPROVAL_COMMIT_PATH_RULE_SINCE = "2026-10-18T06:00:00Z";
+// An approval commit committed after this moment whose entries all say "no
+// visible change" covers the UI files changed before it only when it names
+// them. Older commits keep the old behaviour.
+const NO_VISIBLE_CHANGE_SCOPE_RULE_SINCE = "2026-10-22T14:00:00Z";
 const APPROVAL_PREFIXES = [
   "- User approval:",
   "- Approved customer-visible result:",
@@ -96,6 +100,7 @@ const changedFiles = unique([
 const uiChangedFiles = unique([
   ...changedFiles.filter(isUiFile),
   ...(approvalCommit ? uncoveredApprovalCommitUiFiles(approvalCommit) : []),
+  ...noVisibleChangeUncoveredUiFiles(approvalCommit),
 ]);
 const approvalCoversUi = workingTreeApprovalChanged && workingTreeApprovalValid;
 const unapprovedUiFiles = approvalCoversUi ? [] : uiChangedFiles;
@@ -207,9 +212,9 @@ function approvalCommitChangedFiles(commit) {
   return lines(tryGit(["diff", "--no-renames", "--name-only", `${commit}^1`, commit]));
 }
 
-function appliesPathRule(commit) {
+function appliesPathRule(commit, since = APPROVAL_COMMIT_PATH_RULE_SINCE) {
   const committedAt = Date.parse(tryGit(["log", "-1", "--format=%cI", commit]));
-  return committedAt >= Date.parse(APPROVAL_COMMIT_PATH_RULE_SINCE);
+  return committedAt >= Date.parse(since);
 }
 
 // UI files the approval commit changes itself that its entry does not cover.
@@ -231,6 +236,47 @@ function uncoveredApprovalCommitUiFiles(commit) {
 function coveredByMergedParent(file, commit, parent) {
   const changedSinceParent = lines(tryGit(["diff", "--no-renames", "--name-only", parent, commit, "--", file]));
   return changedSinceParent.length === 0 && unapprovedUiFilesAt(parent).length === 0;
+}
+
+// A "no visible change" entry is no approval from Paul (Codex review of #823).
+// An approval commit whose entries all say so covers the UI files changed since
+// the approval before it only when its entries name them; else an earlier,
+// unapproved UI commit would pass with it. Files the branch takes from its base
+// (a merge of main) are approved there.
+function noVisibleChangeUncoveredUiFiles(commit) {
+  const parent = commit ? tryGit(["rev-parse", "--verify", `${commit}^1`]) : "";
+  if (
+    !parent ||
+    !onlyNoVisibleChange(commit) ||
+    !appliesPathRule(commit, NO_VISIBLE_CHANGE_SCOPE_RULE_SINCE) ||
+    onBaseBranch(commit)
+  ) {
+    return [];
+  }
+  const previous = latestApprovalCommit(parent);
+  const base = pullRequestBase() || tryGit(["rev-parse", "--verify", "origin/main"]);
+  const forkPoint = base ? tryGit(["merge-base", base, parent]) : "";
+  const branchFiles = forkPoint
+    ? lines(tryGit(["diff", "--no-renames", "--name-only", forkPoint, parent]))
+    : null;
+  const entryText = addedApprovalText(commitDiff(commit));
+  return unique([
+    ...changedFilesSince(previous, parent)
+      .filter(isUiFile)
+      .filter((file) => !branchFiles || branchFiles.includes(file))
+      .filter((file) => !namesPath(entryText, file)),
+    ...noVisibleChangeUncoveredUiFiles(previous),
+  ]);
+}
+
+function onlyNoVisibleChange(commit) {
+  const entries = addedEntries(commitDiff(commit));
+  return (
+    entries.length > 0 &&
+    entries.every((entry) =>
+      NO_VISIBLE_CHANGE_START.test(entryField(entry, "- User approval:").replace(LEADING_MARKDOWN, "")),
+    )
+  );
 }
 
 // An approval commit that is already on main was gated in its own pull request.
@@ -261,7 +307,7 @@ function unapprovedUiFilesAt(ref) {
   if (!diffAddsApprovalEvidence(commitDiff(approval), approval)) {
     return [...since, "approval marker without evidence"];
   }
-  return unique([...since, ...uncoveredApprovalCommitUiFiles(approval)]);
+  return unique([...since, ...uncoveredApprovalCommitUiFiles(approval), ...noVisibleChangeUncoveredUiFiles(approval)]);
 }
 
 // The path as a whole token: "widget.tsx" does not name "widget.ts".

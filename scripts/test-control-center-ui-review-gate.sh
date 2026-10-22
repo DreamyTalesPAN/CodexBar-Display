@@ -910,6 +910,38 @@ test_no_visible_change_ends_after_its_reason() {
   expect_gate_success "$repo"
 }
 
+# A "no visible change" entry is no approval from Paul (Codex review of #823):
+# it covers an earlier UI commit only when it names that file. Entries before
+# the rule's cutoff keep the old behaviour (test_no_visible_change_with_reason_passes).
+test_no_visible_change_does_not_cover_earlier_ui() {
+  local repo="${TMP_ROOT}/no-visible-change-earlier-ui"
+  setup_repo "$repo"
+  export GIT_COMMITTER_DATE="2026-10-23T07:00:00Z"
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Unapproved visible UI change"
+  commit_file "$repo" "companion/fix.go" "Companion fix"
+  printf '\n## Companion fix\n\n%s\n- Approved customer-visible result: No screen differs.\n- Scope: companion/fix.go and this approval record.\n%s\n' \
+    "$NO_CHANGE_LINE" "$WHATS_NEW_NONE" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Record the companion fix"
+  expect_gate_due "$repo"
+  assert_contains "$(run_gate "$repo")" "apps/control-center/src/components/overview-screen.tsx"
+
+  # Naming the UI file covers it.
+  repo="${TMP_ROOT}/no-visible-change-names-ui"
+  setup_repo "$repo"
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "UI change without a visible difference"
+  printf '\n## Overview refactor\n\n%s\n- Approved customer-visible result: No screen differs.\n- Scope: apps/control-center/src/components/overview-screen.tsx and this approval record.\n%s\n' \
+    "$NO_CHANGE_LINE" "$WHATS_NEW_NONE" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add docs/control-center-customer-ui-approval.md
+  git -C "$repo" commit -q -m "Record the overview refactor"
+  expect_gate_success "$repo"
+  export GIT_COMMITTER_DATE="2026-10-18T07:00:00Z"
+}
+
 # An approval entry that a later commit removes again approves nothing (Codex
 # review of #823): the UI change before it is due again.
 test_removed_approval_entry_does_not_cover_ui() {
@@ -1212,6 +1244,7 @@ test_no_visible_change_in_an_earlier_commit_passes
 test_approved_by_paul_may_be_followed_by_text
 test_no_visible_change_ends_after_its_reason
 test_removed_approval_entry_does_not_cover_ui
+test_no_visible_change_does_not_cover_earlier_ui
 test_pending_and_draft_stay_due_next_to_the_new_forms
 test_unrecognized_approval_value_is_due
 test_every_added_entry_needs_all_four_fields
