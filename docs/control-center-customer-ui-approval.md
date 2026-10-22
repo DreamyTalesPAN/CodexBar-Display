@@ -10194,3 +10194,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Updates tab shows the completed state everywhere for a firmware check older than the finished update; a newer firmware failure and a Mac App failure show as failed as before.
 - Scope: Updates tab only, the failed-check decision in updates-screen.tsx and its test. Pull request #798 only, not merged, not released.
 - What's new: none — removes a stale failure display, no customer-visible addition
+
+## 2026-10-23 — #798: no "Up to date" on the firmware row while the update needs attention (Codex review)
+
+- User approval: no visible change – UI approval not needed (bug fix: the firmware row no longer shows the green "Up to date" beside "Firmware current — attention needed")
+- Approved customer-visible result: after an update that ends in attention the firmware row shows the version without an "Up to date" label, next to the attention notice; every other row state is unchanged.
+- Scope: Updates tab only, the firmware row status in updates-screen.tsx and its test. Pull request #798 only, not merged, not released.
+- What's new: none — removes a wrong label, no customer-visible addition

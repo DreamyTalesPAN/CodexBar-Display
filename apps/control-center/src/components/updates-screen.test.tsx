@@ -197,6 +197,35 @@ describe("UpdatesScreen VibeTV update card", () => {
     expect(html).not.toContain("Update available");
   });
 
+  // An update that ends in the attention phase leaves the firmware current, but
+  // the connection or picture still needs repair: the row must not claim
+  // "Up to date" beside "Firmware current — attention needed" (Codex review on #798).
+  it("does not mark the firmware row up to date while the update needs attention", () => {
+    const html = renderMarkup(
+      <UpdatesScreen
+        companionStatus="online"
+        device={{ connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.40" }}
+        firmwareUpdate={{
+          checkedAt: "2026-10-22T10:06:00Z",
+          installedFirmware: "1.0.40",
+          latestFirmware: "1.0.40",
+          updateAvailable: false,
+          status: "current",
+        }}
+        updateStatus={{
+          phase: "attention",
+          outcome: "firmware_current_stream_attention",
+          startedAt: "2026-10-22T10:01:00Z",
+          finishedAt: "2026-10-22T10:05:00Z",
+          logs: [],
+        }}
+      />,
+    );
+
+    expect(html).toContain("Firmware current — attention needed");
+    expect(html).not.toContain("Up to date");
+  });
+
   // A completed job must not gate future releases: status polling restores
   // the completed job indefinitely, so a later check that discovers a
   // DIFFERENT release has to surface it.

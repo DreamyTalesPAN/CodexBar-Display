@@ -489,7 +489,9 @@ export function UpdatesScreen({
                     ? "failed"
                     : checking
                       ? "checking"
-                      : canCheckFirmware && !firmwareNoAnswer
+                      : canCheckFirmware &&
+                          !firmwareNoAnswer &&
+                          visibleUpdateStatus?.phase !== "attention"
                         ? "ok"
                         : undefined
           }
