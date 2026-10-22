@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import type { ReactNode } from "react";
 import type { DeviceInfo, UsageSnapshot } from "./control-center-types";
@@ -245,12 +245,15 @@ export type FrameData = {
   date: string;
 };
 
+// The label of a catalog preview is the provider the customer actually shows,
+// taken from the live frame (PreviewFrameProvider); without one there is no
+// provider to name, so the sample carries none.
 // Catalog previews deliberately use short, generic usage windows. They are not
 // connected to the current provider or VibeTV frame, so labels must not imply
 // a provider-specific entitlement such as "Codex Spark Weekly".
 export const THEME_CATALOG_PREVIEW_FRAME: FrameData = {
-  provider: "vibetv",
-  label: "VibeTV",
+  provider: "",
+  label: "",
   session: 64,
   weekly: 28,
   sessionUnavailable: false,
@@ -711,9 +714,39 @@ export function livePreviewDisplayFrame(
   return displayFrame;
 }
 
+const PreviewFrameContext = createContext<DisplayFrameSnapshot | null>(null);
+
+/** Previews that name no frame of their own show this live frame. */
+export function PreviewFrameProvider({
+  children,
+  snapshot,
+}: {
+  children: ReactNode;
+  snapshot: DisplayFrameSnapshot | null;
+}) {
+  return <PreviewFrameContext.Provider value={snapshot}>{children}</PreviewFrameContext.Provider>;
+}
+
+/** Feeds every preview below it the companion's latest frame; only this node re-renders per poll. */
+export function LivePreviewFrameProvider({
+  active,
+  children,
+  device,
+}: {
+  active: boolean;
+  children: ReactNode;
+  device: string;
+}) {
+  return (
+    <PreviewFrameProvider snapshot={useLatestDisplayFrame(active, device)}>
+      {children}
+    </PreviewFrameProvider>
+  );
+}
+
 export function ThemeSpecPreview({
   animate = true,
-  frame = THEME_CATALOG_PREVIEW_FRAME,
+  frame: ownFrame,
   pack,
   status,
   themeId,
@@ -724,6 +757,12 @@ export function ThemeSpecPreview({
   status: "idle" | "loading" | "ready" | "error";
   themeId: string;
 }) {
+  const snapshot = useContext(PreviewFrameContext);
+  const frame =
+    ownFrame ??
+    (hasRenderableUsage(snapshot)
+      ? buildFrameData(snapshot.savedAt, snapshot.frame)
+      : THEME_CATALOG_PREVIEW_FRAME);
   if (pack?.spec) {
     return (
       <ThemeSpecSVG
@@ -1667,7 +1706,7 @@ export function themeSpecAriaLabel(
     screensaver === undefined
       ? `theme ${themeId}`
       : `screensaver ${screensaver}`.trim();
-  return `Rendered VibeTV ${shown} showing ${frame.label}, ${usage.length > 0 ? usage.join(", ") : "no usage windows available"}`;
+  return `Rendered VibeTV ${shown} showing ${[frame.label, usage.length > 0 ? usage.join(", ") : "no usage windows available"].filter(Boolean).join(", ")}`;
 }
 
 function frameUsageMode(displayFrame: DisplayFrame | undefined): string {

@@ -20209,3 +20209,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the #909 and calm Settings entries above; nothing else changes.
 - Scope: settings-screen.tsx and its test, plus a guard test that the Two at once card in Setup shows the skeleton like the others. Test build only, not a pull request.
 - What's new: none — integration fix, no customer-visible change of its own
+
+## 2026-10-22 — build11: theme previews name the provider the customer shows
+
+- User approval: pending — Every theme preview (Appearance, Setup theme step, Theme Studio) shows the provider the customer currently shows (Two at once: used/remaining like the device) at the top instead of "VibeTV"; without a live frame the label stays empty
+- Approved customer-visible result: previews carry the real provider name from the companion frame, never a placeholder.
+- Scope: live-vibetv-preview.tsx (sample frame has no label, previews read the live frame from one context fed in control-center-app.tsx), the preview aria label, and tests. Test build only, not a pull request.
+- What's new: none — preview label only

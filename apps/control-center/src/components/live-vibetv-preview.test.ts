@@ -785,7 +785,7 @@ describe("dynamic usage slot preview", () => {
     );
 
     expect(markup).toContain(
-      "Rendered VibeTV theme catalog-preview showing VibeTV, Session 64% used, Weekly 28% used",
+      "Rendered VibeTV theme catalog-preview showing Session 64% used, Weekly 28% used",
     );
     expect(markup).not.toContain("Codex Spark Weekly");
   });

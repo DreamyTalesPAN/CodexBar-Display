@@ -103,7 +103,7 @@ import {
 } from "./device-recovery-gate";
 import { useCompanionRelease } from "./companion-installer-actions";
 import { LogsScreen } from "./logs-screen";
-import { WithLatestDisplayFrame } from "./live-vibetv-preview";
+import { LivePreviewFrameProvider, WithLatestDisplayFrame } from "./live-vibetv-preview";
 import { OverviewScreen, useOverviewNotice } from "./overview-screen";
 import { VibeTVNotFoundDialog, vibetvNotFound } from "./vibetv-not-found-dialog";
 import {
@@ -6244,7 +6244,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   return (
     // The hosted download page has no local Mac App to read a setup log from.
     <SetupEventsContext.Provider value={hostedSetup ? null : loadSetupEvents}>
-      {renderScreen()}
+      <LivePreviewFrameProvider
+        active={displaySessionActive}
+        device={device?.deviceId || deviceTarget}
+      >
+        {renderScreen()}
+      </LivePreviewFrameProvider>
       <SetupRecoveryDialogs
         onHide={() => setRuntimeRecoveryHidden(true)}
         onRestart={restartLocalControlCenterApp}
