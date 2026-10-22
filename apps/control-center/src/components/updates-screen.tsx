@@ -274,9 +274,11 @@ export function UpdatesScreen({
       ? "Not running"
       : companionInfo?.app?.version || companionVersion || "Unknown";
   // The answer was neither "current" nor an update nor a failure (no release
-  // for this board, not supported over this connection): never "up to date".
+  // for this board, not supported over this connection), or the finished
+  // update still needs attention: never "up to date".
   const firmwareNoAnswer = Boolean(
-    !macAppRunning ||
+    visibleUpdateStatus?.phase === "attention" ||
+      !macAppRunning ||
       !device?.connected ||
       !canCheckFirmware ||
       !firmwareUpdate ||
@@ -489,9 +491,7 @@ export function UpdatesScreen({
                     ? "failed"
                     : checking
                       ? "checking"
-                      : canCheckFirmware &&
-                          !firmwareNoAnswer &&
-                          visibleUpdateStatus?.phase !== "attention"
+                      : canCheckFirmware && !firmwareNoAnswer
                         ? "ok"
                         : undefined
           }

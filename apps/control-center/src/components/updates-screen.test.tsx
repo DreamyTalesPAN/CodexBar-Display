@@ -199,10 +199,19 @@ describe("UpdatesScreen VibeTV update card", () => {
 
   // An update that ends in the attention phase leaves the firmware current, but
   // the connection or picture still needs repair: the row must not claim
-  // "Up to date" beside "Firmware current — attention needed" (Codex review on #798).
-  it("does not mark the firmware row up to date while the update needs attention", () => {
+  // "Up to date" beside "Firmware current — attention needed", nor the headline
+  // "Everything is up to date" over it (Codex review on #798).
+  it("does not mark the firmware row or the headline up to date while the update needs attention", () => {
     const html = renderMarkup(
       <UpdatesScreen
+        companionRelease={{
+          checkedAt: "2026-10-22T10:06:00Z",
+          status: "available",
+          latestVersion: "1.0.52",
+          installedVersion: "1.0.52",
+          updateAvailable: false,
+          message: "Mac App is up to date.",
+        }}
         companionStatus="online"
         device={{ connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.40" }}
         firmwareUpdate={{
@@ -223,7 +232,10 @@ describe("UpdatesScreen VibeTV update card", () => {
     );
 
     expect(html).toContain("Firmware current — attention needed");
-    expect(html).not.toContain("Up to date");
+    expect(html).toContain("No update available");
+    expect(html).not.toContain("Everything is up to date");
+    // Only the Mac App row, whose check answered, says "Up to date".
+    expect(html.match(/Up to date/g)).toHaveLength(1);
   });
 
   // A completed job must not gate future releases: status polling restores

@@ -10201,3 +10201,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: after an update that ends in attention the firmware row shows the version without an "Up to date" label, next to the attention notice; every other row state is unchanged.
 - Scope: Updates tab only, the firmware row status in updates-screen.tsx and its test. Pull request #798 only, not merged, not released.
 - What's new: none — removes a wrong label, no customer-visible addition
+
+## 2026-10-23 — #798: no "Everything is up to date" headline while the update needs attention (Codex review)
+
+- User approval: no visible change – UI approval not needed (bug fix: the Updates headline no longer shows the green "Everything is up to date" beside "Firmware current — attention needed"; it shows the existing muted "No update available")
+- Approved customer-visible result: after an update that ends in attention the headline and the firmware row follow one decision and show no "up to date" claim; every other state is unchanged.
+- Scope: Updates tab only, the firmware no-answer decision in updates-screen.tsx (the separate row rule is removed) and its test. Pull request #798 only, not merged, not released.
+- What's new: none — removes a wrong claim, no customer-visible addition
