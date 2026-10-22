@@ -1318,6 +1318,26 @@ async function startTestApp({
   return { app, appUrl };
 }
 
+// The axe unit checks switch color-contrast off (jsdom has no colours). Here
+// the real browser computes it for a rendered dialog (issue #214).
+const axeSource = await readFile(
+  join(root, "node_modules", "axe-core", "axe.min.js"),
+  "utf8",
+);
+async function assertDialogContrast(page, dialog) {
+  await page.addScriptTag({ content: axeSource });
+  const failures = await dialog.evaluate(async (node) => {
+    const { violations } = await window.axe.run(node, {
+      runOnly: ["color-contrast"],
+      resultTypes: ["violations"],
+    });
+    return violations.flatMap(({ id, nodes }) =>
+      nodes.map(({ html, failureSummary }) => `${id}: ${html} ${failureSummary}`),
+    );
+  });
+  assert(failures.length === 0, `dialog colour contrast:\n${failures.join("\n")}`);
+}
+
 async function newCustomerPage(browser, appUrl, options) {
   const page = await browser.newPage(options);
   await markWhatsNewRead(page);
@@ -1579,6 +1599,7 @@ async function testFirmwareOnboardingTerminalStates(browser, appUrl) {
       await dialog.waitFor({ timeout: 10_000 });
       assert(await dialog.getByRole("button", { name: "Create support report" }).isEnabled(), "Terminal attention must release busy state for support");
       assert((await dialog.getByRole("button", { name: /try.*again/i }).count()) === 0, "Verified firmware must not offer another flash");
+      await assertDialogContrast(page, dialog);
     }
     const terminalPolls = polls;
     await page.waitForTimeout(1600);
@@ -1737,6 +1758,7 @@ async function testConnectFirmwareUpdateFailureOffersRetry(browser, appUrl) {
     name: "Firmware update did not finish",
   });
   await failure.waitFor({ timeout: 20_000 });
+  await assertDialogContrast(page, failure);
   await failure
     .getByText("Unplug VibeTV from power, plug it back in, then try again.", {
       exact: true,
@@ -3420,6 +3442,7 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
     ].includes(recoveryTitle),
     `A background service outage must announce itself, got ${JSON.stringify(recoveryTitle)}`,
   );
+  await assertDialogContrast(page, recovery);
   // The announcement must not take the app it is reporting on: the tabs stay
   // reachable while the dialog is still standing.
   await clickNavigation(page, "Usage");

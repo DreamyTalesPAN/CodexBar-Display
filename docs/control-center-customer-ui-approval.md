@@ -9213,3 +9213,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the dialogs look and behave exactly as before.
 - Scope: `setup-dialogs.axe.test.tsx` only. Pull request #902 only, not merged, not released.
 - What's new: none — test-only accessibility baseline
+
+## 2026-10-22 — #902: real-browser colour-contrast check for the setup firmware and recovery dialogs
+
+- User approval: no visible change – UI approval not needed (test only: the customer-flow script runs axe color-contrast on the firmware and recovery dialogs; no component change)
+- Approved customer-visible result: the dialogs look and behave exactly as before.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` only. Pull request #902 only, not merged, not released.
+- What's new: none — test-only accessibility check
