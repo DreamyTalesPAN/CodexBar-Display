@@ -9683,3 +9683,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: when VibeTV does not answer the first check of a WiFi theme or screensaver install, the install dialog says "VibeTV didn't answer." with the next step "Check that VibeTV is on and near your WiFi, then try again." instead of the engine's raw error and the command-line `--target` hint.
 - Scope: `companion/internal/companionapi/theme_install.go` (`themeInstallErrorPayload`, check-device failure only) and its test. Pull request #943 only, not merged, not released.
 - What's new: none — error wording only, nothing a customer would look for
+
+## 2026-10-22 — #943: Paul approves the "VibeTV didn't answer." wording
+
+- User approval: approved by Paul in the communicator chat, 2026-10-22 ~16:40 (relayed by the communicator: Paul releases the #943 text "VibeTV didn't answer." / "Check that VibeTV is on and near your WiFi, then try again."); text-only check, no screenshot (WiFi-only case).
+- Approved customer-visible result: as in the #943 entry above.
+- Scope: this approval record only. Pull request #943 only, not merged, not released.
+- What's new: none — approval record only
