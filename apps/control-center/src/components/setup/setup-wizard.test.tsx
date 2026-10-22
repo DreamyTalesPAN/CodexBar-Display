@@ -105,10 +105,115 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
   };
 }
 
+describe("SetupWizard: display step tiles", () => {
+  const frame = {
+    v: 1, provider: "claude", label: "Claude", usageMode: "used",
+    usageWindows: [{ id: "session", label: "Session", percent: 64, resetSecs: 3600 }],
+  };
+  const withValues = { providerLabel: "Claude", resetLabel: null, windows: [], frame };
+
+  async function showStep(props: SetupWizardProps) {
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }) as unknown as typeof window.matchMedia;
+    const fetcher = vi.fn(async (_url: string) => ({
+      ok: true, status: 200,
+      json: async () => ({ assets: {}, spec: { p: [] }, themeId: "synthwave", specPath: "/themes/u/synth--1.json" }),
+    }) as Response);
+    vi.stubGlobal("fetch", fetcher);
+    render(<SetupWizard {...props} />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    return fetcher;
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("draws the theme the device reports, with the provider's live values", async () => {
+    const props = baseProps({
+      automaticPreviews: [withValues],
+      displayProviders: [{ id: "claude", label: "Claude" }],
+      device: {
+        activeTheme: "synthwave", connected: true,
+        display: { themeSpec: { path: "/themes/u/synth--1.json" } },
+      } as SetupWizardProps["device"],
+    });
+    const fetcher = await showStep(props);
+
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain("synthwave");
+    expect(
+      screen.getAllByRole("img", { name: /Rendered VibeTV theme synthwave showing Claude/i }),
+    ).not.toHaveLength(0);
+  });
+
+  it("shows the activity VibeTV was last sent, not what the usage service reported", async () => {
+    const withActivity = { ...withValues, frame: { ...frame, activity: undefined } };
+    const props = baseProps({
+      automaticPreviews: [withActivity],
+      displayProviders: [{ id: "claude", label: "Claude" }],
+      device: {
+        activeTheme: "synthwave", connected: true, active: true, paired: true,
+        display: { themeSpec: { path: "/themes/u/synth--1.json" } },
+      } as SetupWizardProps["device"],
+      displayFrame: {
+        ok: true,
+        savedAt: new Date().toISOString(),
+        frame: { ...frame, activity: "coding" },
+      } as SetupWizardProps["displayFrame"],
+    });
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }) as unknown as typeof window.matchMedia;
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true, status: 200,
+      json: async () => ({
+        assets: {},
+        spec: { p: [{ t: "tx", x: 0, y: 0, w: 240, h: 40, s: 20, c: "#fff", b: "act" }] },
+        themeId: "synthwave", specPath: "/themes/u/synth--1.json",
+      }),
+    }) as Response));
+    render(<SetupWizard {...props} />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    const tile = document.querySelector('[data-slot="display-mode-tile"]');
+    expect(tile?.textContent).toContain("coding");
+    expect(tile?.textContent).not.toContain("idle");
+  });
+
+  it("uses the theme picked on the previous step before the device names one", async () => {
+    const props = baseProps({
+      automaticPreviews: [withValues],
+      displayProviders: [{ id: "claude", label: "Claude" }],
+      selectedThemeId: "synthwave",
+      themes: [{ id: "synthwave", name: "Synthwave", themeSpecPath: "/themes/u/synth--1.json" }],
+    });
+    const fetcher = await showStep(props);
+
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain("synthwave");
+  });
+});
+
 // Windows walk-through of #642: a signed-out Codex stayed first in the saved
 // selection. Manual then previewed "No usage yet" and Continue stayed locked,
 // although Claude was the one provider listed under "Show this provider".
 describe("SetupWizard: display step with a saved provider that shows nothing", () => {
+  it("releases the display step when the first usage read has no displayable providers", () => {
+    const props = baseProps({ usage: null, displayProviders: [], automaticPreviews: [] });
+    const { rerender } = render(<SetupWizard {...props} />);
+    const continueButton = () => screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement;
+    expect(continueButton().disabled).toBe(true);
+    expect(document.querySelector('[data-state="skeleton"]')).not.toBeNull();
+
+    const usage = baseProps({}).usage!;
+    rerender(<SetupWizard {...props} usage={{
+      ...usage,
+      providers: usage.providers.map((provider) => ({ ...provider, stale: true, usageUnavailable: true })),
+    }} />);
+
+    expect(document.querySelector('[data-state="skeleton"]')).toBeNull();
+    expect(screen.getAllByText("No usage yet")).toHaveLength(2);
+    expect(continueButton().disabled).toBe(false);
+  });
+
   it("falls back to the first provider that can show usage", async () => {
     const props = baseProps({
       automaticPreviews: [

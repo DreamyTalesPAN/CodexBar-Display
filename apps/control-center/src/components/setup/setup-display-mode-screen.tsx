@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type {
   ProviderDisplaySelection,
   SupportDiagnostics,
 } from "../control-center-types";
+import type { DisplayFrame } from "../live-vibetv-preview";
 import {
   Item,
   ItemActions,
@@ -14,7 +15,16 @@ import {
   ItemDescription,
   ItemTitle,
 } from "@/components/ui/item";
+import {
+  ThemeTileSkeleton,
+  ThemeTileStrip,
+  useThemeRenderPack,
+  type SetupDisplayModeTheme,
+  type ThemePackLoad,
+} from "./setup-display-theme-tiles";
+import { displayPreviewSize } from "./setup-display-size";
 import { SETUP_REVEAL } from "./setup-reveal";
+import { pinnedPreview } from "./setup-display-previews";
 import {
   SelectionCheck,
   SelectionDot,
@@ -45,7 +55,20 @@ export type SetupDisplayModeProvider = {
  * arrives as `null` and stays visibly unavailable instead of being invented.
  */
 export type SetupDisplayModePreview = {
+  providerId?: string;
   providerLabel: string;
+  /**
+   * The provider's readings in the shape the theme renderer draws, exactly as
+   * the usage service delivered them. Absent while it has none to give; the
+   * theme tile then shows a placeholder instead of numbers.
+   */
+  frame?: DisplayFrame;
+  /** The same frame builder with fixed provider selection before the window cap. */
+  pinnedFrame?: DisplayFrame;
+  /** When those readings were taken, so reset countdowns keep counting down. */
+  frameAt?: string;
+  /** When VibeTV received the frame whose activity this preview shows (its TTL counts from there). */
+  activityAt?: string;
   resetLabel: string | null;
   windows: { label: string; percent: number | null }[];
 };
@@ -64,6 +87,12 @@ type SetupDisplayModeScreenProps = {
   /** Live usage of the provider Manual is pinned to right now. */
   manualPreview: SetupDisplayModePreview | null;
   mode: ProviderDisplaySelection["mode"];
+  /**
+   * The theme VibeTV is showing. With it, the tiles draw that theme with each
+   * provider's live values; without it (or if it cannot be read) they fall back
+   * to the plain usage tiles.
+   */
+  theme?: SetupDisplayModeTheme | null;
   aiFixPrompt?: () => string;
   onBack?: () => void;
   onContinue: () => void;
@@ -75,6 +104,8 @@ type SetupDisplayModeScreenProps = {
   providers: SetupDisplayModeProvider[];
   /** The choice is being written; the step has not finished yet. */
   saving?: boolean;
+  /** No usage snapshot has been read yet; an unavailable reading is complete. */
+  usageLoading?: boolean;
   selectedProviderId: string | null;
 };
 
@@ -83,6 +114,7 @@ export function SetupDisplayModeScreen({
   automaticPreviews,
   manualPreview,
   mode,
+  theme,
   aiFixPrompt,
   onBack,
   onContinue,
@@ -92,8 +124,14 @@ export function SetupDisplayModeScreen({
   onSelectProvider,
   providers,
   saving = false,
+  usageLoading = false,
   selectedProviderId,
 }: SetupDisplayModeScreenProps) {
+  const themePack = useThemeRenderPack(theme);
+  // Continue waits exactly while a card draws the skeleton, the same rule the
+  // tiles use. Unavailable usage is not a skeleton, so it never holds Continue.
+  const awaitingUsage = tileIsSkeleton(themePack, usageLoading);
+
   return (
     <SetupWizardScreen
       contentWidth="wide"
@@ -120,6 +158,8 @@ export function SetupDisplayModeScreen({
         providers={providers}
         saving={saving}
         selectedProviderId={selectedProviderId}
+        themePack={themePack}
+        usageLoading={usageLoading}
       />
 
       <Button
@@ -136,6 +176,7 @@ export function SetupDisplayModeScreen({
         // the same refused provider.
         disabled={
           saving ||
+          awaitingUsage ||
           (mode === "fixed" &&
             !providers.some((provider) => provider.id === selectedProviderId))
         }
@@ -159,6 +200,7 @@ type DisplayModeChoiceProps = Pick<
   | "onSelectProvider"
   | "providers"
   | "saving"
+  | "usageLoading"
   | "selectedProviderId"
 > & {
   /** Settings says so when Automatic follows a timer instead of activity. */
@@ -166,9 +208,13 @@ type DisplayModeChoiceProps = Pick<
   /** The Setup Wizard's calm look (variant B); Settings keeps its own. */
   calm?: boolean;
   className?: string;
+  /** The theme's render pack as loaded by the step; absent means no theme. */
+  themePack?: ThemePackLoad;
   /** Settings frames the chosen card and provider in ink, not lime. */
   ink?: boolean;
 };
+
+const NO_THEME_PACK: ThemePackLoad = { pack: null, status: "error" };
 
 /**
  * The display-mode choice itself: two cards showing what each mode would put
@@ -191,18 +237,76 @@ export function DisplayModeChoice({
   onSelectProvider,
   providers,
   saving = false,
+  usageLoading = false,
   selectedProviderId,
+  themePack = NO_THEME_PACK,
 }: DisplayModeChoiceProps) {
+  const choiceRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!calm) return;
+    const choice = choiceRef.current;
+    const main = choice?.closest("main");
+    const content = main?.firstElementChild;
+    const row = choice?.firstElementChild;
+    if (!choice || !main || !content || !row) return;
+    const resize = () => {
+      const preview = row.querySelector<HTMLElement>('[data-slot="display-mode-preview"]');
+      if (!preview || !row.clientWidth) return;
+      const mainStyle = getComputedStyle(main);
+      const previewStyle = getComputedStyle(preview);
+      const currentSize = preview.getBoundingClientRect().height
+        - parseFloat(previewStyle.paddingTop) - parseFloat(previewStyle.paddingBottom);
+      // Measure the real text, provider picker and Continue instead of guessing
+      // a fixed height budget; subtract the old picture to avoid resize feedback.
+      const otherHeight = content.getBoundingClientRect().height - currentSize;
+      const availableHeight = window.innerHeight - parseFloat(mainStyle.paddingTop)
+        - parseFloat(mainStyle.paddingBottom) - otherHeight;
+      const availableWidth = preview.clientWidth - parseFloat(previewStyle.paddingLeft)
+        - parseFloat(previewStyle.paddingRight);
+      choice.style.setProperty("--display-preview-size", `${displayPreviewSize(availableWidth, availableHeight)}px`);
+    };
+    resize();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(resize);
+    observer?.observe(content);
+    observer?.observe(row);
+    window.addEventListener("resize", resize);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", resize);
+    };
+  }, [calm, mode, providers.length, themePack.status, usageLoading]);
   const rotation = rotationFrames(
     automaticPreview,
     automaticPreviews,
     providers,
   );
-  const { index } = useProviderRotation(rotation.length);
+  const { index, reducedMotion } = useProviderRotation(rotation.length);
+  const manualFrames = manualPreview ? [pinnedPreview(manualPreview)] : [];
+  const tiles = (frames: SetupDisplayModePreview[], at: number) => {
+    // The theme's own picture whenever it can be had; the plain tile is what
+    // stays if the theme could not be read, so the step never loses its preview.
+    if (tileIsSkeleton(themePack, usageLoading)) {
+      return <ThemeTileSkeleton count={frames.length} />;
+    }
+    if (themePack.pack && frames[at]) {
+      return (
+        <ThemeTileStrip
+          frames={frames}
+          index={at}
+          pack={themePack.pack}
+          reducedMotion={reducedMotion}
+        />
+      );
+    }
+    return <PreviewTile calm={calm} frames={frames} index={at} />;
+  };
 
   return (
-    <div className={cn("flex w-full flex-col", calm ? "gap-6" : "gap-4", className)}>
-      <div className="grid w-full grid-cols-2 items-stretch gap-4">
+    <div ref={choiceRef} className={cn("flex w-full flex-col", calm ? "gap-6" : "gap-4", className)}>
+      <div className={cn(
+        "grid w-full items-stretch gap-4",
+        calm ? "grid-flow-col auto-cols-fr" : "grid-cols-2",
+      )}>
         <ModeCard
           calm={calm}
           description={automaticDescription}
@@ -212,7 +316,7 @@ export function DisplayModeChoice({
           selected={mode === "automatic"}
           title="Automatic"
         >
-          <PreviewTile calm={calm} frames={rotation} index={index} />
+          {tiles(rotation, index)}
         </ModeCard>
         <ModeCard
           calm={calm}
@@ -223,7 +327,7 @@ export function DisplayModeChoice({
           selected={mode === "fixed"}
           title="Manual"
         >
-          <PreviewTile calm={calm} frames={manualPreview ? [manualPreview] : []} index={0} />
+          {tiles(manualFrames, 0)}
         </ModeCard>
       </div>
 
@@ -280,6 +384,15 @@ export function DisplayModeChoice({
 }
 
 /**
+ * Whether a card draws the skeleton rather than readings: the theme pack is
+ * still loading, or the usage snapshot has not been read yet. The
+ * Continue gate and the tiles both ask this, so they cannot disagree.
+ */
+function tileIsSkeleton(themePack: ThemePackLoad, usageLoading: boolean): boolean {
+  return themePack.status === "loading" || usageLoading;
+}
+
+/**
  * The providers the Automatic tile moves through. A caller that hands over the
  * whole set decides the order; otherwise the enabled providers are the set,
  * and only the one reading the caller did take carries numbers.
@@ -304,19 +417,22 @@ function rotationFrames(
 
 /**
  * Which provider the Automatic tile is on. It starts held on the first one, so
- * server output and a reduced-motion Mac render the same still tile; on such a
- * Mac the card's own description is what says the mode rotates. It also holds
+ * server output renders a still tile. It keeps rotating under reduced motion —
+ * only the movement between providers is dropped (`reducedMotion`). It holds
  * while the page is hidden: nobody sees it move, and the timer would keep a
  * minimised window busy.
  */
-function useProviderRotation(count: number): { index: number } {
-  const [animated, setAnimated] = useState(false);
+function useProviderRotation(count: number): {
+  index: number;
+  reducedMotion: boolean;
+} {
+  const [reducedMotion, setReducedMotion] = useState(false);
   const [visible, setVisible] = useState(true);
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const sync = () => setAnimated(!query.matches);
+    const sync = () => setReducedMotion(query.matches);
     const syncVisible = () => setVisible(document.visibilityState !== "hidden");
     sync();
     syncVisible();
@@ -328,7 +444,7 @@ function useProviderRotation(count: number): { index: number } {
     };
   }, []);
 
-  const moving = animated && visible && count > 1;
+  const moving = visible && count > 1;
 
   useEffect(() => {
     if (!moving) return;
@@ -339,7 +455,7 @@ function useProviderRotation(count: number): { index: number } {
     return () => window.clearInterval(timer);
   }, [count, moving]);
 
-  return { index: count ? index % count : 0 };
+  return { index: count ? index % count : 0, reducedMotion };
 }
 
 function ModeCard({
@@ -369,7 +485,7 @@ function ModeCard({
         // must not move its preview down.
         className={cn(
           calmCardClass(selected),
-          "flex flex-col items-stretch overflow-hidden p-0",
+          "flex min-w-0 flex-col items-stretch overflow-hidden p-0",
         )}
         disabled={disabled}
         onClick={onSelect}
@@ -435,7 +551,7 @@ function PreviewTile({
   index: number;
 }) {
   const tileClass = calm
-    ? "min-h-[136px] bg-muted"
+    ? "h-[calc(var(--display-preview-size,104px)+32px)] shrink-0 overflow-hidden bg-muted"
     : "min-h-[140px] bg-muted/50";
   const frame = frames[index];
 

@@ -11,7 +11,11 @@ import type {
   UsageSnapshot,
   WiFiNetwork,
 } from "../control-center-types";
-import type { DisplayFrameSnapshot } from "../live-vibetv-preview";
+import {
+  activeThemeId,
+  livePreviewDisplayFrame,
+  type DisplayFrameSnapshot,
+} from "../live-vibetv-preview";
 import type { ProviderItem } from "../provider-picker";
 import { copyForHost } from "@/lib/customer-platform";
 import { useSetupConnect, type SetupConnectSteps } from "./setup-connect";
@@ -32,10 +36,12 @@ import {
   type SetupDisplayModePreview,
   type SetupDisplayModeProvider,
 } from "./setup-display-mode-screen";
+import { withSentActivity } from "./setup-display-previews";
 import {
   SetupFirmwareBlockedDialog,
   SetupFirmwareUpdateFailedDialog,
 } from "./setup-firmware-dialogs";
+import type { SetupDisplayModeTheme } from "./setup-display-theme-tiles";
 import { SetupLiveScreen } from "./setup-live-screen";
 import type { SetupLogLine } from "./setup-log";
 import { SetupProvidersScreen } from "./setup-providers-screen";
@@ -1041,14 +1047,36 @@ export function SetupWizard(props: SetupWizardProps) {
     )
       ? savedProviderId
       : (props.displayProviders[0]?.id ?? null);
+    // The tiles draw the theme VibeTV is showing. The device's own report wins;
+    // before it names one, the theme picked on the previous step stands in.
+    const deviceThemeId = activeThemeId(props.device);
+    const pickedTheme = props.themes.find(
+      (theme) => theme.id === props.selectedThemeId,
+    );
+    const displayTheme: SetupDisplayModeTheme | null = deviceThemeId
+      ? {
+          id: deviceThemeId,
+          specHash: props.device?.display?.themeSpec?.hash,
+          specPath: props.device?.display?.themeSpec?.path,
+        }
+      : pickedTheme
+        ? { id: pickedTheme.id, specPath: pickedTheme.themeSpecPath }
+        : null;
+    // The activity verdict is the one in the frame last sent to VibeTV: the
+    // usage service's own activity is from before the daemon decides it.
+    const displayPreviews = withSentActivity(
+      props.automaticPreviews,
+      livePreviewDisplayFrame(props.device, props.displayFrame),
+    );
     return (
       <>
         <SetupDisplayModeScreen
           {...help}
-          automaticPreview={props.automaticPreviews[0] ?? null}
-          automaticPreviews={props.automaticPreviews}
+          automaticPreview={displayPreviews[0] ?? null}
+          automaticPreviews={displayPreviews}
+          usageLoading={props.usage === null}
           manualPreview={
-            props.automaticPreviews.find(
+            displayPreviews.find(
               (preview) =>
                 preview.providerLabel ===
                 props.displayProviders.find(
@@ -1057,6 +1085,7 @@ export function SetupWizard(props: SetupWizardProps) {
             ) ?? null
           }
           mode={displayMode}
+          theme={displayTheme}
           onBack={goBack}
           onContinue={() => {
             // Deliberately not goForward() first: a failed save rolls the

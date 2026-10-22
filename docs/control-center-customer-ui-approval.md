@@ -10131,3 +10131,283 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none beyond the entries above; nothing in this merge is shown to Paul as new.
 - Scope: the merge of main into #780 and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — Setup step 11: display mode tiles show the active theme with live values
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: Setup step 11: display mode tiles show the active theme with live values — before → after: (1) Automatic shows one tile per provider that is switched on, each the theme picture with that provider's own current values (the one VibeTV is on 104 px and full strength, the others 84 px at 30 % strength, as drawn in frame 22) → before one plain tile of CLAUDE / SESSION / WEEKLY bars that changed provider every 2 seconds; (2) Manual shows one such tile for the chosen provider → before the same plain tile; (3) a provider that has no values yet shows a quiet grey placeholder tile where the picture would be → before the words "No usage yet" or "Usage unavailable"; no example numbers are drawn anywhere, and the app calculates nothing: it shows only what the usage service delivers; (4) while the theme is still being read the tiles show the same placeholders, and if it cannot be read the plain tiles stay as before. Settings keeps its plain tiles for now.
+- Approved customer-visible result: none yet; waits for Paul's review of the rendered result. See the entries above.
+- Scope: `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, `apps/control-center/src/components/setup/setup-display-previews.ts`, `apps/control-center/src/components/setup/setup-wizard.tsx`, `apps/control-center/src/components/setup/setup-preview-gallery.tsx`, `apps/control-center/src/components/live-vibetv-preview.tsx` (type and helper exports only) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #821: setup step 11 tiles show known zero token totals as 0 (Codex review on #821)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821: setup step 11 tiles show known zero token totals as 0 (Codex review on #821)
+- Approved customer-visible result: #821 setup step 11 tiles show the same token totals as the VibeTV.
+- Scope: `apps/control-center/src/components/setup/setup-display-previews.ts`, its test and this approval record for #821. Pull request branch only, not merged, not released.
+- What's new: none — #821 token-total fix, no new content
+
+## 2026-10-20 — #821 carousel: Automatic tiles of setup step 11 rotate as a calm carousel
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821 carousel: Automatic tiles of setup step 11 rotate as a calm carousel
+- Approved customer-visible result: #821 carousel: none yet; waits for Paul's review of the rendered result (stills and animation in `review-1016/ui/821-carousel/`).
+- Scope: #821 carousel: `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, `apps/control-center/src/app/globals.css` (one keyframe), the #821 carousel tests and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #821 carousel movement only, no new content
+
+## 2026-10-20 — #821 carousel: at most three tiles visible
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821 carousel: at most three tiles visible
+- Approved customer-visible result: the #821 carousel shows the front tile and two behind it, as in frame 22; further providers wait invisibly at the back and fade in as the strip turns; nothing is cut off or shrunk.
+- Scope: #821 carousel in `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #821 carousel limit, no new content
+
+## 2026-10-20 — #821 single tile: Automatic shows one tile that changes provider
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821 single tile: Automatic shows one tile that changes provider
+- Approved customer-visible result: #821 Automatic shows ONE theme tile, the same size as Manual, whose provider (name and values) changes every 2 s with a calm 500 ms crossfade; no small or grey tiles beside it; Manual shows one fixed tile; reduced motion changes without the fade.
+- Scope: #821 single tile in `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, `apps/control-center/src/app/globals.css` (unused carousel keyframes removed), the tile tests and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #821 single tile, no new content
+
+## 2026-10-20 — #821 tile data: provider rows and a moving clock in the setup tiles
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821 tile data: provider rows and a moving clock in the setup tiles
+- Approved customer-visible result: #821 tile data in setup step 11 shows the same provider reset rows, clock and countdowns as the VibeTV; pending Paul's review.
+- Scope: #821 tile data in `apps/control-center/src/components/setup/setup-display-previews.ts`, `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #821 tile data fix, no new content
+
+## 2026-10-20 — #821 frame fidelity: idle wording and provider rows match the device
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821 frame fidelity: idle wording and provider rows match the device
+- Approved customer-visible result: #821 frame fidelity: the tile frame carries the same freshness state the host stamps on a fresh frame and builds provider rows only from delivered windows; pending Paul's review.
+- Scope: #821 frame fidelity in `apps/control-center/src/components/setup/setup-display-previews.ts`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #821 frame fidelity fix, no new content
+
+## 2026-10-20 — #821 reset fidelity: expired countdowns and the later deadline match the device
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821 reset fidelity: expired countdowns and the later deadline match the device
+- Approved customer-visible result: #821 reset fidelity: the tile treats an expired countdown as stale and takes the root reset from the first window that has a deadline, exactly as the host does; pending Paul's review.
+- Scope: #821 reset fidelity in `apps/control-center/src/components/setup/setup-display-previews.ts`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #821 reset fidelity fix, no new content
+
+## 2026-10-20 — #821: a setup tile with usage older than 5 hours shows "Reset unavailable" (Codex review)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821: a setup tile with usage older than 5 hours shows "Reset unavailable" (Codex review) — Before → after: #821 a tile whose usage reading was more than five hours old but still carried a later deadline kept counting down that old reset → #821 the tile shows "Reset unavailable", exactly as the VibeTV does for the same frame (ApplyResetTrust, trust horizon 5 h).
+- Approved customer-visible result: #821 the setup tile draws the same reset text as the VibeTV would; nothing else changes.
+- Scope: #821 `apps/control-center/src/components/setup/setup-display-previews.ts`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #821 Codex fix not announced
+
+## 2026-10-20 — #821: setup tile activity, theme retry and live reset trust (Codex review)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821: setup tile activity, theme retry and live reset trust (Codex review) — Before → after: (1) #821 a theme that draws a different picture while coding (Clippy, Tiny Office) showed its idle picture on the tile while the VibeTV showed the coding one → #821 the tile takes the activity of the frame last sent to the VibeTV; (2) #821 if the Companion was still starting or its theme pack was not ready, the tile stayed on the plain preview until the screen was reopened → #821 it asks again every 5 s and draws the theme as soon as the pack is there; (3) #821 a tile left open past the last reset deadline or past the 5 h trust horizon kept counting down until the next usage update → #821 it shows "Reset unavailable" on the next second, exactly as the VibeTV does.
+- Approved customer-visible result: #821 the setup tile draws the same activity picture, theme and reset text as the VibeTV for the same frame; nothing else changes.
+- Scope: #821 `apps/control-center/src/components/setup/setup-display-previews.ts`, `setup-display-theme-tiles.tsx`, `setup-wizard.tsx`, their tests and this approval record; the unreferenced scratch scripts `apps/control-center/scripts/shots.mjs` and `shots-base.mjs` are removed. Pull request branch only, not merged, not released.
+- What's new: none — #821 Codex fixes not announced
+
+## 2026-10-20 — #821: the setup tile lets a "coding" verdict run out like VibeTV (Codex review)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #821: the setup tile lets a "coding" verdict run out like VibeTV (Codex review) — Before → after: #821 the tile kept the coding sprite of activity-sensitive themes (Clippy, Tiny Office) for as long as setup stayed open → #821 past the sent frame's activity TTL the tile shows the idle sprite, as VibeTV does on its own (#369).
+- Approved customer-visible result: #821 the setup tile draws the same sprite as the VibeTV at every moment.
+- Scope: #821 `apps/control-center/src/components/setup/setup-display-previews.ts`, `setup-display-theme-tiles.tsx`, `setup-display-mode-screen.tsx` (type), `apps/control-center/src/components/live-vibetv-preview.tsx` (frame type), the test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #821 Codex fix not announced
+
+## 2026-10-20 — #821: the setup tile keeps a legacy provider's reset when only its session is unreadable (Codex review)
+
+- User approval: no visible change – UI approval not needed (#821: behaviour fix; a legacy provider without windows and with an unreadable session keeps its root reset countdown in the tile, as the frame sent to VibeTV does, instead of "Reset unavailable"; plus the preview unit tests now pin their clock)
+- Approved customer-visible result: #821 as in its own entries; no new look.
+- Scope: `apps/control-center/src/components/setup/setup-display-previews.ts`, its unit test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — behaviour fix in an edge case, no new content
+
+## 2026-10-20 — #821: approval marker after merging claude/group-setup-b again
+
+- User approval: no visible change – UI approval not needed (merge commit into #821; no visible change of its own; entry: #821: approval marker after merging claude/group-setup-b again)
+- Approved customer-visible result: #821 as in its own entries (pending, Paul reviews) plus the entries of the base branch.
+- Scope: the merge and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of the base branch, no customer-visible change of its own
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at 41652eb8
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (41652eb8) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with 41652eb8; nothing else changes.
+- Scope: the merge of 41652eb8 and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of 41652eb8, no customer-visible change of its own
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at 58ba27d0
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (58ba27d0) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with 58ba27d0; nothing else changes.
+- Scope: the merge of 58ba27d0 and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of 58ba27d0, no customer-visible change of its own
+
+## 2026-10-21 — #821: Paul's approval of build 7200 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #821 approval record for build 7200; the #821 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 stay pending.
+- Approved customer-visible result: #821 as described in its entries above, as seen in build 7200.
+- Scope: #821 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #821 approval record only
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at ac0f1c1c
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (ac0f1c1c) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with ac0f1c1c; nothing else changes.
+- Scope: the merge of ac0f1c1c and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of ac0f1c1c, no customer-visible change of its own
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at 874a7565
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (874a7565) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with 874a7565; nothing else changes.
+- Scope: the merge of 874a7565 and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of 874a7565, no customer-visible change of its own
+
+## 2026-10-21 — #821: Codex fixes for the setup display preview
+
+- User approval: no visible change – UI approval not needed (#821 Codex fixes: setup preview no longer invents usage windows and the Manual tile shows only the pinned provider, as the VibeTV does)
+- Approved customer-visible result: #821 as in its own entries; nothing new is visible, the setup preview only matches what VibeTV already shows.
+- Scope: setup display previews (setup-display-previews.ts, the Manual tile in setup-display-mode-screen.tsx) and their tests. Pull request branch #821 only, not merged, not released.
+- What's new: none — preview corrections that match the device
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at 9702a6ef
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (9702a6ef) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with 9702a6ef; nothing else changes.
+- Scope: the merge of 9702a6ef and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of 9702a6ef, no customer-visible change of its own
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at 2073aaec
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (2073aaec) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with 2073aaec; nothing else changes.
+- Scope: the merge of 2073aaec and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of 2073aaec, no customer-visible change of its own
+
+## 2026-10-21 — #821: Display mode Continue waits for real usage
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: #821 setup step Display mode: Continue becomes active only when the tiles show real usage, not during the loading skeletons (Paul 21.10. 7201 feedback)
+- Approved customer-visible result: on the Display mode step Continue stays inactive while a tile still shows its skeleton, and becomes active once the tiles show usage or an unavailable reading.
+- Scope: setup-display-mode-screen.tsx (Continue gate) and its test. Pull request branch #821 only, not merged, not released.
+- What's new: none — the Continue fix on the Display mode step is pending Paul's approval; not in a release
+
+## 2026-10-21 — #821: Display mode Continue waits while a tile is a skeleton (Codex fix)
+
+- User approval: no visible change – UI approval not needed (#821 Codex fix: Continue also waits while the theme preview itself is still loading; same rule as the pending 7201 fix)
+- Approved customer-visible result: none new; Continue stays inactive exactly while a Display mode card draws its skeleton (theme pack loading, or no provider frames yet), as the pending 7201 entry describes.
+- Scope: setup-display-mode-screen.tsx (Continue gate shares one helper with the tiles; the pack is loaded by the step), its tests, and the two theme tile tests that now pass the pack in. Pull request branch #821 only, not merged, not released.
+- What's new: none — the Continue gate now matches the skeleton rule; no customer-visible change of its own
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at e55eaf93
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (e55eaf93) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with e55eaf93; nothing else changes.
+- Scope: the merge of e55eaf93 and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of e55eaf93, no customer-visible change of its own
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at b821b9ed
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (b821b9ed) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with b821b9ed; nothing else changes.
+- Scope: the merge of b821b9ed and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of b821b9ed, no customer-visible change of its own
+
+## 2026-10-21 — #821: Paul's approval of build 7202 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — #821 approval record for build 7202; only the 1 listed 7202 entries of #821 now carry it, everything else stays as it was.
+- Approved customer-visible result: #821 as described in those entries, as seen in build 7202.
+- Scope: #821 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #821 approval record only
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at 1277c824
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (1277c824) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with 1277c824; nothing else changes.
+- Scope: the merge of 1277c824 and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of 1277c824, no customer-visible change of its own
+
+## 2026-10-21 — #821: keep unavailable token history unknown
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 omitted token counts stay unknown after token collection completes)
+- Approved customer-visible result: unavailable token history shows the existing -- state instead of an invented zero.
+- Scope: setup-display-previews.ts and its regression tests; PR #821 only.
+- What's new: none — correct the existing preview's unavailable-state handling.
+
+## 2026-10-21 — #821: release display selection after unavailable usage
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 completed unavailable usage no longer leaves tiles and Continue loading forever)
+- Approved customer-visible result: the existing no-usage tiles appear after an unavailable reading, and Automatic can continue; only the initial usage read or theme-pack load holds the step.
+- Scope: display-mode screen, theme tiles, wizard usage-loading input and their regression tests; PR #821 only.
+- What's new: none — distinguish pending reads from the existing unavailable state with one shared skeleton rule.
+
+## 2026-10-21 — #821: bound theme render-pack requests
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 a stalled theme response or JSON body releases the display step after 15 seconds)
+- Approved customer-visible result: existing plain tiles replace an unresponsive theme preview and Continue becomes available while the existing five-second retry path recovers the theme.
+- Scope: shared fetchThemeRenderPackRevision timeout, theme-loader cleanup handling and fake-timer setup regression tests; PR #821 only.
+- What's new: none — remove an unbounded loading state without new controls or copy.
+
+## 2026-10-21 — #821: keep theme timeouts compatible with macOS 14.0
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 forward request cancellation without requiring Safari 17.4 AbortSignal.any)
+- Approved customer-visible result: the same bounded theme loading and retry behavior works on the app's supported macOS 14.0 WebKit.
+- Scope: shared render-pack request signal forwarding and one missing-AbortSignal.any regression test; coordinator-approved follow-up commit for PR #821.
+- What's new: none — preserve the existing minimum macOS support.
+
+## 2026-10-21 — #821: enlarge setup display-mode previews
+
+- User approval: pending — Paul (21.10. 7203): "hier sind die previews viel zu klein": the device previews in the setup Display mode cards are larger (240px, same in every card); Paul sees it in the next build.
+- Approved customer-visible result: Automatic and Manual share a native-size 240 × 240 pixelated theme preview, including the loading placeholder; the setup grid stacks cards when two 256px cards do not fit, with a 120px half-scale preview only in exceptionally narrow cards; Automatic crossfades for 180ms of each two-second rotation and shows exactly one provider at rest.
+- Scope: setup-display-mode-screen.tsx (calm setup grid only), setup-display-theme-tiles.tsx (shared preview size and fade duration), setup-display-theme-carousel.test.tsx and this approval record; unit and type checks only, with the real Mac/Windows screen left to the coordinator's next build.
+- What's new: none — refine the pending setup preview layout; no persistent stacking found in the component or regression checks.
+
+## 2026-10-21 — #821: keep unavailable providers inside the theme preview
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 unavailable Automatic providers retain the existing grey theme placeholder and preview size instead of switching to a smaller text fallback; coordinator-authorized review follow-up)
+- Approved customer-visible result: an unavailable provider keeps the same preview area and shows no invented readings; a missing theme still uses the existing plain fallback.
+- Scope: setup-display-mode-screen.tsx (one guard), setup-display-theme-carousel.test.tsx, setup-display-mode-screen.test.tsx and this approval record; regression reproduced before the fix, no hardware or running-app check.
+- What's new: none — restore the existing unavailable placeholder during rotation.
+
+## 2026-10-21 — #821: limit setup theme windows to the device capability
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 an overflow usage window no longer supplies a root theme countdown that the VibeTV cannot display; coordinator-authorized review follow-up)
+- Approved customer-visible result: setup theme frames retain only the usage windows allowed by the device's advertised maxUsageWindows before deriving their root reset; unknown capabilities keep the host's existing uncapped behavior, and the usage snapshot remains unchanged.
+- Scope: control-center-app.tsx passes the existing device capability through setup-display-previews.ts; regressions in setup-display-previews.test.ts cover caps of one and three, retained deadlines, unknown caps and snapshot preservation; no provider-specific rules or hardware changes.
+- What's new: none — correct preview parity with the existing device wire limit.
+
+## 2026-10-21 — #821: approval marker after merging claude/group-setup-b at 01f8694d
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b (01f8694d) into #821; the own entries of #821 keep their approvals)
+- Approved customer-visible result: #821 as in its own entries plus the entries merged with 01f8694d; nothing else changes.
+- Scope: the merge of 01f8694d and this approval record. Pull request branch #821 only, not merged, not released.
+- What's new: none — merge of 01f8694d, no customer-visible change of its own
+
+## 2026-10-21 — #821: match capped preview fields to the host frame
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 capped legacy lanes, fixed-provider reset rows and plain fallback readings now match the existing host send order; coordinator-authorized three-thread review follow-up)
+- Approved customer-visible result: setup previews show only retained usage windows and their legacy fields, while Manual keeps its own provider row built before the window cap; no new copy, controls or layout.
+- Scope: setup-display-previews.ts, its regression tests and the SetupDisplayModePreview data type; red-first regression checks and scoped local validation only, with no hardware or installed-app changes.
+- What's new: none — correct preview parity with the existing device frame.
+
+## 2026-10-21 — #821: preserve the verified retained device frame
+
+- User approval: no visible change – UI approval not needed (bug fix: #821 after a transient collection failure the preview reuses the matching verified sent frame instead of hiding values still shown by VibeTV; coordinator confirmed follow-up at 16:54 UTC)
+- Approved customer-visible result: Automatic and Manual retain the actual device readings for that provider, including their original offline/stale reset state and remaining trust budget; unavailable or unverified sent frames are never presented as measurements.
+- Scope: setup preview mapping and provider identity, reset-trust preservation, unit regressions and rendered theme-tile regression; no new text, controls, layout or hardware writes.
+- What's new: none — align the failure preview with the host's existing last-good send path.
+
+## 2026-10-21 — #821: append-only full-path scope record
+
+- User approval: no visible change – UI approval not needed (scope record: lists the full paths changed by #821)
+- Approved customer-visible result: none from this documentation correction. The entries “2026-10-21 — #821: Display mode Continue waits while a tile is a skeleton (Codex fix)” and “2026-10-21 — #821: enlarge setup display-mode previews” remain pending; this addendum does not approve their visible results.
+- Scope: docs/control-center-customer-ui-approval.md only; the existing #821 records cover `apps/control-center/src/app/globals.css`, `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/live-vibetv-preview.tsx`, `apps/control-center/src/components/setup/setup-display-mode-screen.test.tsx`, `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `apps/control-center/src/components/setup/setup-display-previews.test.ts`, `apps/control-center/src/components/setup/setup-display-previews.ts`, `apps/control-center/src/components/setup/setup-display-theme-carousel.test.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.test.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, `apps/control-center/src/components/setup/setup-preview-gallery.tsx`, `apps/control-center/src/components/setup/setup-wizard.test.tsx`, `apps/control-center/src/components/setup/setup-wizard.tsx` at 322be47abb49e0b409320e6fbd7086babc52164d. These full paths supplement the existing scope; all original entries are preserved.
+- What's new: none — documentation-only scope correction; no product change or announcement.
+
+## 2026-10-21 — #821: fit display previews in one row above Continue
+
+- User approval: pending — Paul asked on 2026-10-21 22:10 for the previews always in one row and Continue always fully visible; result not yet seen by him
+- Approved customer-visible result: Display mode uses the available content width, keeps its mode cards in one row and shares the largest whole 240px preview scale that fits the measured width and remaining height above Continue; when native size cannot fit, previews use the largest fitting whole CSS-pixel size below 240px. This branch currently contains Automatic and Manual only; the same sizing applies to any additional card without a special case. macOS currently declares no minimum window size, so a window smaller than the text and controls themselves cannot fit without scrolling.
+- Scope: `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, `apps/control-center/src/components/setup/setup-wizard-screen.tsx`, `apps/control-center/src/components/setup/setup-display-size.ts`, `apps/control-center/src/components/setup/setup-display-size.test.ts`, `apps/control-center/src/components/setup/setup-display-theme-carousel.test.tsx`; no text changes or hardware writes.
+- What's new: none — correct the requested setup layout before customer approval.
+
+## 2026-10-22 — #821: approval marker after merging claude/group-setup-b at 53a09f77
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-setup-b at 53a09f77, which carries main at 1e1244fe, into #821; the Display mode step keeps both the live theme tiles and the Settings ink frame; entries brought in by #780 and main carry their own approvals)
+- Approved customer-visible result: none beyond the entries above; nothing in this merge is shown to Paul as new.
+- Scope: the merge of claude/group-setup-b into #821 and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own

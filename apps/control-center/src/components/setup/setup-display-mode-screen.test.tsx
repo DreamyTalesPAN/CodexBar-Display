@@ -1,13 +1,32 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DisplayModeChoice,
   SetupDisplayModeScreen,
   type SetupDisplayModeProvider,
 } from "./setup-display-mode-screen";
+import type { ThemePackLoad } from "./setup-display-theme-tiles";
 
 const codex: SetupDisplayModeProvider = { id: "codex", label: "Codex" };
 const cursor: SetupDisplayModeProvider = { id: "cursor", label: "Cursor" };
+
+// The theme pack the step has loaded. SSR never finishes a load, so the tests
+// set it here; keep the real tiles so the gate and their state are tested together.
+let themePack: ThemePackLoad = { pack: null, status: "loading" };
+const readyPack: ThemePackLoad = {
+  pack: { themeId: "claude-creature", assets: {}, spec: { p: [] } },
+  status: "ready",
+};
+vi.mock("./setup-display-theme-tiles", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./setup-display-theme-tiles")>()),
+  // Without a theme the hook reports no pack at all, as the real one does.
+  useThemeRenderPack: (theme: unknown) =>
+    theme ? themePack : { pack: null, status: "error" },
+}));
+
+beforeEach(() => {
+  themePack = { pack: null, status: "loading" };
+});
 
 function render(
   props: Partial<Parameters<typeof SetupDisplayModeScreen>[0]> = {},
@@ -18,11 +37,13 @@ function render(
         providerLabel: "Codex",
         resetLabel: "Resets in 2h 10m",
         windows: [{ label: "Session", percent: 64 }, { label: "Weekly", percent: null }],
+        frame: { provider: "codex", session: 64, weeklyUnavailable: true },
       }}
       manualPreview={{
         providerLabel: "Claude",
         resetLabel: null,
         windows: [{ label: "Session", percent: null }, { label: "Weekly", percent: 12 }],
+        frame: { provider: "claude", sessionUnavailable: true, weekly: 12 },
       }}
       mode="automatic"
       onContinue={vi.fn()}
@@ -166,6 +187,99 @@ describe("SetupDisplayModeScreen", () => {
 
   it("offers one Continue action", () => {
     expect(render()).toContain("Continue");
+  });
+
+  // Continue waits for the tiles to show usage, not for the step to load: a
+  // skeleton holds it, and an unavailable reading releases it.
+  it("keeps Continue closed while a tile still shows a skeleton", () => {
+    const html = render({
+      automaticPreview: { providerLabel: "Codex", resetLabel: null, windows: [] },
+      manualPreview: null,
+      providers: [codex],
+      theme: { id: "claude-creature" },
+    });
+
+    expect(html).toContain('data-state="skeleton"');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+  });
+
+  it("opens Continue once the tiles show real usage", () => {
+    themePack = readyPack;
+    const html = render({ providers: [codex], theme: { id: "claude-creature" } });
+
+    expect(html).toContain('data-state="live"');
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+  });
+
+  it("keeps Continue closed while the theme pack is still loading", () => {
+    const html = render({ theme: { id: "claude-creature" } });
+
+    expect(html).toContain('data-state="skeleton"');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+  });
+
+  it("keeps Continue closed while the provider data is still loading", () => {
+    themePack = readyPack;
+    const html = render({
+      automaticPreview: null,
+      automaticPreviews: [],
+      providers: [],
+      usageLoading: true,
+      theme: { id: "claude-creature" },
+    });
+
+    expect(html).toContain('data-state="skeleton"');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+  });
+
+  it("opens Continue when the usage is unavailable, so the customer is not stuck", () => {
+    themePack = readyPack;
+    const html = render({
+      automaticPreview: {
+        providerLabel: "Codex",
+        resetLabel: null,
+        windows: [{ label: "Session", percent: null }, { label: "Weekly", percent: null }],
+      },
+      providers: [codex],
+      theme: { id: "claude-creature" },
+    });
+
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+    expect(html).not.toContain('data-state="skeleton"');
+  });
+
+  it("releases Continue after all providers become stale or unavailable", () => {
+    themePack = readyPack;
+    // The caller filters out every undisplayable provider after reading usage.
+    const html = render({
+      automaticPreview: null,
+      automaticPreviews: [],
+      manualPreview: null,
+      providers: [],
+      usageLoading: false,
+      theme: { id: "claude-creature" },
+    });
+
+    expect(html).not.toContain('data-state="skeleton"');
+    expect(html).toContain("No usage yet");
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+  });
+
+  it("keeps the gate and real tiles consistent for preview objects without frames", () => {
+    themePack = readyPack;
+    const unavailable = { providerLabel: "Codex", resetLabel: null, windows: [] };
+    const html = render({
+      automaticPreview: unavailable,
+      automaticPreviews: [unavailable],
+      manualPreview: unavailable,
+      usageLoading: false,
+      theme: { id: "claude-creature" },
+    });
+
+    expect(html).not.toContain('data-state="skeleton"');
+    expect(html).toContain('data-state="unavailable"');
+    expect(html).toContain('aria-label="Codex: no usage yet"');
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
   });
 
   // The screen used to take a second Continue, and a changed selection with

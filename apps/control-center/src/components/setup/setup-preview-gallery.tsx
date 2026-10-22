@@ -23,7 +23,11 @@ import {
 } from "./setup-device-dialogs";
 import { candidateKey } from "./setup-connection";
 import { SetupDeviceScreen } from "./setup-device-screen";
-import { SetupDisplayModeScreen } from "./setup-display-mode-screen";
+import {
+  SetupDisplayModeScreen,
+  type SetupDisplayModePreview,
+} from "./setup-display-mode-screen";
+import { displayPreviewFor } from "./setup-display-previews";
 import {
   SetupFirmwareBlockedDialog,
   SetupFirmwareUpdateFailedDialog,
@@ -200,23 +204,33 @@ const SAMPLE_EVENTS: SetupEventsLog = {
 };
 const loadSampleEvents = async () => SAMPLE_EVENTS;
 
+// Run through the same mapping the real step uses, so the gallery's tiles are
+// drawn from usage-service-shaped readings and not from a hand-made frame.
+const GALLERY_COLLECTED_AT = new Date().toISOString();
+const galleryUsage = (
+  id: string,
+  label: string,
+  session: number,
+  weekly: number,
+  resetSecs: number,
+) => ({
+  id,
+  label,
+  session,
+  weekly,
+  resetSecs,
+  usageMode: "used",
+  collectedAt: GALLERY_COLLECTED_AT,
+  windows: [
+    { id: "session", label: "Session", usedPercent: session, resetSecs },
+    { id: "weekly", label: "Weekly", usedPercent: weekly, resetSecs: resetSecs * 24 },
+  ],
+});
 const AUTOMATIC_PREVIEWS = [
-  {
-    providerLabel: "Codex",
-    resetLabel: "RESET IN 3H",
-    windows: [{ label: "Session", percent: 42 }, { label: "Weekly", percent: 26 }],
-  },
-  {
-    providerLabel: "Cursor",
-    resetLabel: "RESET IN 11H",
-    windows: [{ label: "Session", percent: 18 }, { label: "Weekly", percent: 63 }],
-  },
-  {
-    providerLabel: "Claude",
-    resetLabel: "RESET IN 5H",
-    windows: [{ label: "Session", percent: 71 }, { label: "Weekly", percent: 44 }],
-  },
-];
+  displayPreviewFor(galleryUsage("codex", "Codex", 42, 26, 3 * 3600)),
+  displayPreviewFor(galleryUsage("cursor", "Cursor", 18, 63, 11 * 3600)),
+  displayPreviewFor(galleryUsage("claude", "Claude", 71, 44, 5 * 3600)),
+].filter((preview): preview is SetupDisplayModePreview => preview !== null);
 
 const THEME_INSTALL_LOGS = [
   "Preparing theme install",
@@ -637,12 +651,15 @@ export function SetupPreviewGallery() {
             onCreateSupportReport={createSupportReport}
             automaticPreview={AUTOMATIC_PREVIEWS[0]}
             automaticPreviews={AUTOMATIC_PREVIEWS}
-            manualPreview={{
-              providerLabel: displayProvider === "claude" ? "Claude" : "Codex",
-              resetLabel: "RESET IN 5H",
-              windows: [{ label: "Session", percent: 45 }, { label: "Weekly", percent: 26 }],
-            }}
+            manualPreview={
+              AUTOMATIC_PREVIEWS.find(
+                (preview) =>
+                  preview.providerLabel ===
+                  (displayProvider === "claude" ? "Claude" : "Codex"),
+              ) ?? null
+            }
             mode={displayMode}
+            theme={{ id: "claude-creature" }}
             onBack={() => goTo("03")}
             onContinue={() => goTo("05")}
             onSelectMode={setDisplayMode}

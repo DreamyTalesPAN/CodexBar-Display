@@ -80,7 +80,7 @@ type UsageSlotFrame = {
 };
 type UsageWindowFrame = UsageSlotFrame;
 
-type DisplayFrame = {
+export type DisplayFrame = {
   v?: number;
   provider?: string;
   label?: string;
@@ -98,6 +98,8 @@ type DisplayFrame = {
   usageSlots?: UsageSlotFrame[];
   providerSlots?: UsageSlotFrame[];
   activity?: string;
+  /** How long VibeTV keeps showing `activity` without a fresh frame; 0 or absent: no expiry. */
+  activityTtlSecs?: number;
   sessionTokens?: number;
   weekTokens?: number;
   totalTokens?: number;
@@ -182,7 +184,7 @@ export type ThemePrimitive = {
   p?: string[];
 };
 
-type FrameData = {
+export type FrameData = {
   provider: string;
   label: string;
   session: number;
@@ -526,7 +528,7 @@ export function LiveVibeTVPreview({
         }
       })
       .catch((error) => {
-        if (error instanceof DOMException && error.name === "AbortError") {
+        if (controller.signal.aborted) {
           return;
         }
         setPackState({
@@ -640,7 +642,8 @@ const RECONNECT_FRAME_GRACE_MS = 120_000;
 
 // Retry cadence for the theme render pack while it is unavailable or does not
 // match the device's active revision yet.
-const THEME_PACK_RETRY_MS = 5_000;
+export const THEME_PACK_RETRY_MS = 5_000;
+const THEME_PACK_TIMEOUT_MS = 15_000;
 
 function frameFreshForReconnect(
   displayFrame: DisplayFrameSnapshot | null | undefined,
@@ -1492,7 +1495,7 @@ function frameUsageMode(displayFrame: DisplayFrame | undefined): string {
   return "used";
 }
 
-function activeThemeId(device: DeviceInfo | null): string {
+export function activeThemeId(device: DeviceInfo | null): string {
   const theme = normalizeThemeAlias(device?.activeTheme);
   if (theme && theme !== "installing") {
     return theme;
@@ -1531,27 +1534,41 @@ export async function fetchThemeRenderPackRevision(
   signal?: AbortSignal,
   fetcher: typeof fetch = fetch,
 ): Promise<ThemeRenderPack> {
-  const exactResponse = await fetcher(
-    themeRenderPackUrl(themeId, themeSpecPath, themeSpecHash),
-    { signal },
-  );
-  if (exactResponse.ok) {
-    return exactResponse.json() as Promise<ThemeRenderPack>;
-  }
-  if (!themeSpecPath) {
-    throw packUnavailable(exactResponse);
-  }
-
-  // Old Companions only expose the latest cache by theme ID. Their payload
-  // still includes specPath, which lets the caller reject a wrong revision.
-  const legacyResponse = await fetcher(themeRenderPackUrl(themeId), { signal });
-  if (!legacyResponse.ok) {
-    // Unknown only when both reads say so; a transient exact failure stays one.
-    throw packUnavailable(
-      exactResponse.status === 404 ? legacyResponse : exactResponse,
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    // Timeout is a retryable load failure; AbortError is reserved for cleanup.
+    controller.abort(new DOMException("Theme pack took too long to answer", "TimeoutError"));
+  }, THEME_PACK_TIMEOUT_MS);
+  // macOS 14.0's WebKit predates AbortSignal.any.
+  const abort = () => controller.abort(signal?.reason);
+  signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted) abort();
+  try {
+    const exactResponse = await fetcher(
+      themeRenderPackUrl(themeId, themeSpecPath, themeSpecHash),
+      { signal: controller.signal },
     );
+    if (exactResponse.ok) {
+      return await exactResponse.json() as ThemeRenderPack;
+    }
+    if (!themeSpecPath) {
+      throw packUnavailable(exactResponse);
+    }
+
+    // Old Companions only expose the latest cache by theme ID. Their payload
+    // still includes specPath, which lets the caller reject a wrong revision.
+    const legacyResponse = await fetcher(themeRenderPackUrl(themeId), { signal: controller.signal });
+    if (!legacyResponse.ok) {
+      // Unknown only when both reads say so; a transient exact failure stays one.
+      throw packUnavailable(
+        exactResponse.status === 404 ? legacyResponse : exactResponse,
+      );
+    }
+    return await legacyResponse.json() as ThemeRenderPack;
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
   }
-  return legacyResponse.json() as Promise<ThemeRenderPack>;
 }
 
 function packUnavailable(response: Response): Error {
