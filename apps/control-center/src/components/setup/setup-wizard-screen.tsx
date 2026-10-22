@@ -10,6 +10,8 @@ import { SetupHelpMenu } from "./setup-help-menu";
 
 type SetupWizardScreenProps = {
   children: ReactNode;
+  /** A step without a title (Welcome, the download) sits in the middle; every titled step starts at the top. */
+  centered?: boolean;
   /** Display-mode cards use all available content width. */
   contentWidth?: "default" | "wide";
   label: string;
@@ -29,6 +31,7 @@ type SetupWizardScreenProps = {
  */
 export function SetupWizardScreen({
   children,
+  centered = false,
   contentWidth = "default",
   label,
   aiFixPrompt,
@@ -50,7 +53,8 @@ export function SetupWizardScreen({
       */}
       <div
         className={cn(
-          "my-auto flex w-full flex-col items-center text-center",
+          "flex w-full flex-col items-center text-center",
+          centered && "my-auto",
           contentWidth === "wide" ? "max-w-none" : "max-w-[460px]",
         )}
       >

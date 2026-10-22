@@ -20241,3 +20241,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: both scrolling lists in setup (providers, themes) look alike at their bottom edge.
 - Scope: setup-theme-screen.tsx; test expectations in setup-wizard.test.tsx and control-center-app.display-preferences.test.tsx follow the approved step order and skeleton gate. Test build 9999.0.7208 only, not a pull request.
 - What's new: none — layout change only, no new text
+
+## 2026-10-22 — build12: setup steps share one layout; long theme names wrap; Settings says providers
+
+- User approval: pending — every setup step with a title (device, providers, theme, display mode, live) starts at the same height instead of being centred; the display-mode step keeps its title, cards and Continue in place whichever mode is chosen (room for the provider pickers is reserved); long theme names wrap to a second line in Setup and Appearance instead of running past the card; Settings › Display mode says "providers" like the wizard ("VibeTV shows two providers together, one limit each.")
+- Approved customer-visible result: the setup steps look uniform and calm, nothing is cut off, and Settings and the wizard use the same words.
+- Scope: setup-wizard-screen.tsx (top-aligned unless `centered`; Welcome and the download screen stay centred), setup-display-mode-screen.tsx, setup-theme-screen.tsx, theme-library-screen.tsx, lib/theme-grid.ts, settings-screen.tsx and their tests. Test build 9999.0.7208 only, not a pull request.
+- What's new: none — layout and wording consistency only

@@ -611,7 +611,7 @@ describe("SettingsScreen standby controls", () => {
       };
     };
     const updateNeeded = "Update needed. Update VibeTV to use this.";
-    const shown = "VibeTV shows two sources, one above the other.";
+    const shown = "VibeTV shows two providers together, one limit each.";
 
     const old = pairCard({ supportsUsageWindowsV1: false, maxUsageWindows: 1 });
     expect(old.card).toContain('disabled=""');
@@ -652,8 +652,8 @@ describe("SettingsScreen standby controls", () => {
       );
     };
     const byActivity =
-      "VibeTV switches between your sources based on recent activity and usage.";
-    const onATimer = "VibeTV switches between your sources on a timer.";
+      "VibeTV switches between your providers based on recent activity and usage.";
+    const onATimer = "VibeTV switches between your providers on a timer.";
 
     const automatic = displayMode("automatic", [rotation]);
     expect(automatic).toMatch(
@@ -719,8 +719,8 @@ describe("SettingsScreen standby controls", () => {
 
     const automatic = section("automatic");
     expect(pressed(automatic)).toEqual(["Automatic"]);
-    expect(automatic).toContain("VibeTV always shows the one source you pick.");
-    expect(automatic).toContain("VibeTV shows two sources, one above the other.");
+    expect(automatic).toContain("VibeTV always shows the one provider you pick.");
+    expect(automatic).toContain("VibeTV shows two providers together, one limit each.");
     for (const label of ["Source", "Provider 1", "Provider 2"]) {
       expect(automatic).not.toContain(`>${label}</label>`);
     }

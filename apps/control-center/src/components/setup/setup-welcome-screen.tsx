@@ -39,6 +39,7 @@ export function SetupWelcomeScreen({
 }: SetupWelcomeScreenProps) {
   return (
     <SetupWizardScreen
+      centered
       label="Welcome"
       aiFixPrompt={aiFixPrompt}
       onCreateSupportReport={onCreateSupportReport}

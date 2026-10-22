@@ -4,7 +4,7 @@ import type { SupportDiagnostics } from "../control-center-types";
 import { Button } from "@/components/ui/button";
 import { ItemGroup } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
-import { THEME_GRID_CLASS, THEME_GRID_STYLE } from "@/lib/theme-grid";
+import { THEME_CARD_TITLE_CLASS, THEME_GRID_CLASS, THEME_GRID_STYLE } from "@/lib/theme-grid";
 import { cn } from "@/lib/utils";
 import { ThemeRenderPreview } from "../theme-render-preview";
 import { SetupLog, type SetupLogLine } from "./setup-log";
@@ -167,7 +167,7 @@ function SetupThemeCard({
         themeSpecPath={theme.themeSpecPath}
       />
       <span className="flex items-center gap-2 px-0.5">
-        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{theme.name}</span>
+        <span className={cn(THEME_CARD_TITLE_CLASS, "flex-1 text-[13px] font-semibold")}>{theme.name}</span>
         <SelectionDot selected={selected} />
       </span>
     </button>

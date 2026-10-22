@@ -124,6 +124,7 @@ export function MacAppDownloadScreen({
 
   return (
     <SetupWizardScreen
+      centered
       label="Download VibeTV Control Center"
       onCreateSupportReport={onCreateSupportReport}
     >
@@ -187,6 +188,7 @@ function DownloadScreenFrame({
 }) {
   return (
     <SetupWizardScreen
+      centered
       label="Download VibeTV Control Center"
       onCreateSupportReport={onCreateSupportReport}
     >

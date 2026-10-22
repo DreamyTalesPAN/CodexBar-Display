@@ -324,8 +324,8 @@ export function SettingsScreen({
           <RadioRow
             description={
               rotation && rotation.value !== "0"
-                ? "VibeTV switches between your sources on a timer."
-                : "VibeTV switches between your sources based on recent activity and usage."
+                ? "VibeTV switches between your providers on a timer."
+                : "VibeTV switches between your providers based on recent activity and usage."
             }
             label="Automatic"
             onSelect={() => selectMode("automatic")}
@@ -344,7 +344,7 @@ export function SettingsScreen({
             </div>
           ) : null}
           <RadioRow
-            description="VibeTV always shows the one source you pick."
+            description="VibeTV always shows the one provider you pick."
             label="One provider"
             onSelect={() => selectMode("fixed")}
             selected={displayMode === "fixed"}
@@ -367,7 +367,7 @@ export function SettingsScreen({
           ) : null}
           <RadioRow
             description={
-              pairLacks ? UPDATE_NEEDED_NOTE : "VibeTV shows two sources, one above the other."
+              pairLacks ? UPDATE_NEEDED_NOTE : "VibeTV shows two providers together, one limit each."
             }
             disabled={pairLacks || (displayMode !== "pair" && pairChoices.length < 2)}
             label="Two at once"

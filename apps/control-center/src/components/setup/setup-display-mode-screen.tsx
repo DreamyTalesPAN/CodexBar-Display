@@ -228,7 +228,7 @@ export function SetupDisplayModeScreen({
         }
         // The wide content column would stretch it across the whole window; the
         // other steps' 460px column is the size every calm step ends in.
-        className={cn(CALM_BUTTON_CLASS, "max-w-[460px]", mode === "fixed" ? "mt-6" : "mt-8")}
+        className={cn(CALM_BUTTON_CLASS, "mt-8 max-w-[460px]")}
         onClick={onContinue}
         type="button"
       >
@@ -271,6 +271,12 @@ type DisplayModeChoiceProps = Pick<
 };
 
 const NO_THEME_PACK: ThemePackLoad = { pack: null, status: "error" };
+
+// Heights of what the mode options draw below the cards (px): two provider
+// pickers with a limit each, and the provider list (a 20px label, 8px gap, 44px
+// rows 6px apart). The wizard keeps room for the tallest one in every mode.
+const PAIR_OPTIONS_HEIGHT = 132;
+const providerListHeight = (count: number) => 28 + 44 * count + 6 * Math.max(count - 1, 0);
 
 /**
  * The display-mode choice itself: cards showing what each mode would put on
@@ -367,6 +373,22 @@ export function DisplayModeChoice({
     return <PreviewTile calm={calm} frames={frames} index={at} />;
   };
 
+  const optionsArea = (options: ReactNode) =>
+    calm ? (
+      <div
+        style={{
+          minHeight: Math.max(
+            offersPair ? PAIR_OPTIONS_HEIGHT : 0,
+            providerListHeight(providers.length),
+          ),
+        }}
+      >
+        {options}
+      </div>
+    ) : (
+      options
+    );
+
   return (
     <div ref={choiceRef} className={cn("flex w-full flex-col", calm ? "gap-6" : "gap-4", className)}>
       <div className={cn(
@@ -410,6 +432,8 @@ export function DisplayModeChoice({
         ) : null}
       </div>
 
+      {optionsArea(
+        <>
       {mode === "pair" && offersPair && onSelectPair ? (
         <div className={cn("mx-auto grid w-full max-w-[460px] grid-cols-2 gap-4 text-left", SETUP_REVEAL)}>
           {(["Provider 1", "Provider 2"] as const).map((name, position) => {
@@ -502,6 +526,8 @@ export function DisplayModeChoice({
           </div>
         </div>
       ) : null}
+        </>,
+      )}
     </div>
   );
 }

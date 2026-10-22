@@ -25,15 +25,25 @@ function cornerClasses(html: string): string[] {
 }
 
 describe("SetupWizardScreen", () => {
+  // Every titled step starts at the same height, whatever its content: a
+  // centred column put each title where its own content height happened to
+  // leave it, so the heading moved from step to step.
+  it("starts every step at the top, so the title sits in the same place", () => {
+    const html = render();
+
+    expect(contentClass(html)).not.toContain("my-auto");
+    expect(landmarkClass(html)).not.toContain("justify-center");
+    expect(landmarkClass(html)).toContain("min-h-svh");
+  });
+
   // The app window has no minimum size, so a step whose content outgrows the
   // viewport has to scroll. Centring the flex child instead would clip its top
   // and put it out of reach.
-  it("centres its content without clipping it when it does not fit", () => {
-    const html = render();
+  it("centres a step without a title, without clipping it when it does not fit", () => {
+    const html = render({ centered: true });
 
     expect(contentClass(html)).toContain("my-auto");
     expect(landmarkClass(html)).not.toContain("justify-center");
-    expect(landmarkClass(html)).toContain("min-h-svh");
   });
 
   it("keeps the corner controls in the viewport, not at the end of the content", () => {

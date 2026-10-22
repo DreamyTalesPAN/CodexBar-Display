@@ -6,6 +6,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { THEME_CARD_TITLE_CLASS } from "@/lib/theme-grid";
 import type { ThemeProduct } from "@/lib/themes";
 import {
   ThemeLibraryScreen,
@@ -493,4 +494,11 @@ it("centres the preview picture in the dialog with the same 6 px corners as the 
   expect(picture.parentElement?.classList).toContain("mx-auto");
   expect(picture.classList).toContain("rounded-[6px]");
   expect(cardPicture?.classList).toContain("rounded-[6px]");
+});
+
+it("wraps a long card title to a second line instead of running past the card edge", () => {
+  render(<Page themes={[product("long", "Fixture Future Firmware Theme", "live")]} />);
+  const title = within(screen.getByRole("listitem")).getByText("Fixture Future Firmware Theme");
+  expect(title.className).toContain(THEME_CARD_TITLE_CLASS);
+  expect(title.classList).not.toContain("truncate");
 });

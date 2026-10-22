@@ -70,7 +70,7 @@ import { sentOwnThemePaths } from "@/lib/sent-own-theme-paths";
 import { cn } from "@/lib/utils";
 import { copyForHost, statusForHost } from "@/lib/customer-platform";
 import { isRemoteThemePackUrl } from "@/lib/theme-pack-url";
-import { THEME_GRID_CLASS, THEME_GRID_STYLE } from "@/lib/theme-grid";
+import { THEME_CARD_TITLE_CLASS, THEME_GRID_CLASS, THEME_GRID_STYLE } from "@/lib/theme-grid";
 import { catalogThemeRowId } from "@/lib/whats-new";
 import {
   createBlankThemeSpec,
@@ -1529,7 +1529,7 @@ function ThemeListItem({
       <ItemContent className="basis-full gap-0.5 px-0.5">
         <div className="flex min-w-0 flex-col">
           <ItemTitle className="min-w-0 text-[13px] font-semibold">
-            <span className="truncate">{item.title}</span>
+            <span className={THEME_CARD_TITLE_CLASS}>{item.title}</span>
             {isCustom ? <Badge variant="secondary">Custom</Badge> : null}
           </ItemTitle>
           <span className="shrink-0 text-[12px] font-normal text-muted-foreground">

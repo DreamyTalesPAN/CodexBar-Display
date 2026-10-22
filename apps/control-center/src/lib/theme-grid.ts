@@ -7,3 +7,6 @@
 export const THEME_GRID_CLASS = "mx-auto grid max-w-[664px] justify-center gap-8!";
 
 export const THEME_GRID_STYLE = { gridTemplateColumns: "repeat(auto-fill, 200px)" };
+
+/** A card title wraps to a second line; it is never cut off or shrunk. */
+export const THEME_CARD_TITLE_CLASS = "min-w-0 break-words";

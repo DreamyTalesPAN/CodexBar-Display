@@ -87,6 +87,29 @@ describe("SetupDisplayModeScreen", () => {
     expect(html).not.toContain("Display Mode</h1>");
   });
 
+  // The title sits at the top and Continue follows the cards and the options
+  // area, so a mode that adds a picker must not move Continue: that area keeps
+  // the height of the tallest mode whichever one is chosen.
+  it("keeps Continue where it is in every mode by reserving the options area", () => {
+    const frame = (mode: "automatic" | "fixed" | "pair") =>
+      render({
+        mode,
+        onSelectPair: vi.fn(),
+        pairProviderIds: [codex.id, cursor.id],
+        pairPreview: codexAutomatic,
+      });
+    const reserved = (html: string) =>
+      html.match(/<div style="min-height:(\d+)px">/)?.[1];
+    const heights = (["automatic", "fixed", "pair"] as const).map((mode) => reserved(frame(mode)));
+
+    expect(heights[0]).toBeDefined();
+    expect(new Set(heights).size).toBe(1);
+    for (const mode of ["automatic", "fixed", "pair"] as const) {
+      expect(frame(mode)).toContain("mt-8");
+      expect(frame(mode)).not.toContain("mt-6");
+    }
+  });
+
   const companionTile = (automatic: DisplayFrame, pinned = automatic) => {
     const previews = displayPreviewsFor({ providers: [{
       id: "codex", label: "Codex", session: 91, weekly: 82, resetSecs: 60,

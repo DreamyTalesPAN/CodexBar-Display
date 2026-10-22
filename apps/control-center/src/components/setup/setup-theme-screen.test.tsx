@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { SetupThemeScreen, type SetupThemeOption } from "./setup-theme-screen";
-import { THEME_GRID_CLASS, THEME_GRID_STYLE } from "@/lib/theme-grid";
+import { THEME_CARD_TITLE_CLASS, THEME_GRID_CLASS, THEME_GRID_STYLE } from "@/lib/theme-grid";
 
 // The four live themes of the shipped catalog. A screensaver cannot be the
 // first install: it leaves the live slot empty and setup could never finish.
@@ -47,6 +47,15 @@ describe("SetupThemeScreen", () => {
     expect(html).toContain(THEME_GRID_CLASS);
     expect(html).toContain(THEME_GRID_STYLE.gridTemplateColumns);
     expect(html.match(/role="radio"/g)).toHaveLength(themes.length);
+  });
+
+  it("wraps a long theme name to a second line instead of cutting it off", () => {
+    const html = render({
+      themes: [{ id: "long", name: "Fixture Future Firmware Theme" }],
+    });
+
+    expect(html).toContain(THEME_CARD_TITLE_CLASS);
+    expect(html).not.toContain("truncate");
   });
 
   it("scrolls the grid inside the screen so Continue stays in view at 1280x800", () => {
