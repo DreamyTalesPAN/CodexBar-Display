@@ -5,23 +5,19 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   buildFrameData, ThemeSpecPreview, primitiveUsageSlotVisible, renderTextPrimitive,
-  themeFirmwareTextMetrics, themeTextFit, themeTextAlignedY, themeTextValignBoxHeight,
-  type ThemePrimitive, type ThemeRenderPack,
+  themeTextFit, type ThemePrimitive, type ThemeRenderPack,
 } from "@/components/live-vibetv-preview";
+import { textInk } from "./text-ink";
 
 const root = path.resolve(process.cwd(), "../..");
 const themes = ["clippy", "pixel-battery", "synthwave", "tiny-office", "gauge", "pace-meter", "claude-creature", "mini-classic"];
 const clock = new Date("2026-10-21T12:00:00Z");
 
+// What the text paints (ink rows, not the whole glyph cell): a pace text may sit in the empty rows under a number.
 function textBox(p: ThemePrimitive, text: string) {
-  const maxSize = p.s ?? 1, lane = p.w ?? 0;
-  const { font, size, lines } = themeTextFit(text, p.f ?? 1, maxSize, lane, p.ft === "shrink", p.h ?? 0);
-  const height = (font === 4 ? 26 : font === 2 ? 16 : 8) * size * lines.length;
-  const width = Math.max(...lines.map(line => themeFirmwareTextMetrics(line, font, size)?.width ?? line.length * height * 0.6));
-  expect(width, `${text} must fit its lane`).toBeLessThanOrEqual(lane || 240 - (p.x ?? 0));
-  const x = (p.x ?? 0) + (p.al === "right" ? lane - width : p.al === "center" ? (lane - width) / 2 : 0);
-  const y = themeTextAlignedY(p.y ?? 0, themeTextValignBoxHeight(p.h ?? 0, p.f ?? 1, maxSize), height, p.va);
-  return { text, x, y, right: x + width, bottom: y + height };
+  const ink = textInk(p, text);
+  expect(ink.w, `${text} must fit its lane`).toBeLessThanOrEqual(p.w || 240 - (p.x ?? 0));
+  return { text, x: ink.x, y: ink.y, right: ink.x + ink.w, bottom: ink.y + ink.h };
 }
 
 describe.each(themes)("%s Two at once", (themeId) => {

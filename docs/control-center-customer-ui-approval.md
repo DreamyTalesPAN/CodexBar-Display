@@ -20353,3 +20353,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Tiny Office's title stands 1 px higher, so the "g" of "remaining" ends on the last row above the divider instead of on the divider's first row; nothing else in Tiny Office moves.
 - Scope: the theme pack Tiny Office 0.7.5 (title text y 1 → 0, spec rev 13) and the layout guard test animation-layout.test.ts (zero rows of tolerance for a glyph across a band edge of the background).
 - What's new: none — Tiny Office layout only
+
+## 2026-10-22 — #7210: Pixel Battery, Synthwave, Pace Meter and Tiny Office: calm vertical rhythm and "100%" at full size; the guard test catches both classes in every theme
+
+- User approval: pending — 7211 acceptance FAILs, 22.10.2026: in Pixel Battery and Synthwave the pace text ended 1 px above the name of the next limit, in Pace Meter "100%" was drawn at half the height of "68%", in Pixel Battery "remaining" sat 1 px above "Claude Session"
+- Approved customer-visible result: each pace text stands 4 px under its own bar and 8 to 10 px above the next limit name in Pixel Battery and Synthwave (Pixel Battery's header, labels, bars and battery outlines are redistributed; no text gets smaller); "100%" is as tall as "68%" in both limits of Pace Meter; the "y" of "Weekly" in Tiny Office is 4 px above its bar instead of 2 px.
+- Scope: the theme packs Pixel Battery 1.17.5 (spec rev 22, battery outlines in pba-bg.cbi), Synthwave 1.2.6 (rev 12), Pace Meter 1.0.2 (rev 4, percent box 100 → 128 px wide) and Tiny Office 0.7.6 (rev 14, second limit name 2 px higher), and the layout guard test animation-layout.test.ts (a gap under 3 px next to one of 8 px or more, a pace text nearer the next limit than its own bar, a percent value fitted smaller than its sibling).
+- What's new: none — theme layouts only

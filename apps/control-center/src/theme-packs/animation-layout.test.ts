@@ -3,9 +3,10 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
   buildFrameData, decodeSprite, primitiveUsageSlotVisible, renderTextPrimitive,
-  themeFirmwareTextMetrics, themeTextAlignedY, themeTextFit, themeTextValignBoxHeight,
+  themeTextFit,
   type FrameData, type ThemePrimitive, type ThemeRenderPack,
 } from "@/components/live-vibetv-preview";
+import { cellHeight, textInk, type Rect } from "./text-ink";
 
 const root = path.resolve(process.cwd(), "../..");
 const renderDir = path.join(root, "dist/theme-packs/render");
@@ -13,32 +14,8 @@ const themeIds = readdirSync(renderDir).filter((file) => file.endsWith(".json"))
 const clock = new Date("2026-10-22T12:00:00Z");
 const PACE_TICK_OVERHANG = 3; // kPaceTickOverhang in usage_window_contract.h
 
-type Rect = { x: number; y: number; w: number; h: number };
 const hit = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 const show = (r: Rect) => `${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.w)}x${Math.round(r.h)}`;
-
-// The rows of a glyph cell that carry ink in TFT_eSPI 2.5.43 Font16 (font 2) and Font32rle (font 4): caps, digits and
-// ascenders reach the top, lowercase without ascenders starts at the x-height, g j p q y and brackets reach the
-// descender. GLCD (font 1) fills its 8 rows. Within one row of the real glyphs.
-function inkRows(text: string, font: number): [number, number] {
-  if (font === 1) return [0, 7];
-  const tall = /[^aceimnorsuvwxz ]/.test(text) ? (font === 4 ? 1 : 3) : 6;
-  const low = /[gjpqy,;()[\]{}|]/.test(text) ? (font === 4 ? 24 : 15) : (font === 4 ? 18 : 12);
-  return [tall, low];
-}
-
-// What the text of a primitive paints: the cell width of the fitted lines, the rows that carry ink.
-function textInk(p: ThemePrimitive, text: string): Rect {
-  const maxSize = p.s ?? 1, lane = p.w ?? 0;
-  const { font, size, lines } = themeTextFit(text, p.f ?? 1, maxSize, lane, p.ft === "shrink", p.h ?? 0);
-  const cell = (font === 4 ? 26 : font === 2 ? 16 : 8) * size;
-  const width = Math.max(...lines.map((line) => themeFirmwareTextMetrics(line, font, size)?.width ?? line.length * cell * 0.6));
-  const x = (p.x ?? 0) + (p.al === "right" ? lane - width : p.al === "center" ? (lane - width) / 2 : 0);
-  const y = themeTextAlignedY(p.y ?? 0, themeTextValignBoxHeight(p.h ?? 0, p.f ?? 1, maxSize), cell * lines.length, p.va);
-  const top = y + inkRows(lines[0], font)[0] * size;
-  const bottom = y + cell * (lines.length - 1) + (inkRows(lines[lines.length - 1], font)[1] + 1) * size;
-  return { x, y: top, w: width, h: bottom - top };
-}
 
 // Dividers painted into a static background sprite (Clippy's etched line): a band of at most 8 px, at least 40 px
 // long, between two rows of one and the same plain colour. Scene art does not have this shape.
@@ -82,16 +59,23 @@ function backgroundColourAt(pack: ThemeRenderPack): (x: number, y: number) => st
 // Sum of the channel differences of two #RRGGBB colours: a frame line of #141418 on #0A0A0B is not an edge anyone sees.
 const contrast = (a: string, b: string) => [1, 3, 5].reduce((sum, i) => sum + Math.abs(parseInt(a.slice(i, i + 2), 16) - parseInt(b.slice(i, i + 2), 16)), 0);
 
-function frameFor(two: boolean, usageMode: string, pace: boolean, footer: number | undefined): FrameData {
+// The three pace sentences; "On pace" carries a descender (p), the others none.
+const PACES = {
+  reserve: { delta: -14, state: "reserve", lasts: true }, // "14% reserve", the widest of two digits
+  deficit: { delta: 33, state: "deficit", lasts: false },
+  "on pace": { delta: 0, state: "on pace", lasts: true },
+};
+type PaceName = keyof typeof PACES;
+
+function frameFor(two: boolean, usageMode: string, pace: PaceName | undefined, footer: number | undefined, percents?: number[]): FrameData {
   const ids = two ? ["claude:session", "codex:weekly"] : ["session", "weekly"];
   const labels = two ? ["Claude Session", "Codex Weekly"] : ["Session", "Weekly"];
-  const widest = { delta: -14, state: "reserve", lasts: true }; // "14% reserve", the widest pace text of two digits
   return buildFrameData(clock.toISOString(), {
     provider: two ? "claude+codex" : "claude", label: two ? "" : "Claude", usageMode, resetSecs: 9100,
     footerWindow: footer === undefined ? undefined : ids[footer],
     usageWindows: ids.map((id, i) => ({
-      id, label: labels[i], percent: usageMode === "used" ? 100 - [73, 43][i] : [73, 43][i],
-      resetSecs: [9100, 424000][i], pace: pace ? widest : undefined,
+      id, label: labels[i], percent: percents?.[i] ?? (usageMode === "used" ? 100 - [73, 43][i] : [73, 43][i]),
+      resetSecs: [9100, 424000][i], pace: pace ? PACES[pace] : undefined,
     })),
     sessionTokens: 1234567, weekTokens: 98765432, totalTokens: 987654321, tokenTotalsKnown: true,
   }, clock);
@@ -104,6 +88,25 @@ const animationBoxes = (pack: ThemeRenderPack) => (pack.spec?.p ?? [])
   .filter((p) => p.t === "g" || (p.t === "sp" && [p.a, ...Object.values(p.sa ?? {})].some((a) => a?.endsWith(".cba"))))
   .map((p) => ({ name: p.a ?? "", x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 0, h: p.h ?? 0 }));
 
+const source = (p: ThemePrimitive) => `${p.b ?? ""}${p.v ?? ""}`;
+const slotOf = (p: ThemePrimitive) => p.sl ?? p.slot;
+// Empty pixel rows between two boxes, 0 when they touch, also 0 when they share rows.
+const verticalGap = (a: Rect, b: Rect) => Math.max(b.y - (a.y + a.h), a.y - (b.y + b.h), 0);
+
+// The vertical rhythm of a screen: boxes that share pixel rows are one row (a value beside its bar), the gaps are the
+// empty pixel rows between neighbouring rows.
+function rowGaps(items: Array<Rect & { name: string }>) {
+  const rows: Array<{ top: number; bottom: number; names: string[] }> = [];
+  for (const item of [...items].sort((a, b) => a.y - b.y)) {
+    const last = rows[rows.length - 1];
+    if (last && item.y < last.bottom) {
+      last.bottom = Math.max(last.bottom, item.y + item.h);
+      last.names.push(item.name);
+    } else rows.push({ top: item.y, bottom: item.y + item.h, names: [item.name] });
+  }
+  return rows.slice(1).map((row, i) => ({ gap: row.top - rows[i].bottom, above: rows[i].names.join(" + "), below: row.names.join(" + ") }));
+}
+
 function layoutViolations(pack: ThemeRenderPack): string[] {
   const prims = pack.spec?.p ?? [];
   const animations = animationBoxes(pack);
@@ -113,16 +116,16 @@ function layoutViolations(pack: ThemeRenderPack): string[] {
     ...bakedDividers(pack),
   ];
   const found = new Map<string, string>();
-  for (const two of [false, true]) for (const usageMode of ["used", "remaining"]) for (const pace of [false, true]) {
+  for (const two of [false, true]) for (const usageMode of ["used", "remaining"]) for (const pace of [undefined, ...(Object.keys(PACES) as PaceName[])]) {
     for (const footer of [undefined, 0, 1]) {
-      const state = `${two ? "Two at once" : "One provider"}, ${usageMode}, pace ${pace ? "on" : "off"}, footer ${footer === undefined ? "off" : footer}`;
+      const state = `${two ? "Two at once" : "One provider"}, ${usageMode}, pace ${pace ?? "off"}, footer ${footer === undefined ? "off" : footer}`;
       const frame = frameFor(two, usageMode, pace, footer);
       const texts = prims.filter((p) => p.t === "tx" && primitiveUsageSlotVisible(p, frame))
         .map((p) => ({ text: renderTextPrimitive(p, frame, prims), p })).filter(({ text }) => text.trim())
-        .map(({ text, p }) => ({ text, ...textInk(p, text) }));
+        .map(({ text, p }) => ({ text, p, ...textInk(p, text) }));
       const bars = prims.filter((p) => p.t === "p" && primitiveUsageSlotVisible(p, frame)).map((p) => {
         const o = pace && (p.b ?? "").includes("Pace") ? PACE_TICK_OVERHANG : 0;
-        return { x: (p.x ?? 0) - o, y: (p.y ?? 0) - o, w: (p.w ?? 0) + 2 * o, h: (p.h ?? 0) + 2 * o };
+        return { x: (p.x ?? 0) - o, y: (p.y ?? 0) - o, w: (p.w ?? 0) + 2 * o, h: (p.h ?? 0) + 2 * o, slot: slotOf(p), body: { x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 0, h: p.h ?? 0 } };
       });
       const note = (key: string, detail: string) => found.has(key) || found.set(key, `${detail} (first in: ${state})`);
       for (const a of animations) {
@@ -142,18 +145,51 @@ function layoutViolations(pack: ThemeRenderPack): string[] {
       texts.forEach((a, i) => texts.slice(i + 1).forEach((b) => {
         if (hit(a, b)) note(`"${a.text}" x "${b.text}"`, `text "${a.text}" [${show(a)}] overlaps text "${b.text}" [${show(b)}]`);
       }));
+      // Calm rhythm: two texts or a text and a bar that all but touch (under 3 px) while another gap of the screen is 8 to
+      // 40 px (not open picture) is the "0 px beside 10 px" look. The pace tick is left out, it only reaches 3 px beyond the
+      // bar at one column; a number beside its bar is part of the bar's row.
+      const beside = (t: { p: ThemePrimitive }) => /Percent/.test(source(t.p)) && bars.some((b) => b.slot === slotOf(t.p));
+      const gaps = rowGaps([...texts.filter((t) => !beside(t)).map((t) => ({ ...t, name: `"${t.text}"` })), ...bars.map((b) => ({ ...b.body, name: "a bar" }))]);
+      const roomy = gaps.find((g) => g.gap >= 8 && g.gap <= 40);
+      for (const g of gaps) if (g.gap < 3 && roomy) note(`gap ${g.above} / ${g.below}`, `${g.gap} px between ${g.above} and ${g.below}, next to ${roomy.gap} px between ${roomy.above} and ${roomy.below}`);
+      // A pace text belongs to its own bar: nearer to it than to the label or bar of any other limit.
+      for (const t of texts.filter((q) => /Pace(Text|Short)/.test(source(q.p)))) {
+        const own = bars.find((b) => b.slot === slotOf(t.p))?.body;
+        if (!own) continue;
+        const near = verticalGap(t, own);
+        const others = [
+          ...texts.filter((q) => /Label/.test(source(q.p)) && slotOf(q.p) !== slotOf(t.p)).map((q) => ({ name: `"${q.text}"`, box: q as Rect })),
+          ...bars.filter((b) => b.slot !== undefined && b.slot !== slotOf(t.p)).map((b) => ({ name: "the bar of the other limit", box: b.body })),
+        ];
+        for (const o of others) if (verticalGap(t, o.box) <= near) note(`pace "${t.text}" ${slotOf(t.p)} near ${o.name}`, `pace text "${t.text}" is ${near} px from its own bar but ${verticalGap(t, o.box)} px from ${o.name}`);
+      }
+    }
+  }
+  // Numbers of one role are drawn at one size, whatever they say: "100%" next to "68%" is not half as high.
+  for (const two of [false, true]) for (const first of [0, 9, 68, 100]) for (const second of [0, 9, 68, 100]) {
+    const frame = frameFor(two, "used", undefined, undefined, [first, second]);
+    const values = prims.filter((p) => p.t === "tx" && /Percent/.test(source(p)) && primitiveUsageSlotVisible(p, frame)).map((p) => {
+      const text = renderTextPrimitive(p, frame, prims);
+      const { font, size } = themeTextFit(text, p.f ?? 1, p.s ?? 1, p.w ?? 0, p.ft === "shrink", p.h ?? 0);
+      return { text, role: `${source(p).replace(/usageSlot\d/, "usageSlot#")} ${p.f} ${p.s}`, height: cellHeight(font) * size };
+    }).filter((v) => v.text.trim());
+    for (const a of values) for (const b of values) {
+      if (a.role === b.role && a.height < b.height) {
+        const key = `value ${a.role}`;
+        if (!found.has(key)) found.set(key, `value "${a.text}" is drawn ${a.height} px high, its sibling "${b.text}" ${b.height} px (first in: ${two ? "Two at once" : "One provider"}, ${first}% and ${second}%)`);
+      }
     }
   }
   return [...found.values()];
 }
 
-describe("animations, dividers, bars and text of every catalog theme stay apart", () => {
+describe("animations, dividers, bars and text of every catalog theme stay apart and calm", () => {
   it("covers the animated themes", () => {
     const animated = themeIds.filter((id) => animationBoxes(loadPack(id)).length > 0);
     expect(animated).toEqual(expect.arrayContaining(["claude-creature", "clippy", "mini-classic", "tiny-office", "token-fire"]));
   });
 
-  it.each(themeIds)("%s: no animation box on a divider, text or bar, no two texts on each other, no glyph across a band edge", (themeId) => {
+  it.each(themeIds)("%s: nothing on top of anything, no glyph across a band edge, no 0 px gap beside a roomy one, pace beside its own bar, equal numbers", (themeId) => {
     expect(layoutViolations(loadPack(themeId))).toEqual([]);
   });
 });

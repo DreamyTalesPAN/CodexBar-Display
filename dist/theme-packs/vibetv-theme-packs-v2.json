@@ -174,19 +174,20 @@
       "id": "pace-meter",
       "title": "Pace Meter",
       "usage": "live",
-      "version": "1.0.1",
-      "themeRev": 3,
-      "themeSpecPath": "/themes/u/pace-3-1b01befc.json",
+      "version": "1.0.2",
+      "themeRev": 4,
+      "themeSpecPath": "/themes/u/pace-4-2449e897.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
         "color-stops-v1",
         "usage-pace-v1"
       ],
-      "downloadAsset": "vibetv-theme-pace-meter-v1.0.1.zip",
-      "sha256": "a8dcf70ae4bce8a77cd44aa90d2ba7dc74f1af10eba0607ebe17830ab61659ea",
-      "bytes": 900,
+      "downloadAsset": "vibetv-theme-pace-meter-v1.0.2.zip",
+      "sha256": "c32cf107d237c9f6c780c17901594db052118d67244b5b67270844bf4f9fb725",
+      "bytes": 899,
       "earlierThemeSpecPaths": [
+        "/themes/u/pace-3-1b01befc.json",
         "/themes/u/pm-2-09a741.json"
       ]
     },
@@ -194,9 +195,9 @@
       "id": "pixel-battery",
       "title": "Pixel Battery",
       "usage": "live",
-      "version": "1.17.4",
-      "themeRev": 21,
-      "themeSpecPath": "/themes/u/pba-21-d20fb73b.json",
+      "version": "1.17.5",
+      "themeRev": 22,
+      "themeSpecPath": "/themes/u/pba-22-a9d080fe.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -209,16 +210,17 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-pixel-battery-v1.17.4.zip",
-      "sha256": "91ba53f9200b9c1f7cde16e4f6343dc514d703733d225399ca1b0dd05a48d003",
-      "bytes": 2938,
+      "downloadAsset": "vibetv-theme-pixel-battery-v1.17.5.zip",
+      "sha256": "3e0b4d60ef61a6095ac24790793db7bac3abdaccd5962a3e3aa36ff16aba219a",
+      "bytes": 2936,
       "earlierThemeSpecPaths": [
         "/themes/u/pba-15-9e62e5.json",
         "/themes/u/pba-16-f46829.json",
         "/themes/u/pba-17-6714a0.json",
         "/themes/u/pba-18-cb568cbf.json",
         "/themes/u/pba-19-941e3302.json",
-        "/themes/u/pba-20-09a7a514.json"
+        "/themes/u/pba-20-09a7a514.json",
+        "/themes/u/pba-21-d20fb73b.json"
       ]
     },
     {
@@ -252,9 +254,9 @@
       "id": "synthwave",
       "title": "Synthwave",
       "usage": "live",
-      "version": "1.2.5",
-      "themeRev": 11,
-      "themeSpecPath": "/themes/u/syn-11-876b1fbe.json",
+      "version": "1.2.6",
+      "themeRev": 12,
+      "themeSpecPath": "/themes/u/syn-12-319e19a2.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -265,11 +267,12 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-synthwave-v1.2.5.zip",
-      "sha256": "0fc8018b06da6ec8a881df515bc66d6d564e8f67eb652621e615df9c4497d202",
+      "downloadAsset": "vibetv-theme-synthwave-v1.2.6.zip",
+      "sha256": "98f2676063d4003a1565f5cbd48ac6a79241a57727d275f7c05b0bfb8ce8de27",
       "bytes": 4982,
       "earlierThemeSpecPaths": [
         "/themes/u/syn-10-cc3fcc64.json",
+        "/themes/u/syn-11-876b1fbe.json",
         "/themes/u/syn-7-c929bcfe.json",
         "/themes/u/syn-8-0b08afde.json",
         "/themes/u/syn-9-7e671d91.json",
@@ -288,9 +291,9 @@
       "id": "tiny-office",
       "title": "Tiny Office",
       "usage": "live",
-      "version": "0.7.5",
-      "themeRev": 13,
-      "themeSpecPath": "/themes/u/to-13-02cfea41.json",
+      "version": "0.7.6",
+      "themeRev": 14,
+      "themeSpecPath": "/themes/u/to-14-282c98d8.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -302,13 +305,14 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-tiny-office-v0.7.5.zip",
-      "sha256": "b7395207926fdf6b7e08bd1662e3c047bc646ea3738c78c081c7d2f643a9d261",
+      "downloadAsset": "vibetv-theme-tiny-office-v0.7.6.zip",
+      "sha256": "f73ec7217fc8ff9bd7c4c903bc18cdbc39c14c7c934fae7e3b6a55de6f314076",
       "bytes": 7832,
       "earlierThemeSpecPaths": [
         "/themes/u/to-10-53728b81.json",
         "/themes/u/to-11-98ef389a.json",
         "/themes/u/to-12-5d257b7b.json",
+        "/themes/u/to-13-02cfea41.json",
         "/themes/u/to-6-6eed22ed.json",
         "/themes/u/to-7-d7799cec.json",
         "/themes/u/to-8-fdeaccda.json",
