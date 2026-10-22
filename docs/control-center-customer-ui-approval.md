@@ -9635,6 +9635,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: docs/control-center-customer-ui-approval.md only, the wording of the #782 build 7200 record. Pull request branch #782 only, not merged, not released.
 - What's new: none — approval log wording only
 
+## 2026-10-22 — #915: saved WiFi recovery test waits for the firmware dialog
+
+- User approval: no visible change – UI approval not needed (test-only fix for flaky test #915)
+- Approved customer-visible result: None. The setup wizard is unchanged; only its unit test now waits for the firmware dialog before clicking "Use WiFi instead".
+- Scope: apps/control-center/src/components/setup/setup-wizard.test.tsx, test "rescans and reconnects the same device after reusing its saved network" only. Pull request branch only, not merged, not released.
+- What's new: none — test only, no customer-visible change
+
 ## 2026-10-22 — #883: Windows one-time hint that VibeTV keeps running in the tray
 
 - User approval: approved by Paul: "ja passt"
@@ -9648,3 +9655,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #919 as in its #883 entry plus the entries merged with d7250de6; nothing else changes.
 - Scope: the merge of d7250de6 and this approval record. Pull request #919 only, not merged, not released.
 - What's new: none — merge of d7250de6, no customer-visible change of its own
+
+## 2026-10-22 — #919: approval marker after merging main at 8d956342
+
+- User approval: no visible change – UI approval not needed (merge of main (8d956342) into #919; the #883 entry keeps Paul's approval)
+- Approved customer-visible result: #919 as in its #883 entry plus the entries merged with 8d956342; nothing else changes.
+- Scope: the merge of 8d956342 and this approval record. Pull request #919 only, not merged, not released.
+- What's new: none — merge of 8d956342, no customer-visible change of its own
