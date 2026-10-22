@@ -11037,3 +11037,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Same as the entry above; this commit changes documentation only.
 - Scope: Approval record for PR #802, no product changes.
 - What's new: none — standalone documentation marker for the completed main merge
+
+## 2026-10-22 — #802: approval marker after merging main at 1e1244fe
+
+- User approval: no visible change – UI approval not needed (merge of main (1e1244fe) into #802; the own entries of #802 keep their approval)
+- Approved customer-visible result: #802 as in its own entries plus the entries merged with 1e1244fe; nothing else changes.
+- Scope: the merge of 1e1244fe and this approval record. Pull request #802 only, not merged, not released.
+- What's new: none — merge of 1e1244fe, no customer-visible change of its own
