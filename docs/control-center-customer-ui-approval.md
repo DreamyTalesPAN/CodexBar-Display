@@ -9760,3 +9760,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The existing #864 pace behavior and #909 footer choice remain intact.
 - Scope: Resolve appended preview and native tests and preserve both approval histories from #864.
 - What's new: none — base synchronization only.
+
+## 2026-10-22 — #909: Approval marker after #864 pace merge
+- User approval: no visible change – UI approval not needed (approval marker for the #864 pace merge, whose combined diff is not recognized by the gate)
+- Approved customer-visible result: No additional change beyond the merged base and the pending footer preference entries.
+- Scope: Approval record only after merging 10f2f21f into #909.
+- What's new: none — approval marker only.
