@@ -3910,9 +3910,9 @@ async function testEnteredControlCenterOpensPairingRecovery(browser, appUrl) {
   await clickNavigation(page, "Settings");
   const pairingError = page.getByRole("dialog");
   await pairingError.waitFor({ timeout: 10_000 });
-  await pairingError.getByRole("button", { name: "OK", exact: true }).click();
-  await pairingError.waitFor({ state: "detached", timeout: 5_000 });
-  await runSetupAgain(page);
+  await pairingError
+    .getByRole("button", { name: "Run setup again", exact: true })
+    .click();
   await waitForSetupDeviceStep(page, 20_000);
   await setupDeviceCards(page).first().waitFor({ timeout: 10_000 });
   await setupConnectButton(page).click();
