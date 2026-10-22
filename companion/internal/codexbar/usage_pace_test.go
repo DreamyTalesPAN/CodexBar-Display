@@ -54,9 +54,9 @@ func TestDashboardUsageCarriesCodexBarPace(t *testing.T) {
 	want := map[string][]protocol.UsagePace{
 		// "54% in deficit | Expected 16% used | Runs out in 11h 14m"
 		"codex": {pace(54, protocol.PaceDeficit, false)},
-		// Claude's recorded resets differ by one second between endpoints;
-		// those paces cannot describe the dashboard windows. Fable has none.
-		"claude": {{}, {}, {}},
+		// "39% in reserve | ... | Lasts until reset", "2% in reserve | ..."
+		// the extra Fable window has no pace in CodexBar
+		"claude": {pace(-39, protocol.PaceReserve, true), pace(-2, protocol.PaceReserve, true), {}},
 	}
 	for _, provider := range providers {
 		windows := provider.Frame.UsageWindows
@@ -68,8 +68,8 @@ func TestDashboardUsageCarriesCodexBarPace(t *testing.T) {
 				t.Fatalf("%s window %s pace=%+v want %+v", provider.Provider, window.ID, window.Pace, want[provider.Provider][i])
 			}
 		}
-		if (len(provider.Meta.Pace) > 0) != (provider.Provider == "codex") {
-			t.Fatalf("%s: API pace must match the device's measurement: %+v", provider.Provider, provider.Meta.Pace)
+		if len(provider.Meta.Pace) == 0 {
+			t.Fatalf("%s: /v1/usage lost the pace the frame carries", provider.Provider)
 		}
 	}
 }
@@ -136,34 +136,21 @@ func TestUsagePaceWithoutExpectedPercentStaysUnknown(t *testing.T) {
 	}
 }
 
-// Serve caches these endpoints independently: pace must describe the exact
-// measurement retained from the dashboard, including its reset when present.
-func TestDashboardPaceRequiresMatchingMeasurement(t *testing.T) {
-	for _, tc := range []struct {
-		name, used, dashboardReset, usageReset string
-		wantPace                               bool
-	}{
-		{"different usage", "70", "2099-01-01T00:00:00Z", "2099-01-01T00:00:00Z", false},
-		{"same measurement", "20", "2099-01-01T00:00:00Z", "2099-01-01T00:00:00Z", true},
-		{"different reset", "20", "2099-01-01T00:00:00Z", "2099-01-02T00:00:00Z", false},
-		{"fractional mismatch", "20.1", "2099-01-01T00:00:00Z", "2099-01-01T00:00:00Z", false},
-		{"missing usage", "null", "2099-01-01T00:00:00Z", "2099-01-01T00:00:00Z", false},
-		{"missing usage reset", "20", "2099-01-01T00:00:00Z", "", true},
-		{"missing dashboard reset", "20", "", "2099-01-01T00:00:00Z", true},
+// Serve caches the two endpoints independently, so the same window is read a
+// second apart or a point apart. Pace is CodexBar's own answer for the window
+// and stays; the Companion does not second-guess it.
+func TestDashboardPaceDoesNotDependOnMatchingMeasurement(t *testing.T) {
+	for _, tc := range []struct{ name, used, reset string }{
+		{"used one point apart", "21", "2099-01-01T00:00:00Z"},
+		{"reset one second apart", "20", "2099-01-01T00:00:01Z"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			reset := func(key, value string) string {
-				if value == "" {
-					return ""
-				}
-				return fmt.Sprintf(",%q:%q", key, value)
-			}
 			mux := http.NewServeMux()
 			mux.HandleFunc(dashboardSnapshotPath, func(w http.ResponseWriter, _ *http.Request) {
-				fmt.Fprintf(w, `{"schemaVersion":1,"providers":[{"id":"claude","windows":[{"kind":"session","label":"Session","usedPercent":20%s}]}]}`, reset("resetAt", tc.dashboardReset))
+				fmt.Fprint(w, `{"schemaVersion":1,"providers":[{"id":"claude","windows":[{"kind":"session","label":"Session","usedPercent":20,"resetAt":"2099-01-01T00:00:00Z"}]}]}`)
 			})
 			mux.HandleFunc(dashboardUsagePath, func(w http.ResponseWriter, _ *http.Request) {
-				fmt.Fprintf(w, `[{"provider":"claude","usage":{"primary":{"usedPercent":%s%s}},"pace":{"primary":{"stage":"ahead","deltaPercent":20,"expectedUsedPercent":50}}}]`, tc.used, reset("resetsAt", tc.usageReset))
+				fmt.Fprintf(w, `[{"provider":"claude","usage":{"primary":{"usedPercent":%s,"resetsAt":%q}},"pace":{"primary":{"stage":"ahead","deltaPercent":20,"expectedUsedPercent":50}}}]`, tc.used, tc.reset)
 			})
 			server := httptest.NewServer(mux)
 			defer server.Close()
@@ -175,18 +162,13 @@ func TestDashboardPaceRequiresMatchingMeasurement(t *testing.T) {
 			if len(got.Frame.UsageWindows) != 1 || got.Frame.UsageWindows[0].Percent != 20 {
 				t.Fatalf("dashboard must remain the usage source: %+v", got.Frame)
 			}
-			if hasPace := got.Frame.UsageWindows[0].Pace.State != ""; hasPace != tc.wantPace {
-				t.Errorf("device pace=%+v, want present=%v", got.Frame.UsageWindows[0].Pace, tc.wantPace)
-			}
-			if (len(got.Meta.Pace) != 0) != tc.wantPace {
-				t.Errorf("API pace=%+v, want present=%v", got.Meta.Pace, tc.wantPace)
+			if got.Frame.UsageWindows[0].Pace.State == "" || len(got.Meta.Pace) == 0 {
+				t.Errorf("pace lost: device=%+v API=%+v", got.Frame.UsageWindows[0].Pace, got.Meta.Pace)
 			}
 		})
 	}
 }
 
-// CodexBar 0.75.0 CLIRenderer.pacePayload rounds both percentages before
-// encoding them; integral JSON numbers are valid regardless of decimal syntax.
 func TestParsePacePercentagesStrictNumbers(t *testing.T) {
 	for _, field := range []string{"deltaPercent", "expectedUsedPercent"} {
 		for _, tc := range []struct {
