@@ -9207,13 +9207,6 @@ issue scope, or release permission never implies UI permission.
 - Scope: `overview-screen.tsx` and its theme-name regression tests. Pull request #784 only, not merged, not released.
 - What's new: none — avoid repeated localStorage JSON parsing
 
-## 2026-10-21 — setup completion: always return to Overview
-
-- User approval: no visible change – UI approval not needed (bug fix: setup ends on Overview)
-- Approved customer-visible result: finishing setup returns to the existing Overview even if a firmware update selected Updates during setup.
-- Scope: `control-center-app.tsx` setup completion and regression tests; update navigation outside setup is unchanged.
-- What's new: none — restore the intended setup destination
-
 ## 2026-10-21 — #893: preserve theme links when setup is skipped
 
 - User approval: no visible change – UI approval not needed (bug fix: remembered setup preserves the requested theme destination)
@@ -9249,9 +9242,9 @@ issue scope, or release permission never implies UI permission.
 - Scope: control-center-app.setup-end-tab.test.tsx; pull request branch #893 only.
 - What's new: none — test only
 
-## 2026-10-22 — #905: setup from Settings returns to Settings after a firmware update
+## 2026-10-22 — #893: merge main after #784
 
-- User approval: no visible change – UI approval not needed (bug fix restores the tab the customer started from: a firmware update during a Settings connection change now ends setup on Settings instead of Overview; no text or layout change)
-- Approved customer-visible result: none beyond the corrected tab after setup; no new screens or text.
-- Scope: finishSetup and the Settings connection change in control-center-app.tsx, plus its test in control-center-app.setup-end-tab.test.tsx; pull request branch #893 only.
-- What's new: none — bug fix
+- User approval: no visible change – UI approval not needed (merge of main after #784 into #893)
+- Approved customer-visible result: Main redesign with this PR's setup completion destination.
+- Scope: apps/control-center/src/components/control-center-app.tsx and setup completion tests; merge integration only.
+- What's new: none — merge integration only.
