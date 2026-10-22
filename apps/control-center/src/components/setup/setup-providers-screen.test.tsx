@@ -187,7 +187,7 @@ describe("SetupProvidersScreen", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     rerender(<SetupProvidersScreen {...props} />);
     expect(screen.getByRole("dialog")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
     fireEvent.click(screen.getByRole("switch", { name: "GitHub Copilot" }));
     expect(onToggle).toHaveBeenCalledWith(failed, false);
     rerender(<SetupProvidersScreen {...props} providers={[claude, { ...failed, value: false }]} />);
@@ -350,7 +350,7 @@ describe("SetupProvidersScreen", () => {
       expect(within(dialog).getByText(sentence)).toBeTruthy();
       expect(dialog.textContent).not.toMatch(/fetch strategy|No usage reading|Check again|check again/);
       expect(within(dialog).getAllByRole("button").map((button) => button.textContent))
-        .toEqual(["OK", "Close"]);
+        .toEqual(["OK"]);
       unmount();
     }
     for (const state of ["healthy", "checking", "disabled"]) {
@@ -401,13 +401,13 @@ describe("SetupProvidersScreen", () => {
       onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
       pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
-    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot")).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot needs a GitHub sign-in")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
     expect(within(screen.getByRole("dialog")).getByText("OpenAI")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show provider message for GitHub Copilot" }));
-    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot")).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot needs a GitHub sign-in")).toBeTruthy();
   });
 
   // The Companion can start the sign-in of these four only; every other
@@ -455,7 +455,9 @@ describe("SetupProvidersScreen", () => {
     expect(dialog.queryByText("No available fetch strategy for copilot.")).toBeNull();
     expect(dialog.queryByRole("button", { name: /Copy provider message/ })).toBeNull();
     expect(dialog.getAllByRole("button").map((button) => button.textContent))
-      .toEqual(["OK", "Open setup guide", "Close"]);
+      .toEqual(["Close", "Open setup guide"]);
+    // Frame 39 of the template: "<Provider> needs its own app", Close beside the guide.
+    expect(dialog.getByRole("heading", { name: "GitHub Copilot needs a GitHub sign-in" })).toBeTruthy();
     fireEvent.click(dialog.getByRole("button", { name: "Open setup guide" }));
     expect(onOpenSetupGuide).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -467,16 +469,18 @@ describe("SetupProvidersScreen", () => {
     const timedOut = provider({ providerId: "copilot", label: "GitHub Copilot",
       health: "timeout", message: "The provider check timed out." });
     const signedOut = { ...copilot, value: true };
-    for (const [item, guide, sentence] of [
-      [claudeSignedOut, vi.fn(), "Sign in to Claude so VibeTV can read its usage."],
-      [timedOut, vi.fn(), "GitHub Copilot did not answer in time, and VibeTV tries again by itself."],
-      [signedOut, undefined, "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet."],
+    for (const [item, guide, sentence, title] of [
+      [claudeSignedOut, vi.fn(), "Sign in to Claude so VibeTV can read its usage.", "Claude"],
+      // Only the own-app case is drawn in the template; the others keep the provider's name.
+      [timedOut, vi.fn(), "GitHub Copilot did not answer in time, and VibeTV tries again by itself.", "GitHub Copilot"],
+      [signedOut, undefined, "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.", "GitHub Copilot needs a GitHub sign-in"],
     ] as const) {
       const { unmount } = renderDom(<SetupProvidersScreen usage={usage} providers={[item]}
         onOpenSetupGuide={guide} onContinue={vi.fn()} onCheckAgain={vi.fn()} onToggle={vi.fn()}
         pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
       const dialog = within(screen.getByRole("dialog"));
       expect(dialog.getByText(sentence)).toBeTruthy();
+      expect(dialog.getByRole("heading", { name: title })).toBeTruthy();
       expect(dialog.queryByRole("button", { name: "Open setup guide" })).toBeNull();
       unmount();
     }
@@ -683,6 +687,24 @@ describe("SetupProvidersScreen", () => {
     expect(html).toContain("Provider 9");
     expect(html).not.toContain("Provider 10");
     expect(html).toContain("Show more providers (4 left)");
+  });
+
+  // Calm rule: a link is ink with an underline, like the other links in Settings.
+  it("shows the more-providers control as an underlined link", () => {
+    const many = Array.from({ length: 14 }, (_, index) =>
+      provider({
+        health: "healthy",
+        label: `Provider ${index}`,
+        providerId: `p${index}`,
+      }),
+    );
+    const html = render({ providers: many });
+    const control = html.match(/<button[^>]*>(?:(?!<\/button>)[\s\S])*Show more providers/)?.[0] ?? "";
+    const opening = control.slice(0, control.indexOf(">"));
+
+    expect(opening).toContain("underline");
+    expect(opening).toContain("font-normal");
+    expect(opening).not.toContain("font-semibold");
   });
 
   it("does not offer more when everything already fits", () => {

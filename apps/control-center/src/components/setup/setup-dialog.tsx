@@ -1,6 +1,5 @@
 "use client";
 
-import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import {
   Dialog,
@@ -23,12 +22,9 @@ export type SetupDialogAction = {
 
 type SetupDialogProps = {
   children?: ReactNode;
-  description: ReactNode;
-  icon?: LucideIcon;
-  /** An announcement, not a page's own dialog: it waits for those (#632). */
+  description?: ReactNode;
   announcement?: boolean;
-  /** Destructive tints the header icon; "neutral" is for progress dialogs. */
-  tone?: "error" | "neutral";
+  noticeKind?: "system-busy" | "theme-library";
   onOpenChange: (open: boolean) => void;
   /** Lets an announcement leave focus where it is (#632). */
   onOpenAutoFocus?: (event: Event) => void;
@@ -40,11 +36,19 @@ type SetupDialogProps = {
   /**
    * Whether the screen behind is held. A step's own error freezes it; an
    * announcement about the background service must not, or it takes away the
-   * app it is reporting on.
+   * app it is reporting on. Without it the grey backdrop still shows, but it
+   * takes no clicks.
    */
   scrim?: boolean;
+  /**
+   * There is no close X. When true and there is no secondary action, a
+   * visible "Close" (ghost) is the footer's secondary button. Otherwise the
+   * secondary action is the way out.
+   */
   showCloseButton?: boolean;
   title: string;
+  /** 480 px instead of 440, for the dialogs that carry a list. */
+  wide?: boolean;
 };
 
 /**
@@ -59,9 +63,8 @@ type SetupDialogProps = {
 export function SetupDialog({
   children,
   description,
-  icon: Icon,
   announcement,
-  tone = "error",
+  noticeKind,
   onOpenChange,
   onOpenAutoFocus,
   open,
@@ -70,6 +73,7 @@ export function SetupDialog({
   secondaryAction,
   showCloseButton = true,
   title,
+  wide = false,
 }: SetupDialogProps) {
   return (
     <Dialog modal={false} onOpenChange={onOpenChange} open={open}>
@@ -82,40 +86,37 @@ export function SetupDialog({
         aria-hidden
         className={cn(
           "fixed inset-0 z-40 bg-black/10 transition-opacity duration-100 supports-backdrop-filter:backdrop-blur-xs",
-          open && scrim ? "opacity-100" : "pointer-events-none opacity-0",
+          open ? "opacity-100" : "pointer-events-none opacity-0",
+          // Without scrim the grey backdrop is only a look: it never takes clicks,
+          // so the page behind stays usable (the outage and busy announcements).
+          !scrim && "pointer-events-none",
         )}
       />
       <DialogContent
         data-announcement={announcement ? "" : undefined}
+        data-notice-kind={noticeKind}
+        className={wide ? "sm:max-w-[480px]" : undefined}
         style={{ animation: "none" }}
         onInteractOutside={(event) => event.preventDefault()}
         onOpenAutoFocus={onOpenAutoFocus}
-        showCloseButton={showCloseButton}
       >
-        <DialogHeader className="gap-1.5">
-          <DialogTitle className="flex items-center gap-2 pr-6">
-            {Icon ? (
-              <Icon
-                className={cn(
-                  "size-[18px] shrink-0",
-                  tone === "error"
-                    ? "text-destructive"
-                    : "text-muted-foreground",
-                )}
-              />
-            ) : null}
-            <span>{title}</span>
-          </DialogTitle>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         {children}
-        {primaryAction || secondaryAction ? (
+        {primaryAction || secondaryAction || showCloseButton ? (
           // Two long labels, e.g. "Copy provider message for Claude" and
           // "Sign in to Claude", are wider than the popup: the main action
           // moves to its own line instead of sticking out on the right.
           <DialogFooter className="sm:flex-wrap">
+            {showCloseButton && !secondaryAction ? (
+              <Button onClick={() => onOpenChange(false)} type="button" variant="ghost">
+                Close
+              </Button>
+            ) : null}
             {secondaryAction ? (
-              <SetupDialogButton action={secondaryAction} variant="outline" />
+              <SetupDialogButton action={secondaryAction} variant="ghost" />
             ) : null}
             {primaryAction ? (
               <SetupDialogButton action={primaryAction} variant="default" />
@@ -132,7 +133,7 @@ function SetupDialogButton({
   variant,
 }: {
   action: SetupDialogAction;
-  variant: "default" | "outline";
+  variant: "default" | "ghost";
 }) {
   return (
     <Button

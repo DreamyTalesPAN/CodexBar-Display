@@ -141,6 +141,8 @@ export function SetupEventList({
 }) {
   const scrollRef = useRef<HTMLOListElement | null>(null);
   const [following, setFollowing] = useState(true);
+  // Only older entries above the view are faded; at the oldest entry the top row is shown whole.
+  const [atStart, setAtStart] = useState(true);
   const events = log?.events ?? [];
   const newest = events.at(-1);
 
@@ -148,6 +150,9 @@ export function SetupEventList({
     const node = scrollRef.current;
     if (node && following) {
       node.scrollTop = node.scrollHeight;
+    }
+    if (node) {
+      setAtStart(node.scrollTop <= 0);
     }
   }, [following, newest?.seq, newest?.count]);
 
@@ -164,10 +169,14 @@ export function SetupEventList({
       <ol
         aria-label="Setup log"
         aria-live="polite"
-        className="max-h-[280px] overflow-y-auto overscroll-contain rounded-lg border font-mono text-xs"
+        className={cn(
+          "max-h-[280px] overflow-y-auto overscroll-contain rounded-lg border font-mono text-xs",
+          !atStart && "[mask-image:linear-gradient(to_bottom,transparent,black_14px)]",
+        )}
         onScroll={(event) => {
           const node = event.currentTarget;
           setFollowing(node.scrollHeight - node.scrollTop - node.clientHeight < 8);
+          setAtStart(node.scrollTop <= 0);
         }}
         ref={scrollRef}
         tabIndex={0}

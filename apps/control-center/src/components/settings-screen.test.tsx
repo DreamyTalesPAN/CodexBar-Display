@@ -13,7 +13,6 @@ import {
   standbyTimeoutLabel,
   type SettingsScreenProps,
 } from "./settings-screen";
-import type { SetupDisplayModePreview } from "./setup/setup-display-mode-screen";
 
 const providerPicker: ProviderPickerProps = {
   usage: { providers: ["codex", "claude", "cursor"].map((id) => ({
@@ -97,12 +96,10 @@ function render(
   connectionMode: "cable" | "wifi" = "cable",
   windowsHost = false,
   displayPreferences: PreferenceDescriptor[] = [],
-  automaticPreviews: SetupDisplayModePreview[] = [],
   providerShortcut: SettingsScreenProps["providerShortcut"] = null,
 ) {
   return renderToStaticMarkup(
     <SettingsScreen
-      automaticPreviews={automaticPreviews}
       brightness={brightness}
       busyAction={null}
       connectionMode={connectionMode}
@@ -149,7 +146,6 @@ describe("SettingsScreen on Windows", () => {
 describe("SettingsScreen standby controls", () => {
   it("offers the factory reset only over the USB cable", () => {
     const props = {
-      automaticPreviews: [],
       brightness: 70,
       busyAction: null,
       device: standbyDevice,
@@ -172,15 +168,17 @@ describe("SettingsScreen standby controls", () => {
       <SettingsScreen {...props} connectionMode="wifi" />,
     );
 
-    expect(cable).toContain("Reset to factory settings");
-    expect(wifi).not.toContain("Reset to factory settings");
-    // Paul, 2026-10-08: the two setup actions sit side by side in one row, and
-    // Run diagnostics is on Support only.
-    // Issue #579: each has its own line below it; before, the one line
-    // beside them explained only Run setup again.
+    expect(cable).toContain("Factory reset");
+    expect(wifi).not.toContain("Factory reset");
+    // Calm master: each action is a row with its title, its own line and an
+    // outline button on the right ("Run setup", red "Reset…"). Run diagnostics
+    // is on Support only.
     expect(cable).toMatch(
-      /Run setup again<\/span><\/button><p[^>]*>Connect this Mac to another VibeTV\.<\/p><\/div><div[^>]*><button[^>]*><span>Reset to factory settings<\/span><\/button><p[^>]*>VibeTV forgets its WiFi details, pairing, settings and themes\.<\/p>/,
+      /Run setup again<\/p><p[^>]*>Connect this Mac to another VibeTV\.<\/p><\/div><button[^>]*><span>Run setup<\/span><\/button><\/div><div[^>]*><div[^>]*><p[^>]*>Factory reset<\/p><p[^>]*>VibeTV forgets its WiFi details, pairing, settings and themes\.<\/p><\/div><button[^>]*><span>Reset…<\/span><\/button>/,
     );
+    // The template's outline buttons have 14 px of side space (border included in the 36 px box).
+    expect(cable).toMatch(/<button[^>]*class="[^"]*\bpx-3\.5\b[^"]*"[^>]*><span>Run setup<\/span>/);
+    expect(cable).toMatch(/<button[^>]*class="[^"]*\bpx-3\.5\b[^"]*"[^>]*><span>Reset…<\/span>/);
     expect(cable.match(/Connect this Mac to another VibeTV\./g)).toHaveLength(1);
     expect(wifi).toContain("Connect this Mac to another VibeTV.");
     expect(wifi).not.toContain("VibeTV forgets");
@@ -217,8 +215,9 @@ describe("SettingsScreen standby controls", () => {
 
     expect(html).toContain(">Screensaver</h2>");
     expect(html).toContain("Show screensaver");
-    expect(html.indexOf('id="vibetv-standby"')).toBeLessThan(
-      html.indexOf('for="vibetv-standby"'),
+    // The name sits in its fixed column to the left, the switch beside it.
+    expect(html.indexOf('for="vibetv-standby"')).toBeLessThan(
+      html.indexOf('id="vibetv-standby"'),
     );
     expect(html).toContain("Show after");
     expect(html).toContain("Brightness in screensaver");
@@ -270,9 +269,7 @@ describe("SettingsScreen standby controls", () => {
     expect(html).toContain("Show screensaver");
     expect(html).toContain('aria-checked="true"');
     expect(html).toContain("Show after");
-    expect(html).toMatch(
-      /data-orientation="horizontal"[^>]*><label[^>]+for="vibetv-standby-timeout"/,
-    );
+    expect(html).toMatch(/<label[^>]+for="vibetv-standby-timeout"/);
     expect(html).toContain('id="vibetv-standby-timeout"');
     expect(html).toContain("Brightness in screensaver");
     expect(html).toContain('id="vibetv-standby-brightness"');
@@ -309,7 +306,7 @@ describe("SettingsScreen standby controls", () => {
     const headings = html.match(/<h2[^>]*>([^<]+)<\/h2>/g) || [];
 
     expect(headings).toHaveLength(7);
-    expect(html).toContain(">Display</h2>");
+    expect(html).toContain(">Brightness</h2>");
     expect(html).toContain(">Display mode</h2>");
     expect(html).toContain(">AI providers</h2>");
     expect(html).toContain(">Screensaver</h2>");
@@ -329,10 +326,10 @@ describe("SettingsScreen standby controls", () => {
     );
 
     expect(order).toEqual([
-      "Connection",
-      "Display",
       "Display mode",
+      "Brightness",
       "Screensaver",
+      "Connection",
       "Setup",
       "Theme Studio AI",
       "AI providers",
@@ -400,9 +397,10 @@ describe("SettingsScreen standby controls", () => {
     expect(providerSection).toContain(">Gemini</");
   });
 
-  it("leaves the display mode cards usable when no write is in flight", () => {
+  it("leaves the display mode radios usable when no write is in flight", () => {
     const html = render(standbyDevice);
-    const cards = html.match(/<button aria-pressed="(?:true|false)"[^>]*>/g) || [];
+    const cards =
+      html.match(/<button aria-label="(?:Automatic|Manual)" aria-pressed="(?:true|false)"[^>]*>/g) || [];
 
     expect(cards.length).toBeGreaterThanOrEqual(2);
     expect(cards.some((card) => card.includes('disabled=""'))).toBe(false);
@@ -420,13 +418,60 @@ describe("SettingsScreen standby controls", () => {
     expect(html).not.toMatch(/<output[^>]*style="left:/);
   });
 
-  it("puts the design's connection cards first and marks the active mode", () => {
+  it("puts Connection after Screensaver and marks the active mode", () => {
     const html = render(standbyDevice);
-    expect(html.indexOf(">Connection</h2>")).toBeLessThan(html.indexOf(">Display</h2>"));
+    expect(html.indexOf(">Screensaver</h2>")).toBeLessThan(html.indexOf(">Connection</h2>"));
     expect(html).toContain('aria-label="USB-C" aria-pressed="true"');
     expect(html).toContain('aria-label="WiFi" aria-pressed="false"');
     expect(html).toContain("Requires a data cable connected to this Mac.");
     expect(html).toContain("VibeTV can sit anywhere on your desk.");
+  });
+
+  // Calm rule: small descriptions are 13 px, not the 16 px of the page body.
+  it("sets the Connection descriptions at 13 px", () => {
+    const html = render(standbyDevice, savedStandby, providerPicker, 70, "cable", false);
+
+    expect(html).toMatch(
+      /<span class="[^"]*text-\[13px\][^"]*">Requires a data cable connected to this Mac\.<\/span>/,
+    );
+    expect(html).toMatch(
+      /<span class="[^"]*text-\[13px\][^"]*">No cable needed — VibeTV can sit anywhere on your desk\.<\/span>/,
+    );
+  });
+
+  // Calm rule: the rest of the small text on Settings is 13 px too: section
+  // names (semibold), the notice above Display mode, the brightness reading
+  // and both help texts under Setup.
+  it("sets the remaining small Settings text at 13 px", () => {
+    const html = renderToStaticMarkup(
+      <SettingsScreen
+        brightness={70}
+        busyAction={null}
+        connectionMode="cable"
+        device={standbyDevice}
+        standby={savedStandby}
+        onBrightnessChange={vi.fn()}
+        onChooseScreensaver={vi.fn()}
+        onConnectionModeChange={vi.fn()}
+        onDismissError={vi.fn()}
+        onEraseDevice={vi.fn()}
+        onResetSetup={vi.fn()}
+        onSaveBrightness={vi.fn()}
+        onSaveStandby={vi.fn()}
+        onStandbyBrightnessChange={vi.fn()}
+        providerPicker={{
+          ...providerPicker,
+          displayNotice: "Codex is off, so VibeTV now switches automatically.",
+        }}
+      />,
+    );
+
+    expect(html).toMatch(/<h2 class="[^"]*text-\[13px\][^"]*">Display mode<\/h2>/);
+    expect(html).toMatch(/<h2 class="[^"]*text-\[13px\][^"]*">Connection<\/h2>/);
+    expect(html).toMatch(/<p [^>]*text-\[13px\][^>]*role="status">/);
+    expect(html).toMatch(/<output [^>]*text-\[13px\][^>]*>70%<\/output>/);
+    expect(html).toMatch(/<p [^>]*text-\[13px\][^>]*id="vibetv-run-setup-help">/);
+    expect(html).toMatch(/<p [^>]*text-\[13px\][^>]*id="vibetv-factory-reset-help">/);
   });
 
   it("keeps Cable recovery available for an active offline WiFi binding", () => {
@@ -483,7 +528,6 @@ describe("SettingsScreen standby controls", () => {
   it("keeps VibeTV mutations disabled during a firmware update", () => {
     const html = renderToStaticMarkup(
       <SettingsScreen
-        automaticPreviews={[]}
         brightness={50}
         busyAction="firmware-update"
         connectionMode="cable"
@@ -504,7 +548,7 @@ describe("SettingsScreen standby controls", () => {
     expect(html.match(/<button[^>]*disabled=""/g)?.length).toBeGreaterThanOrEqual(2);
   });
 
-  // Issue #322: the timed rotation is one select under the Automatic card.
+  // Issue #322: the timed rotation is one select under the Automatic radio.
   it("offers the rotation under Display mode only while Automatic is chosen", () => {
     const displayMode = (
       mode: "automatic" | "fixed",
@@ -536,7 +580,7 @@ describe("SettingsScreen standby controls", () => {
     expect(automatic).toContain(byActivity);
     expect(automatic).not.toContain(onATimer);
 
-    // The Automatic card says what the chosen timer makes it do.
+    // The Automatic line says what the chosen timer makes it do.
     const timed = displayMode("automatic", [{ ...rotation, value: "30" }]);
     expect(timed).toContain(onATimer);
     expect(timed).not.toContain(byActivity);
@@ -545,37 +589,35 @@ describe("SettingsScreen standby controls", () => {
     expect(displayMode("automatic", [])).not.toContain("Switch providers");
   });
 
-  // Windows walk-through of 2026-10-08: with Automatic chosen and a signed-out
-  // provider first in the list, the Manual card read "No usage yet" although a
-  // click on it showed Claude.
-  it("previews on the Manual card the provider a click on Manual would show", () => {
-    const signedOut: ProviderItem = {
-      ...provider("codex", "Codex", true),
-      health: { message: "Authentication required.", service: "operational", state: "auth_required" },
+  // Calm master: Display mode is a plain radio list. Only the chosen radio is
+  // pressed; "Show this provider" is a select that belongs to Manual only.
+  it("shows Display mode as a radio list with the provider select under Manual", () => {
+    const section = (mode: "automatic" | "fixed") => {
+      const html = render(standbyDevice, savedStandby, {
+        ...providerPicker,
+        display: { mode, providerIds: ["claude"], configured: true, valid: true },
+        items: [provider("claude", "Claude", true), provider("codex", "Codex", true)],
+      });
+      return html.slice(
+        html.indexOf(">Display mode</h2>"),
+        html.indexOf(">Screensaver</h2>"),
+      );
     };
-    const manualPanel = (mode: "automatic" | "fixed", providerIds: string[]) => {
-      const panel = render(
-        standbyDevice,
-        savedStandby,
-        {
-          ...providerPicker,
-          display: { mode, providerIds, configured: true, valid: true },
-          items: [signedOut, provider("claude", "Claude", true)],
-        },
-        70, "cable", false, [],
-        [{ providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: 12 }] }],
-      ).split('data-slot="display-mode-preview"')[2] ?? "";
-      return panel.slice(0, panel.indexOf(">Manual<"));
-    };
+    const pressed = (html: string) =>
+      Array.from(
+        html.matchAll(/<button\b[^>]*aria-label="([^"]*)"[^>]*aria-pressed="true"/g),
+        (match) => match[1],
+      );
 
-    const automatic = manualPanel("automatic", ["codex", "claude"]);
-    expect(automatic).toContain("Claude");
-    expect(automatic).toContain("12");
-    expect(automatic).not.toContain("No usage yet");
+    const manual = section("fixed");
+    expect(pressed(manual)).toEqual(["Manual"]);
+    expect(manual).toContain("Show this provider");
+    // No preview cards in Settings any more.
+    expect(manual).not.toContain('data-slot="display-mode-preview"');
 
-    // Pinned to a provider that shows nothing, the card keeps saying so.
-    expect(manualPanel("fixed", ["codex"])).toContain("No usage yet");
-    expect(manualPanel("fixed", ["claude"])).toContain("Claude");
+    const automatic = section("automatic");
+    expect(pressed(automatic)).toEqual(["Automatic"]);
+    expect(automatic).not.toContain("Show this provider");
   });
 
   // Issue #424: the app's global shortcut for the next provider is named
@@ -596,7 +638,7 @@ describe("SettingsScreen standby controls", () => {
         standbyDevice, savedStandby,
         { ...providerPicker, items,
           display: { mode, providerIds: ["claude"], configured: true, valid: true } },
-        70, "cable", windowsHost, [], [], providerShortcut,
+        70, "cable", windowsHost, [], providerShortcut,
       );
       return html.slice(
         html.indexOf(">Display mode</h2>"),
@@ -641,10 +683,15 @@ describe("SettingsScreen standby controls", () => {
       standbyDevice, savedStandby,
       { ...providerPicker, usage: null, items: twoWithUsage,
         display: { mode: "automatic", providerIds: ["claude"], configured: true, valid: true } },
-      70, "cable", false, [], [], "available",
+      70, "cable", false, [], "available",
     );
     expect(unread).toContain("Press ⌃⌥⌘P in any app to show the next provider.</p>");
     expect(unread).not.toContain("This needs two providers with usage.");
+
+    // Calm rule: the shortcut line is 13 px like the other small text.
+    expect(displayMode("available")).toMatch(
+      /<p class="[^"]*text-\[13px\][^"]*">Press ⌃⌥⌘P in any app to show the next provider\. This switches to Manual\.<\/p>/,
+    );
 
     // A browser has no global shortcut, so Settings names none.
     expect(displayMode(null)).not.toContain("shortcut");
@@ -655,7 +702,7 @@ describe("SettingsScreen standby controls", () => {
   // everything below it (#579, found in #698). Every state keeps the same
   // paragraph, with room for two lines.
   it("keeps the provider shortcut line two lines high in every state", () => {
-    const reserved = '<p class="min-h-[2lh] text-sm text-muted-foreground">';
+    const reserved = '<p class="min-h-[2lh] -mt-1 text-[13px] text-muted-foreground">';
     const page = (
       providerShortcut: SettingsScreenProps["providerShortcut"],
       mode: "automatic" | "fixed" = "automatic",
@@ -666,7 +713,7 @@ describe("SettingsScreen standby controls", () => {
         standbyDevice, savedStandby,
         { ...providerPicker, usage, items,
           display: { mode, providerIds: ["claude"], configured: true, valid: true } },
-        70, "cable", false, [], [], providerShortcut,
+        70, "cable", false, [], providerShortcut,
       );
 
     // Automatic with two providers and usage wraps to two lines; Manual, an
@@ -719,7 +766,6 @@ describe("SettingsScreen standby controls", () => {
     ) => {
       const html = renderToStaticMarkup(
         <SettingsScreen
-          automaticPreviews={[]}
           brightness={70}
           busyAction={null}
           connectionMode="cable"
@@ -739,7 +785,7 @@ describe("SettingsScreen standby controls", () => {
       );
       return html.slice(
         html.indexOf(">Screensaver</h2>"),
-        html.indexOf(">Setup</h2>"),
+        html.indexOf(">Connection</h2>"),
       );
     };
     const link = /<a aria-disabled="false"[^>]*>Choose screensaver<\/a>/;
@@ -747,7 +793,7 @@ describe("SettingsScreen standby controls", () => {
     it("is named beside Choose screensaver while the screensaver is on", () => {
       // An older revision in the slot is still this screensaver.
       const named = block(true, { screensaverPath: "/themes/s/nc-2-cb6d64ba.json" });
-      expect(named).toMatch(/>Night Clock is installed\.<\/span><a /);
+      expect(named).toMatch(/<span class="[^"]*text-\[13px\][^"]*">Night Clock is installed\.<\/span>/);
       expect(named).toMatch(link);
 
       // A screensaver neither the catalog nor this computer knows.
@@ -755,10 +801,19 @@ describe("SettingsScreen standby controls", () => {
       expect(unknown).toContain(">A custom screensaver is installed.</span>");
     });
 
+    it("turns the Choose screensaver link olive on hover, never lime", () => {
+      const none = block(true, { active: false });
+
+      expect(none).toMatch(
+        /<a [^>]*hover:text-\[var\(--vibetv-support\)\][^>]*>Choose screensaver<\/a>/,
+      );
+      expect(none).not.toContain("hover:text-primary");
+    });
+
     it("says that none is installed, with Choose screensaver as the way out", () => {
       const none = block(true, { active: false });
 
-      expect(none).toMatch(/>No screensaver is installed yet\.<\/span><a /);
+      expect(none).toMatch(/>No screensaver is installed yet\.<\/span>/);
       expect(none).toMatch(link);
     });
 
@@ -788,7 +843,6 @@ describe("SettingsScreen standby controls", () => {
           items: [provider("claude", "Claude", true), provider("codex", "Codex", false)],
         },
         70, "cable", false, [rotation],
-        [{ providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: 12 }] }],
       ),
     );
   });

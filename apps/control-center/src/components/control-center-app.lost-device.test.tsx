@@ -274,7 +274,7 @@ it("keeps the confirmation for the Settings Run setup again row", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   await window.wait(1);
 
-  fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run setup" }));
   expect(screen.getByRole("dialog", { name: "Run setup again?" })).toBeTruthy();
   expect(window.companion.requests).not.toContain("POST /api/local-companion/v1/setup/reset");
 });

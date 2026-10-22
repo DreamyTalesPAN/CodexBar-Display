@@ -166,12 +166,12 @@ it("keeps Create report on the Support report card after Run diagnostics, and Cr
   await wait(3);
   expect(screen.getByRole("button", { name: "Copy" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Download" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Create again" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Create new" })).toBeTruthy();
 });
 
 function recentActivity() {
   return within(
-    screen.getByText("Recent activity").closest('[data-slot="card"]') as HTMLElement,
+    screen.getByText("Recent activity").closest("section") as HTMLElement,
   ).queryByRole("list")?.textContent ?? "";
 }
 

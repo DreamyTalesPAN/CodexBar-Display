@@ -34,10 +34,10 @@ it("keeps the Support report card on Create report after Run diagnostics", () =>
 
   expect(screen.getByRole("button", { name: "Create report" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Copy" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Create again" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Create new" })).toBeNull();
 });
 
-it("shows Copy, Download and Create again once Create report made the report", () => {
+it("shows Copy, Download and Create new once Create report made the report", () => {
   const onCreate = vi.fn();
   const view = render(
     <LogsScreen onCreateSupportReport={onCreate} onLoadDiagnostics={vi.fn()} />,
@@ -56,7 +56,7 @@ it("shows Copy, Download and Create again once Create report made the report", (
 
   expect(screen.getByRole("button", { name: "Copy" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Download" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Create again" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Create new" })).toBeTruthy();
 });
 
 // Busy states do not cross: Run diagnostics does not show the card as creating,

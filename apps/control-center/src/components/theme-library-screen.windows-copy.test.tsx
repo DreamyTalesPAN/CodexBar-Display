@@ -86,7 +86,7 @@ async function installOwnThemeRefused(windowsHost: boolean) {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
-  return { text: host.textContent ?? "", cleanup: () => root.unmount() };
+  return { text: document.body.textContent ?? "", cleanup: () => root.unmount() };
 }
 
 afterEach(() => {

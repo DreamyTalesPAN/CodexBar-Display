@@ -13,7 +13,6 @@ afterEach(() => {
   cleanup();
 });
 
-const device = { active: true, connected: true, paired: true, ready: true };
 const failure = {
   code: "usage_failed",
   message: "Usage needs attention.",
@@ -21,7 +20,7 @@ const failure = {
 };
 
 it("shows the last error in a dialog over the page, not as text on the page", () => {
-  const { container } = render(<LogsScreen device={device} lastError={failure} />);
+  const { container } = render(<LogsScreen lastError={failure} />);
 
   const dialog = screen.getByRole("dialog");
   expect(within(dialog).getByText("Usage needs attention.")).toBeTruthy();
@@ -32,13 +31,13 @@ it("shows the last error in a dialog over the page, not as text on the page", ()
 
 it("reports the dismissal to its owner when OK closes the dialog", () => {
   const onDismissError = vi.fn();
-  render(<LogsScreen device={device} lastError={failure} onDismissError={onDismissError} />);
+  render(<LogsScreen lastError={failure} onDismissError={onDismissError} />);
 
   fireEvent.click(screen.getByRole("button", { name: "OK" }));
   expect(onDismissError).toHaveBeenCalledTimes(1);
 });
 
 it("shows no dialog when the owner has no error to show", () => {
-  render(<LogsScreen device={device} lastError={null} />);
+  render(<LogsScreen lastError={null} />);
   expect(screen.queryByRole("dialog")).toBeNull();
 });
