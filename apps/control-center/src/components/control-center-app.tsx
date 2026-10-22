@@ -4366,7 +4366,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setSupportReportBusy(true);
     try {
       const { payload, error } = await collectSupport();
-      setSupportReport(payload);
+      // Run setup again during the collection returns neither a report nor
+      // an error. The reset keeps the card's report, so this does too (#917).
+      if (payload || error) {
+        setSupportReport(payload);
+      }
       if (payload) {
         const partial = Boolean(payload.collectionErrors?.length);
         addEvent({
