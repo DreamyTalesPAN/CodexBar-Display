@@ -57,7 +57,6 @@ const usageMode: PreferenceDescriptor = {
 
 function props(overrides: Partial<SettingsScreenProps> = {}): SettingsScreenProps {
   return {
-    automaticPreviews: [],
     brightness: 20,
     busyAction: null,
     connectionMode: "cable",

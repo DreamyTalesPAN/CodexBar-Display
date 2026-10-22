@@ -104,7 +104,8 @@ import {
 import { useCompanionRelease } from "./companion-installer-actions";
 import { LogsScreen } from "./logs-screen";
 import { WithLatestDisplayFrame } from "./live-vibetv-preview";
-import { OverviewScreen } from "./overview-screen";
+import { OverviewScreen, useOverviewNotice } from "./overview-screen";
+import { VibeTVNotFoundDialog, vibetvNotFound } from "./vibetv-not-found-dialog";
 import {
   PROVIDER_RECONCILE_WINDOW_MS,
   providerUsageNeedsReconcile,
@@ -322,6 +323,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [appearanceSection, setAppearanceSection] = useState<AppearanceSection>(
     initialThemeIsScreensaver ? "screensavers" : "themes",
   );
+  const [themeStudioOpen, setThemeStudioOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>(
     initialThemeId ? "theme-library" : "overview",
   );
@@ -611,8 +613,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Its start time keys the incident; null while there is none.
   const [systemBusySince, setSystemBusySince] = useState<string | null>(null);
   const [systemBusyDismissed, dismissSystemBusy] = useSystemBusyDismissal(systemBusySince);
-  // "Run setup again" asks first, from Settings and from Support alike.
+  // "Run setup again" asks first, from Settings and from the not-found dialog alike.
   const [setupAgainRequested, setSetupAgainRequested] = useState(false);
+  const [vibetvNotFoundDismissed, setVibetvNotFoundDismissed] = useState(false);
   // The "What's new" entries this customer has seen, null while nothing is
   // stored, and whether Updates has opened the notice again.
   const [whatsNewSeen, setWhatsNewSeen] = useState(seenWhatsNew);
@@ -681,7 +684,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       id: "session-start",
       label: "Control Center opened",
       detail: "This session started.",
-      at: "Session",
+      at: formatTime(),
       tone: "unknown",
     },
   ]);
@@ -5297,17 +5300,40 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     !lostDevicePickerOpen &&
     !setupOwnsScreen &&
     !(usageFailure && !usageFailureHidden);
+  // The Overview notices (#265, #498) wait while the busy notice is due.
+  const overviewNotice = useOverviewNotice(device, systemBusyOpen);
   // The notice opens by itself on Overview, and again from Updates, once
   // nothing else asks for the customer: not during setup or a firmware update,
   // and under no other dialog. It stays on the page it was opened on: other
   // pages have dialogs of their own.
+  // Not found is one dialog like the others: it waits behind the same
+  // higher-priority dialogs, and it is not shown during a firmware update.
+  // A "Not now" comes back the next time VibeTV is found and lost again.
+  if (!vibetvNotFound(device) && vibetvNotFoundDismissed) {
+    setVibetvNotFoundDismissed(false);
+  }
+  const vibetvNotFoundOpen =
+    activeShellTab === "overview" &&
+    vibetvNotFound(device) &&
+    !vibetvNotFoundDismissed &&
+    !systemBusyOpen &&
+    !setupAgainRequested &&
+    !setupOwnsScreen &&
+    !firmwareUpdateInProgress &&
+    !needsRuntimeRecovery &&
+    !lostDevicePickerOpen &&
+    !(usageFailure && !usageFailureHidden);
   const somethingElseAsks =
+    vibetvNotFoundOpen ||
+    setupAgainRequested ||
     setupOwnsScreen ||
     firmwareUpdateInProgress ||
     needsRuntimeRecovery ||
     lostDevicePickerOpen ||
     (usageFailure && !usageFailureHidden) ||
-    systemBusyOpen;
+    systemBusyOpen ||
+    // The Overview notice (#265, #498) asks first; What's new follows it.
+    (activeShellTab === "overview" && overviewNotice.notice !== null);
   const whatsNewEntries = (somethingElseAsks
     ? []
     : whatsNewReopened && activeShellTab === "updates"
@@ -5757,6 +5783,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         activeTab={activeShellTab}
         activeAppearanceSection={appearanceSection}
         disabledTabs={disabledTabs}
+        themeStudioOpen={themeStudioOpen}
         updateAvailable={anyUpdateAvailable}
         onAppearanceSectionChange={setAppearanceSection}
         onTabChange={(tab) => {
@@ -5777,7 +5804,25 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 companionStatus={companionStatus}
                 device={device}
                 displayFrame={displayFrame}
+                firmwareUpdate={
+                  firmwareUpdateAvailable
+                    ? "available"
+                    : effectiveFirmwareUpdate?.status === "current"
+                      ? "current"
+                      : undefined
+                }
                 firmwareUpdateStatus={firmwareUpdateStatus}
+                macAppUpdate={
+                  macAppUpdateAvailable
+                    ? "available"
+                    : companionRelease?.status === "available" &&
+                        companionRelease.installedVersion
+                      ? "current"
+                      : undefined
+                }
+                notice={overviewNotice.notice}
+                onCloseNotice={overviewNotice.close}
+                themes={catalog.themes}
                 usage={usage}
                 windowsHost={windowsHost}
               />
@@ -5806,7 +5851,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               setProviderDisplayError(null);
               setProviderPreferencesError(null);
             }}
-            automaticPreviews={setupPreviews}
             brightness={brightness}
             busyAction={
               firmwareUpdateInProgress ? "firmware-update" : busyAction
@@ -5884,6 +5928,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             usage={
               appearanceSection === "screensavers" ? "screensaver" : "live"
             }
+            onStudioOpenChange={setThemeStudioOpen}
             onOpenScreensaverSettings={() => {
               shownAfterPageOpensRef.current = "settings-screensaver";
               setActiveTab("settings");
@@ -5922,15 +5967,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         {activeShellTab === "logs" ? (
           <LogsScreen
             busyAction={busyAction}
-            device={device}
-            themes={catalog.themes}
             diagnostics={supportDiagnostics}
             events={logs}
             lastError={errorForHost(lastError, windowsHost)}
             onLoadDiagnostics={loadSupportDiagnostics}
             onRefresh={checkCompanion}
             onRepairUsageEngine={retryUsageService}
-            onRunSetupAgain={() => setSetupAgainRequested(true)}
             repairingUsageEngine={busyAction === "usage-service-repair"}
             supportReportBusy={supportReportBusy}
             windowsHost={windowsHost}
@@ -5999,6 +6041,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         />
       ) : null}
       {systemBusyOpen ? <SystemBusyDialog onClose={dismissSystemBusy} /> : null}
+      {vibetvNotFoundOpen ? (
+        <VibeTVNotFoundDialog
+          onDismiss={() => setVibetvNotFoundDismissed(true)}
+          onRunSetupAgain={() => {
+            setVibetvNotFoundDismissed(true);
+            setSetupAgainRequested(true);
+          }}
+          windowsHost={windowsHost}
+        />
+      ) : null}
       {setupAgainRequested ? (
         <SetupDialog
           description="You connect VibeTV and choose your AI providers and display mode again. VibeTV keeps its WiFi details, settings and themes."
