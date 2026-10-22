@@ -11022,3 +11022,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #800 as in its own entries plus the entries merged with f323876e; nothing else changes.
 - Scope: the merge of f323876e and this approval record. Pull request branch #800 only, not merged, not released.
 - What's new: none — merge of f323876e, no customer-visible change of its own
+
+## 2026-10-22 — #800: Pace settings test follows the calm Settings screen
+
+- User approval: no visible change – UI approval not needed (test only: the calm Settings screen no longer takes the automatic-mode previews, so the Pace settings test stops passing them)
+- Approved customer-visible result: none new; Pace stays directly under Display mode, before Brightness.
+- Scope: one prop in settings-pace.test.tsx and this approval record. Pull request branch #800 only, not merged, not released.
+- What's new: none — test only
