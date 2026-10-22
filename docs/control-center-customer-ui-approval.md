@@ -10180,3 +10180,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #798 as in its own entries plus the entries merged with 2d42c92f; nothing else changes.
 - Scope: the merge of 2d42c92f and this approval record. Pull request #798 only, not merged, not released.
 - What's new: none — merge of 2d42c92f, no customer-visible change of its own
+
+## 2026-10-22 — #798: no failed-check dialog beside a finished update (Codex review)
+
+- User approval: no visible change – UI approval not needed (bug fix: a failed firmware check older than a finished update no longer opens the Could not check for updates dialog over "Update complete")
+- Approved customer-visible result: the Updates tab keeps "Update complete" without a retry dialog for a firmware check that failed before the update finished; a failed check newer than the update and a failed Mac App check open the dialog as before.
+- Scope: Updates tab only, the dialog gate in updates-screen.tsx and its tests. Pull request #798 only, not merged, not released.
+- What's new: none — removes a dialog that should not appear, no customer-visible addition

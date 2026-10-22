@@ -261,7 +261,12 @@ export function UpdatesScreen({
   // A newer failed check is a new failure and opens again; a check that
   // answered is not part of it.
   const macAppFailedKey = macAppCheckFailed ? companionRelease?.checkedAt ?? "" : null;
-  const firmwareFailedKey = firmwareCheckFailed ? firmwareUpdate?.checkedAt ?? "" : null;
+  // A failed check that did not replace the finished update is too old to ask
+  // the customer to retry beside "Update complete".
+  const firmwareFailedKey =
+    firmwareCheckFailed && !(firmwareUpdateCompleted && !failedCheckReplacesCompletion)
+      ? firmwareUpdate?.checkedAt ?? ""
+      : null;
   const undismissedFailure =
     (macAppFailedKey !== null && macAppFailedKey !== dismissedMacAppCheck) ||
     (firmwareFailedKey !== null && firmwareFailedKey !== dismissedFirmwareCheck);

@@ -660,6 +660,14 @@ describe("UpdatesScreen finished update notice", () => {
     },
   };
 
+  // Without an answered Mac App check the page is still checking and shows no dialog.
+  const macAppCurrent = {
+    checkedAt: "2026-10-13T10:05:30Z",
+    status: "available" as const,
+    updateAvailable: false,
+    message: "Mac App is up to date.",
+  };
+
   it("shows Update complete without a progress bar", () => {
     render(<UpdatesScreen {...props} updateStatus={completedUpdate} />);
 
@@ -674,6 +682,7 @@ describe("UpdatesScreen finished update notice", () => {
     render(
       <UpdatesScreen
         {...props}
+        companionRelease={macAppCurrent}
         firmwareUpdate={{
           checkedAt: "2026-10-13T11:00:00Z",
           installedFirmware: "1.0.41",
@@ -686,6 +695,7 @@ describe("UpdatesScreen finished update notice", () => {
 
     expect(screen.getByText("Update check failed")).toBeTruthy();
     expect(screen.queryByText("Update complete")).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
   });
 
   // Issue #687: a failure recorded before the update finished must not hide
@@ -694,6 +704,7 @@ describe("UpdatesScreen finished update notice", () => {
     render(
       <UpdatesScreen
         {...props}
+        companionRelease={macAppCurrent}
         firmwareUpdate={{
           checkedAt: "2026-10-13T09:00:00Z",
           installedFirmware: "1.0.40",
@@ -705,6 +716,30 @@ describe("UpdatesScreen finished update notice", () => {
     );
 
     expect(screen.getByText("Update complete")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("still opens the dialog for a Mac App check failure beside an older firmware failure", () => {
+    render(
+      <UpdatesScreen
+        {...props}
+        companionRelease={{
+          checkedAt: "2026-10-13T11:00:00Z",
+          status: "check_failed",
+          updateAvailable: false,
+          message: "Mac App check failed.",
+        }}
+        firmwareUpdate={{
+          checkedAt: "2026-10-13T09:00:00Z",
+          installedFirmware: "1.0.40",
+          updateAvailable: false,
+          status: "check_failed",
+        }}
+        updateStatus={completedUpdate}
+      />,
+    );
+
+    expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
   });
 });
 
