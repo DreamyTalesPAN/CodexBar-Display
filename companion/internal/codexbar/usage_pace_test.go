@@ -104,7 +104,7 @@ func TestUsagePaceMirrorsEveryCodexBarStage(t *testing.T) {
 		"farAhead": protocol.PaceDeficit, "ahead": protocol.PaceDeficit,
 		"slightlyBehind": protocol.PaceReserve, "behind": protocol.PaceReserve, "farBehind": protocol.PaceReserve,
 	} {
-		got := ProviderPace{Window: "secondary", Stage: stage, HasDeltaPercent: true, WillLastToReset: true}.Device()
+		got := ProviderPace{Window: "secondary", Stage: stage, HasDeltaPercent: true, HasExpectedUsedPercent: true, WillLastToReset: true}.Device()
 		if !samePace(got, pace(0, state, true)) {
 			t.Fatalf("stage %s: %+v", stage, got)
 		}
@@ -116,6 +116,23 @@ func TestUsagePaceMirrorsEveryCodexBarStage(t *testing.T) {
 func TestUsagePaceWithoutDeltaStaysUnknown(t *testing.T) {
 	if got := (ProviderPace{Window: "primary", Stage: "ahead"}).Device(); got != (protocol.UsagePace{}) {
 		t.Fatalf("a stage without deltaPercent must stay unknown, got %+v", got)
+	}
+}
+
+// The device derives its plan tick from the delta, so a delta without
+// CodexBar's expectedUsedPercent is as unavailable on the device as in the API.
+func TestUsagePaceWithoutExpectedPercentStaysUnknown(t *testing.T) {
+	for _, expected := range []string{`"expectedUsedPercent":"n/a",`, ""} {
+		raw := []byte(`[{"provider":"cursor","usage":{
+			"primary":{"usedPercent":1,"windowMinutes":43200,"resetsAt":"2099-01-01T00:00:00Z"}
+		},"pace":{"primary":{"stage":"ahead","deltaPercent":5,` + expected + `"willLastToReset":false,"summary":"5% in deficit"}}}]`)
+		parsed, err := parseAllProviders(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := parsed[0].Frame.UsageWindows[0].Pace; got != (protocol.UsagePace{}) {
+			t.Fatalf("expected=%q: pace without expectedUsedPercent must stay unknown, got %+v", expected, got)
+		}
 	}
 }
 

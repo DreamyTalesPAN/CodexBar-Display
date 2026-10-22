@@ -218,10 +218,11 @@ var paceStates = map[string]string{
 }
 
 // Device is this pace as the device frame carries it. A stage CodexBar does
-// not document, or a missing delta, leaves the pace unknown (the zero value).
+// not document, or a missing delta or expected use (the device derives its plan
+// tick from both), leaves the pace unknown (the zero value).
 func (p ProviderPace) Device() protocol.UsagePace {
 	state := paceStates[p.Stage]
-	if state == "" || !p.HasDeltaPercent {
+	if state == "" || !p.HasDeltaPercent || !p.HasExpectedUsedPercent {
 		return protocol.UsagePace{}
 	}
 	out := protocol.UsagePace{Delta: p.DeltaPercent, State: state}
