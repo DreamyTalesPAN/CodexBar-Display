@@ -11086,3 +11086,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: closing the install-failure dialog stays closed for that failed install, also after another page dialog opened and closed.
 - Scope: theme-library-screen.tsx (dismissal state moves to the screen) and its calm-states regression test. Pull request #802 only, not merged, not released.
 - What's new: none — dialog state fix, no announcement
+
+## 2026-10-22 — #802: approval marker after merging main at 2d42c92f
+
+- User approval: no visible change – UI approval not needed (merge of main (2d42c92f) into #802; the own entries of #802 keep their approval)
+- Approved customer-visible result: #802 as in its own entries plus the entries merged with 2d42c92f; nothing else changes.
+- Scope: the merge of 2d42c92f and this approval record. Pull request #802 only, not merged, not released.
+- What's new: none — merge of 2d42c92f, no customer-visible change of its own
