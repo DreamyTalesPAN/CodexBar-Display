@@ -10043,3 +10043,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge conflict resolution in `apps/control-center/src/components/diagnostics-panel.tsx` (main's busy-elsewhere guard on Run diagnostics plus this branch's passed count) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-22 — #803: approval marker after merging main at 2d42c92f
+
+- User approval: no visible change – UI approval not needed (merge of main (2d42c92f) into #803; the own entries of #803 keep their approval)
+- Approved customer-visible result: #803 as in its own entries plus the entries merged with 2d42c92f; nothing else changes.
+- Scope: the merge of 2d42c92f and this approval record. Pull request #803 only, not merged, not released.
+- What's new: none — merge of 2d42c92f, no customer-visible change of its own
