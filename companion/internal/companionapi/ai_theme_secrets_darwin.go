@@ -11,6 +11,10 @@ import (
 
 const aiThemeKeychainService = "shop.vibetv.control-center.ai-theme"
 
+// securityTool is the system's keychain tool. The package's tests clear it so
+// that no test reaches the real login keychain (#932).
+var securityTool = "/usr/bin/security"
+
 // The verified OpenAI key in the login keychain. It goes through the system's
 // security tool so that a rebuilt or re-signed app can still read the item it
 // stored; the key is passed on standard input, never as an argument.
@@ -22,7 +26,7 @@ func NewDurableAIThemeSecrets(string) SecretStore {
 }
 
 func (k keychainAIThemeSecrets) Get(provider string) (string, error) {
-	out, err := exec.Command("/usr/bin/security", "find-generic-password", "-s", k.service, "-a", provider, "-w").Output()
+	out, err := exec.Command(securityTool, "find-generic-password", "-s", k.service, "-a", provider, "-w").Output()
 	key := strings.TrimSpace(string(out))
 	if err != nil || key == "" {
 		return "", ErrSecretNotFound
@@ -35,7 +39,7 @@ func (k keychainAIThemeSecrets) Set(provider, key string) error {
 	if strings.ContainsAny(key, " \t\r\n'\"\\") {
 		return errors.New("credential cannot be stored")
 	}
-	cmd := exec.Command("/usr/bin/security", "-i")
+	cmd := exec.Command(securityTool, "-i")
 	cmd.Stdin = strings.NewReader("add-generic-password -U -s " + k.service + " -a " + provider + " -w " + key + "\n")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -46,7 +50,7 @@ func (k keychainAIThemeSecrets) Set(provider, key string) error {
 }
 
 func (k keychainAIThemeSecrets) Delete(provider string) error {
-	err := exec.Command("/usr/bin/security", "delete-generic-password", "-s", k.service, "-a", provider).Run()
+	err := exec.Command(securityTool, "delete-generic-password", "-s", k.service, "-a", provider).Run()
 	// 44 is the tool's "item could not be found"; anything else left the key in place.
 	var exit *exec.ExitError
 	if errors.As(err, &exit) && exit.ExitCode() == 44 {

@@ -39,7 +39,7 @@ func TestRunInstallUpdateCableRescueResumesAVibeTVReplugged(t *testing.T) {
 		return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
 	}
 	var flashedPort string
-	readCableFirmwareHelloFn = func(port string) (protocol.DeviceHello, error) {
+	readCableFirmwareHelloFn = func(_ context.Context, port string) (protocol.DeviceHello, error) {
 		if port != "COM5" {
 			t.Fatalf("hello read on %q, want only the moved port", port)
 		}
@@ -79,7 +79,7 @@ func TestRunInstallUpdateCableRescueWritesNothingWhenTwoNewPortsAreSilent(t *tes
 	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
 		return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
 	}
-	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+	readCableFirmwareHelloFn = func(context.Context, string) (protocol.DeviceHello, error) {
 		return protocol.DeviceHello{}, errors.New("no hello")
 	}
 	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
@@ -105,7 +105,7 @@ func TestRunInstallUpdateCableRescueSkipsANewPortThatAnswers(t *testing.T) {
 	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
 		return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
 	}
-	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+	readCableFirmwareHelloFn = func(context.Context, string) (protocol.DeviceHello, error) {
 		return protocol.DeviceHello{DeviceID: "working", Board: rescueTestBoard, Firmware: "1.0.0"}, nil
 	}
 	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {

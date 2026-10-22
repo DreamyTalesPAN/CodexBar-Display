@@ -161,4 +161,46 @@ inline bool Expired(
   return state.active && nowMs - state.lastActivityAtMs > timeoutMs;
 }
 
+// Why transfer-start refuses before any sink opens. Every code is still an
+// error reply, so older Macs read it as transfer-rejected; the distinct codes
+// tell a newer Mac which fix applies (#870): a stale pairing token needs a
+// re-pair, busy needs a retry.
+enum class StartRefusal : uint8_t {
+  kNone = 0,
+  kBusy = 1,
+  kDeviceMismatch = 2,
+  kTokenMismatch = 3,
+};
+
+inline StartRefusal CheckStartIdentity(
+    bool busy,
+    bool deviceMatches,
+    bool authConfigured,
+    bool tokenMatches) {
+  if (busy) {
+    return StartRefusal::kBusy;
+  }
+  if (!deviceMatches) {
+    return StartRefusal::kDeviceMismatch;
+  }
+  if (!authConfigured || !tokenMatches) {
+    return StartRefusal::kTokenMismatch;
+  }
+  return StartRefusal::kNone;
+}
+
+inline const char* StartRefusalCode(StartRefusal refusal) {
+  switch (refusal) {
+    case StartRefusal::kBusy:
+      return "busy";
+    case StartRefusal::kDeviceMismatch:
+      return "device-mismatch";
+    case StartRefusal::kTokenMismatch:
+      return "token-mismatch";
+    case StartRefusal::kNone:
+      break;
+  }
+  return "transfer-rejected";
+}
+
 }  // namespace codexbar_display::esp8266::cable_transfer
