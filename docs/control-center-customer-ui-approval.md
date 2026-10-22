@@ -20332,3 +20332,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: With the install log showing, the card area is shorter (it scrolls inside its box) and Install plus the full log fit in the window; before the log appears the layout is unchanged.
 - Scope: the max-height of the theme grid in setup-theme-screen.tsx while the install log has lines.
 - What's new: none — layout only
+
+## 2026-10-22 — #7210: Clippy and Claude Creature keep their animation clear of dividers and text
+
+- User approval: pending — Paul's device feedback 22.10.2026 15:25 on Clippy 1.2.4 (one provider, Session 73 %, Weekly 43 %, pace "deficit"): "sieht scheiße und all over the place aus, die animation überschneidet den oberen divider"
+- Approved customer-visible result: Clippy's animation no longer touches a divider or the title: one divider sits between Session and Weekly, each pace text stands in the bar row of its own limit, and title, animation, limit names, bars and divider are spaced by the same 9 px; Claude Creature's animation is a little smaller so a pace text such as "14% reserve" stays whole beside it.
+- Scope: the theme packs Clippy 1.2.5 (layout, background without baked dividers) and Claude Creature 1.4.4 (animation box 58×58), plus the layout guard test animation-layout.test.ts over every catalog theme.
+- What's new: none — Clippy and Claude Creature layout only
