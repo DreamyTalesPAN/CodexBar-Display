@@ -65,6 +65,24 @@
       ]
     },
     {
+      "id": "company-demo",
+      "title": "Company Demo",
+      "usage": "live",
+      "version": "0.1.0",
+      "themeRev": 2,
+      "themeSpecPath": "/themes/u/cd-2-5cc3c801.json",
+      "requiresFirmware": "1.0.42",
+      "requiredCapabilities": [
+        "usage-slots-v1",
+        "text-valign-v1"
+      ],
+      "listed": false,
+      "downloadAsset": "vibetv-theme-company-demo-v0.1.0.zip",
+      "sha256": "aca94ff9dab1cd3e078d8cfe1cbe4b74c4d5f0e116119d43a050d8ef442bfa36",
+      "bytes": 819,
+      "earlierThemeSpecPaths": []
+    },
+    {
       "id": "gauge",
       "title": "Gauge",
       "usage": "live",
