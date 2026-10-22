@@ -70,6 +70,7 @@ import { sentOwnThemePaths } from "@/lib/sent-own-theme-paths";
 import { cn } from "@/lib/utils";
 import { copyForHost, statusForHost } from "@/lib/customer-platform";
 import { isRemoteThemePackUrl } from "@/lib/theme-pack-url";
+import { THEME_GRID_CLASS, THEME_GRID_STYLE } from "@/lib/theme-grid";
 import { catalogThemeRowId } from "@/lib/whats-new";
 import {
   createBlankThemeSpec,
@@ -957,11 +958,7 @@ export function ThemeLibraryScreen({
                 Nothing matches your search or filters.
               </p>
             ) : null}
-            {/* Cards are 200 px wide with 32 px between them, three in a row at most, as a group in the middle of the page (7197 review, point 8). gap-8!: ItemGroup's own gap for small items (gap-2.5) would win. */}
-            <ItemGroup
-              className="mx-auto grid max-w-[664px] justify-center gap-8!"
-              style={{ gridTemplateColumns: "repeat(auto-fill, 200px)" }}
-            >
+            <ItemGroup className={THEME_GRID_CLASS} style={THEME_GRID_STYLE}>
               {listedItems.map((theme) => (
                 <ThemeListItem
                   busyAction={busyAction}

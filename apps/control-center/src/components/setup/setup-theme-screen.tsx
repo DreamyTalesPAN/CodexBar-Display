@@ -4,6 +4,7 @@ import type { SupportDiagnostics } from "../control-center-types";
 import { Button } from "@/components/ui/button";
 import { ItemGroup } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
+import { THEME_GRID_CLASS, THEME_GRID_STYLE } from "@/lib/theme-grid";
 import { cn } from "@/lib/utils";
 import { ThemeRenderPreview } from "../theme-render-preview";
 import { SetupLog, type SetupLogLine } from "./setup-log";
@@ -61,6 +62,7 @@ export function SetupThemeScreen({
     <SetupWizardScreen
       label="Choose your theme"
       aiFixPrompt={aiFixPrompt}
+      contentWidth="wide"
       onBack={onBack}
       onCreateSupportReport={onCreateSupportReport}
       windowsHost={windowsHost}
@@ -70,11 +72,16 @@ export function SetupThemeScreen({
         You can always switch themes later.
       </SetupWizardSubtitle>
 
+      {/* The grid scrolls inside its box, so Continue stays in view on a 1280x800 window (460 px is the chrome above and below it). */}
       <ItemGroup
         aria-label="Themes"
-        className="mt-6 gap-2"
+        className={cn(
+          THEME_GRID_CLASS,
+          "mt-6 max-h-[calc(100dvh-460px)] overflow-y-auto",
+        )}
         onKeyDown={moveAmongRadios}
         role="radiogroup"
+        style={THEME_GRID_STYLE}
       >
         {themes.map((theme, index) => (
           <SetupThemeCard
@@ -93,8 +100,9 @@ export function SetupThemeScreen({
         ))}
       </ItemGroup>
 
+      {/* The wide column would stretch the button across the window; 460 px is the size every calm step ends in. */}
       <Button
-        className={cn(CALM_BUTTON_CLASS, "mt-6")}
+        className={cn(CALM_BUTTON_CLASS, "mt-6 max-w-[460px]")}
         disabled={installing || !selected || Boolean(selected.blockedReason)}
         onClick={onInstall}
         type="button"
@@ -141,7 +149,8 @@ function SetupThemeCard({
       aria-checked={selected}
       className={cn(
         calmCardClass(selected),
-        "flex items-center gap-4 py-2.5 pr-5 pl-2.5",
+        // The Appearance card's frame: 7 px of padding around a square picture.
+        "flex flex-col gap-2 p-[7px]",
         // While one installs, the cards not picked fade back.
         disabled && !selected && "opacity-50",
       )}
@@ -152,12 +161,15 @@ function SetupThemeCard({
       type="button"
     >
       <ThemeRenderPreview
-        className="size-20 shrink-0 rounded-[6px]"
+        // The same square picture as the Appearance cards.
+        className="aspect-square w-full rounded-[6px]"
         themeId={theme.id}
         themeSpecPath={theme.themeSpecPath}
       />
-      <span className="min-w-0 flex-1 font-semibold">{theme.name}</span>
-      <SelectionDot selected={selected} />
+      <span className="flex items-center gap-2 px-0.5">
+        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{theme.name}</span>
+        <SelectionDot selected={selected} />
+      </span>
     </button>
   );
 }

@@ -75,6 +75,12 @@ describe("setup theme choice", () => {
     expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ id: "mini-classic" }));
   });
 
+  it("selects the theme whose card is clicked, with the same handler", () => {
+    const onSelect = renderThemes("clippy");
+    fireEvent.click(radios()[2]);
+    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ id: "mini-classic" }));
+  });
+
   it("moves back with ArrowUp and wraps around at both ends", () => {
     const onSelect = renderThemes("claude-creature");
     pressKey(radios()[0], "ArrowUp");
