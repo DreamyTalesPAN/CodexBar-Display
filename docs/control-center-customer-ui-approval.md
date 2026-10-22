@@ -9754,6 +9754,34 @@ issue scope, or release permission never implies UI permission.
 - Scope: apps/control-center/src/components/control-center-app.tsx, createSupportReport only replaces supportReport when the collection returns a report or an error; its test in control-center-app.support-report-card.test.tsx. Pull request branch only, not merged, not released.
 - What's new: none — bug fix, no customer-visible change of its own
 
+## 2026-10-22 — #883: Windows one-time hint that VibeTV keeps running in the tray
+
+- User approval: approved by Paul: "ja passt"
+- Approved customer-visible result: Windows only. The first close of the Control Center window shows one native message box (information icon, OK button) titled "VibeTV Control Center" with the text "VibeTV keeps running in the tray, so your display stays up to date." followed by a blank line and "To open it again, click the VibeTV icon next to the clock. If you don't see it, click the ^ arrow first." It never shows again (marker tray-hint-shown.txt in the app's local data folder).
+- Scope: windows/src-tauri/src/main.rs, show_tray_hint_once called from hide_after_flush. Pull request #919 only, not merged, not released.
+- What's new: none — one-time hint in the Windows shell, not a Control Center notice
+
+## 2026-10-22 — #919: approval marker after merging main at d7250de6
+
+- User approval: no visible change – UI approval not needed (merge of main (d7250de6) into #919; the #883 entry above keeps Paul's approval)
+- Approved customer-visible result: #919 as in its #883 entry plus the entries merged with d7250de6; nothing else changes.
+- Scope: the merge of d7250de6 and this approval record. Pull request #919 only, not merged, not released.
+- What's new: none — merge of d7250de6, no customer-visible change of its own
+
+## 2026-10-22 — #919: approval marker after merging main at 8d956342
+
+- User approval: no visible change – UI approval not needed (merge of main (8d956342) into #919; the #883 entry keeps Paul's approval)
+- Approved customer-visible result: #919 as in its #883 entry plus the entries merged with 8d956342; nothing else changes.
+- Scope: the merge of 8d956342 and this approval record. Pull request #919 only, not merged, not released.
+- What's new: none — merge of 8d956342, no customer-visible change of its own
+
+## 2026-10-22 — #919: approval marker after merging main at 3babd786
+
+- User approval: no visible change – UI approval not needed (merge of main (3babd786) into #919; the #883 entry keeps Paul's approval)
+- Approved customer-visible result: #919 as in its #883 entry plus the entries merged with 3babd786; nothing else changes.
+- Scope: the merge of 3babd786 and this approval record. Pull request #919 only, not merged, not released.
+- What's new: none — merge of 3babd786, no customer-visible change of its own
+
 ## 2026-10-19 — Calm Updates screen as drawn in the approved master, plus the states derived from the calm rules (#752)
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm Updates screen as drawn in the approved master, plus the states derived from the calm
 - Approved customer-visible result: none yet; waits for Paul's yes. Before: two cards "Mac App" and "VibeTV" with Installed / Available version chips, "Last checked <date, time with seconds>" per card, an "Alert" box for the Mac-App-first rule and the update progress, a heading "Up to date" with a "What's new" link, and one full-width lime button ("Check for updates" / "Update"). After: one headline with a dot ("Everything is up to date", "Update available", "Checking for updates", "Update check failed", "Updating VibeTV", "VibeTV is restarting"); one framed card with a row "Mac App" ("App" on Windows) and a row "VibeTV firmware", each with an icon, one version number (the installed one) and "Up to date"; "Checked today, 08:44" (or "yesterday" / the date) and an outline "Check for updates" button beside the page title; a grey "What's new in <version>" note card with the newest entry's title and "Read notes" (opens the existing What's new dialog). Update available: the row that has the update shows a lime "Update" button (Mac App: Sparkle updater or verified download; firmware: starts the update) and says "Version <x> is available"; the firmware row keeps "Update Mac App first" / "Checking Mac App" inside its row while the app comes first. Installing: a thin progress bar and one "> step" line (shared process steps) inside the firmware row. Update complete / attention: title and sentence inside the firmware row. Failed check: a dialog "Could not check for updates" with "Check the internet connection, then try again.", a lime "Try again" and "Close" (no X); the failed update dialog is unchanged.
