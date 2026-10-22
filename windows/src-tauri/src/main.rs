@@ -633,22 +633,20 @@ fn placement_for(app: &AppHandle) -> Placement {
     let Some((_, remembered)) = *app.state::<Shell>().window_geometry.lock().unwrap() else {
         return Placement::Default;
     };
-    let screens: Vec<Screen> = app
-        .available_monitors()
-        .unwrap_or_default()
-        .iter()
-        .map(|monitor| {
-            let area = monitor.work_area();
-            let rect = WindowRect {
-                x: area.position.x,
-                y: area.position.y,
-                width: area.size.width,
-                height: area.size.height,
-            };
-            (rect, min_size_px(monitor.scale_factor()))
-        })
-        .collect();
+    let screens: Vec<Screen> = app.available_monitors().unwrap_or_default().iter().map(screen_of).collect();
     choose_placement(Some(remembered), &screens)
+}
+
+// A monitor's work area and the window's minimum size on it.
+fn screen_of(monitor: &tauri::Monitor) -> Screen {
+    let area = monitor.work_area();
+    let rect = WindowRect {
+        x: area.position.x,
+        y: area.position.y,
+        width: area.size.width,
+        height: area.size.height,
+    };
+    (rect, min_size_px(monitor.scale_factor()))
 }
 
 fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tauri::Result<()> {
@@ -701,6 +699,16 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
             };
             let (width, height) = inner_within(rect, frame);
             let _ = window.set_size(PhysicalSize::new(width, height));
+            // A raised scale since the last session can grow the window to its
+            // minimum past the remembered frame; pull the grown frame back inside.
+            if let (Ok(at), Ok(outer), Ok(Some(monitor))) =
+                (window.outer_position(), window.outer_size(), window.current_monitor())
+            {
+                let (area, min) = screen_of(&monitor);
+                let grown = WindowRect { x: at.x, y: at.y, width: outer.width, height: outer.height };
+                let fitted = fit_into(grown, area, min);
+                let _ = window.set_position(PhysicalPosition::new(fitted.x, fitted.y));
+            }
         }
         if maximized {
             let _ = window.maximize();
@@ -1923,6 +1931,15 @@ mod tests {
             choose_placement(Some((Some(rect(-1200, 20, 1000, 600)), false)), &[(left, MIN)]),
             Placement::Remembered { rect: Some(rect(-1280, 0, 960, 640)), maximized: false }
         );
+    }
+
+    #[test]
+    fn a_window_grown_to_the_minimum_at_the_bottom_right_edge_ends_inside_the_work_area() {
+        let rect = |x, y, width, height| WindowRect { x, y, width, height };
+        // Remembered small at a lower scale, in the bottom-right corner; the minimum is now 960x640.
+        let area = rect(0, 0, 1920, 1032);
+        assert_eq!(fit_into(rect(1900, 1000, 500, 300), area, MIN), rect(960, 392, 960, 640));
+        assert_eq!(fit_into(rect(1900, 1000, 960, 640), area, MIN), rect(960, 392, 960, 640));
     }
 
     #[test]
