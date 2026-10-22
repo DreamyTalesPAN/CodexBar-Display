@@ -169,7 +169,7 @@ import {
   startUsageSurfacePolling,
   USAGE_REFRESH_PENDING_POLL_INTERVAL_MS,
 } from "./usage-surface-polling";
-import { companionUnavailableError, connectionErrorForCustomer, isCompanionConnectionError, isCompanionMissingError, isConnectionRecoveryError, isLocalCompanionFetchFailureReason, isLocalNetworkAccessError, localControlCenterUnavailableError, localNetworkAccessError, localNetworkAccessNeedsUserAction, normalizeCaughtError, normalizeError, normalizeLocalControlCenterError, normalizeUsageError, pairingRejectionForDevice, readLocalNetworkAccessState, themeInstallErrorText } from "./control-center-errors";
+import { companionUnavailableError, connectionErrorForCustomer, isCompanionConnectionError, isCompanionMissingError, isConnectionRecoveryError, isLocalCompanionFetchFailureReason, isLocalNetworkAccessError, localControlCenterUnavailableError, localNetworkAccessError, localNetworkAccessNeedsUserAction, normalizeCaughtError, normalizeError, normalizeLocalControlCenterError, normalizeUsageError, pairingRejectionForDevice, readLocalNetworkAccessState, sameActiveError, themeInstallErrorText } from "./control-center-errors";
 import { ThemeSetupDeviceIdentity, canReconnectLostDevice, deviceMatchesExpectedConnection, deviceMatchesThemeSetupIdentity, markDeviceDisconnected, mergeDeviceInfo, normalizeDeviceTarget, reconcileThemeSetupIdentity } from "./device-merge";
 import { forgetDeviceTarget, readInitialDeviceTarget, readLocalSetupPreviewStep, rememberDeviceTarget, savedThemePaths } from "./device-target-storage";
 import { FirmwareUpdateJob, FirmwareUpdateStatus, ThemeInstallJob, ThemeInstallResult, ThemeInstallStatus, clampProgress, currentFirmwareUpdate, customerInstallLogs, customerUpdateLogs, firmwareUpdateStatusFromJob, firmwareWrittenPercent, pollFirmwareUpdateJob, statusThemeInstallIsNews, takeStatusPath, themeInstallStatusFromJob } from "./update-jobs";
@@ -213,6 +213,12 @@ const AUTOMATIC_USAGE_REPAIR_REARM_MS = 10 * 60_000;
 const NATIVE_RUNTIME_REPAIR_RESULT_EVENT = "vibetv:runtime-repair-result";
 const NATIVE_CODEXBAR_REPAIR_RESULT_EVENT = "vibetv:codexbar-repair-result";
 const NATIVE_PROVIDER_DISPLAY_CHANGED_EVENT = "vibetv:provider-display-changed";
+
+// A null payload with a null error means the setup changed while collecting.
+type SupportCollection = {
+  payload: SupportDiagnostics | null;
+  error: ApiError | null;
+};
 
 type LocalNetworkRequestInit = RequestInit & {
   targetAddressSpace?: "loopback";
@@ -461,7 +467,21 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       busyAction === "firmware-update" || busyAction === "install";
   }, [busyAction]);
   const [supportReportBusy, setSupportReportBusy] = useState(false);
+  // Run diagnostics has its own busy flag, so it never shows the report card busy.
+  const [supportDiagnosticsRunning, setSupportDiagnosticsRunning] =
+    useState(false);
+  // Both actions send /v1/diagnostics; only one collection runs at a time.
+  const supportCollectingRef = useRef<Promise<SupportCollection> | null>(null);
   const [lastError, setLastError] = useState<ApiError | null>(null);
+  // One error object is one occurrence. Once a surface has closed it, no
+  // surface shows it again (Support and Settings alike).
+  const [dismissedError, setDismissedError] = useState<ApiError | null>(null);
+  const shownError = lastError && lastError !== dismissedError ? lastError : null;
+  const dismissError = () => setDismissedError(lastError);
+  const supportError = useMemo(
+    () => errorForHost(shownError, windowsHost),
+    [shownError, windowsHost],
+  );
   const [lastInstall, setLastInstall] = useState<InstallResponse["result"]>();
   const [themeInstallStatus, setThemeInstallStatus] =
     useState<ThemeInstallStatus | null>(null);
@@ -618,7 +638,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Its start time keys the incident; null while there is none.
   const [systemBusySince, setSystemBusySince] = useState<string | null>(null);
   const [systemBusyDismissed, dismissSystemBusy] = useSystemBusyDismissal(systemBusySince);
-  // "Run setup again" asks first, from Settings and from the not-found dialog alike.
+  // Page actions ask first; the connect dialog already confirms setup.
   const [setupAgainRequested, setSetupAgainRequested] = useState(false);
   const [vibetvNotFoundDismissed, setVibetvNotFoundDismissed] = useState(false);
   // The "What's new" entries this customer has seen, null while nothing is
@@ -629,6 +649,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // End of the last firmware update whose stream was not seen in time (#829).
   const streamAttentionSinceRef = useRef<number>(0);
   const [supportDiagnostics, setSupportDiagnostics] =
+    useState<SupportDiagnostics | null>(null);
+  // The report the Support report card created. Only its Create report actions
+  // set it; Run diagnostics refreshes supportDiagnostics and leaves this alone.
+  const [supportReport, setSupportReport] =
     useState<SupportDiagnostics | null>(null);
   // The brightness the customer chose and VibeTV has not confirmed yet.
   const brightnessDirtyRef = useRef<number | null>(null);
@@ -784,16 +808,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   }, []);
 
   const addEvent = useCallback(
-    (event: Omit<ControlCenterEvent, "id" | "at"> & { at?: string }) => {
+    (event: Omit<ControlCenterEvent, "id" | "at">) => {
       eventIdRef.current += 1;
       const id = String(eventIdRef.current);
-      setEvents((current) =>
-        recentEventsWith(current, {
-          id,
-          at: event.at || formatTime(),
-          ...event,
-        }),
-      );
+      // The time is the moment the entry is written. A time taken before an
+      // await would list an older time above newer entries (issue #548).
+      const at = formatTime();
+      setEvents((current) => recentEventsWith(current, { id, at, ...event }));
     },
     [],
   );
@@ -1419,7 +1440,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         if (setupGeneration !== setupGenerationRef.current) {
           return;
         }
-        const checkedAt = formatTime();
         const wasMissing = companionStatus === "missing";
         setCompanionStatus("online");
         setCompanionInfo(payload.companion || null);
@@ -1428,7 +1448,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setProviderSelectionSetup(payload.setup || null);
         const pairingRejection = pairingRejectionForDevice(payload.device);
         if (pairingRejection) {
-          setLastError(pairingRejection);
+          setLastError((current) => sameActiveError(current, pairingRejection));
         } else if (!quiet || deviceIsReady(payload.device)) {
           setLastError((current) => isConnectionRecoveryError(current) ? null : current);
         }
@@ -1517,7 +1537,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             detail: payload.device?.target
               ? "Mac App is ready."
               : "VibeTV still needs to be connected.",
-            at: checkedAt,
             tone: "ready",
           });
         }
@@ -1598,7 +1617,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       );
       const pairingRejection = pairingRejectionForDevice(payload.device);
       if (pairingRejection) {
-        setLastError(pairingRejection);
+        setLastError((current) => sameActiveError(current, pairingRejection));
       } else if (deviceIsReady(payload.device)) {
         setLastError((current) => isConnectionRecoveryError(current) ? null : current);
       }
@@ -2554,7 +2573,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       addEvent({
         label: `${noun} install started`,
         detail: `${theme.title} is being installed on VibeTV.`,
-        at: startedAt,
         tone: "unknown",
       });
       try {
@@ -3066,7 +3084,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       addEvent({
         label: "VibeTV update started",
         detail: "VibeTV is being updated.",
-        at: startedAt,
         tone: "unknown",
       });
       if (!(await installTheme(activeThemeUpgrade.theme))) {
@@ -3076,7 +3093,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           phase: "attention",
           outcome: "firmware_current_theme_attention",
           startedAt,
-          finishedAt: formatTime(),
+          finishedAt: new Date().toISOString(),
           message,
           progress: 100,
           logs: customerUpdateLogs([...initialLogs, message]),
@@ -3091,7 +3108,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setFirmwareUpdateStatus({
         phase: "complete",
         startedAt,
-        finishedAt: formatTime(),
+        finishedAt: new Date().toISOString(),
         message: "Update complete.",
         progress: 100,
         logs: customerUpdateLogs([...initialLogs, "Update complete."]),
@@ -3117,7 +3134,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     addEvent({
       label: "VibeTV update started",
       detail: "VibeTV is being updated.",
-      at: startedAt,
       tone: "unknown",
     });
     try {
@@ -3160,7 +3176,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       }
       if (finishedJob.phase === "attention") {
         const logs = customerUpdateLogs(finishedJob.logs, initialLogs);
-        const finishedAt = formatTime();
+        const finishedAt = new Date().toISOString();
         setFirmwareUpdateStatus({
           phase: "attention",
           stage: finishedJob.stage,
@@ -3186,7 +3202,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           detail:
             finishedJob.message ||
             "The firmware is current, but the connection or picture still needs repair.",
-          at: finishedAt,
           tone: "attention",
         });
         streamAttentionSinceRef.current =
@@ -3206,7 +3221,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         return false;
       }
       const logs = customerUpdateLogs(finishedJob.logs, initialLogs);
-      const finishedAt = formatTime();
+      const finishedAt = new Date().toISOString();
       const installedFirmware = finishedJob.result?.firmware?.trim() || "";
       if (installedFirmware) {
         setDevice((current) =>
@@ -3257,7 +3272,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         addEvent({
           label: "VibeTV update needs attention",
           detail: message,
-          at: finishedAt,
           tone: "attention",
         });
         return true;
@@ -3282,7 +3296,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           addEvent({
             label: "VibeTV update needs attention",
             detail: message,
-            at: finishedAt,
             tone: "attention",
           });
           return true;
@@ -3302,7 +3315,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             phase: "attention",
             outcome: "firmware_current_theme_attention",
             startedAt,
-            finishedAt: formatTime(),
+            finishedAt: new Date().toISOString(),
             message,
             progress: 100,
             logs: customerUpdateLogs([...logs, message]),
@@ -3319,7 +3332,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setFirmwareUpdateStatus({
         phase: "complete",
         startedAt,
-        finishedAt: formatTime(),
+        finishedAt: new Date().toISOString(),
         message: "Update complete.",
         progress: 100,
         logs: customerUpdateLogs([...completedLogs, "Update complete."]),
@@ -3345,7 +3358,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       setFirmwareUpdateStatus({
         phase: "error",
         startedAt,
-        finishedAt: formatTime(),
+        finishedAt: new Date().toISOString(),
         message: normalized.nextAction,
         progress: 100,
         logs: [...initialLogs, normalized.message, normalized.nextAction],
@@ -3403,7 +3416,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         phase: "attention",
         outcome: "firmware_current_theme_attention",
         startedAt,
-        finishedAt: formatTime(),
+        finishedAt: new Date().toISOString(),
         message,
         progress: 100,
         logs: customerUpdateLogs([...logs, message]),
@@ -3414,7 +3427,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     setFirmwareUpdateStatus({
       phase: "complete",
       startedAt,
-      finishedAt: formatTime(),
+      finishedAt: new Date().toISOString(),
       message: "Update complete.",
       progress: 100,
       logs: customerUpdateLogs([...logs, "Update complete."]),
@@ -4245,12 +4258,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     usage,
   ]);
 
-  // Resolves with the collected report, or null when nothing could be read.
-  // The Help menu saves what it gets and says which of the two happened.
+  // One collection, shared by every caller that asks while it runs. Callers
+  // record their own outcome from the result; nothing here writes Recent activity.
   const loadSupportDiagnostics =
-    useCallback(async (): Promise<SupportDiagnostics | null> => {
+    useCallback(async (): Promise<SupportCollection> => {
       const setupGeneration = setupGenerationRef.current;
-      setSupportReportBusy(true);
       try {
         const payload = await collectSupportReport(
           () => runCompanion<SupportDiagnostics>("/v1/diagnostics"),
@@ -4283,11 +4295,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           windowsHost,
         );
         if (setupGeneration !== setupGenerationRef.current) {
-          return null;
+          return { payload: null, error: null };
         }
         setSupportDiagnostics(payload);
-        const partial = Boolean(payload.collectionErrors?.length);
-        if (!partial) {
+        if (!payload.collectionErrors?.length) {
           setCompanionStatus("online");
           setCompanionInfo(payload.companion || null);
           setProviderSetup(payload.providerSetup || null);
@@ -4295,22 +4306,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             Boolean(payload.companion?.features?.themeInstallEnabled),
           );
         }
-        addEvent({
-          label: partial
-            ? "Support report ready with gaps"
-            : "Support report ready",
-          detail: partial
-            ? "Browser and setup details were saved even though the Mac App did not answer."
-            : `The report has ${payload.checks?.length || 0} checks.`,
-          tone:
-            partial || payload.checks?.some((check) => check.status === "fail")
-              ? "attention"
-              : "ready",
-        });
-        return payload;
+        return { payload, error: null };
       } catch (error) {
         if (setupGeneration !== setupGenerationRef.current) {
-          return null;
+          return { payload: null, error: null };
         }
         const normalized = normalizeCaughtError(
           error,
@@ -4323,17 +4322,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         }
         setSupportDiagnostics(null);
         setLastError(normalized);
-        addEvent({
-          label: "Support report failed",
-          detail: normalized.nextAction,
-          tone: "attention",
-        });
-        return null;
-      } finally {
-        setSupportReportBusy(false);
+        return { payload: null, error: normalized };
       }
     }, [
-      addEvent,
       activeTab,
       companionInfo,
       companionStatus,
@@ -4356,6 +4347,61 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       usage,
       windowsHost,
     ]);
+
+  // Joins the collection that is running, or starts one.
+  const collectSupport = useCallback(() => {
+    supportCollectingRef.current ??= loadSupportDiagnostics().finally(() => {
+      supportCollectingRef.current = null;
+    });
+    return supportCollectingRef.current;
+  }, [loadSupportDiagnostics]);
+
+  // Create report: the card, Updates and the setup screens. Shows the report on the card.
+  const createSupportReport = useCallback(async () => {
+    setSupportReportBusy(true);
+    try {
+      const { payload, error } = await collectSupport();
+      // Run setup again during the collection returns neither a report nor
+      // an error. The reset keeps the card's report, so this does too (#917).
+      if (payload || error) {
+        setSupportReport(payload);
+      }
+      if (payload) {
+        const partial = Boolean(payload.collectionErrors?.length);
+        addEvent({
+          label: partial
+            ? "Support report ready with gaps"
+            : "Support report ready",
+          detail: partial
+            ? "Browser and setup details were saved even though the Mac App did not answer."
+            : `The report has ${payload.checks?.length || 0} checks.`,
+          tone:
+            partial || payload.checks?.some((check) => check.status === "fail")
+              ? "attention"
+              : "ready",
+        });
+      } else if (error) {
+        addEvent({
+          label: "Support report failed",
+          detail: error.nextAction,
+          tone: "attention",
+        });
+      }
+      return payload;
+    } finally {
+      setSupportReportBusy(false);
+    }
+  }, [addEvent, collectSupport]);
+
+  // Run diagnostics: the same snapshot, but the Support report card stays as it is.
+  const runSupportDiagnostics = useCallback(async () => {
+    setSupportDiagnosticsRunning(true);
+    try {
+      await collectSupport();
+    } finally {
+      setSupportDiagnosticsRunning(false);
+    }
+  }, [collectSupport]);
 
   const retryProviderSetup = useCallback(async () => {
     const setupGeneration = setupGenerationRef.current;
@@ -5332,6 +5378,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       id !== "provider-shortcut" ||
       nativeProviderShortcut(navigator.userAgent) !== "unavailable",
   );
+  // The centred dialogs of the arbitration below win over the Support error:
+  // it waits for them, so two centred dialogs never stack.
+  const centredDialogOpen =
+    (needsRuntimeRecovery && !runtimeRecoveryHidden) ||
+    lostDevicePickerOpen ||
+    (usageFailure && !usageFailureHidden) ||
+    systemBusyOpen ||
+    setupAgainRequested ||
+    whatsNewEntries.length > 0;
   // Opened from Updates and taken away by something else, or by the window
   // moving to another page, the notice does not come back by itself: what
   // follows may be a dialog this condition does not know, as the one Updates
@@ -5603,7 +5658,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         <SetupWelcomeScreen
           aiFixPrompt={setupAiFixPrompt}
           lines={setupWelcomeLines}
-          onCreateSupportReport={loadSupportDiagnostics}
+          onCreateSupportReport={createSupportReport}
           windowsHost={windowsHost}
         />
       );
@@ -5612,7 +5667,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     if (runtimeSurface === "hosted-setup") {
       return (
         <MacAppDownloadScreen
-          onCreateSupportReport={loadSupportDiagnostics}
+          onCreateSupportReport={createSupportReport}
           platform={customerPlatform}
           release={companionRelease}
           theme={initialTheme}
@@ -5628,6 +5683,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         >
           {(displayFrame) => (
             <SetupWizard
+              macAppUpdate={
+                macAppUpdateAvailable && isNativeControlCenterApp() && !windowsHost
+                  ? {
+                      version: macAppUpdateOfferedVersion,
+                      onUpdate: () => {
+                        window.location.href = "vibetv://check-for-updates";
+                      },
+                    }
+                  : undefined
+              }
               initialWiFiSetup={settingsWiFiSetup}
               onConnectionComplete={finishConnectionChange}
               aiFixPrompt={setupAiFixPrompt}
@@ -5684,7 +5749,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               }
               onFindManualTarget={findManualTarget}
               onConfigureWiFi={configureSetupWiFi}
-              onCreateSupportReport={loadSupportDiagnostics}
+              onCreateSupportReport={createSupportReport}
               onFinished={finishSetup}
               alreadySetUp={
                 !setupFinishedThisSession && setupCompletedFor(device?.deviceId)
@@ -5826,10 +5891,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         {activeShellTab === "settings" ? (
           <SettingsScreen
             actionError={
-              lostDevicePickerOpen ? null : errorForHost(lastError, windowsHost)
+              lostDevicePickerOpen ? null : errorForHost(shownError, windowsHost)
             }
             onDismissError={() => {
-              setLastError(null);
+              dismissError();
               setProviderDisplayError(null);
               setProviderPreferencesError(null);
             }}
@@ -5861,6 +5926,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               }).catch(() => { /* The connection action already displays its error. */ });
             }}
             onResetSetup={() => setSetupAgainRequested(true)}
+            onStartSetup={resetSetup}
             onEraseDevice={eraseDevice}
             windowsHost={windowsHost}
             onDisplayPreferenceChange={updateDisplayPreference}
@@ -5933,7 +5999,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             onCheckUpdates={checkUpdates}
             onCreateReport={() => {
               setActiveTab("logs");
-              void loadSupportDiagnostics();
+              void createSupportReport();
             }}
             onInstallUpdate={installFirmwareUpdate}
             onRetryThemeUpdate={retryActiveThemeUpgrade}
@@ -5951,11 +6017,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           <LogsScreen
             busyAction={busyAction}
             diagnostics={supportDiagnostics}
+            diagnosticsRunning={supportDiagnosticsRunning}
+            supportReport={supportReport}
             events={logs}
-            lastError={errorForHost(lastError, windowsHost)}
-            onLoadDiagnostics={loadSupportDiagnostics}
+            lastError={centredDialogOpen ? null : supportError}
+            onCreateSupportReport={createSupportReport}
+            onDismissError={dismissError}
+            onLoadDiagnostics={runSupportDiagnostics}
             onRefresh={checkCompanion}
             onRepairUsageEngine={retryUsageService}
+            onStartSetup={resetSetup}
             repairingUsageEngine={busyAction === "usage-service-repair"}
             supportReportBusy={supportReportBusy}
             windowsHost={windowsHost}
@@ -6016,7 +6087,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       !setupOwnsScreen ? (
         <SetupUsageDialog
           cause={usageFailure}
-          onCreateSupportReport={() => void loadSupportDiagnostics()}
+          onCreateSupportReport={() => void createSupportReport()}
           onOpenChange={(open) => setUsageFailureHidden(!open)}
           onRepair={retryUsageService}
           open
