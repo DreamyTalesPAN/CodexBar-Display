@@ -9297,7 +9297,6 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of ece7b388 and this approval record. Pull request branch #803 only, not merged, not released.
 - What's new: none — merge of ece7b388, no customer-visible change of its own
 
-
 ## 2026-10-20 — #803: approval marker after merging claude/group-calm-redesign at fd754339
 
 - User approval: no visible change – UI approval not needed (merge commit into #803; no visible change of its own; entry: #803: approval marker after merging claude/group-calm-redesign at fd754339)
@@ -9451,3 +9450,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none from this documentation correction. The entry “2026-10-21 — #803: restrict Fix to repairable engine failures” still awaits the user's explicit approval; this addendum does not approve its visible result.
 - Scope: docs/control-center-customer-ui-approval.md; the earlier diagnostic repair eligibility entry covers apps/control-center/src/components/diagnostics-panel.tsx and apps/control-center/src/components/diagnostics-panel.test.tsx changed in b318d3510693c1e572bb9b1fdf9877795e204f73. These full paths supplement its existing scope; the original entry is preserved.
 - What's new: none — this addendum only names the existing change's exact paths; no product change or announcement is added.
+
+## 2026-10-22 — #803: main merge after #784
+
+- User approval: no visible change – UI approval not needed (merge of main after #784 into #803)
+- Approved customer-visible result: Preserve main's shell and Support layout with the PR's diagnostics counter and repair.
+- Scope: main merge conflict resolution and this approval record.
+- What's new: none — integration only
