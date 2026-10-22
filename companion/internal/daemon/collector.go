@@ -383,6 +383,9 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	defer cancel()
 
 	allProviders, sourceMode, err := c.fetchProvidersForCollect(ctx, now)
+	// Decided before the inventory read: the replacement may answer meanwhile,
+	// which ends the grace but does not make this collection's miss an outage.
+	replacing := err != nil && c.serveBeingReplaced(c.now().UTC(), err)
 	var inventory []codexbar.ProviderSetting
 	inventoryAuthoritative := false
 	if c.fetchInventory != nil {
@@ -397,7 +400,7 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		return
 	}
 	collectedAt := c.now().UTC()
-	if err != nil && c.serveBeingReplaced(collectedAt, err) {
+	if replacing {
 		// The Companion stopped the engine to measure again (#918); the new
 		// one has not answered yet. Keep the readings as they were.
 		c.logf("collector fetch-all transport=%s source=%s fresh=false err=%v serve-replacing=true\n", usageSourceOrDefault(c.transportName, "usb"), sourceMode, err)

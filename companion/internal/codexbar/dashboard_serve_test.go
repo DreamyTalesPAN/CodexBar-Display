@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -243,6 +242,15 @@ func TestDashboardServeSupervisorRestartReplacesTheRunningChild(t *testing.T) {
 	if !second.ReplaceStartedAt.IsZero() || !third.ReplaceStartedAt.IsZero() {
 		t.Fatalf("an answering replacement must end the replace grace: %v %v", second.ReplaceStartedAt, third.ReplaceStartedAt)
 	}
+	// Replace marks the gap before the new child answers.
+	stopped, cancelStopped := context.WithCancel(context.Background())
+	cancelStopped()
+	if err := supervisor.Replace(stopped); !errors.Is(err, context.Canceled) {
+		t.Fatalf("replace with a canceled context: %v", err)
+	}
+	if supervisor.Info().ReplaceStartedAt.IsZero() {
+		t.Fatal("Replace must mark the gap until the new child answers")
+	}
 }
 
 // The collector reads ReplaceStartedAt to tell the gap until the new child
@@ -259,6 +267,14 @@ func TestDashboardServeSupervisorEndsTheReplaceGraceOnTheFirstAnswer(t *testing.
 	if supervisor.Info().ReplaceStartedAt.IsZero() {
 		t.Fatal("a failed health check is no answer")
 	}
+	// A check of the child being replaced can still be answered after Replace
+	// stopped it; that is not the replacement's answer.
+	supervisor.restart = true
+	supervisor.setHealth(true, nil)
+	if supervisor.Info().ReplaceStartedAt.IsZero() {
+		t.Fatal("the replaced child's late answer must not end the grace")
+	}
+	supervisor.restart = false
 	supervisor.setHealth(true, nil)
 	if started := supervisor.Info().ReplaceStartedAt; !started.IsZero() {
 		t.Fatalf("the first answer must end the grace, got %v", started)
@@ -267,73 +283,6 @@ func TestDashboardServeSupervisorEndsTheReplaceGraceOnTheFirstAnswer(t *testing.
 
 // The same bytes stay current even when touched, while changed bytes with
 // an unchanged timestamp must trigger a replacement.
-// A health answer of the child being replaced can still arrive after Replace
-// stopped it: the request was in flight and its 2xx was already received. That
-// answer is not the replacement's, so the grace holds until the new child
-// answers itself (#950).
-func TestDashboardServeSupervisorKeepsTheReplaceGraceWhenTheReplacedChildAnswersLate(t *testing.T) {
-	recordPath := t.TempDir() + "/dashboard-helper.jsonl"
-	supervisor := newTestDashboardServeSupervisor(t, "serve", recordPath, time.Minute)
-	var replacedPID atomic.Int64
-	var holdOld atomic.Bool
-	oldHeld, releaseOld := make(chan struct{}), make(chan struct{})
-	newAsked, releaseNew := make(chan struct{}), make(chan struct{})
-	supervisor.client = &http.Client{Transport: dashboardServeRoundTripper(func(req *http.Request) (*http.Response, error) {
-		if holdOld.CompareAndSwap(true, false) {
-			close(oldHeld)
-			<-releaseOld
-		} else if pid := int64(supervisor.Info().PID); pid != 0 && replacedPID.Load() != 0 && pid != replacedPID.Load() {
-			select {
-			case <-newAsked:
-			default:
-				close(newAsked)
-			}
-			<-releaseNew
-		}
-		return &http.Response{StatusCode: http.StatusNoContent, Body: io.NopCloser(strings.NewReader("")), Request: req}, nil
-	})}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		supervisor.Run(ctx)
-		close(done)
-	}()
-	defer func() {
-		cancel()
-		waitForDashboardSupervisorDone(t, done)
-	}()
-	release := func(c chan struct{}) {
-		select {
-		case <-c:
-		default:
-			close(c)
-		}
-	}
-	defer release(releaseNew)
-	defer release(releaseOld)
-
-	replacedPID.Store(int64(waitForDashboardServeHealthy(t, supervisor).PID))
-	holdOld.Store(true)
-	<-oldHeld
-	replaced := make(chan error, 1)
-	go func() { replaced <- supervisor.Replace(context.Background()) }()
-	for supervisor.Info().ReplaceStartedAt.IsZero() {
-		time.Sleep(time.Millisecond)
-	}
-	release(releaseOld)
-	<-newAsked
-	if supervisor.Info().ReplaceStartedAt.IsZero() {
-		t.Fatal("the replaced child's late answer must not end the grace of the replacement that has not answered")
-	}
-	release(releaseNew)
-	if err := <-replaced; err != nil {
-		t.Fatalf("replace: %v", err)
-	}
-	if started := supervisor.Info().ReplaceStartedAt; !started.IsZero() {
-		t.Fatalf("the replacement's own answer must end the grace, got %v", started)
-	}
-}
-
 func TestDashboardConfigTracksContentsInsteadOfModificationTime(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	t.Setenv("CODEXBAR_CONFIG", path)
