@@ -129,7 +129,11 @@ export function SetupDisplayModeScreen({
   const themePack = useThemeRenderPack(theme);
   // Continue waits exactly while a card draws the skeleton, the same rule the
   // tiles use. Unavailable usage is not a skeleton, so it never holds Continue.
-  const awaitingUsage = tileIsSkeleton(themePack, usageLoading);
+  const awaitingUsage = tileIsSkeleton(
+    themePack,
+    usageLoading,
+    rotationFrames(automaticPreview, automaticPreviews, providers),
+  );
 
   return (
     <SetupWizardScreen
@@ -179,7 +183,9 @@ export function SetupDisplayModeScreen({
           (mode === "fixed" &&
             !providers.some((provider) => provider.id === selectedProviderId))
         }
-        className={cn(CALM_BUTTON_CLASS, mode === "fixed" ? "mt-6" : "mt-8")}
+        // The wide content column would stretch it across the whole window; the
+        // other steps' 460px column is the size every calm step ends in.
+        className={cn(CALM_BUTTON_CLASS, "max-w-[460px]", mode === "fixed" ? "mt-6" : "mt-8")}
         onClick={onContinue}
         type="button"
       >
@@ -281,7 +287,7 @@ export function DisplayModeChoice({
   const tiles = (frames: SetupDisplayModePreview[], at: number) => {
     // The theme's own picture whenever it can be had; the plain tile is what
     // stays if the theme could not be read, so the step never loses its preview.
-    if (tileIsSkeleton(themePack, usageLoading)) {
+    if (tileIsSkeleton(themePack, usageLoading, rotation)) {
       return <ThemeTileSkeleton count={frames.length} />;
     }
     if (themePack.pack && frames[at]) {
@@ -378,12 +384,22 @@ export function DisplayModeChoice({
 }
 
 /**
- * Whether a card draws the skeleton rather than readings: the theme pack is
- * still loading, or the usage snapshot has not been read yet. The
- * Continue gate and the tiles both ask this, so they cannot disagree.
+ * Whether the cards draw the skeleton rather than readings: the theme pack is
+ * still loading, the usage snapshot has not been read yet, or any provider in
+ * the rotation still lacks its companion frame. Until every preview has one,
+ * no card shows a partial set. The Continue gate and the tiles both ask this,
+ * so they cannot disagree.
  */
-function tileIsSkeleton(themePack: ThemePackLoad, usageLoading: boolean): boolean {
-  return themePack.status === "loading" || usageLoading;
+function tileIsSkeleton(
+  themePack: ThemePackLoad,
+  usageLoading: boolean,
+  rotation: SetupDisplayModePreview[],
+): boolean {
+  return (
+    themePack.status === "loading" ||
+    usageLoading ||
+    rotation.some((preview) => !preview.frame)
+  );
 }
 
 /**

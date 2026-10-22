@@ -196,7 +196,7 @@ describe("Automatic shows one theme tile that changes provider (#821 single tile
   });
 
   it("keeps the same-size grey theme placeholder on a provider's turn without values", async () => {
-    show([live("Claude", 64), { providerLabel: "Cursor", resetLabel: null, windows: [] }]);
+    show([live("Claude", 64), { providerLabel: "Cursor", resetLabel: null, windows: [], frame: { v: 1, error: "no usage yet" } }]);
     await settle();
     act(() => { vi.advanceTimersByTime(ROTATION_HOLD_MS); });
     const shown = tiles(0).find((tile) => tile.dataset.visible === "true");

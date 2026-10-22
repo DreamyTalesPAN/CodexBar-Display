@@ -563,7 +563,12 @@ describe("SettingsScreen standby controls", () => {
           items: [signedOut, provider("claude", "Claude", true)],
         },
         70, "cable", false, [],
-        [{ providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: 12 }] }],
+        [{
+          providerLabel: "Claude",
+          resetLabel: null,
+          windows: [{ label: "Session", percent: 12 }],
+          frame: { provider: "claude", label: "Claude", session: 12 },
+        }],
       ).split('data-slot="display-mode-preview"')[2] ?? "";
       return panel.slice(0, panel.indexOf(">Manual<"));
     };
@@ -757,7 +762,12 @@ describe("SettingsScreen standby controls", () => {
           items: [provider("claude", "Claude", true), provider("codex", "Codex", false)],
         },
         70, "cable", false, [rotation],
-        [{ providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: 12 }] }],
+        [{
+          providerLabel: "Claude",
+          resetLabel: null,
+          windows: [{ label: "Session", percent: 12 }],
+          frame: { provider: "claude", label: "Claude", session: 12 },
+        }],
       ),
     );
   });
