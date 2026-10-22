@@ -3913,9 +3913,9 @@ async function testEnteredControlCenterOpensPairingRecovery(browser, appUrl) {
   await clickNavigation(page, "Settings");
   const pairingError = page.getByRole("dialog");
   await pairingError.waitFor({ timeout: 10_000 });
-  await pairingError.getByRole("button", { name: "OK", exact: true }).click();
-  await pairingError.waitFor({ state: "detached", timeout: 5_000 });
-  await runSetupAgain(page);
+  await pairingError
+    .getByRole("button", { name: "Run setup again", exact: true })
+    .click();
   await waitForSetupDeviceStep(page, 20_000);
   await setupDeviceCards(page).first().waitFor({ timeout: 10_000 });
   await setupConnectButton(page).click();
@@ -8690,7 +8690,7 @@ async function testLegacyMigrationCanRetryFailedRelease(
   await page.getByRole("heading", { name: "Update check failed" }).waitFor({
     timeout: 10_000,
   });
-  const retry = page.getByRole("button", { name: "Check again" });
+  const retry = page.getByRole("button", { name: "Try again" });
   await retry.waitFor({ timeout: 10_000 });
   assert(
     await retry.isEnabled(),
@@ -8706,7 +8706,7 @@ async function testLegacyMigrationCanRetryFailedRelease(
     timeout: 10_000,
   });
   assert(
-    await page.getByRole("button", { name: "Check again" }).isEnabled(),
+    await page.getByRole("button", { name: "Try again" }).isEnabled(),
     "A repeated hosted release failure must leave retry available",
   );
   assert(

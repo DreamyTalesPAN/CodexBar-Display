@@ -457,8 +457,9 @@ struct WindowRect {
 }
 
 // Where the window was when a close released it, and whether it was maximized.
-// While maximized, the rectangle is the last normal one (Tauri only reports
-// the maximized bounds); None when the window was never restored.
+// The rectangle is the outer one (caption and borders included). While
+// maximized, it is the last normal one (Tauri only reports the maximized
+// bounds); None when the window was never restored.
 type Remembered = (Option<WindowRect>, bool);
 
 #[derive(Debug, PartialEq)]
@@ -468,11 +469,26 @@ enum Placement {
     Remembered { rect: Option<WindowRect>, maximized: bool },
 }
 
-fn choose_placement(remembered: Option<Remembered>, work_areas: &[WindowRect]) -> Placement {
+// The window's minimum inner size in logical pixels (create_window).
+const MIN_INNER: (f64, f64) = (960.0, 640.0);
+
+// A monitor's work area, and the window's minimum size on it in physical pixels.
+type Screen = (WindowRect, (u32, u32));
+
+fn choose_placement(remembered: Option<Remembered>, screens: &[Screen]) -> Placement {
     match remembered {
-        Some((Some(rect), maximized)) if centre_on_a_work_area(rect, work_areas) => {
+        // Fully visible across all monitors: kept as it was, even over two monitors.
+        Some((Some(rect), maximized)) if fully_visible(rect, screens) => {
             Placement::Remembered { rect: Some(rect), maximized }
         }
+        // Partly out of reach: pulled inside the work area of its centre, so a
+        // taskbar cannot hide its lower edge.
+        Some((Some(rect), maximized)) => match work_area_of_centre(rect, screens) {
+            Some((area, min)) => {
+                Placement::Remembered { rect: Some(fit_into(rect, area, min)), maximized }
+            }
+            None => Placement::Default,
+        },
         // Maximized, never restored: maximize again at the default size.
         Some((None, true)) => Placement::Remembered { rect: None, maximized: true },
         // Nothing remembered, or the window was on a monitor that is gone.
@@ -490,16 +506,59 @@ fn remembered_for(current: WindowRect, maximized: bool, previous: Option<Remembe
 }
 
 // The centre must lie on a monitor, so the window cannot open out of reach.
-fn centre_on_a_work_area(rect: WindowRect, work_areas: &[WindowRect]) -> bool {
+fn work_area_of_centre(rect: WindowRect, screens: &[Screen]) -> Option<Screen> {
     let cx = i64::from(rect.x) + i64::from(rect.width) / 2;
     let cy = i64::from(rect.y) + i64::from(rect.height) / 2;
-    work_areas.iter().any(|area| {
+    screens.iter().copied().find(|(area, _)| {
         let (left, top) = (i64::from(area.x), i64::from(area.y));
         cx >= left
             && cx < left + i64::from(area.width)
             && cy >= top
             && cy < top + i64::from(area.height)
     })
+}
+
+// Work areas do not overlap, so their overlaps add up to the rectangle's area
+// only when no part of it lies outside all of them.
+fn fully_visible(rect: WindowRect, screens: &[Screen]) -> bool {
+    let visible: i64 = screens.iter().map(|(area, _)| overlap_area(rect, *area)).sum();
+    visible == i64::from(rect.width) * i64::from(rect.height)
+}
+
+fn overlap_area(a: WindowRect, b: WindowRect) -> i64 {
+    let width = (i64::from(a.x) + i64::from(a.width)).min(i64::from(b.x) + i64::from(b.width))
+        - i64::from(a.x).max(i64::from(b.x));
+    let height = (i64::from(a.y) + i64::from(a.height)).min(i64::from(b.y) + i64::from(b.height))
+        - i64::from(a.y).max(i64::from(b.y));
+    width.max(0) * height.max(0)
+}
+
+// Shrinks the rectangle if it is larger than the area, then moves it inside.
+// Never smaller than the minimum: in an area smaller than that, the top-left
+// corner stays inside the area, so the title bar is still reachable.
+fn fit_into(rect: WindowRect, area: WindowRect, min: (u32, u32)) -> WindowRect {
+    let width = rect.width.min(area.width).max(min.0);
+    let height = rect.height.min(area.height).max(min.1);
+    let x = keep_inside(rect.x, area.x, area.width, width);
+    let y = keep_inside(rect.y, area.y, area.height, height);
+    WindowRect { x, y, width, height }
+}
+
+// Keeps a window start inside the area, but never before the area's start.
+fn keep_inside(start: i32, area_start: i32, area_size: u32, size: u32) -> i32 {
+    let last = (i64::from(area_start) + i64::from(area_size) - i64::from(size))
+        .max(i64::from(area_start));
+    i64::from(start).clamp(i64::from(area_start), last) as i32
+}
+
+fn min_size_px(scale: f64) -> (u32, u32) {
+    ((MIN_INNER.0 * scale).ceil() as u32, (MIN_INNER.1 * scale).ceil() as u32)
+}
+
+// The client size for an outer rectangle, given the caption and borders
+// (outer size minus inner size, as Tauri reports them).
+fn inner_within(outer: WindowRect, frame: (u32, u32)) -> (u32, u32) {
+    (outer.width.saturating_sub(frame.0), outer.height.saturating_sub(frame.1))
 }
 
 // None while minimized, because its position says nothing about where it was
@@ -516,11 +575,12 @@ fn remembered_after(
     Some(remembered_for(current, maximized, previous))
 }
 
-// Worker threads only: the getters wait for the event loop.
+// Worker threads only: the getters wait for the event loop. The outer
+// rectangle is stored, so the clamp sees the caption and borders too.
 fn window_geometry(window: &tauri::WebviewWindow, previous: Option<Remembered>) -> Option<Remembered> {
     let minimized = window.is_minimized().ok()?;
     let position = window.outer_position().ok()?;
-    let size = window.inner_size().ok()?;
+    let size = window.outer_size().ok()?;
     let maximized = window.is_maximized().ok()?;
     let current = WindowRect {
         x: position.x,
@@ -557,21 +617,22 @@ fn placement_for(app: &AppHandle) -> Placement {
     let Some((_, remembered)) = *app.state::<Shell>().window_geometry.lock().unwrap() else {
         return Placement::Default;
     };
-    let work_areas: Vec<WindowRect> = app
+    let screens: Vec<Screen> = app
         .available_monitors()
         .unwrap_or_default()
         .iter()
         .map(|monitor| {
             let area = monitor.work_area();
-            WindowRect {
+            let rect = WindowRect {
                 x: area.position.x,
                 y: area.position.y,
                 width: area.size.width,
                 height: area.size.height,
-            }
+            };
+            (rect, min_size_px(monitor.scale_factor()))
         })
         .collect();
-    choose_placement(Some(remembered), &work_areas)
+    choose_placement(Some(remembered), &screens)
 }
 
 fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tauri::Result<()> {
@@ -586,7 +647,7 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
         // does not jump from the default place.
         .visible(visible && remembered.is_none())
         .inner_size(1280.0, 900.0)
-        .min_inner_size(960.0, 640.0)
+        .min_inner_size(MIN_INNER.0, MIN_INNER.1)
         // Issue #548: 1280x900 plus the title bar is taller than the space
         // above the taskbar on a 1080p screen scaled to 125 % or more, and
         // Windows chose the position. Tauri shrinks the window to the
@@ -615,8 +676,15 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
         .build()?;
     if let Some((rect, maximized)) = remembered {
         if let Some(rect) = rect {
-            let _ = window.set_size(PhysicalSize::new(rect.width, rect.height));
+            // Moved first: a monitor with another scale resizes the window when it
+            // arrives, so the frame is measured and the size set where it stays.
             let _ = window.set_position(PhysicalPosition::new(rect.x, rect.y));
+            let frame = match (window.outer_size(), window.inner_size()) {
+                (Ok(outer), Ok(inner)) => (outer.width - inner.width, outer.height - inner.height),
+                _ => (0, 0),
+            };
+            let (width, height) = inner_within(rect, frame);
+            let _ = window.set_size(PhysicalSize::new(width, height));
         }
         if maximized {
             let _ = window.maximize();
@@ -1654,10 +1722,13 @@ fn show_message(message: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        centre_on_a_work_area, choose_placement, clear_loaded_theme, close_stands, label_for_generation,
-        theme_id_from_deep_link, Placement, WindowRect, remembered_after, remembered_for, store_if_newer,
+        choose_placement, clear_loaded_theme, close_stands, fit_into, inner_within,
+        label_for_generation, theme_id_from_deep_link, work_area_of_centre, Placement,
+        WindowRect, remembered_after, remembered_for, store_if_newer,
     };
     use url::Url;
+
+    const MIN: (u32, u32) = (960, 640);
 
     #[test]
     fn theme_link_accepts_only_one_safe_catalog_id() {
@@ -1739,7 +1810,7 @@ mod tests {
     fn window_geometry_choice_remembered_default_or_off_screen() {
         let rect = |x, y, width, height| WindowRect { x, y, width, height };
         // Primary monitor at 0,0 and a second one to its left (negative x).
-        let screens = [rect(0, 0, 1920, 1040), rect(-1280, 0, 1280, 1000)];
+        let screens = [(rect(0, 0, 1920, 1040), MIN), (rect(-1280, 0, 1280, 1000), MIN)];
         let placed = rect(100, 80, 1280, 900);
         assert_eq!(
             choose_placement(Some((Some(placed), false)), &screens),
@@ -1757,7 +1828,7 @@ mod tests {
         );
         // Centre on the left monitor is still on a monitor.
         let left = rect(-900, 50, 1280, 900);
-        assert!(centre_on_a_work_area(left, &screens));
+        assert_eq!(work_area_of_centre(left, &screens), Some(screens[1]));
         // Nothing remembered: first start default.
         assert_eq!(choose_placement(None, &screens), Placement::Default);
         assert_eq!(choose_placement(Some((None, false)), &screens), Placement::Default);
@@ -1766,6 +1837,71 @@ mod tests {
         assert_eq!(choose_placement(Some((Some(unplugged), false)), &screens), Placement::Default);
         // No monitor known at all: default.
         assert_eq!(choose_placement(Some((Some(placed), false)), &[]), Placement::Default);
+    }
+
+    #[test]
+    fn a_remembered_window_is_pulled_inside_the_work_area() {
+        let rect = |x, y, width, height| WindowRect { x, y, width, height };
+        // 1080p with a 48 px taskbar at the bottom: work area ends at y=1032.
+        let work = (rect(0, 0, 1920, 1032), MIN);
+        // Centre (940, 750) is on screen, but the bottom edge (1200) is behind the taskbar.
+        assert_eq!(
+            choose_placement(Some((Some(rect(300, 300, 1280, 900)), false)), &[work]),
+            Placement::Remembered { rect: Some(rect(300, 132, 1280, 900)), maximized: false }
+        );
+        // The stored rectangle is the outer one: 900 px client plus a 32 px caption
+        // and 8 px borders. Its bottom edge must stay above the taskbar too.
+        let outer = rect(300, 300, 1296, 932);
+        let Placement::Remembered { rect: Some(placed), maximized: false } =
+            choose_placement(Some((Some(outer), false)), &[work])
+        else {
+            panic!("a remembered window must be placed");
+        };
+        assert_eq!(placed, rect(300, 100, 1296, 932));
+        assert_eq!(inner_within(placed, (16, 32)), (1280, 900));
+        // Larger than the screen: shrunk to fit, then moved to the corner.
+        assert_eq!(
+            choose_placement(Some((Some(rect(50, 50, 2560, 1440)), false)), &[work]),
+            Placement::Remembered { rect: Some(work.0), maximized: false }
+        );
+        // Off the left edge of a monitor that sits at negative x.
+        let left = rect(-1280, 0, 1280, 1000);
+        assert_eq!(fit_into(rect(-1400, 20, 1000, 800), left, MIN), rect(-1280, 20, 1000, 800));
+    }
+
+    #[test]
+    fn a_window_across_two_monitors_is_kept_when_it_is_fully_visible() {
+        let rect = |x, y, width, height| WindowRect { x, y, width, height };
+        // Two 1080p work areas side by side, 1032 px high each.
+        let screens = [(rect(0, 0, 1920, 1032), MIN), (rect(1920, 0, 1920, 1032), MIN)];
+        // Spans both monitors, centre on the right one: still fully visible, so unchanged.
+        let across = rect(1500, 100, 1000, 800);
+        assert_eq!(
+            choose_placement(Some((Some(across), false)), &screens),
+            Placement::Remembered { rect: Some(across), maximized: false }
+        );
+        // Part of it hangs below both work areas: clamped to the monitor of its centre.
+        assert_eq!(
+            choose_placement(Some((Some(rect(1500, 300, 1000, 900)), false)), &screens),
+            Placement::Remembered { rect: Some(rect(1920, 132, 1000, 900)), maximized: false }
+        );
+    }
+
+    #[test]
+    fn a_work_area_smaller_than_the_minimum_keeps_the_minimum_with_its_top_left_in_reach() {
+        let rect = |x, y, width, height| WindowRect { x, y, width, height };
+        // 800x500 work area, smaller than the 960x640 minimum.
+        let small = rect(0, 0, 800, 500);
+        assert_eq!(
+            choose_placement(Some((Some(rect(50, 50, 1000, 600)), false)), &[(small, MIN)]),
+            Placement::Remembered { rect: Some(rect(0, 0, 960, 640)), maximized: false }
+        );
+        // Same on a monitor at negative x: the top-left is pinned to the area's corner.
+        let left = rect(-1280, 0, 800, 500);
+        assert_eq!(
+            choose_placement(Some((Some(rect(-1200, 20, 1000, 600)), false)), &[(left, MIN)]),
+            Placement::Remembered { rect: Some(rect(-1280, 0, 960, 640)), maximized: false }
+        );
     }
 
     #[test]

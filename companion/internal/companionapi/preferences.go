@@ -1041,7 +1041,8 @@ func providerReadinessHealthState(status string) string {
 
 // providerCopyGOOS names the system in permission copy: Windows has no macOS
 // access to allow (#479). The two pages this server words itself, outside the
-// app's own screens, read it too (#548). A variable so tests cover both hosts.
+// app's own screens, read it too (#548), and so does the app update message
+// (#558). A variable so tests cover both hosts.
 var providerCopyGOOS = runtime.GOOS
 
 func providerReadinessMessage(status string) string {

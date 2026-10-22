@@ -761,6 +761,24 @@ describe("SetupWizard: direct connection", () => {
     expect(props.onSearchDevices).not.toHaveBeenCalled();
   });
 
+  it("offers a newer Mac App once before the usual not-found help (#561)", () => {
+    const onUpdate = vi.fn();
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "not-found", deviceCandidates: [],
+      macAppUpdate: { onUpdate, version: "1.0.65" },
+    });
+    render(<SetupWizard {...props} />);
+    expect(screen.queryByRole("dialog", { name: "We couldn't find your VibeTV" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Update Mac App" }));
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+    const searches = vi.mocked(props.onSearchDevices).mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Scan again" }));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(searches + 1);
+    expect(screen.queryByRole("dialog", { name: "Update the Mac App first" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "We couldn't find your VibeTV" })).toBeTruthy();
+  });
+
   it.each(["wifi", "cable"] as const)("offers recovery when a completed scan only finds the alternative to saved %s", (savedMode) => {
     const alternative = savedMode === "wifi" ? "cable" : "wifi";
     const props = baseProps({
