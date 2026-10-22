@@ -10667,3 +10667,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Gauge ring fills the screen and its texts are larger in one-provider and Two at once; Tiny Office names are readable at normal size and no longer share a line with the percentage.
 - Scope: theme-packs/gauge (theme.json rev 14, manifest 0.2.4) and theme-packs/tiny-office (theme.json rev 11, manifest 0.7.3), their rebuilt dist packs, and the matching theme tests. Branch claude/paultest-592a only, not merged, not released.
 - What's new: none — layout change only
+
+## 2026-10-22 — #592: Creature says remaining, Synthwave uses Paul's design without USAGE
+
+- User approval: pending — Claude Creature writes "remaining" instead of "left" under the usage percentages; Synthwave gets Paul's new top picture and background, and the "USAGE" text is gone in one-provider and Two at once
+- Approved customer-visible result: Claude Creature uses the same remaining wording as the other themes with unchanged font sizes; Synthwave shows the new artwork without the USAGE caption.
+- Scope: theme-packs/claude-creature (theme.json rev 13, manifest 1.4.3) and theme-packs/synthwave (theme.json rev 10, manifest 1.2.4), their rebuilt dist packs, and the pair-layout test. Tiny Office was checked and left unchanged. Branch claude/paultest-592a only, not merged, not released.
+- What's new: none — theme wording and artwork only

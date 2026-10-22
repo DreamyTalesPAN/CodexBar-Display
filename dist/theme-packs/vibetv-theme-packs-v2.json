@@ -6,9 +6,9 @@
       "id": "claude-creature",
       "title": "Claude Creature",
       "usage": "live",
-      "version": "1.4.2",
-      "themeRev": 12,
-      "themeSpecPath": "/themes/u/cld-12-b25a61c0.json",
+      "version": "1.4.3",
+      "themeRev": 13,
+      "themeSpecPath": "/themes/u/cld-13-f42776d5.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -20,9 +20,9 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-claude-creature-v1.4.2.zip",
-      "sha256": "4ffe45efb2f082da9e75224ff743b908695471499f9fcbd4f659c9c0f20d7094",
-      "bytes": 3435,
+      "downloadAsset": "vibetv-theme-claude-creature-v1.4.3.zip",
+      "sha256": "369cb078df74ed7a55444083f0983d36eaa5ff6c741f9b384d5c4db802957593",
+      "bytes": 3447,
       "earlierThemeSpecPaths": [
         "/themes/u/claud-10-dd6753.json",
         "/themes/u/claude--1-12ab01.json",
@@ -37,7 +37,8 @@
         "/themes/u/claude--7-4963df.json",
         "/themes/u/claude--8-53ffce.json",
         "/themes/u/claude--9-5c74ca.json",
-        "/themes/u/cld-11-e02f4e15.json"
+        "/themes/u/cld-11-e02f4e15.json",
+        "/themes/u/cld-12-b25a61c0.json"
       ]
     },
     {
@@ -240,9 +241,9 @@
       "id": "synthwave",
       "title": "Synthwave",
       "usage": "live",
-      "version": "1.2.3",
-      "themeRev": 9,
-      "themeSpecPath": "/themes/u/syn-9-7e671d91.json",
+      "version": "1.2.4",
+      "themeRev": 10,
+      "themeSpecPath": "/themes/u/syn-10-cc3fcc64.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -252,12 +253,13 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-synthwave-v1.2.3.zip",
-      "sha256": "05ebd3080cda3105149ecb9bf510170c851dcd84943dbe09f50a6a4959cf44f3",
-      "bytes": 1681,
+      "downloadAsset": "vibetv-theme-synthwave-v1.2.4.zip",
+      "sha256": "8333fdef757213dda2b486647e1a213ce0f52d8a5f97892d6589b8cbe64f81e8",
+      "bytes": 6389,
       "earlierThemeSpecPaths": [
         "/themes/u/syn-7-c929bcfe.json",
         "/themes/u/syn-8-0b08afde.json",
+        "/themes/u/syn-9-7e671d91.json",
         "/themes/u/synthwa-1-0432f1.json",
         "/themes/u/synthwa-1-0a355b.json",
         "/themes/u/synthwa-1-6b39a3.json",

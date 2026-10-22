@@ -3,25 +3,25 @@
   "schemaVersion": 1,
   "id": "synthwave",
   "name": "Synthwave",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "minFirmware": "1.0.50",
   "requiredCapabilities": [
     "usage-slots-v1",
     "usage-pace-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/syn-9-7e671d91.json",
+    "path": "/themes/u/syn-10-cc3fcc64.json",
     "file": "theme.json",
-    "bytes": 1424,
-    "sha256": "7e671d917111e152ecb96872a523b2b6cfe01f32cebcb58f7b3b049c63728915",
+    "bytes": 1362,
+    "sha256": "cc3fcc646bc185a4566864affd4694215da6b0dac882fdf8ebfe4bd723ab815b",
     "contentType": "application/json"
   },
   "assets": [
     {
       "path": "/themes/u/syn-top.cbi",
       "file": "assets/syn-top.cbi",
-      "bytes": 1649,
-      "sha256": "ff9ac84d3d72a69cea200961d8819d44627dbb2563bf46042d4701149a0f5dc7",
+      "bytes": 9481,
+      "sha256": "c78c9a12573622a0483f86883dd38f1873a346040e9481db4dac94ff1461ef07",
       "contentType": "text/plain"
     }
   ]
