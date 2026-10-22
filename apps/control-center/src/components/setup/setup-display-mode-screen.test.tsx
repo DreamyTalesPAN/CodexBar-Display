@@ -138,6 +138,13 @@ describe("SetupDisplayModeScreen", () => {
     }
   });
 
+  it("titles the screen in sentence case, as Settings does", () => {
+    const html = render();
+
+    expect(html).toContain(">Display mode</h1>");
+    expect(html).not.toContain("Display Mode</h1>");
+  });
+
   it("explains both display modes", () => {
     const html = render();
 

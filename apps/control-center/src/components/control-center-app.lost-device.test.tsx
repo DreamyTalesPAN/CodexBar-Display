@@ -5,7 +5,7 @@
 // cable. /v1/status reported the cable VibeTV as connected and ready, and the
 // window still showed "Not connected" under the lost-VibeTV dialog for the
 // WiFi one until it was reloaded. The Companion's connected VibeTV wins.
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -109,6 +109,9 @@ function startWindow() {
       if (url.endsWith("/v1/device/select")) {
         return jsonResponse({ ok: false, error: notFound }, 404);
       }
+      if (url.endsWith("/v1/setup/reset")) {
+        return jsonResponse({ ok: true, connectionModeChoiceRequired: true });
+      }
       return jsonResponse({ ok: false, error: { code: "HTTP_404" } }, 404);
     }),
   );
@@ -178,4 +181,100 @@ it("follows a connection changed to another VibeTV without calling the first one
   expect(window.companion.requests).not.toContain(
     "POST /api/local-companion/v1/device/search",
   );
+});
+
+// A connect error the customer closed must stay closed: each status poll
+// rebuilds the pairing rejection for the same active condition (#782).
+it("keeps a closed connect error closed across status polls", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  window.companion.device = {
+    ...wifi,
+    connected: false,
+    ready: false,
+    stream: { errorCode: "pairing_token_rejected" },
+  } as typeof wifi;
+  await window.wait(6);
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await window.wait(1);
+  expect(window.text()).toContain("VibeTV could not connect.");
+
+  fireEvent.keyDown(document, { key: "Escape" });
+  await window.wait(1);
+  expect(window.text()).not.toContain("VibeTV could not connect.");
+
+  await window.wait(15);
+  expect(window.companion.requests.filter((request) => request.endsWith("/v1/status")).length).toBeGreaterThan(2);
+  expect(window.text()).not.toContain("VibeTV could not connect.");
+});
+
+// Settings shows the same connect dialog; its OK must keep it closed the same
+// way the Support page does (#782).
+it("keeps a connect error closed on Settings and shows a new one", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  const rejected = {
+    ...wifi,
+    connected: false,
+    ready: false,
+    stream: { errorCode: "pairing_token_rejected" },
+  } as typeof wifi;
+  window.companion.device = rejected;
+  await window.wait(6);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  expect(window.text()).toContain("VibeTV could not connect.");
+
+  fireEvent.keyDown(document, { key: "Escape" });
+  await window.wait(15);
+  expect(window.companion.requests.filter((request) => request.endsWith("/v1/status")).length).toBeGreaterThan(2);
+  expect(window.text()).not.toContain("VibeTV could not connect.");
+
+  // A new rejection after the VibeTV was healthy again is a new error.
+  window.companion.device = wifi;
+  await window.wait(6);
+  window.companion.device = rejected;
+  await window.wait(6);
+  expect(window.text()).toContain("VibeTV could not connect.");
+});
+
+// The running app's connect dialog offers one way forward: Run setup again.
+// No OK and no "Press Connect again" (#782).
+it.each(["Settings", "Support"])("starts setup directly from the connect dialog on %s", async (tab) => {
+  const window = startWindow();
+  await window.wait(10);
+  window.companion.device = {
+    ...wifi,
+    connected: false,
+    ready: false,
+    stream: { errorCode: "pairing_token_rejected" },
+  } as typeof wifi;
+  await window.wait(6);
+  fireEvent.click(screen.getByRole("button", { name: tab }));
+  await window.wait(1);
+  const dialog = screen.getByRole("dialog", { name: "VibeTV could not connect." });
+  expect(dialog.textContent).toContain(
+    "VibeTV no longer accepts this computer. Run setup again to connect it.",
+  );
+  expect(dialog.textContent).not.toContain("Press Connect again");
+  expect(within(dialog).queryByRole("button", { name: "OK" })).toBeNull();
+
+  fireEvent.click(within(dialog).getByRole("button", { name: "Run setup again" }));
+  await window.wait(1);
+  expect(screen.queryByRole("dialog", { name: "Run setup again?" })).toBeNull();
+  expect(screen.queryByRole("dialog", { name: "VibeTV could not connect." })).toBeNull();
+  expect(window.companion.requests.filter((request) =>
+    request === "POST /api/local-companion/v1/setup/reset",
+  )).toHaveLength(1);
+});
+
+it("keeps the confirmation for the Settings Run setup again row", async () => {
+  const window = startWindow();
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  fireEvent.click(screen.getByRole("button", { name: "Run setup" }));
+  expect(screen.getByRole("dialog", { name: "Run setup again?" })).toBeTruthy();
+  expect(window.companion.requests).not.toContain("POST /api/local-companion/v1/setup/reset");
 });

@@ -57,6 +57,10 @@ type DashboardServeInfo struct {
 	// child that crashes before it ever answered keeps the time of the one
 	// it replaces, so a crash loop does not look like a service just started.
 	StartedAt time.Time `json:"startedAt,omitempty"`
+	// ReplaceStartedAt is when the Companion last stopped a running serve to
+	// start a new one (Restart, Replace). The collector reads it to tell the
+	// few seconds until the new one answers from an outage (#918).
+	ReplaceStartedAt time.Time `json:"replaceStartedAt,omitempty"`
 }
 
 type DashboardServeConfig struct {
@@ -372,6 +376,9 @@ func (s *DashboardServeSupervisor) replace(ctx context.Context, force bool) erro
 	oldPID := s.info.PID
 	stale := process != nil && (force || dashboardConfigChanged(s.config))
 	s.restart = stale
+	if stale {
+		s.info.ReplaceStartedAt = time.Now().UTC()
+	}
 	s.mu.Unlock()
 	if process == nil {
 		return errors.New("codexbar serve is not running")
