@@ -10094,3 +10094,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the dialogs look and behave exactly as before.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` only. Pull request #902 only, not merged, not released.
 - What's new: none — test-only accessibility check
+
+## 2026-10-22 — #902: approval marker after merging main at 242e4846
+
+- User approval: no visible change – UI approval not needed (merge of main (242e4846) into #902; the own entries of #902 keep their approvals)
+- Approved customer-visible result: #902 as in its own entries plus the entries merged with 242e4846; nothing else changes.
+- Scope: the merge of 242e4846 and this approval record. Pull request branch #902 only, not merged, not released.
+- What's new: none — merge of 242e4846, no customer-visible change of its own
