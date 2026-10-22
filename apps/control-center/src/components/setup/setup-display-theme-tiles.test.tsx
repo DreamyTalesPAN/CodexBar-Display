@@ -53,10 +53,13 @@ function live(label: string, percent: number): SetupDisplayModePreview {
   };
 }
 
+// The companion answered with no values for this provider: an error frame, so
+// the card does not wait on it.
 const noValues = (label: string): SetupDisplayModePreview => ({
   providerLabel: label,
   resetLabel: null,
   windows: [],
+  frame: { v: 1, error: "no usage yet" },
 });
 
 function show(

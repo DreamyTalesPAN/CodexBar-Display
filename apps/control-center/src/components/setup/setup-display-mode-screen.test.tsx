@@ -5,9 +5,11 @@ import type { DisplayFrame } from "../live-vibetv-preview";
 import {
   DisplayModeChoice,
   SetupDisplayModeScreen,
+  type SetupDisplayModePreview,
   type SetupDisplayModeProvider,
 } from "./setup-display-mode-screen";
 import type { ThemePackLoad } from "./setup-display-theme-tiles";
+import { CALM_BUTTON_CLASS } from "./setup-wizard-screen";
 
 const codex: SetupDisplayModeProvider = { id: "codex", label: "Codex" };
 const cursor: SetupDisplayModeProvider = { id: "cursor", label: "Cursor" };
@@ -30,17 +32,28 @@ beforeEach(() => {
   themePack = { pack: null, status: "loading" };
 });
 
+// Each rotation provider with its companion frame. Continue and the cards
+// only open once every one of them has one.
+const codexAutomatic: SetupDisplayModePreview = {
+  providerLabel: "Codex",
+  resetLabel: "Resets in 2h 10m",
+  windows: [{ label: "Session", percent: 64 }, { label: "Weekly", percent: null }],
+  frame: { provider: "codex", session: 64, weeklyUnavailable: true },
+};
+const cursorAutomatic: SetupDisplayModePreview = {
+  providerLabel: "Cursor",
+  resetLabel: "Resets in 5h",
+  windows: [{ label: "Session", percent: 18 }, { label: "Weekly", percent: 63 }],
+  frame: { provider: "cursor", session: 18, weekly: 63 },
+};
+
 function render(
   props: Partial<Parameters<typeof SetupDisplayModeScreen>[0]> = {},
 ) {
   return renderToStaticMarkup(
     <SetupDisplayModeScreen
-      automaticPreview={{
-        providerLabel: "Codex",
-        resetLabel: "Resets in 2h 10m",
-        windows: [{ label: "Session", percent: 64 }, { label: "Weekly", percent: null }],
-        frame: { provider: "codex", session: 64, weeklyUnavailable: true },
-      }}
+      automaticPreview={codexAutomatic}
+      automaticPreviews={[codexAutomatic, cursorAutomatic]}
       manualPreview={{
         providerLabel: "Claude",
         resetLabel: null,
@@ -189,11 +202,13 @@ describe("SetupDisplayModeScreen", () => {
             providerLabel: "Claude",
             resetLabel: "Resets in 1h",
             windows: [{ label: "Session", percent: 7 }, { label: "Weekly", percent: 3 }],
+            frame: { provider: "claude", session: 7, weekly: 3 },
           },
           {
             providerLabel: "Copilot",
             resetLabel: null,
             windows: [{ label: "Session", percent: null }, { label: "Weekly", percent: null }],
+            frame: { provider: "copilot", sessionUnavailable: true, weeklyUnavailable: true },
           },
         ],
         providers: [codex, cursor],
@@ -228,12 +243,15 @@ describe("SetupDisplayModeScreen", () => {
   });
 
   it("never lends one provider's numbers to another", () => {
-    // Cursor leads the rotation and has no reading of its own, so the panel it
-    // holds carries no numbers - Codex's 64% waits for Codex's turn.
-    const { automatic } = panels(render({ providers: [cursor, codex] }));
+    // Cursor has no companion frame of its own, so the card waits on the
+    // skeleton: Codex's 64% is not shown in its place.
+    const { automatic } = panels(render({
+      automaticPreviews: [codexAutomatic, { providerLabel: "Cursor", resetLabel: null, windows: [] }],
+      providers: [cursor, codex],
+    }));
 
-    expect(automatic).toContain("Cursor");
-    expect(automatic).toContain("--");
+    expect(automatic).toContain('data-state="skeleton"');
+    expect(automatic).not.toContain("Codex");
     expect(automatic).not.toContain("64");
   });
 
@@ -326,21 +344,30 @@ describe("SetupDisplayModeScreen", () => {
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
   });
 
-  it("keeps the gate and real tiles consistent for preview objects without frames", () => {
+  it("waits for a companion frame, but takes a companion error frame as the answer", () => {
     themePack = readyPack;
-    const unavailable = { providerLabel: "Codex", resetLabel: null, windows: [] };
-    const html = render({
-      automaticPreview: unavailable,
-      automaticPreviews: [unavailable],
-      manualPreview: unavailable,
+    const unframed = { providerLabel: "Codex", resetLabel: null, windows: [] };
+    const waiting = render({
+      automaticPreview: unframed,
+      automaticPreviews: [unframed],
+      manualPreview: unframed,
       usageLoading: false,
       theme: { id: "claude-creature" },
     });
+    expect(waiting).toContain('data-state="skeleton"');
+    expect(waiting).toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
 
-    expect(html).not.toContain('data-state="skeleton"');
-    expect(html).toContain('data-state="unavailable"');
-    expect(html).toContain('aria-label="Codex: no usage yet"');
-    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+    const failed = { providerLabel: "Codex", resetLabel: null, windows: [], frame: { provider: "codex", error: "no_providers" } };
+    const answered = render({
+      automaticPreview: failed,
+      automaticPreviews: [failed],
+      manualPreview: failed,
+      usageLoading: false,
+      theme: { id: "claude-creature" },
+    });
+    expect(answered).not.toContain('data-state="skeleton"');
+    expect(answered).toContain('aria-label="Codex: no usage yet"');
+    expect(answered).not.toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
   });
 
   it("waits for the usage response carrying companion frames even when provider placeholders exist", () => {
@@ -443,4 +470,69 @@ describe("SetupDisplayModeScreen", () => {
     );
   });
 
+
+  // Three providers take part in the rotation. Until every one of them has its
+  // companion frame, both cards draw the skeleton: never a partial set of
+  // previews, and Continue stays closed with them.
+  describe("until every rotation preview has its companion frame", () => {
+    const threeProviders = [codex, cursor, { id: "claude", label: "Claude" }];
+    const framed = (label: string): SetupDisplayModePreview => ({
+      providerLabel: label,
+      resetLabel: "Resets in 1h",
+      windows: [{ label: "Session", percent: 40 }, { label: "Weekly", percent: 20 }],
+      frame: { provider: label.toLowerCase(), label, session: 40, weekly: 20 },
+    });
+    const unframed = (label: string): SetupDisplayModePreview => ({
+      providerLabel: label,
+      resetLabel: null,
+      windows: [],
+    });
+
+    it("draws the skeleton and keeps Continue closed with only two of three frames", () => {
+      themePack = readyPack;
+      const html = render({
+        automaticPreview: framed("Codex"),
+        automaticPreviews: [framed("Codex"), framed("Cursor"), unframed("Claude")],
+        manualPreview: framed("Codex"),
+        providers: threeProviders,
+        theme: { id: "claude-creature" },
+      });
+
+      expect(html).toContain('data-state="skeleton"');
+      expect(html).not.toContain('data-state="live"');
+      expect(html).not.toContain("No usage yet");
+      expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+    });
+
+    it("shows the real tiles and opens Continue once all three frames are there", () => {
+      themePack = readyPack;
+      const html = render({
+        automaticPreview: framed("Codex"),
+        automaticPreviews: [framed("Codex"), framed("Cursor"), framed("Claude")],
+        manualPreview: framed("Codex"),
+        providers: threeProviders,
+        theme: { id: "claude-creature" },
+      });
+
+      expect(html).not.toContain('data-state="skeleton"');
+      expect(html.match(/data-state="live"/g)).toHaveLength(3);
+      expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+    });
+
+    it("gives Continue the shared setup button size, not the full wide column", () => {
+      themePack = readyPack;
+      const html = render({
+        automaticPreview: framed("Codex"),
+        automaticPreviews: [framed("Codex"), framed("Cursor"), framed("Claude")],
+        providers: threeProviders,
+        theme: { id: "claude-creature" },
+      });
+      const button = html.match(/<button[^>]*>Continue<\/button>/)?.[0] ?? "";
+
+      for (const token of CALM_BUTTON_CLASS.split(" ")) {
+        expect(button).toContain(token);
+      }
+      expect(button).toContain("max-w-[460px]");
+    });
+  });
 });
