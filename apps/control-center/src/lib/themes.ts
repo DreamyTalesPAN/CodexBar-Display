@@ -32,6 +32,9 @@ export type ThemeProduct = {
   requiresFirmware?: string;
   requiredCapabilities?: string[];
   tags?: ThemeTag[];
+  // false for a theme its pack marks "listed": false, such as a company theme
+  // (#935): installed through its setup link, not offered in the theme list.
+  listed?: boolean;
   source: ThemeSource;
 };
 
@@ -121,6 +124,7 @@ type ThemePackCatalog = {
     requiresFirmware?: string;
     requiredCapabilities?: string[];
     tags?: string[];
+    listed?: boolean;
     sha256?: string;
     bytes?: number;
   }>;
@@ -387,6 +391,7 @@ function mapThemePackCatalogEntry(
     requiresFirmware: theme.requiresFirmware,
     requiredCapabilities: theme.requiredCapabilities,
     tags: readThemeTags(theme.tags),
+    ...(theme.listed === false ? { listed: false } : {}),
     source: "github-catalog",
   };
 }
@@ -427,13 +432,22 @@ async function enrichThemesWithGitHubCatalog(
     const githubByThemeId = new Map(
       githubThemes.map((theme) => [theme.themeId, theme]),
     );
-    return shopifyThemes.map((theme) => {
+    const shopifyThemeIds = new Set(shopifyThemes.map((theme) => theme.themeId));
+    const enriched = shopifyThemes.map((theme) => {
       const catalogTheme = githubByThemeId.get(theme.themeId);
       if (!catalogTheme) {
         return theme;
       }
       return mergeThemeProductWithCatalog(theme, catalogTheme);
     });
+    // An unlisted theme (#935) has no shop product, but its setup link
+    // /install/<id> must still find it, so the catalog's entry joins the list.
+    return [
+      ...enriched,
+      ...githubThemes.filter(
+        (theme) => theme.listed === false && !shopifyThemeIds.has(theme.themeId),
+      ),
+    ];
   } catch {
     return shopifyThemes;
   }

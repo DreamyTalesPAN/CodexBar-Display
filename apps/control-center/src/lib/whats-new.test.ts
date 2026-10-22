@@ -40,7 +40,8 @@ it("has entries with unique kebab-case ids", () => {
 });
 
 // A new theme must not reach customers without a word about it, and no entry
-// may announce a theme the catalog does not hold.
+// may announce a theme the catalog does not hold. An unlisted theme (#935) is
+// one company's and is not announced.
 it("has an entry for every theme added to the catalog, and for no other", () => {
   const catalog = JSON.parse(
     readFileSync(
@@ -50,9 +51,14 @@ it("has an entry for every theme added to the catalog, and for no other", () => 
       ),
       "utf8",
     ),
-  ) as { themes: { id: string; usage?: string }[] };
+  ) as { themes: { id: string; usage?: string; listed?: boolean }[] };
   const added = catalog.themes
-    .filter(({ id, usage }) => (usage || "live") === "live" && !THEMES_BEFORE_THE_NOTICE.includes(id))
+    .filter(
+      ({ id, usage, listed }) =>
+        (usage || "live") === "live" &&
+        listed !== false &&
+        !THEMES_BEFORE_THE_NOTICE.includes(id),
+    )
     .map(({ id }) => id);
 
   expect(themes.map(({ theme }) => theme).sort()).toEqual(added.sort());

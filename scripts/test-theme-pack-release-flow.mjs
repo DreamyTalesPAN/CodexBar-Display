@@ -95,6 +95,10 @@ for (const entry of await readdir(sourceRoot, { withFileTypes: true })) {
     catalogTheme.usage === (String(manifest.usage || "live").trim() || "live"),
     `catalog usage mismatch for ${manifest.id}`,
   );
+  assert(
+    catalogTheme.listed === (manifest.listed === false ? false : undefined),
+    `catalog listed mismatch for ${manifest.id}`,
+  );
   if (legacyById.has(manifest.id)) {
     assert(spec.rev >= 2, `${manifest.id} must use a post-legacy revision`);
     assert(

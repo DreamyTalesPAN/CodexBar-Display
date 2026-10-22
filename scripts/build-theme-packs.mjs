@@ -109,6 +109,11 @@ for (const theme of themeDirs) {
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
     throw new Error(`theme ${manifest.id} needs a SemVer version`);
   }
+  // "listed": false keeps a theme out of the app's theme list; its setup link
+  // still installs it (#935). Without the field a theme is listed.
+  if (manifest.listed !== undefined && typeof manifest.listed !== "boolean") {
+    throw new Error(`theme ${manifest.id} has a non-boolean "listed"; use true or false`);
+  }
   const specRaw = await readFile(
     path.join(theme.dir, manifest.themeSpec?.file || "theme.json"),
     "utf8",
@@ -135,6 +140,7 @@ for (const theme of themeDirs) {
     requiresFirmware: manifest.minFirmware,
     requiredCapabilities: manifest.requiredCapabilities,
     ...(tags.length > 0 ? { tags } : {}),
+    ...(manifest.listed === false ? { listed: false } : {}),
     downloadAsset: zipName,
     sha256: createHash("sha256").update(zipBytes).digest("hex"),
     bytes: zipBytes.byteLength,

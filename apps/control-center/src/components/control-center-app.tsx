@@ -22,6 +22,7 @@ import {
 } from "@/lib/ordered-theme";
 import {
   NO_THEME_UPGRADE,
+  installedScreensaver,
   resolveActiveLiveTheme,
   resolveActiveThemeUpgrade,
   resolveScreensaverUpgrade,
@@ -29,6 +30,7 @@ import {
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import { buildDeviceThemePack, pollThemeInstallJob } from "@/lib/theme-install";
 import { rememberSentOwnThemePath } from "@/lib/sent-own-theme-paths";
+import { listedThemes } from "@/lib/theme-visibility";
 import type { ThemeCatalogResponse, ThemeProduct } from "@/lib/themes";
 import {
   markWhatsNewSeen,
@@ -5452,10 +5454,19 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       label: item.label,
     })),
   );
-  // Step 05 keeps offering every live theme: hiding one would make the
+  // A theme its pack does not list (#935) shows only while it is linked,
+  // selected or on VibeTV.
+  const offeredThemes = listedThemes(catalog.themes, [
+    initialThemeId,
+    selectedThemeId,
+    selectedScreensaverId,
+    resolveActiveLiveTheme(catalog.themes, device)?.themeId,
+    installedScreensaver(catalog.themes, [], screensaverPath)?.themeId,
+  ]);
+  // Step 05 keeps offering every listed live theme: hiding one would make the
   // device's limitation invisible. The Install is gated by the same rules the
   // theme library uses, so setup cannot promise what the device would refuse.
-  const setupThemes = catalog.themes
+  const setupThemes = offeredThemes
     .filter((theme) => (theme.usage || "live") === "live")
     .map((theme) => ({
       id: theme.themeId,
@@ -5961,7 +5972,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             standby={standby}
             storefrontConfigured={catalog.storefrontConfigured}
             themeInstallEnabled={themeInstallEnabled}
-            themes={catalog.themes}
+            themes={offeredThemes}
             tokenHistoryUnavailable={usageTokenHistoryUnavailableOnVibeTV(usage)}
             usage={
               appearanceSection === "screensavers" ? "screensaver" : "live"

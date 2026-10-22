@@ -111,6 +111,28 @@ https://raw.githubusercontent.com/DreamyTalesPAN/CodexBar-Display/main/dist/them
 When a renderer contract changes incompatibly again, create a new catalog
 generation instead of repointing an old Companion at incompatible packs.
 
+## Company Themes
+
+A theme made for one company (#935) is a normal pack with `"listed": false`
+in its `manifest.json`. The field is optional; a pack without it is listed.
+The build carries `listed: false` into the catalog entry.
+
+The app leaves an unlisted theme out of the theme list and the setup theme
+step. It shows only while it is opened through its setup link, selected, or
+installed on the customer's VibeTV. The setup link works like for every other
+theme: `https://app.vibetv.shop/install/<theme-id>` or
+`vibetv://install-theme/<theme-id>` preselects it, and one click on Install
+installs it. The hosted app adds unlisted catalog themes that have no Shopify
+product, so the link resolves there too.
+
+To add one, create `theme-packs/<theme-id>/` with `"listed": false`, run
+`node scripts/build-theme-packs.mjs`, and commit the source and `dist`
+output. Installed apps bundle their catalog, so the theme reaches customers
+with the next app release; release it before the devices ship.
+
+Unlisted is not confidential: the repository is public, and the pack files
+stay readable on GitHub.
+
 ## Withdrawing A Theme
 
 Delete `theme-packs/<theme-id>/` and rebuild. The catalog is generated from the

@@ -83,6 +83,21 @@ const catalogFixture = {
       requiredCapabilities: ["usage-slots-v1"],
     },
     {
+      id: "acme-company",
+      title: "Fixture Company Theme",
+      description: "A theme made for one company, installed through its setup link.",
+      downloadUrl: "https://cdn.example.test/vibetv-theme-acme-company-v1.0.0.zip",
+      sha256: fixturePackSHA256,
+      bytes: fixturePackBytes,
+      version: "1.0.0",
+      themeRev: 3,
+      themeSpecPath: "/themes/u/acme-3-1a2b3c.json",
+      compatibleBoards: ["esp8266_smalltv_st7789"],
+      requiresFirmware: "1.0.0",
+      requiredCapabilities: ["usage-slots-v1"],
+      listed: false,
+    },
+    {
       id: "usage-windows",
       title: "Fixture Usage Windows Theme",
       description:
@@ -404,6 +419,7 @@ async function main() {
       await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
       await testLocalInstallLinkKeepsSetupGate(browser, appContext.appUrl);
       await testOrderedThemeSurvivesRestartDuringSetup(browser, appContext.appUrl);
+      await testUnlistedThemeOnlyThroughItsLink(browser, appContext.appUrl);
       await testInstallLinkSkipsLiveScreenForSetUpVibeTV(browser, appContext.appUrl);
       await testInstallThemeLinkStaysOnSetupWhenThemeLibraryLocked(
         browser,
@@ -1103,6 +1119,7 @@ async function main() {
     await testInstallLinkKeepsRequestedTheme(browser, appContext.appUrl);
     await testInstallLinkSkipsLiveScreenForSetUpVibeTV(browser, appContext.appUrl);
     await testOrderedThemeSurvivesRestartDuringSetup(browser, appContext.appUrl);
+    await testUnlistedThemeOnlyThroughItsLink(browser, appContext.appUrl);
     await testThemeInstallStatusStaysCustomerOnly(browser, appContext.appUrl);
     await testThemeInstallShowsIntermediateProgress(browser, appContext.appUrl);
     await testCustomerLogsStayCustomerOnly(browser, appContext.appUrl);
@@ -10648,6 +10665,85 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   assert(errors.length === 0, errors.join("\n"));
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await page.close();
+}
+
+// #935: a theme its pack does not list (a company theme) is missing from the
+// theme list and from the setup theme step. Its setup link still preselects it,
+// and while VibeTV has it installed it shows in the list. Nothing installs
+// without a click.
+async function testUnlistedThemeOnlyThroughItsLink(browser, appUrl) {
+  const installRequests = [];
+  const companyRows = (page) =>
+    page.getByRole("listitem").filter({ hasText: "Fixture Company Theme" });
+
+  const list = await newCustomerPage(browser, appUrl, { viewport });
+  await routeCompanionOnline(list, installRequests, () => {}, {
+    companionVersion: "1.0.99",
+    device: synthwaveDevice,
+  });
+  await list.goto(`${appUrl}/install/synthwave`, {
+    waitUntil: "domcontentloaded",
+  });
+  await assertSelectedThemeRow(list, "Fixture Synthwave Theme");
+  assert(
+    (await companyRows(list).count()) === 0,
+    "an unlisted theme must not be in the theme list",
+  );
+  await list.close();
+
+  const setup = await newCustomerPage(browser, appUrl, {
+    viewport: nativeDefaultViewport,
+  });
+  await routeCompanionOnline(setup, installRequests, () => {}, {
+    device: { ...themeMissingDevice, deviceId: "fixture-device-1" },
+  });
+  await setup.goto(appUrl, { waitUntil: "domcontentloaded" });
+  await setup
+    .getByRole("heading", { name: SETUP_THEME_SCREEN })
+    .waitFor({ timeout: 20_000 });
+  await setup
+    .getByRole("radio", { name: "Fixture Clippy Theme" })
+    .waitFor({ timeout: 10_000 });
+  assert(
+    (await setup.getByRole("radio", { name: "Fixture Company Theme" }).count()) === 0,
+    "setup must not offer an unlisted theme without its link",
+  );
+  await setup.goto(`${appUrl}/install/acme-company`, {
+    waitUntil: "domcontentloaded",
+  });
+  await setup
+    .getByRole("heading", { name: SETUP_THEME_SCREEN })
+    .waitFor({ timeout: 20_000 });
+  const company = setup.getByRole("radio", { name: "Fixture Company Theme" });
+  await waitForCondition(
+    async () => (await company.getAttribute("aria-checked")) === "true",
+    "the setup link must preselect the unlisted theme",
+  );
+  await setup.close();
+
+  const installed = await newCustomerPage(browser, appUrl, { viewport });
+  await routeCompanionOnline(installed, installRequests, () => {}, {
+    companionVersion: "1.0.99",
+    device: {
+      ...synthwaveDevice,
+      activeTheme: "acme-company",
+      display: {
+        themeSpec: {
+          active: true,
+          path: "/themes/u/acme-3-1a2b3c.json",
+          renderOk: true,
+        },
+      },
+    },
+  });
+  await installed.goto(`${appUrl}/install/synthwave`, {
+    waitUntil: "domcontentloaded",
+  });
+  await assertSelectedThemeRow(installed, "Fixture Synthwave Theme");
+  await assertThemeRowNotSelected(installed, "Fixture Company Theme");
+  await installed.waitForTimeout(250);
+  assertNoInstallRequests(installRequests);
+  await installed.close();
 }
 
 async function testInstallLinkKeepsRequestedTheme(browser, appUrl) {

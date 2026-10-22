@@ -90,6 +90,64 @@ describe("Shopify theme usage", () => {
   });
 });
 
+describe("unlisted catalog themes on the hosted app (#935)", () => {
+  it("adds an unlisted catalog theme without a shop product, and no other", async () => {
+    vi.stubEnv("SHOPIFY_STORE_DOMAIN", "vibetv.shop");
+    vi.stubEnv("SHOPIFY_STOREFRONT_PRIVATE_TOKEN", "");
+    vi.stubEnv("SHOPIFY_STOREFRONT_ACCESS_TOKEN", "storefront-token");
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (String(input).includes("/graphql.json")) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              collection: {
+                products: {
+                  edges: [
+                    {
+                      node: {
+                        id: "gid://shopify/Product/clippy",
+                        title: "Clippy",
+                        handle: "clippy",
+                        themeId: { value: "clippy" },
+                        priceRange: {
+                          minVariantPrice: { amount: "0", currencyCode: "EUR" },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          schemaVersion: 1,
+          generation: 2,
+          themes: [
+            { id: "clippy", title: "Clippy", version: "1.0.0" },
+            { id: "acme", title: "Acme", version: "1.0.0", listed: false },
+            { id: "synthwave", title: "Synthwave", version: "1.0.0" },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+
+    const catalog = await getThemeCatalog();
+
+    expect(catalog.source).toBe("shopify");
+    expect(
+      catalog.themes.map((theme) => [theme.themeId, theme.listed]),
+    ).toEqual([
+      ["clippy", undefined],
+      ["acme", false],
+    ]);
+  });
+});
+
 describe("chooseCompleteThemePackMetadata", () => {
   it("keeps a complete valid Shopify metadata triplet", () => {
     expect(
