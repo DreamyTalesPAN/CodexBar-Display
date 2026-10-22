@@ -1654,7 +1654,7 @@ export function AIThemeStudioScreen({
             <div className="mt-3 w-full space-y-3 empty:mt-0">
               {error ? (
                 <p id="ai-theme-error" role="alert" className="text-sm text-destructive [overflow-wrap:anywhere]">
-                  {error}
+                  {copyForHost(error, windowsHost)}
                 </p>
               ) : null}
               {/* The same reason already shows under the toolbar while Send is off (#551). */}

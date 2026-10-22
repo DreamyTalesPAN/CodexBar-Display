@@ -58,7 +58,7 @@ import {
 import { compareSemVer, parseSemVer } from "@/lib/semver";
 import { sentOwnThemePaths } from "@/lib/sent-own-theme-paths";
 import { cn } from "@/lib/utils";
-import { statusForHost } from "@/lib/customer-platform";
+import { copyForHost, statusForHost } from "@/lib/customer-platform";
 import { isRemoteThemePackUrl } from "@/lib/theme-pack-url";
 import { catalogThemeRowId } from "@/lib/whats-new";
 import {
@@ -836,7 +836,7 @@ export function ThemeLibraryScreen({
           error that arrives while another dialog is open waits for it. */}
       {libraryError && !otherDialogOpen ? (
         <PageNotice
-          description={libraryError}
+          description={copyForHost(libraryError, windowsHost)}
           onOpenChange={(open) => {
             if (!open) setLibraryError("");
           }}
@@ -1382,7 +1382,7 @@ function InlineInstallProgress({
   ];
   return (
     <div className="flex flex-col gap-3" ref={noticeRef} role="status" aria-live="polite">
-      <Progress aria-label={title} className={complete ? "" : "animate-pulse"} value={clampProgress(complete ? 100 : status.progress)} />
+      {complete ? null : <Progress aria-label={title} className="animate-pulse" value={clampProgress(status.progress)} />}
       <Alert>
         {complete ? <ShieldCheck aria-hidden /> : <Spinner />}
         <AlertTitle>{title}</AlertTitle>

@@ -378,11 +378,20 @@ uint8_t clampBrightnessPercent(int value) {
   return codexbar_display::esp8266::device_settings::ClampBrightnessPercent(value);
 }
 
+// The screensaver is not where an update is announced: screensavers have no
+// notice slot, so every phase toggle forced a full repaint of the whole
+// screensaver about every 1.5 s. Standby and the post-install preview both put
+// one on screen; the notice returns with the live theme.
+bool screensaverOwnsDisplay() {
+  return standbyState.active || screensaverPreviewState.showing;
+}
+
 // Single place that decides how bright the panel is, so entering standby,
-// waking up and editing either brightness value all go through one path.
+// waking up, showing a screensaver preview and editing either brightness value
+// all go through one path.
 void applyDeviceSettings() {
   if (renderer.SupportsBrightnessControl()) {
-    renderer.ApplyBrightnessPercent(standbyState.active
+    renderer.ApplyBrightnessPercent(screensaverOwnsDisplay()
                                         ? deviceSettings.standby.brightnessPercent
                                         : deviceSettings.brightnessPercent);
   }
@@ -974,14 +983,6 @@ void appendClockJSON(String& out) {
   out += "\",\"date\":\"";
   out += dateText;
   out += "\"},";
-}
-
-// The screensaver is not where an update is announced: screensavers have no
-// notice slot, so every phase toggle forced a full repaint of the whole
-// screensaver about every 1.5 s. Standby and the post-install preview both put
-// one on screen; the notice returns with the live theme.
-bool screensaverOwnsDisplay() {
-  return standbyState.active || screensaverPreviewState.showing;
 }
 
 void markFirmwareUpdateNoticeDirty() {
@@ -3818,6 +3819,12 @@ void maintainScreensaverPreview() {
     } else {
       restoreScreensaverPreviewLiveTheme();
     }
+  }
+  // Show and Restore change who owns the display, so the brightness follows
+  // them: the screensaver brightness while the preview is up, the normal one
+  // again once it hands the screen back.
+  if (action != screensaver_preview::Action::None) {
+    applyDeviceSettings();
   }
 #endif
 }

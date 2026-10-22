@@ -83,6 +83,10 @@ func ReadDeviceHello(port string) (protocol.DeviceHello, error) {
 	return defaultSender.ReadHello(port)
 }
 
+func ReadDeviceHelloContext(ctx context.Context, port string) (protocol.DeviceHello, error) {
+	return defaultSender.DeviceHelloContext(ctx, port)
+}
+
 func GetDeviceCapabilities(port string) (protocol.DeviceCapabilities, error) {
 	return defaultSender.ReadCapabilities(port)
 }
