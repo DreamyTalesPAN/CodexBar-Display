@@ -529,6 +529,7 @@ func canRetryAfterThemeCapabilityFirmwareUpdate(pack *themepack.Pack, caps proto
 	missingTextValign := isMissingUsageCapabilityError(err, protocol.FeatureTextValignV1)
 	missingProgressArc := isMissingUsageCapabilityError(err, protocol.FeatureProgressArcV1)
 	missingUsagePace := isMissingUsageCapabilityError(err, protocol.FeatureUsagePaceV1)
+	missingResetFooter := isMissingUsageCapabilityError(err, protocol.FeatureResetFooterV1)
 	if (!missingSlots || caps.SupportsUsageSlotsV1) &&
 		(!missingWindows || caps.SupportsUsageWindowsV1) &&
 		(!missingProviderSlots || caps.SupportsProviderSlotsV1) &&
@@ -536,7 +537,8 @@ func canRetryAfterThemeCapabilityFirmwareUpdate(pack *themepack.Pack, caps proto
 		(!missingColorStops || caps.SupportsColorStopsV1) &&
 		(!missingTextValign || caps.SupportsTextValignV1) &&
 		(!missingProgressArc || caps.SupportsProgressArcV1) &&
-		(!missingUsagePace || caps.SupportsUsagePaceV1) {
+		(!missingUsagePace || caps.SupportsUsagePaceV1) &&
+		(!missingResetFooter || caps.SupportsResetFooterV1) {
 		return false
 	}
 	updatedCaps := caps
@@ -548,6 +550,7 @@ func canRetryAfterThemeCapabilityFirmwareUpdate(pack *themepack.Pack, caps proto
 	updatedCaps.SupportsTextValignV1 = true
 	updatedCaps.SupportsProgressArcV1 = true
 	updatedCaps.SupportsUsagePaceV1 = true
+	updatedCaps.SupportsResetFooterV1 = true
 	return pack.ValidateAgainstCapabilities(updatedCaps) == nil
 }
 

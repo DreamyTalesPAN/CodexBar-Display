@@ -264,6 +264,21 @@ describe("resolveActiveThemeUpgrade", () => {
     expect(resolveActiveThemeUpgrade([paceTheme], current).needed).toBe(false);
   });
 
+  it("asks for reset-footer-v1 only for a theme that needs it", () => {
+    const current = device(true, slotTheme.themeSpecPath);
+    const footerTheme = {
+      ...slotTheme,
+      requiredCapabilities: ["usage-slots-v1", "reset-footer-v1"],
+    };
+    expect(resolveActiveThemeUpgrade([slotTheme], current).needed).toBe(false);
+    expect(resolveActiveThemeUpgrade([footerTheme], current)).toMatchObject({
+      needed: true,
+      needsFirmwareCapability: true,
+    });
+    current.capabilities!.theme!.supportsResetFooterV1 = true;
+    expect(resolveActiveThemeUpgrade([footerTheme], current).needed).toBe(false);
+  });
+
   it("needs no catalog attention when all firmware capabilities are present", () => {
     expect(resolveActiveThemeUpgrade([], device(true)).unresolved).toBe(false);
   });

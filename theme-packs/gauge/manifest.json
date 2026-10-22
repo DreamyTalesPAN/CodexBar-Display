@@ -3,20 +3,21 @@
   "schemaVersion": 1,
   "id": "gauge",
   "name": "Gauge",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "minFirmware": "1.0.50",
   "usage": "live",
   "requiredCapabilities": [
     "usage-slots-v1",
     "color-stops-v1",
     "progress-arc-v1",
-    "usage-pace-v1"
+    "usage-pace-v1",
+    "reset-footer-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/ga-14-e0dae764.json",
+    "path": "/themes/u/ga-15-9cfc333b.json",
     "file": "theme.json",
-    "bytes": 1499,
-    "sha256": "e0dae764c52dcc167bb23b5c54b666fa19523125d2222493e21e8fa5f1fec780",
+    "bytes": 1491,
+    "sha256": "9cfc333bf33ad0153a06c294bf8e5e78bb7712cf76b2518936c34dec66bf140b",
     "contentType": "application/json"
   },
   "assets": []

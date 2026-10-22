@@ -24,6 +24,7 @@ export type ThemeStudioDeviceCapabilities = {
   supportsTextValignV1?: boolean;
   supportsProgressArcV1?: boolean;
   supportsUsagePaceV1?: boolean;
+  supportsResetFooterV1?: boolean;
   maxUsageWindows?: number;
   supportsStoredThemes?: boolean;
   maxThemeSpecBytes?: number;

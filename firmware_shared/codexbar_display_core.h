@@ -615,6 +615,11 @@ inline void AddThemeSpecSlotKeyUse(const char* key, ThemeSpecLiveUse& use) {
     }
     return;
   }
+  if (std::strcmp(key, themespec::kUsageFooterResetBinding) == 0) {
+    use.usageWindows |= static_cast<uint8_t>((1U << kMaxUsageWindows) - 1U);
+    use.usageWindowResets |= static_cast<uint8_t>((1U << kMaxUsageWindows) - 1U);
+    return;
+  }
   index = themespec::UsageWindowBindingIndex(key);
   if (index >= 0 && static_cast<size_t>(index) < kMaxUsageWindows) {
     use.usageWindows |= static_cast<uint8_t>(1U << index);

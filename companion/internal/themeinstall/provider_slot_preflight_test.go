@@ -88,3 +88,35 @@ func TestProgressArcPackReachesTheFirmwareUpdater(t *testing.T) {
 		t.Fatalf("expected firmware with the arc to take the pack: %v", err)
 	}
 }
+
+// A pack whose reset line is the shared footer needs firmware that knows the
+// binding; older firmware gets the update, not a pack it would draw blank.
+func TestResetFooterPackReachesTheFirmwareUpdater(t *testing.T) {
+	pack := &themepack.Pack{
+		Manifest: themepack.Manifest{
+			Kind:                 "vibetv-theme-pack",
+			Schema:               1,
+			ID:                   "gauge",
+			Name:                 "Gauge",
+			RequiredCapabilities: []string{protocol.FeatureUsageSlotsV1, protocol.FeatureResetFooterV1},
+		},
+	}
+	caps := protocol.DeviceCapabilities{
+		Known:                true,
+		SupportsThemeSpecV1:  true,
+		SupportsUsageSlotsV1: true,
+	}
+	opts := Options{FirmwareUpdater: func(context.Context, string, string) error { return nil }}
+
+	err := pack.ValidateAgainstCapabilities(caps)
+	if err == nil || !strings.Contains(err.Error(), protocol.FeatureResetFooterV1) {
+		t.Fatalf("expected the pack to be rejected on firmware without the reset footer, got %v", err)
+	}
+	if !canRetryAfterThemeCapabilityFirmwareUpdate(pack, caps, err, opts) {
+		t.Fatal("a reset footer pack must be eligible for the firmware preflight")
+	}
+	caps.SupportsResetFooterV1 = true
+	if err := pack.ValidateAgainstCapabilities(caps); err != nil {
+		t.Fatalf("expected firmware with the reset footer to take the pack: %v", err)
+	}
+}

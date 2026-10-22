@@ -1933,7 +1933,8 @@ export function themeShowsTokenTotals(spec?: ThemeSpec | null): boolean {
   });
 }
 
-// A standalone first-limit countdown below the usage rows is the shared footer.
+// A standalone first-limit countdown below the usage rows is the shared footer,
+// and so is usageFooterReset wherever a theme places it.
 // Explicit per-limit lines (with their label or another row below) keep their binding.
 function displayedResetFooter(
   primitive: ThemePrimitive,
@@ -1941,8 +1942,9 @@ function displayedResetFooter(
   primitives: ThemePrimitive[],
 ): string | null {
   const binding = primitive.binding || primitive.b;
+  const explicitFooter = binding === "usageFooterReset";
   const isFooter = binding
-    ? /^(?:usageSlot1Reset|us1r|usage\.0\.reset)$/.test(binding)
+    ? explicitFooter || /^(?:usageSlot1Reset|us1r|usage\.0\.reset)$/.test(binding)
     : /^(?:Reset|Resets) in \{(?:usageSlot1Reset|us1r|usage\.0\.reset)\}$/.test(
         primitive.text || primitive.v || "",
       );
@@ -1952,7 +1954,7 @@ function displayedResetFooter(
     if (row === primitive || !primitiveUsageSlotVisible(row, frame)) continue;
     const index = row.usageIndex ?? row.ui ?? ((row.slot ?? row.sl ?? 0) - 1);
     if (index < 0) continue;
-    if ((row.y || 0) >= (primitive.y || 0)) return null;
+    if (!explicitFooter && (row.y || 0) >= (primitive.y || 0)) return null;
     slots.add(index);
   }
   if (slots.size === 0) return null;
@@ -1968,11 +1970,11 @@ function displayedResetFooter(
     sawAvailable = true;
     allIdle = allIdle && window.idle;
     if (window.resetSecs > 0) {
-      const duration = formatReset(window.resetSecs, false);
+      const duration = formatReset(window.resetSecs, false).split(" ")[0];
       // A pair label ("Claude Weekly") is longer than the limit name ("Weekly").
       const limit = frame.provider.includes("+") ? window.label.replace(/^\S+ /, "") : window.label;
-      const variants = [`${window.label} resets in ${duration}`, `${window.label} ${duration}`, `${limit} ${duration}`];
-      if (slots.size === 1) variants.push(`Resets ${duration}`);
+      const variants = [`${window.label} reset ${duration}`, `${limit} reset ${duration}`];
+      variants.push(`Reset ${duration}`);
       const maxWidth = primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
       const font = primitive.font || primitive.f || 1;
       const size = Math.max(1, primitive.fontSize || primitive.s || 1);
@@ -2241,8 +2243,7 @@ export function boundValue(key: string, frame: FrameData): string {
   }
   if (key === "usageModeShort" || key === "usageModeStandalone") {
     if (frame.provider.includes("+")) return "";
-    // Mirrors the firmware: "left" for what remains, else the mode itself.
-    return key === "usageModeShort" && frame.usageMode === "remaining" ? "left" : frame.usageMode;
+    return frame.usageMode;
   }
   switch (key) {
     case "label":

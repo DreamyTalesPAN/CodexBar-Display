@@ -20248,3 +20248,31 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the setup steps look uniform and calm, nothing is cut off, and Settings and the wizard use the same words.
 - Scope: setup-wizard-screen.tsx (top-aligned unless `centered`; Welcome and the download screen stay centred), setup-display-mode-screen.tsx, setup-theme-screen.tsx, theme-library-screen.tsx, lib/theme-grid.ts, settings-screen.tsx and their tests. Test build 9999.0.7208 only, not a pull request.
 - What's new: none — layout and wording consistency only
+
+## 2026-10-22 — #592: Themes say remaining instead of left
+
+- User approval: pending — Pace Meter, Gauge and Synthwave write "Session remaining" / "Weekly remaining" instead of "Session left" / "Weekly left" in remaining mode
+- Approved customer-visible result: the usage labels use the same "remaining" wording as the other themes with unchanged font sizes; the text is longer and still fits on the 240 px screen (Gauge wraps a long window name to two lines).
+- Scope: the {usageModeShort} token in firmware_shared/theme_spec_renderer_core.h and the live preview; theme files are unchanged.
+- What's new: none — wording only
+
+## 2026-10-22 — #7208: Reset footer names the limit and its largest unit
+
+- User approval: pending — the theme footer reset reads "Weekly reset 5d" / "Session reset 1h" / "Session reset 45m" instead of "Weekly 5d 1h" or "Weekly resets in 5d 1h"
+- Approved customer-visible result: the footer names the limit followed by "reset" and only the largest time unit, rounded down; it is shorter than before, so it fits where the long form was cut back, with unchanged font sizes.
+- Scope: the footer reset formatter in firmware_shared/theme_spec_renderer_core.h and displayedResetFooter in the live preview, plus their tests. Themes with their own per-limit "resets …" lines (Gauge, Pace Meter) are unchanged.
+- What's new: none — wording only
+
+## 2026-10-22 — #913: Gauge ring reset line is the shared footer
+
+- User approval: pending — Gauge's ring reset line reads "Session reset 2h" / "Weekly reset 5d" like the other themes and follows "Reset in footer" instead of always "resets 2h 14m"
+- Approved customer-visible result: the line under the ring names the limit and shows only the largest time unit, and switches with the Session/Weekly setting; position, size and fonts are unchanged. A VibeTV on older firmware sees "Firmware update needed" for Gauge.
+- Scope: the usageFooterReset binding in firmware_shared/theme_spec_renderer_core.h and the live preview, the Gauge pack (0.2.5, theme revision 15, requires reset-footer-v1), and the capability check for that requirement in the library and active-theme upgrade.
+- What's new: none — wording only
+
+## 2026-10-22 — #913: Footer reset falls back to "Reset <unit>"
+
+- User approval: pending — a footer reset line too long for its width reads "Reset 3d" at the unchanged font instead of shrinking or being cut off
+- Approved customer-visible result: "<Limit> reset 3d" is shown at the theme's original font when it fits, otherwise "Reset 3d" at the same font, in every theme, with one limit or several (Gauge's 130 px line with "Weekly (Sonnet)" shows "Reset 3d"); the old "Resets 3d" wording is gone.
+- Scope: the footer fallback chain in firmware_shared/theme_spec_renderer_core.h and the matching live preview (displayedResetFooter), with their tests.
+- What's new: none — wording only

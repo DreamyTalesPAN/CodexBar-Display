@@ -155,7 +155,9 @@ export function resolveActiveThemeUpgrade(
     // Only a theme that needs pace makes its absence a gap: no shipped
     // firmware has it yet, so it must not flag every other VibeTV.
     (theme.requiredCapabilities.includes("usage-pace-v1") &&
-      device.capabilities?.theme?.supportsUsagePaceV1 !== true);
+      device.capabilities?.theme?.supportsUsagePaceV1 !== true) ||
+    (theme.requiredCapabilities.includes("reset-footer-v1") &&
+      device.capabilities?.theme?.supportsResetFooterV1 !== true);
   return {
     needed: needsRequiredCapability || pathIsOutdated,
     needsFirmwareCapability: needsRequiredCapability,

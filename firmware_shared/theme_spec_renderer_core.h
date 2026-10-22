@@ -651,6 +651,10 @@ inline const char* UsageWindowField(const char* key) {
   return "percent";
 }
 
+// The shared footer text ("Weekly reset 5d") for a reset line the theme places
+// anywhere; it follows every usage window's countdown.
+constexpr const char* kUsageFooterResetBinding = "usageFooterReset";
+
 // A countdown repaints whenever it moves. Compact countdowns: us1r/us2r,
 // pv1r/pv2r.
 inline bool UsageWindowKeyFollowsReset(const char* key) {
@@ -986,9 +990,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
   if (std::strcmp(key, "usageModeShort") == 0 || std::strcmp(key, "usageModeStandalone") == 0) {
     // In Two at once the basis already occupies the provider header.
     if (std::strchr(SafeText(frame.provider), '+') != nullptr) return;
-    // "left" for what remains, else the mode itself ("used"): "Session left".
-    std::snprintf(out, outSize, "%s",
-                  std::strcmp(key, "usageModeShort") == 0 && std::strcmp(SafeText(frame.usageMode), "remaining") == 0 ? "left" : SafeText(frame.usageMode));
+    std::snprintf(out, outSize, "%s", SafeText(frame.usageMode));
     return;
   }
   if (std::strcmp(key, "activity") == 0 || std::strcmp(key, "act") == 0) {
@@ -1221,6 +1223,9 @@ inline uint32_t BindingFieldMask(const char* binding) {
   }
   if (ProviderSlotBindingIndex(binding) >= 0) {
     return kThemeSpecFieldProviderSlots;
+  }
+  if (std::strcmp(SafeText(binding), kUsageFooterResetBinding) == 0) {
+    return kThemeSpecFieldUsageWindows | kThemeSpecFieldUsageWindowReset;
   }
   if (UsageWindowBindingIndex(binding) >= 0) {
     // A pace bar's plan moves with the usage mode (delta counts used percent), also
@@ -2207,7 +2212,8 @@ inline bool ResetFooterFits(Sink* sink, const CompiledPrimitive& primitive, cons
 }
 
 // Mirrors displayedResetFooter in the preview. Only a standalone first-limit
-// countdown below the displayed usage rows is a shared footer.
+// countdown below the displayed usage rows is a shared footer; the explicit
+// usageFooterReset binding is one wherever the theme places it.
 inline bool RenderDisplayedResetFooter(const CompiledThemeSpec& scene,
     const CompiledPrimitive& primitive, const FrameData& frame, char* out, size_t outSize,
     Sink* sink = nullptr) {
@@ -2215,22 +2221,23 @@ inline bool RenderDisplayedResetFooter(const CompiledThemeSpec& scene,
   const char* token = nullptr;
   if (std::strncmp(raw, "Reset in ", 9) == 0) token = raw + 9;
   if (std::strncmp(raw, "Resets in ", 10) == 0) token = raw + 10;
+  const bool explicitFooter = std::strcmp(SafeText(primitive.binding), kUsageFooterResetBinding) == 0;
   const bool binding = StringEqualsAny(primitive.binding, "usageSlot1Reset", "us1r", "usage.0.reset");
-  if (primitive.binding != nullptr && !binding) return false;
-  if (!binding && (token == nullptr ||
-      (std::strcmp(token, "{usageSlot1Reset}") != 0 &&
-       std::strcmp(token, "{us1r}") != 0 &&
-       std::strcmp(token, "{usage.0.reset}") != 0))) return false;
+  if (!explicitFooter) {
+    if (primitive.binding != nullptr && !binding) return false;
+    if (!binding && (token == nullptr ||
+        (std::strcmp(token, "{usageSlot1Reset}") != 0 &&
+         std::strcmp(token, "{us1r}") != 0 &&
+         std::strcmp(token, "{usage.0.reset}") != 0))) return false;
+  }
   bool displayed[kMaxThemeSpecUsageWindows] = {};
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
     const CompiledPrimitive& row = scene.primitives[i];
     if (&row == &primitive || row.usageSlot == 0 ||
         !UsageWindowOwnerAvailableFor(frame, row.usageSlot - 1)) continue;
-    if (row.y >= primitive.y) return false;
+    if (!explicitFooter && row.y >= primitive.y) return false;
     displayed[row.usageSlot - 1] = true;
   }
-  size_t displayedCount = 0;
-  for (bool slot : displayed) if (slot) ++displayedCount;
   size_t preferred = kMaxThemeSpecUsageWindows;
   if (!frame.usageUnavailable && SafeText(frame.footerWindow)[0] != '\0') {
     for (size_t i = 0; i < kMaxThemeSpecUsageWindows; ++i) {
@@ -2257,19 +2264,18 @@ inline bool RenderDisplayedResetFooter(const CompiledThemeSpec& scene,
     if (window.resetSecs <= 0 || frame.usageUnavailable) continue;
     char duration[32] = {};
     FormatDuration(window.resetSecs, duration, sizeof(duration));
+    if (char* space = std::strchr(duration, ' ')) *space = '\0';  // largest unit only
     // A pair label ("Claude Weekly") is longer than the limit name ("Weekly").
     const char* label = SafeText(window.label);
     const char* limit = std::strchr(frame.provider, '+') != nullptr && std::strchr(label, ' ') != nullptr
         ? std::strchr(label, ' ') + 1 : label;
-    const char* formats[] = {"%s resets in %s", "%s %s", "%s %s"};
-    const char* names[] = {label, label, limit};
-    for (size_t v = 0; v < 3; ++v) {
-      std::snprintf(out, outSize, formats[v], names[v], duration);
-      if (ResetFooterFits(sink, primitive, out)) break;
+    const char* names[] = {label, limit};
+    for (size_t v = 0; v < 2; ++v) {
+      std::snprintf(out, outSize, "%s reset %s", names[v], duration);
+      if (ResetFooterFits(sink, primitive, out)) return true;
     }
-    if (displayedCount == 1 && !ResetFooterFits(sink, primitive, out)) {
-      std::snprintf(out, outSize, "Resets %s", duration);
-    }
+    // No name fits at the original font: the name goes, the font and the text stay whole.
+    std::snprintf(out, outSize, "Reset %s", duration);
     return true;
   }
   if (!sawDisplayed) return false;

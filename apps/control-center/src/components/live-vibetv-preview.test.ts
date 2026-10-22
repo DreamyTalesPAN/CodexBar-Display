@@ -1324,8 +1324,8 @@ describe("usage pace", () => {
     expect(render(paced(91, { delta: -6, state: "reserve" }), { ...rounded, br: 0 })).not.toContain("<clipPath");
   });
 
-  it("says left for what remains and the mode itself otherwise", () => {
-    expect(boundValue("usageModeShort", paced(91, undefined))).toBe("left");
+  it("says the mode itself, remaining or used", () => {
+    expect(boundValue("usageModeShort", paced(91, undefined))).toBe("remaining");
     expect(boundValue("usageModeShort", paced(9, undefined, { usageMode: "used" }))).toBe("used");
   });
 
@@ -1421,40 +1421,58 @@ describe("displayed-limit reset footer", () => {
     const rowReset = { ...footer, y: 10 };
     expect(renderTextPrimitive(rowReset, frame, [lane1, rowReset, { ...lane2, y: 20 }])).toBe("No active session");
     const generic = { t: "tx", y: 204, ui: 0, b: "usage.0.reset" };
-    expect(renderTextPrimitive(generic, frame, [{ ...lane1, ui: 0 }, { ...lane2, ui: 1 }, generic])).toBe("Weekly resets in 3d 1h");
+    expect(renderTextPrimitive(generic, frame, [{ ...lane1, ui: 0 }, { ...lane2, ui: 1 }, generic])).toBe("Weekly reset 3d");
   });
   it("prefers the first reset, never the earliest deadline", () => {
     const both = { ...frame, usageWindows: frame.usageWindows.map((w, i) => i === 0 ? { ...w, resetSecs: 360000, idle: false } : w) };
-    expect(renderTextPrimitive(footer, both, primitives)).toBe("Session resets in 4d 4h");
+    expect(renderTextPrimitive(footer, both, primitives)).toBe("Session reset 4d");
   });
   it("checks the shipped Mini Classic and preserved Cozy Meadow specs", () => {
     const mini = JSON.parse(readFileSync(new URL("../../../../theme-packs/mini-classic/theme.json", import.meta.url), "utf8"));
     const cozy = JSON.parse(readFileSync(new URL("../../../../dist/theme-packs/render/cozy-meadow/cm-4-5e14e6.json", import.meta.url), "utf8")).spec;
     const miniFooter = mini.p.at(-1);
-    expect(renderTextPrimitive(miniFooter, frame, mini.p)).toBe("Weekly 3d 1h");
+    expect(renderTextPrimitive(miniFooter, frame, mini.p)).toBe("Weekly reset 3d");
     const markup = renderToStaticMarkup(createElement(ThemeSpecPreview, {
       pack: { themeId: "mini-classic", spec: mini, assets: {} },
       status: "ready", themeId: "mini-classic", frame,
     }));
     expect([...markup.matchAll(/<text[^>]*font-size="(\d+)"/g)].at(-1)?.[1]).toBe("32");
-    expect(markup.replace(/<[^>]+>/g, "")).toContain("Weekly 3d 1h");
+    expect(markup.replace(/<[^>]+>/g, "")).toContain("Weekly reset 3d");
     // Cozy Meadow really has only one displayed limit, so Weekly stays hidden.
     expect(renderTextPrimitive(cozy.p.at(-1), frame, cozy.p)).toBe("No active session");
   });
-  it("keeps the name with multiple limits and permits Resets only for one", () => {
+  it("keeps the name while it fits and falls back to Reset <unit> for one or several limits", () => {
     const narrow = { ...footer, f: 1, s: 2, w: 120, ft: "shrink" };
-    expect(renderTextPrimitive(narrow, frame, [lane1, lane2, narrow])).toBe("Weekly 3d 1h");
+    expect(renderTextPrimitive(narrow, frame, [lane1, lane2, narrow])).toBe("Reset 3d");
     const single = { ...frame, usageWindows: frame.usageWindows.map(w => ({ ...w, label: "Long weekly limit" })) };
-    expect(renderTextPrimitive({ ...narrow, w: 144 }, single, [lane2])).toBe("Resets 3d 1h");
+    expect(renderTextPrimitive({ ...narrow, w: 144 }, single, [lane2])).toBe("Reset 3d");
     const wide = { ...narrow, w: 300 };
-    expect(renderTextPrimitive(wide, frame, [lane1, lane2, wide])).toBe("Weekly resets in 3d 1h");
+    expect(renderTextPrimitive(wide, frame, [lane1, lane2, wide])).toBe("Weekly reset 3d");
+  });
+  it("drops a long name on Gauge's 130 px line without shrinking or clipping", () => {
+    const gauge = JSON.parse(readFileSync(new URL("../../../../theme-packs/gauge/theme.json", import.meta.url), "utf8"));
+    const line = gauge.p.find((p: ThemePrimitive) => (p.b || p.binding) === "usageFooterReset");
+    const draw = (label: string) => {
+      const labelled = { ...frame, usageWindows: frame.usageWindows.map((w) => ({ ...w, label })) };
+      const markup = renderToStaticMarkup(createElement(ThemeSpecPreview, {
+        pack: { themeId: "gauge", spec: gauge, assets: {} }, status: "ready", themeId: "gauge", frame: labelled,
+      }));
+      return {
+        text: renderTextPrimitive(line, labelled, gauge.p),
+        sizes: new Set([...markup.matchAll(/<text[^>]*font-size="([\d.]+)"/g)].map((m) => m[1])),
+      };
+    };
+    const long = draw("Weekly (Sonnet)");
+    expect(long.text).toBe("Reset 3d");
+    expect(draw("Weekly").text).toBe("Weekly reset 3d");
+    expect(long.sizes).toEqual(draw("Weekly").sizes);
   });
   it("names the first displayed limit with a real reset", () => {
     const markup = renderToStaticMarkup(createElement(ThemeSpecPreview, {
       pack: { themeId: "mini-classic", spec: { p: primitives }, assets: {} },
       status: "ready", themeId: "mini-classic", frame,
     }));
-    expect(markup.replace(/<[^>]+>/g, "")).toContain("Weekly resets in 3d 1h");
+    expect(markup.replace(/<[^>]+>/g, "")).toContain("Weekly reset 3d");
   });
   it("never clips a pair footer: pair label, then limit name, then shrink", () => {
     const pair = buildFrameData(now.toISOString(), {
@@ -1467,7 +1485,7 @@ describe("displayed-limit reset footer", () => {
     // The shipped Claude Creature and Pixel Battery footers (font 2, size 2).
     for (const [x, w, v] of [[4, 231, "Resets in {usageSlot1Reset}"], [10, 220, "Reset in {usageSlot1Reset}"]] as const) {
       const f = { t: "tx", x, y: 199, w, sl: 1, v, s: 2, f: 2, ft: "shrink" };
-      expect(renderTextPrimitive(f, pair, [lane1, lane2, f])).toBe("Weekly 3d 1h");
+      expect(renderTextPrimitive(f, pair, [lane1, lane2, f])).toBe("Weekly reset 3d");
     }
     const tiny = { ...footer, f: 2, s: 2, w: 60, ft: "shrink" };
     const markup = renderToStaticMarkup(createElement(ThemeSpecPreview, {
@@ -1539,15 +1557,15 @@ const footerWordingCases: Array<{
   untrusted: boolean;
   expected: string;
 }> = [
-  { first: "C", second: "C", shown: 2, width: 0, untrusted: false, expected: "Session resets in 4d 4h" },
-  { first: "C", second: "C", shown: 2, width: 200, untrusted: false, expected: "Session 4d 4h" },
-  { first: "C", second: "I", shown: 2, width: 0, untrusted: false, expected: "Session resets in 4d 4h" },
-  { first: "I", second: "C", shown: 2, width: 300, untrusted: false, expected: "Weekly resets in 3d 1h" },
-  { first: "I", second: "C", shown: 2, width: 200, untrusted: false, expected: "Weekly 3d 1h" },
-  { first: "C", second: "C", shown: 2, width: 170, untrusted: false, expected: "Session 4d 4h" },
+  { first: "C", second: "C", shown: 2, width: 0, untrusted: false, expected: "Session reset 4d" },
+  { first: "C", second: "C", shown: 2, width: 200, untrusted: false, expected: "Reset 4d" },
+  { first: "C", second: "I", shown: 2, width: 0, untrusted: false, expected: "Session reset 4d" },
+  { first: "I", second: "C", shown: 2, width: 300, untrusted: false, expected: "Weekly reset 3d" },
+  { first: "I", second: "C", shown: 2, width: 200, untrusted: false, expected: "Weekly reset 3d" },
+  { first: "C", second: "C", shown: 2, width: 170, untrusted: false, expected: "Reset 4d" },
   { first: "C", second: "C", shown: 2, width: 0, untrusted: true, expected: "Reset unavailable" },
-  { first: "C", second: "C", shown: 1, width: 0, untrusted: false, expected: "Session resets in 4d 4h" },
-  { first: "C", second: "C", shown: 1, width: 170, untrusted: false, expected: "Resets 4d 4h" },
+  { first: "C", second: "C", shown: 1, width: 0, untrusted: false, expected: "Session reset 4d" },
+  { first: "C", second: "C", shown: 1, width: 170, untrusted: false, expected: "Reset 4d" },
   { first: "I", second: "C", shown: 1, width: 0, untrusted: false, expected: "No active session" },
   { first: "E", second: "C", shown: 1, width: 0, untrusted: false, expected: "Reset unavailable" },
   { first: "C", second: "C", shown: 1, width: 0, untrusted: true, expected: "Reset unavailable" },
@@ -1557,7 +1575,9 @@ describe("footer wording table", () => {
   const now = new Date("2026-10-21T20:20:00Z");
   for (const row of footerWordingCases) {
     for (const mode of ["used", "remaining"] as const) {
-      it(`${row.first}${row.second}, ${row.shown} shown, width ${row.width}${row.untrusted ? ", untrusted" : ""}, ${mode}: ${row.expected}`, () => {
+      for (const explicit of [false, true]) {
+      // usageFooterReset (Gauge's ring line, above its second row) reads like the footer below the rows.
+      it(`${row.first}${row.second}, ${row.shown} shown, width ${row.width}${row.untrusted ? ", untrusted" : ""}, ${mode}${explicit ? ", usageFooterReset" : ""}: ${row.expected}`, () => {
         // Idle means nothing used: 0 in used mode, 100 in remaining mode.
         const nothingUsed = mode === "remaining" ? 100 : 0;
         const window = (label: string, code: string, countdown: number) => ({
@@ -1573,16 +1593,36 @@ describe("footer wording table", () => {
           usageWindows: [window("Session", row.first, 360000), window("Weekly", row.second, 262800)],
         }, now);
         const footer: ThemePrimitive = {
-          t: "tx", y: 204, sl: 1, f: 2, s: 2, ft: "shrink", v: "Reset in {usageSlot1Reset}",
-          ...(row.width > 0 ? { w: row.width } : {}),
+          t: "tx", sl: 1, f: 2, s: 2, ft: "shrink", ...(row.width > 0 ? { w: row.width } : {}),
+          ...(explicit ? { y: 10, b: "usageFooterReset" } : { y: 204, v: "Reset in {usageSlot1Reset}" }),
         };
         // Text lanes like the native table: an unavailable limit keeps its name, so it still counts as displayed.
         const labels: ThemePrimitive[] = [1, 2].slice(0, row.shown).map((sl) => ({ t: "tx", y: 30, sl, v: `{usageSlot${sl}Label}` }));
         const primitives = [...labels, footer];
         expect(renderTextPrimitive(footer, built, primitives)).toBe(row.expected);
       });
+      }
     }
   }
+});
+
+it("usageFooterReset follows the footer window wherever it sits", () => {
+ const now = new Date("2026-10-21T12:00:00Z");
+ const footer: ThemePrimitive = {t:"tx",y:184,sl:1,b:"usageFooterReset"};
+ const rows: ThemePrimitive[] = [{t:"tx",y:122,sl:1},{t:"tx",y:208,sl:2},footer];
+ const at = (footerWindow?: string) => buildFrameData(now.toISOString(), {provider:"claude",...(footerWindow?{footerWindow}:{}),usageWindows:[{id:"session",label:"Session",percent:20,resetSecs:3600},{id:"weekly",label:"Weekly",percent:30,resetSecs:5*86400+3600}]},now);
+ expect(renderTextPrimitive(footer,at(),rows)).toBe("Session reset 1h");
+ expect(renderTextPrimitive(footer,at("weekly"),rows)).toBe("Weekly reset 5d");
+});
+
+it("names the limit and only the largest unit in the footer", () => {
+ const now = new Date("2026-10-21T12:00:00Z");
+ const footer: ThemePrimitive = {t:"tx",y:200,v:"Reset in {usageSlot1Reset}"};
+ const rows: ThemePrimitive[] = [{t:"tx",y:20,sl:1},{t:"tx",y:50,sl:2},footer];
+ const at = (first: number, second: number, footerWindow = "primary") => buildFrameData(now.toISOString(), {provider:"claude",footerWindow,usageWindows:[{id:"primary",label:"Session",percent:20,resetSecs:first},{id:"secondary",label:"Weekly",percent:30,resetSecs:second}]},now);
+ expect(renderTextPrimitive(footer,at(3600+20*60,5*86400+3600),rows)).toBe("Session reset 1h");
+ expect(renderTextPrimitive(footer,at(45*60,5*86400+3600),rows)).toBe("Session reset 45m");
+ expect(renderTextPrimitive(footer,at(45*60,5*86400+3600,"secondary"),rows)).toBe("Weekly reset 5d");
 });
 
 it("prefers the selected footer window only when displayed with a reset", () => {
@@ -1590,10 +1630,10 @@ it("prefers the selected footer window only when displayed with a reset", () => 
  const footer: ThemePrimitive = {t:"tx",y:200,v:"Reset in {usageSlot1Reset}"};
  const rows: ThemePrimitive[] = [{t:"tx",y:20,sl:1},{t:"tx",y:50,sl:2},footer];
  const frame = buildFrameData(now.toISOString(), {provider:"claude",footerWindow:"secondary",usageWindows:[{id:"primary",label:"Session",percent:20,resetSecs:3600},{id:"secondary",label:"Weekly",percent:30,resetSecs:7200}]},now);
- expect(renderTextPrimitive(footer,frame,rows)).toBe("Weekly resets in 2h 0m");
- expect(renderTextPrimitive(footer,frame,[rows[0],footer])).toBe("Session resets in 1h 0m");
+ expect(renderTextPrimitive(footer,frame,rows)).toBe("Weekly reset 2h");
+ expect(renderTextPrimitive(footer,frame,[rows[0],footer])).toBe("Session reset 1h");
  frame.usageWindows[1].resetSecs = 0;
- expect(renderTextPrimitive(footer,frame,rows)).toBe("Session resets in 1h 0m");
+ expect(renderTextPrimitive(footer,frame,rows)).toBe("Session reset 1h");
 });
 
 // The pace bar table, row for row the same as paceBarRows in

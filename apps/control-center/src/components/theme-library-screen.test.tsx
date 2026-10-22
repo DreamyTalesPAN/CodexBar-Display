@@ -174,6 +174,17 @@ describe("a theme that needs usage-pace-v1", () => {
     expect(themeNeedsUpgradeableFirmware(pace, withSlots(true), true)).toBe(false);
   });
 
+  it("takes the firmware-update path for reset-footer-v1 until the VibeTV advertises it", () => {
+    const footer: ThemeProduct = { ...pace, requiredCapabilities: ["usage-slots-v1", "reset-footer-v1"] };
+    const withFooter = (supportsResetFooterV1?: boolean): ThemeLibraryDeviceInfo => ({
+      ...device,
+      firmware: "1.0.50",
+      capabilities: { theme: { supportsThemeSpecV1: true, supportsUsageSlotsV1: true, supportsResetFooterV1 } },
+    });
+    expect(themeNeedsUpgradeableFirmware(footer, withFooter(false), true)).toBe(true);
+    expect(themeNeedsUpgradeableFirmware(footer, withFooter(true), true)).toBe(false);
+  });
+
   // An app that predates a capability (v1.0.65 does not know usage-pace-v1 or
   // any later one) blocks that one pack and still lists every other theme.
   it("blocks only its own pack when the app does not know the capability", () => {
