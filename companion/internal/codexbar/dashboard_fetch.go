@@ -181,11 +181,11 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 		usage, usageOK := dashboardusage.UsageForProvider(usageProviders, provider.ID)
 		id := strings.ToLower(strings.TrimSpace(provider.ID))
 		normalized := dashboardusage.NormalizeProvider(provider, usage)
-		// Serve caches dashboard and usage separately. Only join pace when
-		// its usage measurement matches the authoritative dashboard window.
+		// CodexBar's pace rides in the same usage item as the windows. Serve's
+		// answer is the only source on this path, so it is read here (#210, #412).
 		var pace []ProviderPace
 		if usageOK && !normalized.Unavailable {
-			pace = matchingDashboardPace(normalized.Windows, usageItems[id])
+			pace = parseProviderPace(usageItems[id])
 		}
 		parsed := parsedFrameFromDashboardProvider(
 			provider,
@@ -230,28 +230,6 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	}
 	serveUsage.mu.Unlock()
 	return out, nil
-}
-
-func matchingDashboardPace(windows []dashboardusage.UsageWindow, payload map[string]any) []ProviderPace {
-	parsed := parseProviderPace(payload)
-	var matched []ProviderPace
-	for _, window := range windows {
-		pace, ok := PaceForWindow(parsed, window.ID)
-		if !ok {
-			continue
-		}
-		path := "usage." + pace.Window + "."
-		used, known := floatAtPaths(payload, path+"usedPercent")
-		if !known || used != window.UsedPercent {
-			continue
-		}
-		reset := firstRFC3339AtPaths(payload, path+"resetsAt", path+"resetAt")
-		if window.ResetAt != nil && !reset.IsZero() && !window.ResetAt.Equal(reset) {
-			continue
-		}
-		matched = append(matched, pace)
-	}
-	return matched
 }
 
 // dashboardRequestTimeout bounds the snapshot request to CodexBar's serve,
