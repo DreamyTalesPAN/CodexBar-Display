@@ -10008,3 +10008,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: pending — config_error and other failures without an available repair show no Fix link; the incompatible-engine block keeps its single Repair control.
 - Scope: append-only reminder for apps/control-center/src/components/diagnostics-panel.tsx and apps/control-center/src/components/diagnostics-panel.test.tsx; no product changes and no approval granted by the main merge.
 - What's new: none — approval status reminder only
+
+## 2026-10-22 — #803: approval marker after merging main at 1e1244fe
+
+- User approval: no visible change – UI approval not needed (merge of main at 1e1244fe into #803; no visible change of its own; the pending entries of this branch keep their pending status)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge conflict resolution in `apps/control-center/src/components/diagnostics-panel.tsx` (main's busy-elsewhere guard on Run diagnostics plus this branch's passed count) and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
