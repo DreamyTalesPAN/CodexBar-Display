@@ -9599,3 +9599,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: after "Run setup again" the Support report card keeps Copy / Download for the report made before the reset, as before the Support report change of this pull request.
 - Scope: apps/control-center/src/components/control-center-app.tsx, resetSetup no longer clears supportReport. Pull request branch #782 only, not merged, not released.
 - What's new: none — reverts the clearing, no customer-visible change of its own
+
+## 2026-10-22 — #915: saved WiFi recovery test waits for the firmware dialog
+
+- User approval: no visible change – UI approval not needed (test-only fix for flaky test #915)
+- Approved customer-visible result: None. The setup wizard is unchanged; only its unit test now waits for the firmware dialog before clicking "Use WiFi instead".
+- Scope: apps/control-center/src/components/setup/setup-wizard.test.tsx, test "rescans and reconnects the same device after reusing its saved network" only. Pull request branch only, not merged, not released.
+- What's new: none — test only, no customer-visible change
