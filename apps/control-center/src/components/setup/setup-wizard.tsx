@@ -522,8 +522,11 @@ export function SetupWizard(props: SetupWizardProps) {
     }
   });
 
+  const wifiUpdateOfferOpen = Boolean(
+    step === "device" && !wifiSetup?.viaCable && macAppUpdateAfterSearch,
+  );
   useEffect(() => {
-    if (wifiSetup?.phase !== "waiting") return;
+    if (wifiSetup?.phase !== "waiting" || wifiUpdateOfferOpen) return;
     const retry = window.setInterval(() => searchWhileWaitingForWiFi(), 1500);
     const deadline = window.setTimeout(() => {
       setWiFiSetup((current) => current?.viaCable
@@ -536,7 +539,7 @@ export function SetupWizard(props: SetupWizardProps) {
       window.clearInterval(retry);
       window.clearTimeout(deadline);
     };
-  }, [wifiSetup?.phase]);
+  }, [wifiSetup?.phase, wifiUpdateOfferOpen]);
 
   useEffect(() => {
     if (

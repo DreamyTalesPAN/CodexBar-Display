@@ -828,6 +828,29 @@ describe("SetupWizard: direct connection", () => {
     }
   });
 
+  it("pauses WiFi retry scans and their deadline while the update offer is open", async () => {
+    vi.useFakeTimers();
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "not-found",
+      onSelectConnectionMode: vi.fn().mockResolvedValue({ status: "waiting_for_wifi" }),
+    });
+    const view = render(<SetupWizard {...props} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Already on WiFi/ }));
+    });
+    view.rerender(<SetupWizard {...props} macAppUpdate={{ onUpdate: vi.fn(), version: "1.0.65" }} />);
+    expect(screen.getByRole("dialog", { name: "Update the Mac App first" })).toBeTruthy();
+    const searches = vi.mocked(props.onSearchDevices).mock.calls.length;
+    await act(() => vi.advanceTimersByTimeAsync(65_000));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(searches);
+    expect(screen.getByRole("dialog", { name: "Update the Mac App first" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Scan again" }));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(searches + 1);
+    await act(() => vi.advanceTimersByTimeAsync(1500));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(searches + 2);
+  });
+
   it("offers a newer release again after the previous one was dismissed (#822)", () => {
     const onUpdate = vi.fn();
     const props = baseProps({

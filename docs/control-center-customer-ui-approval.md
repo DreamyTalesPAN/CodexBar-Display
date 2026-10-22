@@ -9388,3 +9388,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve main's dialog contract and the PR's setup update offer.
 - Scope: main merge conflict resolution and this approval record.
 - What's new: none — integration only
+
+## 2026-10-22 — #822: stable update offer during WiFi retries
+
+- User approval: no visible change – UI approval not needed (keep the existing #822 update offer open during automatic WiFi retries)
+- Approved customer-visible result: The existing update offer stays readable and usable until dismissed; automatic discovery resumes afterwards.
+- Scope: pause the WiFi retry timer and deadline while the offer is open, with regression coverage.
+- What's new: none — bug fix, not announced to customers
