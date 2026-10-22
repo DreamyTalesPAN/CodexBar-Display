@@ -382,6 +382,25 @@ describe("SetupProvidersScreen", () => {
     expect(html).toContain("Show more providers (4 left)");
   });
 
+  it("keeps Continue outside the provider list, which scrolls and fades at its bottom", () => {
+    renderDom(
+      <SetupProvidersScreen
+        onContinue={vi.fn()}
+        onToggle={vi.fn()}
+        pendingCheckIds={new Set<string>()}
+        pendingPreferenceIds={new Set<string>()}
+        providers={[claude, copilot]}
+        usage={usage}
+      />,
+    );
+    const list = screen.getByText("Claude Code").closest(".overflow-y-auto");
+
+    expect(list?.className).toMatch(/max-h-\[/);
+    expect(list?.className).toContain("mask-image:");
+    expect(list?.contains(screen.getByText("GitHub Copilot"))).toBe(true);
+    expect(screen.getByRole("button", { name: "Continue" }).closest(".overflow-y-auto")).toBeNull();
+  });
+
   it("does not offer more when everything already fits", () => {
     const html = render({ providers: [claude, copilot] });
 
