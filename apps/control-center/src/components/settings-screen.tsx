@@ -50,6 +50,7 @@ import {
   deviceCanSwitchToCable,
   deviceIsCustomerConnected,
   deviceIsReady,
+  deviceLacks,
   deviceOffersCable,
   type ApiError,
   type DeviceInfo,
@@ -59,6 +60,9 @@ import {
 } from "./control-center-types";
 
 const standbyTimeoutOptions = [1, 5, 10, 15, 30, 60];
+
+// Shown on a Pace or Two at once option that this VibeTV firmware cannot draw.
+const UPDATE_NEEDED_NOTE = "Update needed. Update VibeTV to use this.";
 
 export function standbyTimeoutLabel(minutes: number): string {
   return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
@@ -247,6 +251,10 @@ export function SettingsScreen({
     activeLiveThemeId(themes, device),
     themes,
   );
+  // The firmware cannot draw pace or two providers at once; say so instead of
+  // offering a switch or card that does nothing on this VibeTV.
+  const paceLacks = deviceLacks(device, "pace");
+  const pairLacks = deviceLacks(device, "pair");
 
   return (
     <div className="mx-auto w-full max-w-[1040px] py-10">
@@ -414,6 +422,7 @@ export function SettingsScreen({
               providerId,
             )
           }
+          pairNote={pairLacks ? UPDATE_NEEDED_NOTE : null}
           pairPreview={pairDisplayPreview(previewOf(pairIds[0]), previewOf(pairIds[1]))}
           pairProviderIds={pairIds}
           pairProviders={pairChoices}
@@ -453,9 +462,9 @@ export function SettingsScreen({
           <ItemSeparator className="my-0" />
           <SettingsSection id="settings-pace" title="Pace">
             <PaceSetting
-              descriptor={pace.descriptor}
-              disabled={localActionBusy}
-              note={pace.note}
+              descriptor={paceLacks ? { ...pace.descriptor, value: false } : pace.descriptor}
+              disabled={localActionBusy || paceLacks}
+              note={paceLacks ? UPDATE_NEEDED_NOTE : pace.note}
               onChange={onDisplayPreferenceChange}
             />
           </SettingsSection>

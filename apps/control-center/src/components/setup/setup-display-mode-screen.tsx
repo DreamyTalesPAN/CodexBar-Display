@@ -63,6 +63,8 @@ type SetupDisplayModeScreenProps = {
   automaticPreviews?: SetupDisplayModePreview[];
   /** Live usage of the provider Manual is pinned to right now. */
   manualPreview: SetupDisplayModePreview | null;
+  /** Set when this VibeTV cannot show Two at once: the card is off and says this. */
+  pairNote?: string | null;
   /** Live usage of the two providers Two at once shows together. */
   pairPreview?: SetupDisplayModePreview | null;
   /** Enabled providers for the pair, including those awaiting fresh usage. */
@@ -177,6 +179,7 @@ type DisplayModeChoiceProps = Pick<
   | "onSelectMode"
   | "onSelectPair"
   | "onSelectProvider"
+  | "pairNote"
   | "pairPreview"
   | "pairProviderIds"
   | "pairProviders"
@@ -208,6 +211,7 @@ export function DisplayModeChoice({
   onSelectMode,
   onSelectPair,
   onSelectProvider,
+  pairNote = null,
   pairPreview = null,
   pairProviderIds = [],
   providers,
@@ -252,8 +256,8 @@ export function DisplayModeChoice({
         </ModeCard>
         {offersPair ? (
           <ModeCard
-            description="VibeTV shows two providers together, one limit each."
-            disabled={saving}
+            description={pairNote ?? "VibeTV shows two providers together, one limit each."}
+            disabled={saving || pairNote !== null}
             onSelect={() => onSelectMode("pair")}
             selected={mode === "pair"}
             title="Two at once"

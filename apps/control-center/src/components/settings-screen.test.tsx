@@ -7,6 +7,8 @@ import type {
   PreferenceDescriptor,
   StandbySettings,
 } from "./control-center-types";
+
+type ThemeCapabilities = NonNullable<NonNullable<DeviceInfo["capabilities"]>["theme"]>;
 import type { ProviderItem, ProviderPickerProps } from "./provider-picker";
 import {
   SettingsScreen,
@@ -506,6 +508,46 @@ describe("SettingsScreen standby controls", () => {
   });
 
   // Issue #322: the timed rotation is one select under the Automatic card.
+  // Issue #864 review: Two at once needs two windows per frame, which only
+  // firmware with usage-windows-v1 and room for two draws.
+  it("disables Two at once with Update needed on firmware without two windows", () => {
+    const pairCard = (theme: ThemeCapabilities, ready = true) => {
+      const html = render(
+        { ...standbyDevice, ready, capabilities: { theme } },
+        savedStandby,
+        {
+          ...providerPicker,
+          display: { mode: "pair", providerIds: ["claude", "codex"], configured: true, valid: true },
+          items: [provider("claude", "Claude", true), provider("codex", "Codex", true)],
+        },
+      );
+      const title = html.indexOf(">Two at once<");
+      return {
+        card: html.slice(html.lastIndexOf("<button", title), title),
+        text: html.slice(title, html.indexOf("</button>", title)),
+      };
+    };
+    const updateNeeded = "Update needed. Update VibeTV to use this.";
+    const shown = "VibeTV shows two providers together, one limit each.";
+
+    const old = pairCard({ supportsUsageWindowsV1: false, maxUsageWindows: 1 });
+    expect(old.card).toContain('disabled=""');
+    expect(old.text).toContain(updateNeeded);
+    expect(old.text).not.toContain(shown);
+
+    // Room for one window is not enough for a pair either.
+    expect(pairCard({ supportsUsageWindowsV1: true, maxUsageWindows: 1 }).card).toContain('disabled=""');
+
+    const capable = pairCard({ supportsUsageWindowsV1: true, maxUsageWindows: 2 });
+    expect(capable.card).not.toContain('disabled=""');
+    expect(capable.text).toContain(shown);
+    expect(capable.text).not.toContain(updateNeeded);
+
+    // Offline or unknown: no claim about the firmware.
+    const offline = pairCard({ supportsUsageWindowsV1: false }, false);
+    expect(offline.text).not.toContain(updateNeeded);
+  });
+
   it("offers the rotation under Display mode only while Automatic is chosen", () => {
     const displayMode = (
       mode: "automatic" | "fixed",
