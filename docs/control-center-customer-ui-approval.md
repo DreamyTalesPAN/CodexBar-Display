@@ -9634,3 +9634,45 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: nothing changes; the customer sees exactly what the earlier entries describe.
 - Scope: docs/control-center-customer-ui-approval.md only, the wording of the #782 build 7200 record. Pull request branch #782 only, not merged, not released.
 - What's new: none — approval log wording only
+
+## 2026-10-22 — #915: saved WiFi recovery test waits for the firmware dialog
+
+- User approval: no visible change – UI approval not needed (test-only fix for flaky test #915)
+- Approved customer-visible result: None. The setup wizard is unchanged; only its unit test now waits for the firmware dialog before clicking "Use WiFi instead".
+- Scope: apps/control-center/src/components/setup/setup-wizard.test.tsx, test "rescans and reconnects the same device after reusing its saved network" only. Pull request branch only, not merged, not released.
+- What's new: none — test only, no customer-visible change
+
+## 2026-10-22 — Usage: Refresh asks for a new reading right away (#918)
+
+- User approval: pending — Marcus' finding from the #782 click test (22.10.2026, build 1321): Refresh stayed on "Refreshing" for about 40 s; his click test of this pull request is still open.
+- Approved customer-visible result: No new wording or control. A click on Refresh on Usage starts CodexBar's usage service fresh, so "Refreshing" lasts about as long as one reading instead of up to about a minute. It still ends only with values collected after the click. A second click while "Refreshing" is shown keeps the first request and starts nothing new.
+- Scope: `requestUsageRefresh` in `companion/internal/companionapi/usage.go`, `TestUsageManualRefreshStartsAFreshUsageServiceOnce` in `server_test.go`, the Manual Refresh section of `docs/usage-polling-architecture.md`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — a faster Refresh needs no notice
+
+## 2026-10-22 — Usage: no second "Refreshing" line above the token total (#918)
+
+- User approval: pending — Marcus' finding from the #782 click test (22.10.2026, build 1321); his click test of this pull request is still open. This replaces the small spinner badge by the token total that Paul asked for on 2026-10-09.
+- Approved customer-visible result: While a manual refresh waits, only the Refresh button shows the spinner and "Refreshing". Above "Total tokens in the last 30 days" nothing appears, and the page does not move. "Still counting" stays as before.
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, its test, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — one duplicate status line less
+
+## 2026-10-22 — Usage: Refresh right away and no second "Refreshing" line, approved after the click test (#918)
+
+- User approval: Marcus, 22.10.2026, channel Abstimmungschat (question 131, answer "131 ok"), after his click test of e8f7d6b4 on the Mac. This approves both pending #918 entries above.
+- Approved customer-visible result: As in the two entries above. A click on Refresh on Usage starts CodexBar's usage service fresh, so "Refreshing" lasts about as long as one reading (about 10 s on the test Mac); the values stay visible and do not turn stale while the fresh service starts. While it waits, only the Refresh button shows the spinner and "Refreshing"; nothing appears above "Total tokens in the last 30 days" and the page does not move.
+- Scope: as above, plus `ReplaceStartedAt` in `companion/internal/codexbar/dashboard_serve.go` and `serveBeingReplaced` in `companion/internal/daemon/collector.go` with their tests, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — a faster Refresh and one status line less need no notice
+
+## 2026-10-22 — #921: approval marker after merging main at 75139f6c
+
+- User approval: no visible change – UI approval not needed (merge of main (75139f6c) into #921; the own #918 entries of #921 keep their approval from Marcus, question 131)
+- Approved customer-visible result: #921 as in its own entries plus the entries merged with 75139f6c; nothing else changes.
+- Scope: the merge of 75139f6c and this approval record. Pull request branch #921 only, not merged, not released.
+- What's new: none — merge of 75139f6c, no customer-visible change of its own
+
+## 2026-10-22 — #921: Paul approves dropping the "Refreshing" badge by the token total
+
+- User approval: approved by Paul in the communicator chat, 2026-10-22: "ja" (to whether it is ok that the small "Refreshing" badge by the token total, which he asked for on 2026-10-09, goes away and only the Refresh button shows "Refreshing"; pictures usage-2-refreshing.png and usage-1-idle.png of f3cb4803).
+- Approved customer-visible result: as in the #918 entries of #921 above; while a manual refresh waits, only the Refresh button shows the spinner and "Refreshing", nothing appears above "Total tokens in the last 30 days".
+- Scope: this approval record only. Pull request branch #921 only, not merged, not released.
+- What's new: none — approval record only
