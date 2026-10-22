@@ -71,9 +71,13 @@ different CLI result.
 
 ## Manual Refresh
 
-Control Center manual refresh wakes the existing collector. It never starts a
-second CodexBar fetch path. A request made while one is still waiting keeps the
-first request's time, so the reading that answers the first also answers the
+Control Center manual refresh replaces the serve process with a fresh one and
+then wakes the existing collector. Serve keeps each answer for its refresh
+interval and answers once more with it while it measures again, so a wake alone
+could wait up to a minute; a fresh serve has no answer yet, and the collection
+after it measures (#918). It never starts a second CodexBar fetch path. A
+request made while one is still waiting keeps the first request's time and only
+wakes the collector, so the reading that answers the first also answers the
 second.
 
 `/v1/usage` reports:

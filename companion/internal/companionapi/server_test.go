@@ -3751,6 +3751,66 @@ func TestUsageManualRefreshSecondClickKeepsTheFirstRequest(t *testing.T) {
 	}
 }
 
+// serve keeps each reading for its refresh interval, so a wake alone could
+// wait up to a minute for new values (#918). A click starts a fresh serve,
+// whose first read measures; a click while that refresh waits starts none.
+func TestUsageManualRefreshStartsAFreshUsageServiceOnce(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 10, 22, 14, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	fresh := make(chan struct{}, 4)
+	woke := make(chan struct{}, 4)
+	server.restartUsageService = func(context.Context) error { return nil }
+	server.freshUsageService = func(context.Context) error { fresh <- struct{}{}; return nil }
+	server.wakeDisplayStream = func() { woke <- struct{}{} }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt: now.Add(-30 * time.Second),
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 24, UsageMode: "used"},
+				CollectedAt: now.Add(-30 * time.Second),
+			}},
+		}, true
+	}
+	get := func(path string) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status %d", path, rec.Code)
+		}
+	}
+	waitFor := func(ch chan struct{}, what string) {
+		t.Helper()
+		select {
+		case <-ch:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s did not happen", what)
+		}
+	}
+	nothingOn := func(ch chan struct{}, what string) {
+		t.Helper()
+		select {
+		case <-ch:
+			t.Fatalf("unexpected %s", what)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
+	get("/v1/usage")
+	nothingOn(fresh, "fresh usage service for a plain usage read")
+
+	get("/v1/usage?refresh=1")
+	waitFor(fresh, "fresh usage service after the click")
+	waitFor(woke, "collection after the fresh usage service")
+
+	now = now.Add(5 * time.Second)
+	get("/v1/usage?refresh=1")
+	waitFor(woke, "wake for the second click")
+	nothingOn(fresh, "second fresh usage service while the first refresh waits")
+}
+
 func TestUsageManualRefreshWaitsForEveryProvider(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)

@@ -9599,3 +9599,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: after "Run setup again" the Support report card keeps Copy / Download for the report made before the reset, as before the Support report change of this pull request.
 - Scope: apps/control-center/src/components/control-center-app.tsx, resetSetup no longer clears supportReport. Pull request branch #782 only, not merged, not released.
 - What's new: none — reverts the clearing, no customer-visible change of its own
+
+## 2026-10-22 — Usage: Refresh asks for a new reading right away (#918)
+
+- User approval: pending — Marcus' finding from the #782 click test (22.10.2026, build 1321): Refresh stayed on "Refreshing" for about 40 s; his click test of this pull request is still open.
+- Approved customer-visible result: No new wording or control. A click on Refresh on Usage starts CodexBar's usage service fresh, so "Refreshing" lasts about as long as one reading instead of up to about a minute. It still ends only with values collected after the click. A second click while "Refreshing" is shown keeps the first request and starts nothing new.
+- Scope: `requestUsageRefresh` in `companion/internal/companionapi/usage.go`, `TestUsageManualRefreshStartsAFreshUsageServiceOnce` in `server_test.go`, the Manual Refresh section of `docs/usage-polling-architecture.md`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — a faster Refresh needs no notice
+
+## 2026-10-22 — Usage: no second "Refreshing" line above the token total (#918)
+
+- User approval: pending — Marcus' finding from the #782 click test (22.10.2026, build 1321); his click test of this pull request is still open. This replaces the small spinner badge by the token total that Paul asked for on 2026-10-09.
+- Approved customer-visible result: While a manual refresh waits, only the Refresh button shows the spinner and "Refreshing". Above "Total tokens in the last 30 days" nothing appears, and the page does not move. "Still counting" stays as before.
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, its test, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — one duplicate status line less
