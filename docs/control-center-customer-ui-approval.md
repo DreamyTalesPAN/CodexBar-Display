@@ -10876,3 +10876,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: On Windows, a theme library error uses the Windows words (as approved on 2026-10-18); everything else as on this branch before the merge.
 - Scope: merge commit only: `apps/control-center/src/components/theme-library-screen.tsx` (Windows wording of the library error), the approval record `docs/control-center-customer-ui-approval.md` (main's entries first, then this branch's). Pull request branch only, not merged, not released.
 - What's new: none — merge of main, no new customer-visible content
+
+## 2026-10-22 — #802: standalone approval marker for the merge of main with #782 and #899
+
+- User approval: no visible change – UI approval not needed (standalone record for merge commit 9ab00514 of origin/main d2f3fade and aa25c723; combined merge diff is not parsed by the current gate)
+- Approved customer-visible result: Same as the entry above; this commit changes documentation only.
+- Scope: Approval record for PR #802, no product changes.
+- What's new: none — standalone documentation marker for the completed main merge
