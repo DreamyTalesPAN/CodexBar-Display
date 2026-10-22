@@ -113,6 +113,53 @@ function SetupAddressDialogForm({
   );
 }
 
+/** A newer Mac App exists; an old app can be why no VibeTV can be found (#561). */
+export type MacAppUpdateOffer = { onUpdate: () => void; version: string };
+
+/**
+ * #561, design 1d: when no VibeTV was found and a newer Mac App exists, setup
+ * offers that update first, in its own dialog. "Scan again" and the close
+ * button lead on to the usual not-found help, which then carries no hint.
+ */
+export function SetupMacAppUpdateDialog({
+  offer,
+  onDismiss,
+  onScanAgain,
+}: {
+  offer: MacAppUpdateOffer;
+  onDismiss: () => void;
+  onScanAgain: () => void;
+}) {
+  return (
+    <SetupDialog
+      description={
+        <>
+          We couldn&apos;t find your VibeTV.{" "}
+          {offer.version ? (
+            <>
+              Version <span className="font-mono text-xs">{offer.version}</span>{" "}
+              is out
+            </>
+          ) : (
+            "A newer version is out"
+          )}
+          , and an older app may not find it. Setup scans again after the
+          update.
+        </>
+      }
+      onOpenChange={(open) => {
+        if (!open) {
+          onDismiss();
+        }
+      }}
+      open
+      primaryAction={{ label: "Update Mac App", onSelect: offer.onUpdate }}
+      secondaryAction={{ label: "Scan again", onSelect: onScanAgain }}
+      title="Update the Mac App first"
+    />
+  );
+}
+
 type NotFoundDialogProps = {
   busy?: boolean;
   onEnterAddressManually: () => void;

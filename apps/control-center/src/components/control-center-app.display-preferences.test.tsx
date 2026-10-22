@@ -1115,6 +1115,49 @@ it("leaves no Recent activity entry for reading the settings", async () => {
   expect(window.text()).not.toContain("Brightness is set to");
 });
 
+// Issues #548, #558, #579: Recent activity is newest first, and each entry shows
+// the time it was written. A Mac App check asked for at 10:00:00 that answers
+// after a brightness save at 10:00:05 must not show as the older time on top.
+it("lists Recent activity newest first with the time each entry was written", async () => {
+  const window = startWindow();
+  vi.setSystemTime(new Date(2026, 9, 17, 10, 0, 0));
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await window.wait(1);
+
+  let answer = () => {};
+  window.companion.holdStatus = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await window.wait(1);
+
+  // While the check is on its way the customer changes the brightness.
+  vi.setSystemTime(new Date(2026, 9, 17, 10, 0, 5));
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  await window.step(() =>
+    fireEvent.keyDown(screen.getByRole("slider", { name: "Brightness" }), { key: "ArrowRight" }),
+  );
+  await window.wait(1);
+
+  vi.setSystemTime(new Date(2026, 9, 17, 10, 0, 6));
+  answer();
+  await window.wait(2);
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await window.wait(1);
+
+  const entries = within(
+    screen.getByText("Recent activity").closest("section") as HTMLElement,
+  ).getAllByRole("listitem");
+  // The opening event predates the test clock; it still has a real timestamp.
+  expect(entries.at(-1)?.textContent).toMatch(/^\d\d:\d\d:\d\d/);
+  const times = entries.slice(0, -1).map((entry) => entry.textContent?.match(/^\d\d:\d\d:\d\d/)?.[0]);
+  expect(times.length).toBeGreaterThanOrEqual(2);
+  expect(times.every((time) => time !== undefined)).toBe(true);
+  expect(times).toEqual([...times].sort().reverse());
+});
+
 // Issue #579: Recent activity named a saved brightness, and nothing else the
 // customer changes in Settings.
 it("enters a changed display mode, provider switching and provider under Recent activity", async () => {
