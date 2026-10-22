@@ -684,6 +684,8 @@ func providersWithSwitchState(ctx context.Context, bin string, providers []Provi
 		provider := providerResult(inventory[i].ID, ProviderNotConfigured)
 		provider.Label = inventory[i].Label
 		provider.Enabled = &inventory[i].Enabled
+		// A switched-off provider needs no sign-in; it keeps main's generic sentence.
+		provider.Detail = engineRowDetail(ProviderNotConfigured, provider.Label, "")
 		merged = append(merged, provider)
 	}
 	return merged

@@ -856,6 +856,9 @@ func TestProbeProviderSetupReportsEveryProviderSwitchedOff(t *testing.T) {
 		if provider.Enabled == nil || *provider.Enabled {
 			t.Fatalf("a switched-off provider must say so: %+v", provider)
 		}
+		if provider.Detail != "No usable AI provider is configured yet." {
+			t.Fatalf("a switched-off provider needs no sign-in, got %q: %+v", provider.Detail, provider)
+		}
 	}
 }
 
