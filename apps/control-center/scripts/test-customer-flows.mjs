@@ -7918,8 +7918,13 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
   await displayScreen.getByRole("button", { name: /Manual/ }).waitFor();
   assert(await displayScreen.getByText("Usage unavailable", { exact: true }).count() === 0,
     "the display preview must use the same available usage that admitted setup");
-  assert(await displayScreen.getByText("0%", { exact: true }).count() > 0,
-    "the real zero must be visible in the display preview");
+  // Cards draw the skeleton until every rotation preview has its frame, so the
+  // real zero can arrive after the Manual button.
+  await waitForCondition(
+    async () => (await displayScreen.getByText("0%", { exact: true }).count()) > 0,
+    "the real zero must be visible in the display preview",
+    15_000,
+  );
   // Picking a mode is a draft until Continue: choosing Manual and coming back
   // to Automatic must leave exactly one write, made from the live inventory.
   await displayScreen.getByRole("button", { name: /Manual/ }).click();
