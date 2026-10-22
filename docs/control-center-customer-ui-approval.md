@@ -9655,3 +9655,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #919 as in its #883 entry plus the entries merged with d7250de6; nothing else changes.
 - Scope: the merge of d7250de6 and this approval record. Pull request #919 only, not merged, not released.
 - What's new: none — merge of d7250de6, no customer-visible change of its own
+
+## 2026-10-22 — #919: approval marker after merging main at 8d956342
+
+- User approval: no visible change – UI approval not needed (merge of main (8d956342) into #919; the #883 entry keeps Paul's approval)
+- Approved customer-visible result: #919 as in its #883 entry plus the entries merged with 8d956342; nothing else changes.
+- Scope: the merge of 8d956342 and this approval record. Pull request #919 only, not merged, not released.
+- What's new: none — merge of 8d956342, no customer-visible change of its own
