@@ -449,8 +449,9 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 		result.Providers = []ProviderReadiness{row}
 		if exactProvider != "" && exactProvider != "codexbar" {
 			// "Check again" on one provider must update that provider's row too.
+			// The provider's own row says the popup sentence; the version
+			// detail stays on the usage service row.
 			exact := providerResult(exactProvider, ProviderEngineIncompatible)
-			exact.Detail = row.Detail
 			result.Providers = append(result.Providers, exact)
 		}
 		return result
@@ -607,20 +608,54 @@ func exactProviderReadinessFromOutput(providerID string, raw []byte, commandErr,
 // their real switch state, and every switched-off provider appears as its own
 // row. An engine-level failure (timeout, config error, engine error) keeps the
 // bare stand-in -- an inventory read is no more trustworthy than the usage call
-// that just failed. A ready provider skips the extra call entirely.
+// that just failed. A ready provider skips the extra call, unless a row that is
+// not ready still lacks CodexBar's name; then the call only names those rows.
+// It asks for each such name once per runtime: an id the inventory never names,
+// or an inventory read that keeps failing, does not repeat the call on every
+// check (#914).
 func providersWithSwitchState(ctx context.Context, bin string, providers []ProviderReadiness) []ProviderReadiness {
 	standIn := len(providers) == 1 && providers[0].ID == "codexbar"
 	if standIn && providers[0].Status != ProviderNotConfigured {
 		return providers
 	}
+	ready, named := false, true
 	for _, provider := range providers {
 		if provider.Status == ProviderReady {
-			return providers
+			ready = true
+		} else if provider.ID != "codexbar" && !providerNameKnownOrAsked(provider.ID) {
+			named = false
 		}
 	}
+	if ready && named {
+		return providers
+	}
 	raw, runErr := readProviderInventory(ctx, 5*time.Second, bin, runUsageCommandFn)
+	if ready {
+		for _, provider := range providers {
+			if provider.Status != ProviderReady && provider.ID != "codexbar" {
+				rememberProviderNameAsked(provider.ID)
+			}
+		}
+	}
 	inventory, parseErr := parseProviderSettings(raw)
 	if runErr != nil || parseErr != nil || len(inventory) == 0 {
+		return providers
+	}
+	if ready {
+		// A ready provider keeps the answer as it is: the inventory only names
+		// the rows that are not ready, and adds no switched-off rows.
+		for i := range providers {
+			if providers[i].Status == ProviderReady || providers[i].ID == "codexbar" {
+				continue
+			}
+			for j := range inventory {
+				if inventory[j].ID == providers[i].ID {
+					providers[i].Label = inventory[j].Label
+					break
+				}
+			}
+			providers[i].Detail = providerResultWithSignIn(providers[i].ID, providers[i].Status, providers[i].SignInURL).Detail
+		}
 		return providers
 	}
 	settingByID := make(map[string]*ProviderSetting, len(inventory))
@@ -642,6 +677,9 @@ func providersWithSwitchState(ctx context.Context, bin string, providers []Provi
 		} else if setting := settingByID[provider.ID]; setting != nil {
 			provider.Label = setting.Label
 			provider.Enabled = &setting.Enabled
+			// The row was built before this inventory was read: its sentence
+			// names the provider the way the inventory does now.
+			provider.Detail = providerResultWithSignIn(provider.ID, provider.Status, provider.SignInURL).Detail
 		}
 		reported[provider.ID] = struct{}{}
 		merged = append(merged, provider)
@@ -656,6 +694,8 @@ func providersWithSwitchState(ctx context.Context, bin string, providers []Provi
 		provider := providerResult(inventory[i].ID, ProviderNotConfigured)
 		provider.Label = inventory[i].Label
 		provider.Enabled = &inventory[i].Enabled
+		// A switched-off provider needs no sign-in; it keeps main's generic sentence.
+		provider.Detail = engineRowDetail(ProviderNotConfigured, provider.Label, "")
 		merged = append(merged, provider)
 	}
 	return merged
@@ -898,12 +938,92 @@ func ProviderErrorKind(id, detail string) string {
 // permission to allow (#479). A variable so tests cover both hosts.
 var providerCopyGOOS = runtime.GOOS
 
+// signInStartableProviders are the providers whose sign-in the Companion starts
+// itself (companionapi/provider_sign_in_launch.go; a test there pins the list).
+// Their signed-out sentence offers the sign-in, every other provider's says
+// the app has to be signed in on this computer.
+var signInStartableProviders = []string{"codex", "claude", "cursor", "antigravity"}
+
+// SignInStartableProviderIDs lists the providers in signInStartableProviders.
+func SignInStartableProviderIDs() []string {
+	return slices.Clone(signInStartableProviders)
+}
+
+// ProviderSignInStartable reports whether the Companion starts the sign-in of
+// this provider.
+func ProviderSignInStartable(id string) bool {
+	return slices.Contains(signInStartableProviders, strings.ToLower(strings.TrimSpace(id)))
+}
+
+// The setup log and the Control Center popup say the same sentence for the
+// same state (Paul, 16.10.; the popup sentences of #642 are the source). Keep
+// these in step with setupProviderDialogSentence in
+// apps/control-center/src/components/setup/setup-providers-screen.tsx: the
+// shared fixture provider-setup-sentences.json pins both sides.
+
+// providerDisplayNames holds the display names CodexBar gave in its last
+// inventory: the labels the Control Center shows for each provider. The
+// inventory parsers fill it; providerDisplayName reads it.
+// providerNamesAsked holds the ids providersWithSwitchState already read the
+// inventory for only to name them (#914), named or not.
+var (
+	providerDisplayNamesMu sync.Mutex
+	providerDisplayNames   = map[string]string{}
+	providerNamesAsked     = map[string]struct{}{}
+)
+
+func rememberProviderDisplayName(id, label string) {
+	providerDisplayNamesMu.Lock()
+	defer providerDisplayNamesMu.Unlock()
+	providerDisplayNames[id] = label
+}
+
+// providerNameKnownOrAsked reports whether the inventory has named the provider
+// or was already read once to name it.
+func providerNameKnownOrAsked(id string) bool {
+	providerDisplayNamesMu.Lock()
+	defer providerDisplayNamesMu.Unlock()
+	_, known := providerDisplayNames[id]
+	_, asked := providerNamesAsked[id]
+	return known || asked
+}
+
+func rememberProviderNameAsked(id string) {
+	providerDisplayNamesMu.Lock()
+	defer providerDisplayNamesMu.Unlock()
+	providerNamesAsked[id] = struct{}{}
+}
+
+// providerDisplayName is the label a provider's sentences use: CodexBar's
+// display name from the last inventory, else the Companion's own short name.
+func providerDisplayName(id string) string {
+	providerDisplayNamesMu.Lock()
+	defer providerDisplayNamesMu.Unlock()
+	if name, ok := providerDisplayNames[id]; ok {
+		return name
+	}
+	return HumanLabel(id)
+}
+
+// providerSignInSentence is the signed-out sentence of a provider.
+func providerSignInSentence(id, label string) string {
+	if ProviderSignInStartable(id) {
+		return "Sign in to " + label + " so VibeTV can read its usage."
+	}
+	return "VibeTV can't read " + label + " until the " + label + " app is installed and running."
+}
+
+// providerCouldNotReadSentence is the sentence for a failure VibeTV retries by itself.
+func providerCouldNotReadSentence(label string) string {
+	return "VibeTV could not read " + label + " usage right now and tries again by itself."
+}
+
 func providerResult(id, status string) ProviderReadiness {
 	return providerResultWithSignIn(id, status, "")
 }
 
 func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
-	label := HumanLabel(id)
+	label := providerDisplayName(id)
 	if id == "codexbar" {
 		label = "Usage service"
 	}
@@ -912,56 +1032,95 @@ func providerResultWithSignIn(id, status, signInURL string) ProviderReadiness {
 	case ProviderReady:
 		result.Detail = "Usage data is available."
 	case ProviderAuthRequired:
-		result.Detail = "This provider needs an active sign-in."
+		result.Detail = providerSignInSentence(id, label)
 		result.NextAction = "Sign in to this provider."
 	case ProviderBrowserSignInRequired:
 		host := signInHost(signInURL)
-		result.Detail = label + " usage needs a signed-in " + host + " session in your browser."
+		result.Detail = "Sign in to " + label + " in your browser, then close the browser."
 		result.NextAction = "Sign in to " + host + " in your browser, close the browser."
 		result.SignInURL = signInURL
 	case ProviderPermissionRequired:
-		result.Detail = "macOS blocked access required by this provider."
+		result.Detail = "Allow access on this computer so VibeTV can read " + label + " usage."
 		result.NextAction = "Allow the requested macOS permission."
 		if providerCopyGOOS == "windows" {
-			result.Detail = "Windows blocked access required by this provider."
 			result.NextAction = "Allow the requested access."
 		}
 	case ProviderUnsupported:
 		// No sign-in wording: the account cannot use this provider at all, so
 		// the provider's own message carries the migration path and the row
 		// only says what the customer can still do here.
-		result.Detail = label + " no longer supports this account."
+		result.Detail = label + " no longer works with this account, so switch it off and use another provider."
 		result.NextAction = "Read the provider message, then switch this provider off and use another one."
 	case ProviderNoUsageAvailable:
-		result.Detail = "This account does not expose usage data."
+		result.Detail = "This " + label + " account has no usage yet."
 		result.NextAction = "Choose another provider that exposes usage limits."
 	case ProviderTimeout:
-		result.Detail = "The provider check timed out."
+		result.Detail = label + " did not answer in time, and VibeTV tries again by itself."
 		result.NextAction = "Confirm the provider sign-in."
 	case ProviderRateLimited:
-		result.Detail = label + " received too many usage checks and is pausing them for a few minutes."
+		result.Detail = "Nothing to fix: " + label + " is busy right now, and VibeTV tries again by itself."
 		result.NextAction = RateLimitedNextAction
 	case ProviderConfigError:
-		result.Detail = "The usage service could not save or read its provider settings."
+		result.Detail = providerCouldNotReadSentence(label)
 		result.NextAction = "Repair the usage service."
 	case ProviderEngineIncompatible:
-		result.Detail = "The usage engine is too old."
+		result.Detail = "The usage engine is too old and needs a repair."
 		result.NextAction = "Repair the usage engine."
 	case ProviderNotConfigured:
-		result.Detail = "No usable AI provider is configured yet."
+		// The popup's sentence for this state (setup_required). The usage
+		// engine row keeps the setup-level sentence (engineRowDetail).
+		result.Detail = providerSignInSentence(id, label)
 		result.NextAction = "Open provider setup and connect an AI provider."
 	default:
-		result.Detail = "The usage service could not read this provider."
+		result.Detail = providerCouldNotReadSentence(label)
 		result.NextAction = "Wait a moment."
+	}
+	if id == "codexbar" {
+		// The engine row is not a provider: it keeps the sentences it had.
+		result.Detail = engineRowDetail(status, label, signInURL)
 	}
 	return result
 }
 
+// engineRowDetail is the usage service's own sentence per status, as it was
+// before the provider sentences were shared with the Control Center popup.
+func engineRowDetail(status, label, signInURL string) string {
+	switch status {
+	case ProviderReady:
+		return "Usage data is available."
+	case ProviderAuthRequired:
+		return "This provider needs an active sign-in."
+	case ProviderBrowserSignInRequired:
+		return label + " usage needs a signed-in " + signInHost(signInURL) + " session in your browser."
+	case ProviderPermissionRequired:
+		if providerCopyGOOS == "windows" {
+			return "Windows blocked access required by this provider."
+		}
+		return "macOS blocked access required by this provider."
+	case ProviderUnsupported:
+		return label + " no longer supports this account."
+	case ProviderNoUsageAvailable:
+		return "This account does not expose usage data."
+	case ProviderTimeout:
+		return "The provider check timed out."
+	case ProviderRateLimited:
+		return label + " received too many usage checks and is pausing them for a few minutes."
+	case ProviderConfigError:
+		return "The usage service could not save or read its provider settings."
+	case ProviderEngineIncompatible:
+		return "The usage engine is too old."
+	case ProviderNotConfigured:
+		return "No usable AI provider is configured yet."
+	default:
+		return "The usage service could not read this provider."
+	}
+}
+
 // BrowserSignInGuidance is the customer sentence for a provider that needs a
-// signed-in browser session on signInURL.
+// signed-in browser session: the same fixed sentence the Setup log says. The
+// row's next action travels beside it, so it is not repeated here.
 func BrowserSignInGuidance(id, signInURL string) string {
-	result := providerResultWithSignIn(id, ProviderBrowserSignInRequired, signInURL)
-	return result.Detail + " " + result.NextAction
+	return providerResultWithSignIn(id, ProviderBrowserSignInRequired, signInURL).Detail
 }
 
 func signInHost(url string) string {
