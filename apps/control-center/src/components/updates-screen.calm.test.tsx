@@ -87,6 +87,16 @@ describe("calm Updates screen", () => {
     expect(screen.getAllByText("Up to date")).toHaveLength(1);
   });
 
+  it.each([
+    { name: "companion offline", companionStatus: "missing", device: upToDate.device },
+    { name: "device disconnected", companionStatus: "online", device: { ...upToDate.device!, connected: false } },
+    { name: "firmware metadata missing", companionStatus: "online", device: { connected: true } },
+  ] as const)("hides retained firmware success when $name", ({ companionStatus, device }) => {
+    render(<UpdatesScreen {...upToDate} companionStatus={companionStatus} device={device}
+      firmwareUpdate={{ ...upToDate.firmwareUpdate!, message: "Firmware is up to date." }} />);
+    expect(screen.queryByText("Firmware is up to date.")).toBeNull();
+  });
+
   it("checks for updates from the header button", () => {
     const check = vi.fn();
     render(<UpdatesScreen {...upToDate} onCheckUpdates={check} />);

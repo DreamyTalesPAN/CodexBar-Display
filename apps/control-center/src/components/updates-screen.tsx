@@ -475,7 +475,8 @@ export function UpdatesScreen({
                         : undefined
           }
           note={
-            firmwareNoAnswer && !installingUpdate && !vibetvUpdateAvailable
+            firmwareNoAnswer && macAppRunning && device?.connected && canCheckFirmware &&
+            !installingUpdate && !vibetvUpdateAvailable
               ? firmwareUpdate?.message
               : undefined
           }

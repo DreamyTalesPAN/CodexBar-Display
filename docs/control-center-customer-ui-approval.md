@@ -9563,3 +9563,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve main's calm shell and the PR's existing Updates behavior; no additional change.
 - Scope: docs/control-center-customer-ui-approval.md only; make the merge checkpoint readable by the committed-diff UI gate.
 - What's new: none — documentation-only merge checkpoint
+
+## 2026-10-22 — #798: suppress stale firmware success while unavailable
+
+- User approval: no visible change – UI approval not needed (bug fix: removes a stale success sentence when status is unavailable)
+- Approved customer-visible result: Retained firmware success text is hidden when the Companion/device is disconnected or firmware metadata is missing; terminal no-answer explanations remain available.
+- Scope: updates-screen.tsx note visibility and red-first regression cases for all three unavailable states; coordinator explicitly authorized this narrow suppression.
+- What's new: none — bug fix, not announced to customers
