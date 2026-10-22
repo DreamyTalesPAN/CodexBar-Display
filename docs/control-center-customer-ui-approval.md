@@ -20222,3 +20222,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the display mode cards show the chosen theme with the Companion's frames, and the provider pickers line up with the other setup elements.
 - Scope: setup-step.ts (step order), setup-wizard.tsx, setup-display-mode-screen.tsx and their tests. Test build only, not a pull request.
 - What's new: none — setup order and layout only
+## 2026-10-22 — build 7208: Choose AI providers list scrolls, Continue stays on screen
+
+- User approval: pending — on "Choose AI providers" the provider list gets a fixed height (about four rows), scrolls inside itself with a fade at its bottom edge, and Continue sits below it so it is visible without scrolling the page at 1280×800 and 1440×900
+- Approved customer-visible result: the same rows, wording and widths as before; only the list scrolls and fades, and Continue no longer waits below the fold.
+- Scope: setup-providers-screen.tsx (calm list only; Settings keeps its list) and its test. Test build 7208 only, not a pull request.
+- What's new: none — layout of the provider list only, no new feature

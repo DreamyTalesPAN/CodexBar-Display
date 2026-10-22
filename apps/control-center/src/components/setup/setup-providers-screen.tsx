@@ -429,7 +429,15 @@ export function ProviderList({
         />
       </div>
 
-      <ItemGroup className="mt-3 gap-2">
+      {/* Calm (the wizard) scrolls the rows inside a fixed height, so the step's Continue stays on screen. */}
+      <div
+        className={cn(
+          "mt-3",
+          calm &&
+            "max-h-[264px] overflow-y-auto pb-6 [mask-image:linear-gradient(to_bottom,black_calc(100%_-_24px),transparent)]",
+        )}
+      >
+      <ItemGroup className="gap-2">
         {visible.map((provider) => (
           <SetupProviderRow
             calm={calm}
@@ -489,6 +497,7 @@ export function ProviderList({
           <span>{`Show more providers (${remaining} left)`}</span>
         </Button>
       ) : null}
+      </div>
     </div>
   );
 }
