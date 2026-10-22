@@ -10653,3 +10653,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: in Two at once, a theme that draws token numbers gets the same "Shows -- while token history is unavailable. See Usage." line that one-provider mode already shows, because Two at once frames carry no token totals; nothing else changes.
 - Scope: Theme Library hint for Two at once (usage-screen.tsx helper, control-center-app.tsx call site, tests). Pull request branch #864 only, not merged, not released.
 - What's new: none — the hint text already exists; only the case in which it shows is extended to Two at once
+
+## 2026-10-22 — #592: Claude Creature pace text is one font step larger
+
+- User approval: pending — Claude Creature pace text (for example "40% deficit" and "6% reserve") is drawn in the readable font 2 in one-provider and Two at once layouts instead of the smallest fallback; the pace boxes are wider so the text does not wrap
+- Approved customer-visible result: the pace line under each usage slot is larger and easier to read in both layouts; the sprite, labels and reset line stay where they were.
+- Scope: theme-packs/claude-creature (theme.json rev 12, manifest 1.4.2) and its rebuilt dist packs, one legibility test revision pin. Branch claude/paultest-592a only, not merged, not released.
+- What's new: none — the pace text is a theme size change only; the Theme Library shows no new text

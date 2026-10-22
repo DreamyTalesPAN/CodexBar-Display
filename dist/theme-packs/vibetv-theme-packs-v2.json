@@ -6,9 +6,9 @@
       "id": "claude-creature",
       "title": "Claude Creature",
       "usage": "live",
-      "version": "1.4.1",
-      "themeRev": 11,
-      "themeSpecPath": "/themes/u/cld-11-e02f4e15.json",
+      "version": "1.4.2",
+      "themeRev": 12,
+      "themeSpecPath": "/themes/u/cld-12-b25a61c0.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -20,9 +20,9 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-claude-creature-v1.4.1.zip",
-      "sha256": "314d3448c3c6584e1b5dcdc2b10709626f0384b996836b89a715a838836ed775",
-      "bytes": 3436,
+      "downloadAsset": "vibetv-theme-claude-creature-v1.4.2.zip",
+      "sha256": "4ffe45efb2f082da9e75224ff743b908695471499f9fcbd4f659c9c0f20d7094",
+      "bytes": 3435,
       "earlierThemeSpecPaths": [
         "/themes/u/claud-10-dd6753.json",
         "/themes/u/claude--1-12ab01.json",
@@ -36,7 +36,8 @@
         "/themes/u/claude--6-546f9e.json",
         "/themes/u/claude--7-4963df.json",
         "/themes/u/claude--8-53ffce.json",
-        "/themes/u/claude--9-5c74ca.json"
+        "/themes/u/claude--9-5c74ca.json",
+        "/themes/u/cld-11-e02f4e15.json"
       ]
     },
     {
@@ -256,7 +257,6 @@
       "earlierThemeSpecPaths": [
         "/themes/u/syn-7-c929bcfe.json",
         "/themes/u/syn-8-0b08afde.json",
-        "/themes/u/syn-9-0e3e730d.json",
         "/themes/u/synthwa-1-0432f1.json",
         "/themes/u/synthwa-1-0a355b.json",
         "/themes/u/synthwa-1-6b39a3.json",
