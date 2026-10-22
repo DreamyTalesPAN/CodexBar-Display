@@ -851,6 +851,19 @@ describe("SetupWizard: direct connection", () => {
     expect(props.onSearchDevices).toHaveBeenCalledTimes(searches + 2);
   });
 
+  it("offers a late Mac App update after the ordinary not-found dialog was dismissed", () => {
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "not-found", deviceCandidates: [],
+    });
+    const view = render(<SetupWizard {...props} />);
+    expect(screen.getByRole("dialog", { name: "We couldn't find your VibeTV" })).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    view.rerender(<SetupWizard {...props} macAppUpdate={{ onUpdate: vi.fn(), version: "1.0.65" }} />);
+    expect(screen.getByRole("dialog", { name: "Update the Mac App first" })).toBeTruthy();
+  });
+
   it("offers a newer release again after the previous one was dismissed (#822)", () => {
     const onUpdate = vi.fn();
     const props = baseProps({

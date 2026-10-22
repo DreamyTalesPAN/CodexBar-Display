@@ -9395,3 +9395,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The existing update offer stays readable and usable until dismissed; automatic discovery resumes afterwards.
 - Scope: pause the WiFi retry timer and deadline while the offer is open, with regression coverage.
 - What's new: none — bug fix, not announced to customers
+
+## 2026-10-22 — #822: late update offer after not-found dismissal
+
+- User approval: no visible change – UI approval not needed (restore the existing late update offer after the ordinary not-found help is dismissed)
+- Approved customer-visible result: A newly available version still offers the existing update dialog once, independently of the ordinary help dialog's dismissal.
+- Scope: setup-wizard.tsx update branch and its red-first regression test.
+- What's new: none — bug fix, not announced to customers

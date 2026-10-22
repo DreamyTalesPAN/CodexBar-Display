@@ -813,7 +813,7 @@ export function SetupWizard(props: SetupWizardProps) {
             showCloseButton={false}
           />
         ) : null}
-        {searchFailed && !wifiSetup && macAppUpdateAfterSearch ? (
+        {!wifiSetup && macAppUpdateAfterSearch ? (
           <SetupMacAppUpdateDialog
             offer={macAppUpdateAfterSearch}
             onDismiss={dismissMacAppUpdate}
