@@ -335,7 +335,10 @@ func usageHasFreshSnapshotAfter(usage daemon.PersistedUsage, requestedAt time.Ti
 		return false
 	}
 	for _, provider := range usage.Providers {
-		if provider.Stale || provider.CollectedAt.IsZero() || provider.CollectedAt.Before(requestedAt) {
+		if provider.Stale || provider.CollectedAt.IsZero() {
+			return false
+		}
+		if provider.CollectedAt.Before(requestedAt) {
 			return false
 		}
 	}
