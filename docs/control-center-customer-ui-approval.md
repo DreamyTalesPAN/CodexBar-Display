@@ -20209,3 +20209,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the #909 and calm Settings entries above; nothing else changes.
 - Scope: settings-screen.tsx and its test, plus a guard test that the Two at once card in Setup shows the skeleton like the others. Test build only, not a pull request.
 - What's new: none — integration fix, no customer-visible change of its own
+
+## 2026-10-22 — build11: Setup theme step in the Appearance grid
+
+- User approval: pending — Setup's "Choose your theme" shows the themes as the Appearance grid's square cards, three across, in a box that scrolls inside the window, instead of a list of small rows; Install and the selection work as before
+- Approved customer-visible result: the theme step of setup shows the same square theme pictures and names as the Appearance tab, with Continue visible without scrolling at 1280×800.
+- Scope: setup-theme-screen.tsx and its tests, the shared grid constants in lib/theme-grid.ts (also used by theme-library-screen.tsx, no visible change there). Test build 7208 only, not a pull request.
+- What's new: none — layout change only, no new text

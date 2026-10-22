@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { SetupThemeScreen, type SetupThemeOption } from "./setup-theme-screen";
+import { THEME_GRID_CLASS, THEME_GRID_STYLE } from "@/lib/theme-grid";
 
 // The four live themes of the shipped catalog. A screensaver cannot be the
 // first install: it leaves the live slot empty and setup could never finish.
@@ -37,7 +38,22 @@ describe("SetupThemeScreen", () => {
 
     expect(html).toContain("text-[28px]");
     expect(html).not.toContain("text-[40px]");
-    expect(html).toContain("size-20 shrink-0 rounded-[6px]");
+    expect(html).toContain("aspect-square w-full rounded-[6px]");
+  });
+
+  it("shows the themes in the Appearance grid: one card per theme, three across", () => {
+    const html = render();
+
+    expect(html).toContain(THEME_GRID_CLASS);
+    expect(html).toContain(THEME_GRID_STYLE.gridTemplateColumns);
+    expect(html.match(/role="radio"/g)).toHaveLength(themes.length);
+  });
+
+  it("scrolls the grid inside the screen so Continue stays in view at 1280x800", () => {
+    const html = render();
+
+    const group = html.match(/<div[^>]*role="radiogroup"[^>]*>/)?.[0] ?? "";
+    expect(group).toMatch(/class="[^"]*overflow-y-auto/);
   });
 
   it("keeps the install action to the one word, whichever theme is chosen", () => {
