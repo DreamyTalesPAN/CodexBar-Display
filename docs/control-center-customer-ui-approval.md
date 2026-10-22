@@ -9613,3 +9613,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: While a manual refresh waits, only the Refresh button shows the spinner and "Refreshing". Above "Total tokens in the last 30 days" nothing appears, and the page does not move. "Still counting" stays as before.
 - Scope: `apps/control-center/src/components/usage-screen.tsx`, its test, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — one duplicate status line less
+
+## 2026-10-22 — Usage: Refresh right away and no second "Refreshing" line, approved after the click test (#918)
+
+- User approval: Marcus, 22.10.2026, channel Abstimmungschat (question 131, answer "131 ok"), after his click test of e8f7d6b4 on the Mac. This approves both pending #918 entries above.
+- Approved customer-visible result: As in the two entries above. A click on Refresh on Usage starts CodexBar's usage service fresh, so "Refreshing" lasts about as long as one reading (about 10 s on the test Mac); the values stay visible and do not turn stale while the fresh service starts. While it waits, only the Refresh button shows the spinner and "Refreshing"; nothing appears above "Total tokens in the last 30 days" and the page does not move.
+- Scope: as above, plus `ReplaceStartedAt` in `companion/internal/codexbar/dashboard_serve.go` and `serveBeingReplaced` in `companion/internal/daemon/collector.go` with their tests, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — a faster Refresh and one status line less need no notice
