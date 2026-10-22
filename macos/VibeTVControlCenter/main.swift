@@ -480,6 +480,20 @@ func makeLocalNetworkPrivacyProbeRequest(
     return request
 }
 
+func makeCompanionRequest(
+    url: URL,
+    method: String = "GET",
+    timeout: TimeInterval = runtimeHealthRequestTimeout
+) -> URLRequest {
+    var request = URLRequest(
+        url: url,
+        cachePolicy: .reloadIgnoringLocalCacheData,
+        timeoutInterval: timeout
+    )
+    request.httpMethod = method
+    return request
+}
+
 func normalizedCompanionVersion(_ raw: String) -> String {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     if trimmed.lowercased().hasPrefix("v") {
@@ -534,7 +548,7 @@ func managedCodexBarRecoveryURL(
 }
 
 
-struct CodexBarCommandResult {
+struct CommandResult {
     let exitCode: Int32
     let output: String
 }
@@ -562,9 +576,26 @@ func runCodexBarCommand(
     environment: [String: String]? = nil,
     mergeStandardError: Bool = true,
     timeout: TimeInterval? = nil
-) -> CodexBarCommandResult? {
+) -> CommandResult? {
+    try? runProcess(
+        executableURL: executableURL,
+        arguments: arguments,
+        environment: environment,
+        mergeStandardError: mergeStandardError,
+        timeout: timeout
+    )
+}
+
+func runProcess(
+    executableURL: URL,
+    arguments: [String],
+    environment: [String: String]? = nil,
+    captureOutput: Bool = true,
+    mergeStandardError: Bool = true,
+    timeout: TimeInterval? = nil
+) throws -> CommandResult? {
     let process = Process()
-    let pipe = Pipe()
+    let pipe = captureOutput ? Pipe() : nil
     process.executableURL = executableURL
     process.arguments = arguments
     // Assigning nil here empties the child environment instead of inheriting
@@ -572,16 +603,15 @@ func runCodexBarCommand(
     if let environment {
         process.environment = environment
     }
-    process.standardOutput = pipe
-    process.standardError = mergeStandardError
-        ? pipe
-        : FileHandle.nullDevice
-    do {
-        try process.run()
-    } catch {
-        return nil
+    if let pipe {
+        process.standardOutput = pipe
+        process.standardError = mergeStandardError ? pipe : FileHandle.nullDevice
+    } else {
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
     }
-    if let timeout {
+    try process.run()
+    if let timeout, let pipe {
         let output = CommandOutput()
         let drained = DispatchSemaphore(value: 0)
         let reader = pipe.fileHandleForReading
@@ -597,14 +627,14 @@ func runCodexBarCommand(
             return nil
         }
         process.waitUntilExit()
-        return CodexBarCommandResult(
+        return CommandResult(
             exitCode: process.terminationStatus,
             output: String(data: output.data, encoding: .utf8) ?? ""
         )
     }
-    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    let data = pipe?.fileHandleForReading.readDataToEndOfFile() ?? Data()
     process.waitUntilExit()
-    return CodexBarCommandResult(
+    return CommandResult(
         exitCode: process.terminationStatus,
         output: String(data: data, encoding: .utf8) ?? ""
     )
@@ -1298,26 +1328,51 @@ private func captureProcessOutput(
     executable: String,
     arguments: [String]
 ) -> ProcessOutput {
-    let process = Process()
-    let outputPipe = Pipe()
-    process.executableURL = URL(fileURLWithPath: executable)
-    process.arguments = arguments
-    process.standardOutput = outputPipe
-    process.standardError = outputPipe
     do {
-        try process.run()
-        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return ProcessOutput(
-            exitStatus: process.terminationStatus,
-            output: String(data: data, encoding: .utf8) ?? ""
+        let result = try runProcess(
+            executableURL: URL(fileURLWithPath: executable),
+            arguments: arguments
         )
+        return ProcessOutput(exitStatus: result?.exitCode, output: result?.output ?? "")
     } catch {
         NSLog(
             "VibeTV Control Center could not run \(executable) \(arguments.joined(separator: " ")): \(error)"
         )
         return ProcessOutput(exitStatus: nil, output: "")
     }
+}
+
+private func runtimeListenerOwnership(
+    launchAgent: ProcessOutput,
+    port: Int
+) -> RuntimeOwnershipEvaluation {
+    guard let servicePID = parseLaunchctlServicePID(launchAgent.output),
+          launchAgent.exitStatus == 0 else {
+        return evaluateRuntimeOwnership(
+            launchctlExitStatus: launchAgent.exitStatus,
+            launchctlOutput: launchAgent.output,
+            lsofExitStatus: nil,
+            lsofOutput: ""
+        )
+    }
+    let lsof = captureProcessOutput(
+        executable: "/usr/sbin/lsof",
+        arguments: [
+            "-nP",
+            "-a",
+            "-p",
+            String(servicePID),
+            "-iTCP@127.0.0.1:\(port)",
+            "-sTCP:LISTEN",
+            "-Fp",
+        ]
+    )
+    return evaluateRuntimeOwnership(
+        launchctlExitStatus: launchAgent.exitStatus,
+        launchctlOutput: launchAgent.output,
+        lsofExitStatus: lsof.exitStatus,
+        lsofOutput: lsof.output
+    )
 }
 
 struct RuntimeEndpoint: Codable, Equatable {
@@ -2745,7 +2800,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 "listenerOwnership": runtimeListenerOwnership(
                     launchAgent: launchAgent,
                     port: runtimePort
-                ),
+                ).description,
                 "helperExists": fileManager.isExecutableFile(atPath: helperURL.path),
                 "helperSignature": processOutputReport(helperSignature),
                 "launchAgent": processOutputReport(launchAgent),
@@ -2796,39 +2851,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         @unknown default:
             return "unknown"
         }
-    }
-
-    nonisolated private static func runtimeListenerOwnership(
-        launchAgent: ProcessOutput,
-        port: Int
-    ) -> String {
-        guard let servicePID = parseLaunchctlServicePID(launchAgent.output),
-              launchAgent.exitStatus == 0 else {
-            return evaluateRuntimeOwnership(
-                launchctlExitStatus: launchAgent.exitStatus,
-                launchctlOutput: launchAgent.output,
-                lsofExitStatus: nil,
-                lsofOutput: ""
-            ).description
-        }
-        let lsof = captureProcessOutput(
-            executable: "/usr/sbin/lsof",
-            arguments: [
-                "-nP",
-                "-a",
-                "-p",
-                String(servicePID),
-                "-iTCP@127.0.0.1:\(port)",
-                "-sTCP:LISTEN",
-                "-Fp",
-            ]
-        )
-        return evaluateRuntimeOwnership(
-            launchctlExitStatus: launchAgent.exitStatus,
-            launchctlOutput: launchAgent.output,
-            lsofExitStatus: lsof.exitStatus,
-            lsofOutput: lsof.output
-        ).description
     }
 
     nonisolated private static func recentTextFiles(
@@ -3091,10 +3113,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         guard installationReady || installationStatusFailed else {
             return
         }
-        let request = URLRequest(
+        let request = makeCompanionRequest(
             url: activeRuntimeOrigin.appendingPathComponent("v1/status"),
-            cachePolicy: .reloadIgnoringLocalCacheData,
-            timeoutInterval: menuBarStatusRequestTimeout
+            timeout: menuBarStatusRequestTimeout
         )
         // Only the newest read is shown: an older one that is still under way
         // when the menu opens again would otherwise answer last.
@@ -3358,12 +3379,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         guard installationReady else {
             return
         }
-        var request = URLRequest(
+        let request = makeCompanionRequest(
             url: activeRuntimeOrigin.appendingPathComponent("v1/provider-display/next"),
-            cachePolicy: .reloadIgnoringLocalCacheData,
-            timeoutInterval: runtimeHealthRequestTimeout
+            method: "POST"
         )
-        request.httpMethod = "POST"
         Task { [weak self] in
             guard let (_, response) = try? await URLSession.shared.data(for: request),
                   (response as? HTTPURLResponse)?.statusCode == 200 else {
@@ -4576,12 +4595,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         _ origin: URL,
         release: Bool
     ) async -> HTTPURLResponse? {
-        var request = URLRequest(
+        var request = makeCompanionRequest(
             url: origin.appendingPathComponent("v1/runtime-health/update-hold"),
-            cachePolicy: .reloadIgnoringLocalCacheData,
-            timeoutInterval: runtimeHealthRequestTimeout
+            method: "POST"
         )
-        request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = release ? Data("{\"release\":true}".utf8) : Data("{}".utf8)
         guard let (_, response) = try? await URLSession.shared.data(for: request),
@@ -4624,12 +4641,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         while Date() < deadline {
             var stillAnswering: [URL] = []
             for origin in pending {
-                var request = URLRequest(
-                    url: origin.appendingPathComponent("v1/runtime-health"),
-                    cachePolicy: .reloadIgnoringLocalCacheData,
-                    timeoutInterval: runtimeHealthRequestTimeout
+                let request = makeCompanionRequest(
+                    url: origin.appendingPathComponent("v1/runtime-health")
                 )
-                request.httpMethod = "GET"
                 if (try? await session.data(for: request)) != nil {
                     stillAnswering.append(origin)
                 }
@@ -4834,12 +4848,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         repeat {
             for origin in runtimeOriginCandidates() {
                 let statusURL = origin.appendingPathComponent("v1/runtime-health")
-                var request = URLRequest(
-                    url: statusURL,
-                    cachePolicy: .reloadIgnoringLocalCacheData,
-                    timeoutInterval: runtimeHealthRequestTimeout
-                )
-                request.httpMethod = "GET"
+                let request = makeCompanionRequest(url: statusURL)
                 do {
                     let (data, response) = try await URLSession.shared.data(for: request)
                     guard let http = response as? HTTPURLResponse else {
@@ -4914,7 +4923,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     private func runtimePortConflictDetail() -> String? {
-        let listener = runCommandCapturingOutput(
+        let listener = captureProcessOutput(
             executable: "/usr/sbin/lsof",
             arguments: [
                 "-nP",
@@ -5139,7 +5148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     private func legacyDisabledServiceStates() -> [String: Bool]? {
-        let result = runCommandCapturingOutput(
+        let result = captureProcessOutput(
             executable: "/bin/launchctl",
             arguments: ["print-disabled", "gui/\(getuid())"]
         )
@@ -5158,60 +5167,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     private func verifyRuntimeListenerOwnership(port: Int) -> RuntimeOwnershipEvaluation {
-        let launchctl = runCommandCapturingOutput(
+        let launchctl = captureProcessOutput(
             executable: "/bin/launchctl",
             arguments: [
                 "print",
                 "gui/\(getuid())/\(activeRuntimeLaunchAgentLabel)",
             ]
         )
-        guard let servicePID = parseLaunchctlServicePID(launchctl.output),
-              launchctl.exitStatus == 0 else {
-            return evaluateRuntimeOwnership(
-                launchctlExitStatus: launchctl.exitStatus,
-                launchctlOutput: launchctl.output,
-                lsofExitStatus: nil,
-                lsofOutput: ""
-            )
-        }
-
-        let lsof = runCommandCapturingOutput(
-            executable: "/usr/sbin/lsof",
-            arguments: [
-                "-nP",
-                "-a",
-                "-p",
-                String(servicePID),
-                "-iTCP@127.0.0.1:\(port)",
-                "-sTCP:LISTEN",
-                "-Fp",
-            ]
-        )
-        return evaluateRuntimeOwnership(
-            launchctlExitStatus: launchctl.exitStatus,
-            launchctlOutput: launchctl.output,
-            lsofExitStatus: lsof.exitStatus,
-            lsofOutput: lsof.output
-        )
-    }
-
-    private func runCommandCapturingOutput(
-        executable: String,
-        arguments: [String]
-    ) -> ProcessOutput {
-        captureProcessOutput(executable: executable, arguments: arguments)
+        return runtimeListenerOwnership(launchAgent: launchctl, port: port)
     }
 
     private func launchctlExitStatus(_ arguments: [String]) -> Int32? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = arguments
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
         do {
-            try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus
+            return try runProcess(
+                executableURL: URL(fileURLWithPath: "/bin/launchctl"),
+                arguments: arguments,
+                captureOutput: false
+            )?.exitCode
         } catch {
             NSLog(
                 "VibeTV Control Center could not run launchctl \(arguments.joined(separator: " ")): \(error)"

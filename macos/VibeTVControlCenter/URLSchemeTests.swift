@@ -10,6 +10,26 @@ private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 
 func runURLSchemeTests() {
+    let companionURL = URL(string: "http://127.0.0.1:54321/v1/status")!
+    for (method, timeout) in [("GET", 5.0), ("GET", 20.0), ("POST", 5.0)] {
+        let request = makeCompanionRequest(url: companionURL, method: method, timeout: timeout)
+        require(
+            request.url == companionURL && request.httpMethod == method
+                && request.timeoutInterval == timeout
+                && request.cachePolicy == .reloadIgnoringLocalCacheData,
+            "companion requests must preserve the origin, method, timeout and cache policy"
+        )
+        require(
+            request.httpBody == nil && (request.allHTTPHeaderFields ?? [:]).isEmpty,
+            "companion requests must not add a body, token or headers"
+        )
+    }
+    let healthRequest = makeCompanionRequest(url: companionURL)
+    require(
+        healthRequest.httpMethod == "GET" && healthRequest.timeoutInterval == 5,
+        "runtime health requests must keep their five-second GET defaults"
+    )
+
     // Issue #655: a window behind other windows must not suspend the page that
     // drives the setup.
     MainActor.assumeIsolated {
@@ -484,6 +504,38 @@ func runURLSchemeTests() {
             && !(environmentResult?.output.isEmpty ?? true),
         "the Companion child must inherit the app environment so it can find HOME"
     )
+    for (capture, merge, expected) in [(true, true, "outerr"), (true, false, "out"), (false, true, "")] {
+        let result = try! runProcess(
+            executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "printf out; printf err >&2; exit 7"],
+            captureOutput: capture,
+            mergeStandardError: merge
+        )
+        require(
+            result?.exitCode == 7 && result?.output == expected,
+            "captured, stdout-only and discarded output must preserve nonzero exit status"
+        )
+    }
+    let explicitEnvironment = runCodexBarCommand(
+        executableURL: URL(fileURLWithPath: "/usr/bin/printenv"),
+        arguments: ["VIBETV_COMMAND_TEST"],
+        environment: ["VIBETV_COMMAND_TEST": "explicit"]
+    )
+    require(
+        explicitEnvironment?.exitCode == 0 && explicitEnvironment?.output == "explicit\n",
+        "a supplied child environment must be passed through"
+    )
+    let missingExecutable = commandFixtureDirectory.appendingPathComponent("missing-command")
+    require(
+        runCodexBarCommand(executableURL: missingExecutable, arguments: []) == nil,
+        "CodexBar launch failures must still return nil"
+    )
+    do {
+        _ = try runProcess(executableURL: missingExecutable, arguments: [])
+        require(false, "process launch errors must reach callers that log them")
+    } catch {
+        // Diagnostic and launchctl callers keep their own error messages.
+    }
     require(
         !shouldRetryControlCenterNavigation(
             NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
