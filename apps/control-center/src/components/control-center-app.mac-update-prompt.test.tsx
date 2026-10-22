@@ -16,7 +16,7 @@ import { openMacAppUpdatePrompt } from "./control-center-runtime";
 
 const runtime = vi.hoisted(() => ({
   hostedShell: false,
-  wizardProps: null as null | { macAppUpdate?: { onUpdate: () => void } },
+  wizardProps: null as null | { macAppUpdate?: { onUpdate: () => void; onDismiss?: () => void } },
 }));
 
 vi.mock("./control-center-runtime", async (importOriginal) => {
@@ -431,4 +431,19 @@ it("drops a late launch update once the running Mac App has that version (#892)"
     );
   });
   expect(runtime.wizardProps?.macAppUpdate).toBeUndefined();
+});
+
+it("keeps a dismissed setup offer dismissed after setup finishes, but offers a newer version", async () => {
+  const app = await openApp({ userAgent: nativeUserAgent, setupFinished: false });
+  await act(async () => {
+    runtime.wizardProps?.macAppUpdate?.onDismiss?.();
+  });
+  rememberCompletedSetup(device.deviceId);
+  app.companion.device = device;
+  await app.wait(20);
+  expect(app.text()).not.toContain("Welcome to");
+  expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
+  app.companion.latestVersion = "9.9.11";
+  await app.wait(10);
+  expect(openMacAppUpdatePrompt).toHaveBeenCalledTimes(1);
 });
