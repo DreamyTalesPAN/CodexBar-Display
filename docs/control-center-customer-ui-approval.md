@@ -11183,3 +11183,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: nothing is approved yet. Two at once, its two pickers, the line "Update needed. Update VibeTV to use this." and Limits on VibeTV keep the wording of the entries above; only their place in the calm Settings changed.
 - Scope: the merge of 94b4c6c2, `settings-screen.tsx` and its tests, `setup-display-mode-screen.tsx` (its unused `pairNote` goes), the mode name in tests and `test-customer-flows.mjs`, the Companion's message `Choose Automatic, Manual or Two at once.` and this approval record. Pull request branch #864 only, not merged, not released.
 - What's new: none — the visible parts still wait for the Claude Design round
+
+## 2026-10-22 — #864: Limits on VibeTV closing tag indented
+
+- User approval: no visible change – UI approval not needed (formatting only: the closing tag of the limits list in Settings is indented like its neighbours)
+- Approved customer-visible result: none new; Settings looks as in the entry above.
+- Scope: one line in settings-screen.tsx and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — formatting only

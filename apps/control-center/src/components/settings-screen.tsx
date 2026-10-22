@@ -451,7 +451,7 @@ export function SettingsScreen({
           providers={displayChoices}
           theme={activeTheme}
           usage={providerPicker.usage}
-/>
+        />
       </SettingsSection>
 
       <ItemSeparator className="my-0" />
