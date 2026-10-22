@@ -9925,3 +9925,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Keep main's redesign and this PR's not-found dismissal behavior.
 - Scope: apps/control-center/src/components/control-center-app.tsx and apps/control-center/src/components/control-center-app.not-found-dismissal.test.tsx; merge integration only.
 - What's new: none — merge integration only.
+
+## 2026-10-22 — #816: approval marker after merging main at 1e1244fe
+
+- User approval: no visible change – UI approval not needed (merge of main (1e1244fe) into #816; the own entries of #816 keep their approval)
+- Approved customer-visible result: #816 as in its own entries plus the entries merged with 1e1244fe; nothing else changes.
+- Scope: the merge of 1e1244fe and this approval record. Pull request #816 only, not merged, not released.
+- What's new: none — merge of 1e1244fe, no customer-visible change of its own
