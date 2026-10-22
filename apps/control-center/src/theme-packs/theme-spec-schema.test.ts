@@ -1,15 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createRequire } from "node:module";
+import Ajv2020 from "ajv/dist/2020";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-
-// The repo has no schema validator of its own: take draft 2020-12 support from
-// the ajv 8 that ships with the MCP SDK.
-const require = createRequire(import.meta.url);
-const sdk = require.resolve("@modelcontextprotocol/sdk/package.json");
-type Validate = ((data: unknown) => boolean) & { errors?: unknown };
-const Ajv2020 = require(require.resolve("ajv/dist/2020", { paths: [path.dirname(sdk)] }))
-  .default as new (options: object) => { compile(schema: object): Validate };
 
 const root = path.resolve(process.cwd(), "../..");
 const read = (file: string) => JSON.parse(readFileSync(path.join(root, file), "utf8"));
