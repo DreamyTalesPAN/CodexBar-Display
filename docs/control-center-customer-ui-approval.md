@@ -20346,3 +20346,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Clippy's usage bars are as long as before (to just before the percent); each pace text stands left-aligned directly under its own bar; the title bar is taller so "remaining" and "used" stay inside it; the animation has no stray pixels under it; title bar, animation, limit names, pace texts and divider are spaced by the same 5 px.
 - Scope: the theme pack Clippy 1.2.6 (layout, taller title bar in the background, animation canvas cropped to its 64×58 inked rows) and the layout guard test animation-layout.test.ts (a glyph must not cross a band edge of the background).
 - What's new: none — Clippy layout only
+
+## 2026-10-22 — #7210: Tiny Office title no longer touches the divider; the guard test tolerates no ink across a band edge
+
+- User approval: pending — Paul's device feedback 22.10.2026 15:25 on the layout of the 7210 build: the "g" of the title word "remaining" in Tiny Office painted one pixel row into the purple divider below the title
+- Approved customer-visible result: Tiny Office's title stands 1 px higher, so the "g" of "remaining" ends on the last row above the divider instead of on the divider's first row; nothing else in Tiny Office moves.
+- Scope: the theme pack Tiny Office 0.7.5 (title text y 1 → 0, spec rev 13) and the layout guard test animation-layout.test.ts (zero rows of tolerance for a glyph across a band edge of the background).
+- What's new: none — Tiny Office layout only

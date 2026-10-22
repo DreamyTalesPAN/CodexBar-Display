@@ -131,10 +131,10 @@ function layoutViolations(pack: ThemeRenderPack): string[] {
         for (const d of dividers) if (hit(a, d)) note(`${a.name} x divider ${show(d)}`, `animation ${a.name} [${show(a)}] overlaps a divider [${show(d)}]`);
       }
       // A glyph that starts on one flat band of the background and ends on another (a descender below the title bar);
-      // the ink rect is within one row of the real glyphs, so the rows next to its edges stay out of it.
+      // the first and the last inked row are both looked at, no row of ink across an edge is tolerated.
       for (const t of texts) {
         const cols = [t.x + 1, t.x + t.w / 2, t.x + t.w - 2].map(Math.floor);
-        const top = cols.map((x) => backgroundAt(x, t.y + 1)), bottom = cols.map((x) => backgroundAt(x, t.y + t.h - 2));
+        const top = cols.map((x) => backgroundAt(x, t.y)), bottom = cols.map((x) => backgroundAt(x, t.y + t.h - 1));
         if (top[0] && bottom[0] && top.every((c) => c === top[0]) && bottom.every((c) => c === bottom[0]) && contrast(top[0], bottom[0]) >= 96) {
           note(`"${t.text}" crosses a band edge`, `text "${t.text}" [${show(t)}] starts on ${top[0]} and ends on ${bottom[0]}, across the edge of a background band`);
         }

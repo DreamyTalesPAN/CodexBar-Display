@@ -288,9 +288,9 @@
       "id": "tiny-office",
       "title": "Tiny Office",
       "usage": "live",
-      "version": "0.7.4",
-      "themeRev": 12,
-      "themeSpecPath": "/themes/u/to-12-5d257b7b.json",
+      "version": "0.7.5",
+      "themeRev": 13,
+      "themeSpecPath": "/themes/u/to-13-02cfea41.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -302,12 +302,13 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-tiny-office-v0.7.4.zip",
-      "sha256": "75b1af8eeb012f7985bef1c1ed81e3c877fb9c23d06ec9a28225211e622ff502",
+      "downloadAsset": "vibetv-theme-tiny-office-v0.7.5.zip",
+      "sha256": "b7395207926fdf6b7e08bd1662e3c047bc646ea3738c78c081c7d2f643a9d261",
       "bytes": 7832,
       "earlierThemeSpecPaths": [
         "/themes/u/to-10-53728b81.json",
         "/themes/u/to-11-98ef389a.json",
+        "/themes/u/to-12-5d257b7b.json",
         "/themes/u/to-6-6eed22ed.json",
         "/themes/u/to-7-d7799cec.json",
         "/themes/u/to-8-fdeaccda.json",
