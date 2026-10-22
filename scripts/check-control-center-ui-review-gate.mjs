@@ -13,6 +13,9 @@ process.chdir(repoRoot);
 // 1 MiB buffer would cut it and the gate would read an empty diff.
 const GIT_MAX_BUFFER = 1 << 28;
 
+// CRLF from a Windows autocrlf checkout must not make old entries look new.
+const DIFF_OPTIONS = ["--unified=0", "--ignore-cr-at-eol"];
+
 const APPROVAL_FILE = "docs/control-center-customer-ui-approval.md";
 const PRINCIPLES_FILE = "docs/control-center-ui-principles.md";
 // Approval commits committed after this moment must name the UI paths they
@@ -49,7 +52,9 @@ const LEADING_MARKDOWN = /^[\s*_`~]+/;
 //    the entry also announces something in "What's new".
 // 3) everything else stays "pending …" and is due until Paul's OK.
 const APPROVED_BY_PAUL_PATTERN =
-  /^approved by Paul in the communicator chat, \d{4}-\d{2}-\d{2} \d{2}:\d{2}: ["“„].+["”“](\s.*)?$/i;
+  /^approved by Paul in the communicator chat, \d{4}-\d{2}-\d{2} \d{2}:\d{2}: ["“„]\s*[^\s"”“„].*["”“](\s.*)?$/i;
+// The text of an approval line outside Paul's quote.
+const QUOTE_PATTERN = /["“„].*["”“]/;
 const NO_VISIBLE_CHANGE_START = /^no visible change\b/i;
 // The reason in brackets ends the line (it may hold brackets of its own, and an
 // entry written twice carries a " [2]" suffix); text after it is not part of
@@ -94,20 +99,20 @@ const uiChangedFiles = unique([
 ]);
 const approvalCoversUi = workingTreeApprovalChanged && workingTreeApprovalValid;
 const unapprovedUiFiles = approvalCoversUi ? [] : uiChangedFiles;
-// Every entry this change adds is checked for pending or draft, also those of
-// earlier commits (#799), as it reads now: against the base the change
-// branched from when known, else the parent of the newest approval commit.
-const comparisonBase = changeBase(analysisRef);
-const addedSince =
-  comparisonBase || (approvalCommit && tryGit(["rev-parse", "--verify", `${approvalCommit}^1`])) || null;
-const addedDiff = addedSince
-  ? workingTreeApprovalEdited
-    ? tryGit(["diff", "--unified=0", addedSince, "--", APPROVAL_FILE])
-    : approvalDiff(addedSince, analysisRef)
-  : [
-      approvalCommit ? commitDiff(approvalCommit) : "",
-      workingTreeApprovalEdited ? workingTreeApprovalDiff() : "",
-    ].join("\n");
+// Every entry this change adds is checked, also those of earlier commits (#799),
+// as it reads now: against the base the change branched from. Without that base
+// the added entries are unknown and the gate fails instead of passing.
+const addedSince = changeBase(analysisRef);
+const addedDiff = workingTreeApprovalEdited
+  ? git(["diff", ...DIFF_OPTIONS, addedSince, "--", APPROVAL_FILE])
+  : approvalDiff(addedSince, analysisRef);
+// Ids of "What's new" and the approval log as they read at the checked head.
+const recordRef = workingTreeChangedFiles.some((file) => file === APPROVAL_FILE || file === WHATS_NEW_FILE)
+  ? null
+  : analysisRef;
+const invalidEntries = addedEntries(addedDiff)
+  .map((entry) => ({ title: entry.split("\n")[0].slice(3), errors: entryErrors(entry, recordRef) }))
+  .filter(({ errors }) => errors.length > 0);
 const pendingEntries = addedEntries(addedDiff).filter(isPendingOrDraft);
 const badNoChangeEntries = addedEntries(addedDiff).filter(isBadNoVisibleChange);
 const unrecognizedApprovalEntries = addedEntries(addedDiff).filter(hasUnrecognizedApproval);
@@ -116,6 +121,7 @@ const invalidApprovalMarker =
   (!workingTreeApprovalChanged && Boolean(approvalCommit) && !committedApprovalValid);
 const due =
   invalidApprovalMarker ||
+  invalidEntries.length > 0 ||
   pendingEntries.length > 0 ||
   badNoChangeEntries.length > 0 ||
   unrecognizedApprovalEntries.length > 0 ||
@@ -128,6 +134,7 @@ printSummary({
   badNoChangeEntries,
   due,
   invalidApprovalMarker,
+  invalidEntries,
   pendingEntries,
   uiChangedFiles,
   unapprovedUiFiles,
@@ -137,7 +144,9 @@ printSummary({
 });
 
 if (due) {
-  const reason = invalidApprovalMarker
+  const reason = invalidEntries.length > 0
+    ? `${invalidEntries.length} approval entr${invalidEntries.length === 1 ? "y" : "ies"} added by this change ${invalidEntries.length === 1 ? "is" : "are"} incomplete or not unique (see the list above): each needs "User approval:" (one line, unique in the log), "Approved customer-visible result:", "Scope:", and "${WHATS_NEW_PREFIX}" with "none — <reason>" or ids from ${WHATS_NEW_FILE} in backticks.`
+    : invalidApprovalMarker
     ? `The newest approval marker does not add the required lines: "${APPROVAL_PREFIXES.join('", "')}", and "${WHATS_NEW_PREFIX}" with "none — <reason>" or ids from ${WHATS_NEW_FILE} in backticks.`
     : pendingEntries.length > 0
       ? `${pendingEntries.length} approval entr${pendingEntries.length === 1 ? "y" : "ies"} added by this change say${pendingEntries.length === 1 ? "s" : ""} pending or draft, which is no approval yet. Replace it with the given approval before merge.`
@@ -173,7 +182,7 @@ function analysisHeadRef() {
 // entries already there is no new marker: the corrected entry keeps covering
 // what it covered.
 function latestApprovalCommit(ref) {
-  const commits = lines(tryGit(["log", "--format=%H", ref, "--", APPROVAL_FILE]));
+  const commits = lines(git(["log", "--format=%H", ref, "--", APPROVAL_FILE]));
   // An entry a later commit removed again approves nothing: it must still be
   // in the file at ref (by its heading), else the UI change before it would be
   // counted as covered by an approval that is gone.
@@ -288,8 +297,8 @@ function changedFilesInWorkingTree() {
 
 function workingTreeApprovalDiff() {
   return [
-    tryGit(["diff", "--", APPROVAL_FILE]),
-    tryGit(["diff", "--cached", "--", APPROVAL_FILE]),
+    git(["diff", "--ignore-cr-at-eol", "--", APPROVAL_FILE]),
+    git(["diff", "--ignore-cr-at-eol", "--cached", "--", APPROVAL_FILE]),
     untrackedFileContents(APPROVAL_FILE),
   ].join("\n");
 }
@@ -299,8 +308,8 @@ function workingTreeApprovalDiff() {
 function commitDiff(commit) {
   const parent = tryGit(["rev-parse", "--verify", `${commit}^1`]);
   return parent
-    ? tryGit(["diff", "--unified=0", parent, commit, "--", APPROVAL_FILE])
-    : tryGit(["show", "--format=", "--unified=0", commit, "--", APPROVAL_FILE]);
+    ? git(["diff", ...DIFF_OPTIONS, parent, commit, "--", APPROVAL_FILE])
+    : git(["show", "--format=", ...DIFF_OPTIONS, commit, "--", APPROVAL_FILE]);
 }
 
 function untrackedFileContents(file) {
@@ -318,14 +327,17 @@ function untrackedFileContents(file) {
 }
 
 // The base the change branched from: the pull request base in CI, else
-// origin/main. null when neither is known.
+// origin/main.
 function changeBase(ref) {
   const base = pullRequestBase() || tryGit(["rev-parse", "--verify", "origin/main"]);
-  return base ? tryGit(["merge-base", base, ref]) || null : null;
+  if (!base) {
+    throw new Error("Cannot determine the approval comparison base. Fetch origin/main with its full history before running the gate.");
+  }
+  return git(["merge-base", base, ref]);
 }
 
 function approvalDiff(from, to) {
-  return tryGit(["diff", "--unified=0", from, to, "--", APPROVAL_FILE]);
+  return git(["diff", ...DIFF_OPTIONS, from, to, "--", APPROVAL_FILE]);
 }
 
 function addedLinesOf(diff) {
@@ -359,10 +371,32 @@ function entryField(entry, prefix) {
   return value.join(" ").trim();
 }
 
+// Every entry the change adds holds all four fields with a value, one "User
+// approval:" line that no other line of the log repeats, and a valid "What's
+// new" line.
+function entryErrors(entry, ref) {
+  const entryLines = lines(entry);
+  const errors = [];
+  for (const prefix of [...APPROVAL_PREFIXES, "- Scope:", WHATS_NEW_PREFIX]) {
+    if (!entryLines.some((line) => line.startsWith(prefix) && line.slice(prefix.length).trim())) {
+      errors.push(`missing ${prefix.slice(2)}`);
+    }
+  }
+  const approvals = entryLines.filter((line) => line.startsWith(APPROVAL_PREFIXES[0]));
+  if (approvals.length !== 1 || lines(readRecordFile(APPROVAL_FILE, ref)).filter((line) => line === approvals[0]).length !== 1) {
+    errors.push("User approval: must occur exactly once and be unique in the log");
+  }
+  if (entryLines.filter((line) => line.startsWith(WHATS_NEW_PREFIX)).some((line) => !namesWhatsNew(line, ref))) {
+    errors.push(`invalid ${WHATS_NEW_PREFIX.slice(2)}`);
+  }
+  return errors;
+}
+
 function isPendingOrDraft(entry) {
-  const approval = entryField(entry, "- User approval:");
+  // Paul's quote is his words; "pending" next to it is not approval.
+  const approval = entryField(entry, "- User approval:").replace(QUOTE_PATTERN, "");
   return (
-    (!APPROVED_BY_PAUL_PATTERN.test(approval) && PENDING_APPROVAL_PATTERN.test(approval)) ||
+    PENDING_APPROVAL_PATTERN.test(approval) ||
     PENDING_RESULT_PATTERN.test(
       entryField(entry, "- Approved customer-visible result:").replace(LEADING_MARKDOWN, ""),
     )
@@ -450,7 +484,8 @@ function whatsNewIds(ref) {
 // A file as it is in ref, or in the working tree when ref is null.
 function readRecordFile(file, ref) {
   if (ref) {
-    return tryGit(["show", `${ref}:${file}`]);
+    // A file the ref does not have is absent; a failed read is not.
+    return git(["ls-tree", "--name-only", ref, "--", file]) ? git(["show", `${ref}:${file}`]) : "";
   }
   try {
     return readFileSync(file, "utf8");
@@ -476,6 +511,7 @@ function printSummary({
   approvalCommit,
   due,
   invalidApprovalMarker,
+  invalidEntries,
   pendingEntries,
   badNoChangeEntries,
   uiChangedFiles,
@@ -497,6 +533,9 @@ function printSummary({
   console.log(`Unapproved UI files: ${unapprovedUiFiles.length}`);
   if (invalidApprovalMarker) {
     console.log("Approval marker is missing required evidence.");
+  }
+  for (const { title, errors } of invalidEntries) {
+    console.log(`- ${title}: ${errors.join("; ")}`);
   }
   if (pendingEntries.length > 0) {
     console.log("Approval entries that say pending or draft:");

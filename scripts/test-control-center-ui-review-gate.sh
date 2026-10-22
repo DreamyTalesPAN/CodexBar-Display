@@ -43,16 +43,16 @@ WHATS_NEW_NONE="- What's new: none — nothing a customer would look for"
 approval_entry() {
   local label="$1"
   local whats_new="${2-$WHATS_NEW_NONE}"
-  printf '\n## %s\n\n- User approval: approved by Paul in the communicator chat, 2026-10-20 12:15: "Ja, so passt das."\n- Approved customer-visible result: %s\n' \
-    "$label" "$label"
+  printf '\n## %s\n\n- User approval: approved by Paul in the communicator chat, 2026-10-20 12:15: "Ja, so passt das (%s)."\n- Approved customer-visible result: %s\n- Scope: %s and this approval record.\n' \
+    "$label" "$label" "$label" "$label"
   [[ -z "$whats_new" ]] || printf '%s\n' "$whats_new"
 }
 
 # An entry that waits for Paul's yes in the PR review: no approval yet.
 pending_approval_entry() {
   local label="$1"
-  printf '\n## %s\n\n- User approval: pending — Paul reviews this PR (test).\n- Approved customer-visible result: The result of %s\n%s\n' \
-    "$label" "$label" "$WHATS_NEW_NONE"
+  printf '\n## %s\n\n- User approval: pending — Paul reviews this PR (test).\n- Approved customer-visible result: The result of %s\n- Scope: %s and this approval record.\n%s\n' \
+    "$label" "$label" "$label" "$WHATS_NEW_NONE"
 }
 
 PENDING_REASON="says pending or draft"
@@ -79,6 +79,8 @@ setup_repo() {
 
   git -C "$repo" add .
   git -C "$repo" commit -q -m "Initial approved UI"
+  # The base the gate compares with; without it the gate fails closed.
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
 }
 
 commit_file() {
@@ -217,7 +219,7 @@ approve_ui_change_with_lines() {
   setup_repo "$repo"
   commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
     "Change customer-facing UI"
-  printf '\n## Overview\n\n%s\n%s\n%s\n' "$2" "$3" "$WHATS_NEW_NONE" \
+  printf '\n## Overview\n\n%s\n%s\n- Scope: overview and this approval record.\n%s\n' "$2" "$3" "$WHATS_NEW_NONE" \
     >> "$repo/docs/control-center-customer-ui-approval.md"
   git -C "$repo" add docs/control-center-customer-ui-approval.md
   git -C "$repo" commit -q -m "Approve overview"
@@ -274,6 +276,11 @@ test_every_added_entry_needs_its_whats_new_line() {
   commit_approval "$repo" "Second change" ""
   expect_gate_due "$repo"
 
+  # Every entry of the change complete: ok (a broken earlier one stays due).
+  repo="${TMP_ROOT}/whats-new-two-entries-ok"
+  setup_repo "$repo"
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
   approval_entry "Third change" \
     >> "$repo/docs/control-center-customer-ui-approval.md"
   commit_approval "$repo" "Fourth change"
@@ -859,7 +866,7 @@ test_no_visible_change_in_an_earlier_commit_passes() {
   git -C "$repo" update-ref refs/remotes/origin/main HEAD
   commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
     "Merge of main touches UI files"
-  printf '\n## Merge of main\n\n%s\n- Approved customer-visible result: No screen differs.\n%s\n' \
+  printf '\n## Merge of main\n\n%s\n- Approved customer-visible result: No screen differs.\n- Scope: the merge and this approval record.\n%s\n' \
     "$NO_CHANGE_LINE" "$WHATS_NEW_NONE" \
     >> "$repo/docs/control-center-customer-ui-approval.md"
   git -C "$repo" add docs/control-center-customer-ui-approval.md
@@ -986,11 +993,178 @@ test_approval_log_over_one_mib_is_read() {
     >> "$repo/docs/control-center-customer-ui-approval.md"
   git -C "$repo" add docs/control-center-customer-ui-approval.md
   git -C "$repo" commit -q -m "Big approval log on base"
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
   commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
     "Change customer-facing UI"
   commit_approval "$repo" "Updated overview after a big log"
   expect_gate_success "$repo"
 }
+
+# --- Per-entry checks ported from #882 (#799) ---
+
+APPROVAL_LOG="docs/control-center-customer-ui-approval.md"
+
+# A repo with the base marked, a UI change, a first entry written with the given
+# lines, then a valid second entry: the first one must not hide behind it.
+first_entry_then_valid() {
+  local repo="$1" entry="$2"
+  setup_repo "$repo"
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
+  printf '%b' "$entry" >> "$repo/$APPROVAL_LOG"
+  git -C "$repo" add "$APPROVAL_LOG"
+  git -C "$repo" commit -q -m "First entry"
+  commit_approval "$repo" "Valid second"
+}
+
+GIVEN='- User approval: approved by Paul in the communicator chat, 2026-10-20 12:15: "Ja, passt (first)."\n'
+RESULT='- Approved customer-visible result: First\n'
+SCOPE='- Scope: first and this approval record.\n'
+NONE_NEW="- What's new: none — nothing a customer would look for\\n"
+
+test_every_added_entry_needs_all_four_fields() {
+  local repo name entry
+  for name in scope empty-scope whats-new empty-whats-new result approval; do
+    case "$name" in
+      scope) entry="\n## First\n\n${GIVEN}${RESULT}${NONE_NEW}" ;;
+      empty-scope) entry="\n## First\n\n${GIVEN}${RESULT}- Scope:\n${NONE_NEW}" ;;
+      whats-new) entry="\n## First\n\n${GIVEN}${RESULT}${SCOPE}" ;;
+      empty-whats-new) entry="\n## First\n\n${GIVEN}${RESULT}${SCOPE}- What's new:\n" ;;
+      result) entry="\n## First\n\n${GIVEN}${SCOPE}${NONE_NEW}" ;;
+      approval) entry="\n## First\n\n${RESULT}${SCOPE}${NONE_NEW}" ;;
+    esac
+    repo="${TMP_ROOT}/fields-${name}"
+    first_entry_then_valid "$repo" "$entry"
+    expect_gate_due "$repo"
+    assert_contains "$(run_gate "$repo")" "First"
+  done
+  # A What's new id that is not in the list fails in an earlier entry too.
+  repo="${TMP_ROOT}/fields-unknown-id"
+  first_entry_then_valid "$repo" "\n## First\n\n${GIVEN}${RESULT}${SCOPE}- What's new: \`not-an-entry\`\n"
+  expect_gate_due "$repo"
+  assert_contains "$(run_gate "$repo")" "First"
+}
+
+test_complete_earlier_entry_passes() {
+  local repo="${TMP_ROOT}/fields-complete"
+  first_entry_then_valid "$repo" "\n## First\n\n${GIVEN}${RESULT}${SCOPE}${NONE_NEW}"
+  expect_gate_success "$repo"
+}
+
+test_approval_line_is_one_per_entry_and_unique() {
+  local repo
+  repo="${TMP_ROOT}/approval-twice-in-entry"
+  first_entry_then_valid "$repo" "\n## First\n\n${GIVEN}${GIVEN}${RESULT}${SCOPE}${NONE_NEW}"
+  expect_gate_due "$repo"
+  assert_contains "$(run_gate "$repo")" "First"
+
+  # The same line in two added entries.
+  repo="${TMP_ROOT}/approval-same-in-two"
+  first_entry_then_valid "$repo" "\n## First\n\n${GIVEN}${RESULT}${SCOPE}${NONE_NEW}\n## Copy\n\n${GIVEN}${RESULT}${SCOPE}${NONE_NEW}"
+  expect_gate_due "$repo"
+  assert_contains "$(run_gate "$repo")" "Copy"
+
+  # The same line as an entry already in the log.
+  repo="${TMP_ROOT}/approval-same-as-base"
+  first_entry_then_valid "$repo" "\n## First\n\n- User approval: approved by Paul in the communicator chat, 2026-10-20 12:15: \"Ja, so passt das (Initial UI).\"\n${RESULT}${SCOPE}${NONE_NEW}"
+  expect_gate_due "$repo"
+  assert_contains "$(run_gate "$repo")" "First"
+}
+
+# A Windows checkout with CRLF must neither fail a valid entry nor make entries
+# of the base look added.
+test_crlf_approval_log() {
+  local repo="${TMP_ROOT}/crlf-entry"
+  setup_repo "$repo"
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
+  approval_entry "Valid in CRLF" >> "$repo/$APPROVAL_LOG"
+  sed -i '' 's/$/\r/' "$repo/$APPROVAL_LOG"
+  git -C "$repo" add "$APPROVAL_LOG"
+  git -C "$repo" commit -q -m "Approve with CRLF"
+  expect_gate_success "$repo"
+
+  # The base holds a pending entry; converting the file to CRLF re-adds it as text.
+  repo="${TMP_ROOT}/crlf-base"
+  setup_repo "$repo"
+  pending_approval_entry "Old pending" >> "$repo/$APPROVAL_LOG"
+  git -C "$repo" add "$APPROVAL_LOG"
+  git -C "$repo" commit -q -m "Pending on base"
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
+  sed -i '' 's/$/\r/' "$repo/$APPROVAL_LOG"
+  git -C "$repo" add "$APPROVAL_LOG"
+  git -C "$repo" commit -q -m "Convert to CRLF"
+  commit_approval "$repo" "Valid after CRLF"
+  expect_gate_success "$repo"
+}
+
+# Without the comparison base the added entries cannot be known: not ok.
+test_missing_comparison_base_fails_closed() {
+  local repo="${TMP_ROOT}/no-base"
+  setup_repo "$repo"
+  git -C "$repo" update-ref -d refs/remotes/origin/main
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
+  commit_approval "$repo" "Updated overview"
+  local output status
+  set +e
+  output="$(run_gate "$repo")"
+  status=$?
+  set -e
+  [[ "$status" -ne 0 ]] || die "expected the gate to fail without a comparison base"
+  assert_not_contains "$output" "Control Center UI review gate: ok"
+  assert_contains "$output" "comparison base"
+}
+
+# A required git read that fails is no empty answer.
+test_failed_git_read_fails_closed() {
+  local repo="${TMP_ROOT}/git-read-fails"
+  setup_repo "$repo"
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Change customer-facing UI"
+  pending_approval_entry "Pending first" >> "$repo/$APPROVAL_LOG"
+  git -C "$repo" add "$APPROVAL_LOG"
+  git -C "$repo" commit -q -m "Pending first"
+  commit_approval "$repo" "Valid second"
+  # The diff of the approval log fails: an empty answer would hide the pending entry.
+  local shim="${TMP_ROOT}/shim" real output status
+  real="$(command -v git)"
+  mkdir -p "$shim"
+  printf '#!/bin/bash\n[[ " $* " == *" --unified=0 "* && " $* " == *" HEAD "* ]] && { echo "fatal: simulated" >&2; exit 128; }\nexec %s "$@"\n' "$real" > "$shim/git"
+  chmod +x "$shim/git"
+  set +e
+  output="$(cd "$repo" && PATH="$shim:$PATH" GITHUB_ACTIONS= GITHUB_EVENT_NAME= node "$GATE" 2>&1)"
+  status=$?
+  set -e
+  [[ "$status" -ne 0 ]] || die "expected the gate to fail when a git read fails"
+  assert_not_contains "$output" "Control Center UI review gate: ok"
+}
+
+test_whitespace_only_quote_is_no_approval() {
+  local repo
+  repo="${TMP_ROOT}/blank-quote"
+  approve_ui_change_with_approval_line "$repo" \
+    '- User approval: approved by Paul in the communicator chat, 2026-10-20 12:15: "   "'
+  expect_gate_due "$repo"
+  repo="${TMP_ROOT}/blank-quote-text"
+  approve_ui_change_with_approval_line "$repo" \
+    '- User approval: approved by Paul in the communicator chat, 2026-10-20 12:15: "  " — entry: "x"'
+  expect_gate_due "$repo"
+}
+
+test_pending_outside_the_quote_is_no_approval() {
+  local repo="${TMP_ROOT}/pending-outside"
+  approve_ui_change_with_approval_line "$repo" \
+    '- User approval: approved by Paul in the communicator chat, 2026-10-20 12:15: "Ja, passt." — pending his final OK'
+  expect_gate_due "$repo"
+  assert_contains "$(run_gate "$repo")" "$PENDING_REASON"
+}
+
 
 test_non_ui_commits_do_not_block
 test_approval_log_over_one_mib_is_read
@@ -1040,5 +1214,13 @@ test_no_visible_change_ends_after_its_reason
 test_removed_approval_entry_does_not_cover_ui
 test_pending_and_draft_stay_due_next_to_the_new_forms
 test_unrecognized_approval_value_is_due
+test_every_added_entry_needs_all_four_fields
+test_complete_earlier_entry_passes
+test_approval_line_is_one_per_entry_and_unique
+test_crlf_approval_log
+test_missing_comparison_base_fails_closed
+test_failed_git_read_fails_closed
+test_whitespace_only_quote_is_no_approval
+test_pending_outside_the_quote_is_no_approval
 
 printf 'control-center UI review gate tests passed\n'
