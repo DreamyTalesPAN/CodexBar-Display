@@ -10187,3 +10187,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Updates tab keeps "Update complete" without a retry dialog for a firmware check that failed before the update finished; a failed check newer than the update and a failed Mac App check open the dialog as before.
 - Scope: Updates tab only, the dialog gate in updates-screen.tsx and its tests. Pull request #798 only, not merged, not released.
 - What's new: none — removes a dialog that should not appear, no customer-visible addition
+
+## 2026-10-22 — #798: one failed-check decision for headline, row and dialog beside a finished update (Codex review)
+
+- User approval: no visible change – UI approval not needed (bug fix: a firmware check that failed before the update finished no longer shows "Update check failed" or the row's failed status beside "Update complete")
+- Approved customer-visible result: the Updates tab shows the completed state everywhere for a firmware check older than the finished update; a newer firmware failure and a Mac App failure show as failed as before.
+- Scope: Updates tab only, the failed-check decision in updates-screen.tsx and its test. Pull request #798 only, not merged, not released.
+- What's new: none — removes a stale failure display, no customer-visible addition

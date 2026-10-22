@@ -717,6 +717,9 @@ describe("UpdatesScreen finished update notice", () => {
 
     expect(screen.getByText("Update complete")).toBeTruthy();
     expect(screen.queryByRole("dialog")).toBeNull();
+    // The headline and the firmware row follow the same decision.
+    expect(screen.queryByText("Update check failed")).toBeNull();
+    expect(screen.queryByText("Check failed")).toBeNull();
   });
 
   it("still opens the dialog for a Mac App check failure beside an older firmware failure", () => {

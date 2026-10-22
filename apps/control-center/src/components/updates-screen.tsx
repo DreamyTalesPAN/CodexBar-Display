@@ -194,19 +194,23 @@ export function UpdatesScreen({
       firmwareUpdate.status !== "check_failed" &&
       !updateAvailable,
   );
-  const firmwareCheckFailed = firmwareUpdate?.status === "check_failed";
   // A failed firmware check replaces a finished update's notice only when it
   // is newer than the completion, so "Update complete" never stays below a
-  // failure that came after the update. Both times are ISO instants.
+  // failure that came after the update. An older one is no failure here: the
+  // headline, the row and the dialog all read this one decision. Both times
+  // are ISO instants.
   const completedAt = Date.parse(updateStatus?.finishedAt ?? "");
   const checkedAt = Date.parse(firmwareUpdate?.checkedAt ?? "");
   const failedCheckReplacesCompletion = Boolean(
     firmwareUpdateCompleted &&
-      firmwareCheckFailed &&
+      firmwareUpdate?.status === "check_failed" &&
       Number.isFinite(completedAt) &&
       Number.isFinite(checkedAt) &&
       checkedAt > completedAt,
   );
+  const firmwareCheckFailed =
+    firmwareUpdate?.status === "check_failed" &&
+    (!firmwareUpdateCompleted || failedCheckReplacesCompletion);
   const visibleUpdateStatus =
     staleFirmwareFailure || failedCheckReplacesCompletion
       ? undefined
@@ -261,12 +265,7 @@ export function UpdatesScreen({
   // A newer failed check is a new failure and opens again; a check that
   // answered is not part of it.
   const macAppFailedKey = macAppCheckFailed ? companionRelease?.checkedAt ?? "" : null;
-  // A failed check that did not replace the finished update is too old to ask
-  // the customer to retry beside "Update complete".
-  const firmwareFailedKey =
-    firmwareCheckFailed && !(firmwareUpdateCompleted && !failedCheckReplacesCompletion)
-      ? firmwareUpdate?.checkedAt ?? ""
-      : null;
+  const firmwareFailedKey = firmwareCheckFailed ? firmwareUpdate?.checkedAt ?? "" : null;
   const undismissedFailure =
     (macAppFailedKey !== null && macAppFailedKey !== dismissedMacAppCheck) ||
     (firmwareFailedKey !== null && firmwareFailedKey !== dismissedFirmwareCheck);
