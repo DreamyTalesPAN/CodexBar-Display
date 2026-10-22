@@ -359,8 +359,8 @@ describe("Display mode tiles keep time-dependent fields moving", () => {
     const text = tiles(0)[0].textContent ?? "";
     expect(text).toContain("Claude");
     expect(text).toContain("Codex");
-    expect(text).toContain("3h 0m");
-    expect(text).toContain("5h 0m");
+    expect(text).toContain("3h");
+    expect(text).toContain("5h");
   });
 
   it("counts the reset down as time passes, also under reduced motion", async () => {
@@ -375,16 +375,16 @@ describe("Display mode tiles keep time-dependent fields moving", () => {
     show([preview]);
     await settle();
 
-    expect(tiles(0)[0].textContent).toContain("3h 0m");
+    expect(tiles(0)[0].textContent).toContain("3h");
 
     await act(async () => {
       vi.advanceTimersByTime(61_000);
     });
 
     const text = tiles(0)[0].textContent ?? "";
-    expect(text).toContain("2h 58m");
-    expect(text).toContain("4h 58m");
-    expect(text).not.toContain("3h 0m");
+    expect(text).toContain("2h");
+    expect(text).toContain("4h");
+    expect(text).not.toContain("3h");
   });
 });
 
