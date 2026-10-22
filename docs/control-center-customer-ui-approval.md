@@ -9227,3 +9227,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; the app renders the same times as before.
 - Scope: control-center-app.update-check.test.tsx, test helper only.
 - What's new: none — test only
+
+## 2026-10-22 — #898: approval marker after merging main at 242e4846
+
+- User approval: no visible change – UI approval not needed (merge of main (242e4846) into #898; the own entries of #898 keep their approvals)
+- Approved customer-visible result: #898 as in its own entries plus the entries merged with 242e4846; nothing else changes.
+- Scope: the merge of 242e4846 and this approval record. Pull request branch #898 only, not merged, not released.
+- What's new: none — merge of 242e4846, no customer-visible change of its own
