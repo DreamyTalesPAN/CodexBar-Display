@@ -1064,8 +1064,11 @@ func themeInstallErrorPayload(slot string, err error) (int, apiError) {
 	}
 	// Issue #927: VibeTV did not answer the first check of a WiFi install. The
 	// engine's text and its command-line hint mean nothing to the customer.
+	// A status answer (for example 401 for a stale token) means VibeTV did
+	// answer, so it keeps the check's earlier wording.
 	var installErr *themeinstall.InstallError
-	if errors.As(err, &installErr) && installErr.Op == "theme-pack/check-device" {
+	if errors.As(err, &installErr) && installErr.Op == "theme-pack/check-device" &&
+		!strings.Contains(err.Error(), "get device hello: status=") {
 		code, message, next = "device_unreachable", "VibeTV didn't answer.", "Check that VibeTV is on and near your WiFi, then try again."
 	}
 	return http.StatusBadGateway, apiError{
