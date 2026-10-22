@@ -516,7 +516,11 @@ func (s *DashboardServeSupervisor) setHealth(healthy bool, err error) {
 	s.info.Healthy = healthy
 	if healthy && s.process != nil {
 		s.answered = true
-		s.info.ReplaceStartedAt = time.Time{}
+		// A child being replaced (restart) can still answer a check that was
+		// in flight when it was stopped; that is not the replacement's answer.
+		if !s.restart {
+			s.info.ReplaceStartedAt = time.Time{}
+		}
 	}
 	s.info.LastHealthAt = time.Now().UTC()
 	if err != nil {
