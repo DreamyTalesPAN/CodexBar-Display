@@ -194,9 +194,23 @@ export function UpdatesScreen({
       firmwareUpdate.status !== "check_failed" &&
       !updateAvailable,
   );
-  const visibleUpdateStatus = staleFirmwareFailure
-    ? undefined
-    : statusForHost(updateStatus, windowsHost);
+  const firmwareCheckFailed = firmwareUpdate?.status === "check_failed";
+  // A failed firmware check replaces a finished update's notice only when it
+  // is newer than the completion, so "Update complete" never stays below a
+  // failure that came after the update. Both times are ISO instants.
+  const completedAt = Date.parse(updateStatus?.finishedAt ?? "");
+  const checkedAt = Date.parse(firmwareUpdate?.checkedAt ?? "");
+  const failedCheckReplacesCompletion = Boolean(
+    firmwareUpdateCompleted &&
+      firmwareCheckFailed &&
+      Number.isFinite(completedAt) &&
+      Number.isFinite(checkedAt) &&
+      checkedAt > completedAt,
+  );
+  const visibleUpdateStatus =
+    staleFirmwareFailure || failedCheckReplacesCompletion
+      ? undefined
+      : statusForHost(updateStatus, windowsHost);
   const macAppUpdateAvailable = Boolean(companionRelease?.updateAvailable);
   const nativeMacUpdateReady = Boolean(
     macAppUpdateAvailable && companionInfo?.app?.installedInApplications,
@@ -244,7 +258,6 @@ export function UpdatesScreen({
     (companionRelease?.status === "check_failed" ||
       (!companionInfo?.app?.installedInApplications &&
         companionRelease?.dmgDownloadStatus === "check_failed"));
-  const firmwareCheckFailed = firmwareUpdate?.status === "check_failed";
   // A newer failed check is a new failure and opens again; a check that
   // answered is not part of it.
   const macAppFailedKey = macAppCheckFailed ? companionRelease?.checkedAt ?? "" : null;
