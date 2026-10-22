@@ -40,6 +40,7 @@ afterEach(() => {
 });
 
 let diagnosticsRequests = 0;
+let resetRequests = 0;
 
 function startApp(
   diagnosticsReply: () => Promise<Response> = async () => jsonResponse({
@@ -50,6 +51,7 @@ function startApp(
   providerSetup?: unknown,
 ) {
   diagnosticsRequests = 0;
+  resetRequests = 0;
   window.localStorage.clear();
   // A customer who has read "What's new"; it would lie over Support.
   markWhatsNewSeen();
@@ -129,6 +131,10 @@ function startApp(
       }
       if (url.includes("/v1/usage")) {
         return jsonResponse({ ok: true, usageMode: "used", providers: [] });
+      }
+      if (url.endsWith("/v1/setup/reset")) {
+        resetRequests += 1;
+        return jsonResponse({ ok: true, connectionModeChoiceRequired: true });
       }
       return jsonResponse({ ok: false, error: { code: "HTTP_404" } }, 404);
     }),
@@ -259,4 +265,48 @@ it("gives a report requested from setup the report Run diagnostics is collecting
   await wait(3);
   expect(diagnosticsRequests).toBe(1);
   expect(screen.getByRole("button", { name: "Copy" })).toBeTruthy();
+});
+
+// Issue #917: Run setup again keeps the report on purpose (#782). A Create new
+// that the reset overtakes returns no report, and must not clear the old one.
+it("keeps the earlier report when Run setup again overtakes Create new", async () => {
+  let hold = false;
+  let release = () => {};
+  startApp(async () => {
+    if (hold) {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    }
+    return jsonResponse({ ok: true, generatedAt: "2026-10-18T06:00:00.000Z", checks: [] });
+  });
+  await wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await wait(2);
+  fireEvent.click(screen.getByRole("button", { name: "Create report" }));
+  await wait(3);
+  expect(screen.getByRole("button", { name: "Copy" })).toBeTruthy();
+
+  hold = true;
+  fireEvent.click(screen.getByRole("button", { name: "Create new" }));
+  await wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Run setup" }));
+  fireEvent.click(
+    within(screen.getByRole("dialog", { name: "Run setup again?" })).getByRole("button", {
+      name: "Run setup again",
+    }),
+  );
+  await wait(2);
+  release();
+  await wait(10);
+  expect(resetRequests).toBe(1);
+  expect(diagnosticsRequests).toBe(2);
+
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  await wait(2);
+  expect(screen.getByRole("button", { name: "Copy" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Download" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Create new" })).toBeTruthy();
 });
