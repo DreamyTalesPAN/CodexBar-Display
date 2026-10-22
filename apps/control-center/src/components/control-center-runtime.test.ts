@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   FINISH_CODEXBAR_RECOVERY_URL,
+  hostTimeLocale,
   isNativeControlCenterUserAgent,
   localThemeRenderPackUrl,
   nativeControlCenterAppBuild,
@@ -9,6 +10,53 @@ import {
   REPAIR_CONTROL_CENTER_RUNTIME_URL,
   RESTART_CONTROL_CENTER_URL,
 } from "./control-center-runtime";
+
+// Issue #890: the shell passes the computer's region and hour cycle in its user
+// agent. English language with German region and 24 h must show 13:05, not 1:05 PM.
+describe("host time locale", () => {
+  const at = new Date("2026-10-21T13:05:09Z");
+  const timeOf = (locale: string) =>
+    new Intl.DateTimeFormat(locale, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      timeZone: "UTC",
+    }).format(at);
+
+  it("reads the locale the shell passed, next to the version and provider shortcut", () => {
+    const withLocale = "VibeTVControlCenter/1.2.3+45 Locale/en-DE-u-hc-h23";
+    const refused = `${withLocale} ProviderShortcut/unavailable`;
+
+    expect(hostTimeLocale(withLocale)).toBe("en-DE-u-hc-h23");
+    expect(hostTimeLocale(refused)).toBe("en-DE-u-hc-h23");
+    expect(nativeControlCenterAppBuild(refused)).toEqual({
+      version: "1.2.3",
+      build: "45",
+    });
+    expect(nativeProviderShortcut(refused)).toBe("unavailable");
+  });
+
+  it("keeps de-DE with 24 hours when no shell passed a locale", () => {
+    expect(hostTimeLocale("Mozilla/5.0")).toBe("de-DE");
+    expect(hostTimeLocale("VibeTVControlCenter/1.2.3+45")).toBe("de-DE");
+  });
+
+  it("formats 24 h and 12 h from the hour cycle, whatever the language", () => {
+    expect(timeOf(hostTimeLocale("VibeTVControlCenter/1.2.3+45 Locale/en-DE-u-hc-h23"))).toBe(
+      "13:05:09",
+    );
+    expect(timeOf(hostTimeLocale("VibeTVControlCenter/1.2.3+45 Locale/en-US-u-hc-h12"))).toBe(
+      "01:05:09 PM",
+    );
+    expect(timeOf(hostTimeLocale("Mozilla/5.0"))).toBe("13:05:09");
+  });
+
+  it("falls back to de-DE when a shell passes a tag Intl rejects, so no render throws", () => {
+    const invalid = "VibeTVControlCenter/1.2.3+45 Locale/en_DE-u-hc-h23";
+    expect(hostTimeLocale(invalid)).toBe("de-DE");
+    expect(timeOf(hostTimeLocale(invalid))).toBe("13:05:09");
+  });
+});
 
 describe("native Control Center recovery", () => {
   it("recognizes only the native WebView user agent", () => {

@@ -7,6 +7,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { hostDateTimeFormat } from "./control-center-runtime";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -1038,7 +1039,7 @@ function formatDayLabel(day: string): string {
   if (Number.isNaN(date.getTime())) {
     return day;
   }
-  return new Intl.DateTimeFormat("en-US", {
+  return hostDateTimeFormat({
     month: "short",
     day: "numeric",
   }).format(date);

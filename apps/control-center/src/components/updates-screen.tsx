@@ -40,6 +40,7 @@ import {
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import { statusForHost } from "@/lib/customer-platform";
 import type { CompanionInfo } from "./control-center-types";
+import { hostDateTimeFormat } from "./control-center-runtime";
 import { SetupDialog } from "./setup/setup-dialog";
 import { clampProgress } from "./update-jobs";
 
@@ -683,7 +684,7 @@ function formatCheckTime(value: string | undefined): string {
   const date = new Date(value || "");
   return Number.isNaN(date.getTime())
     ? ""
-    : new Intl.DateTimeFormat(undefined, {
+    : hostDateTimeFormat({
         dateStyle: "medium",
         timeStyle: "medium",
       }).format(date);

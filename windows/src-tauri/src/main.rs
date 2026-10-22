@@ -307,10 +307,37 @@ fn version(app: &AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
+// The computer's region and 12/24-hour setting as a BCP 47 locale, such as
+// "de-DE-u-hc-h23" (issue #890). The page shows its times in this locale.
+#[cfg(windows)]
+fn host_time_locale() -> String {
+    use windows_sys::Win32::Globalization::{GetLocaleInfoEx, GetUserDefaultLocaleName, LOCALE_ITIME};
+    // 85 is LOCALE_NAME_MAX_LENGTH.
+    let mut name = [0u16; 85];
+    let mut hour_format_flag = [0u16; 2];
+    unsafe {
+        let length = GetUserDefaultLocaleName(name.as_mut_ptr(), name.len() as i32);
+        GetLocaleInfoEx(name.as_ptr(), LOCALE_ITIME, hour_format_flag.as_mut_ptr(), hour_format_flag.len() as i32);
+        let region = if length > 1 {
+            String::from_utf16_lossy(&name[..length as usize - 1])
+        } else {
+            "de-DE".to_string()
+        };
+        // LOCALE_ITIME is "0" for 12 hours and "1" for 24 hours.
+        let hour_cycle = if hour_format_flag[0] == u16::from(b'0') { "h12" } else { "h23" };
+        format!("{region}-u-hc-{hour_cycle}")
+    }
+}
+
+#[cfg(not(windows))]
+fn host_time_locale() -> String {
+    "de-DE-u-hc-h23".to_string()
+}
+
 // The suffix tells Settings that Ctrl+Alt+Shift+P is not available.
 fn user_agent(app: &AppHandle, provider_shortcut: bool) -> String {
     let suffix = if provider_shortcut { "" } else { " ProviderShortcut/unavailable" };
-    format!("VibeTVControlCenter/{}+{}{suffix}", version(app), BUILD)
+    format!("VibeTVControlCenter/{}+{} Locale/{}{suffix}", version(app), BUILD, host_time_locale())
 }
 
 fn companion_path(app: &AppHandle) -> PathBuf {

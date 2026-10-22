@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { SetupEvent, SetupLog } from "./control-center-types";
+import { hostDateTimeFormat } from "./control-center-runtime";
 import { copyForHost } from "@/lib/customer-platform";
 import { formatCustomerSupportText, humanize } from "./customer-support-text";
 
@@ -252,10 +253,9 @@ function formatClock(value: string): string {
   if (Number.isNaN(date.getTime())) {
     return "--:--:--";
   }
-  return date.toLocaleTimeString([], {
+  return hostDateTimeFormat({
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hour12: false,
-  });
+  }).format(date);
 }

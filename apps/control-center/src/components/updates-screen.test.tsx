@@ -517,7 +517,7 @@ describe("UpdatesScreen Mac-App-first gate", () => {
       },
     };
     const at = (value: string) =>
-      `Last checked ${new Intl.DateTimeFormat(undefined, {
+      `Last checked ${new Intl.DateTimeFormat("de-DE", {
         dateStyle: "medium",
         timeStyle: "medium",
       }).format(new Date(value))}`;

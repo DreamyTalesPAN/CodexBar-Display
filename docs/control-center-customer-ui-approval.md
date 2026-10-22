@@ -9781,3 +9781,38 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #919 as in its #883 entry plus the entries merged with 3babd786; nothing else changes.
 - Scope: the merge of 3babd786 and this approval record. Pull request #919 only, not merged, not released.
 - What's new: none — merge of 3babd786, no customer-visible change of its own
+
+## 2026-10-21 — #890: Times follow the computer's region and 12/24-hour setting
+
+- User approval: pending — the Control Center times and dates use the computer's region and 12/24-hour setting (Mac and Windows), not the fixed de-DE or en-US; Paul checks the result on both platforms before this is released.
+- Approved customer-visible result: times and dates in the Control Center follow the computer's region and 12/24-hour setting; the device preview keeps its de-DE 24-hour format because the device firmware draws its own clock.
+- Scope: the time and date formatters of the Control Center pages, the user agent of the Mac App and the Windows App (carries the locale), and the Windows user-locale lookup. Draft pull request, not merged, not released.
+- What's new: none — draft for after v1.0.66; the What's new entry is added with the release, not in this draft
+
+## 2026-10-22 — #890: an invalid locale tag from the shell falls back to de-DE
+
+- User approval: no visible change – UI approval not needed (bug fix: a malformed locale tag in the user agent no longer throws during render; valid tags are unchanged)
+- Approved customer-visible result: none; times and dates keep the computer's locale as before, and an invalid tag shows de-DE instead of a blank screen.
+- Scope: hostTimeLocale in control-center-runtime.ts with its regression test.
+- What's new: none — crash guard only
+
+## 2026-10-22 — #890: update-check test expects the de-DE host-time format
+
+- User approval: no visible change – UI approval not needed (test only: the update-check test formats its expected "Last checked" time with de-DE, the app's fallback, instead of the CI runner's locale)
+- Approved customer-visible result: none; the app renders the same times as before.
+- Scope: control-center-app.update-check.test.tsx, test helper only.
+- What's new: none — test only
+
+## 2026-10-22 — #898: approval marker after merging main at 242e4846
+
+- User approval: no visible change – UI approval not needed (merge of main (242e4846) into #898; the own entries of #898 keep their approvals)
+- Approved customer-visible result: #898 as in its own entries plus the entries merged with 242e4846; nothing else changes.
+- Scope: the merge of 242e4846 and this approval record. Pull request branch #898 only, not merged, not released.
+- What's new: none — merge of 242e4846, no customer-visible change of its own
+
+## 2026-10-22 — #898: approval marker after merging main at d2f3fade
+
+- User approval: no visible change – UI approval not needed (merge of main (d2f3fade) into #898; the own entries of #898 keep their approvals)
+- Approved customer-visible result: #898 as in its own entries plus the entries merged with d2f3fade; nothing else changes.
+- Scope: the merge of d2f3fade and this approval record. Pull request branch #898 only, not merged, not released.
+- What's new: none — merge of d2f3fade, no customer-visible change of its own

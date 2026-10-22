@@ -435,6 +435,17 @@ func nativeControlCenterUserAgent(shortVersion: String?, buildVersion: String?) 
     return nativeControlCenterUserAgentPrefix + (version.isEmpty ? "unknown" : version)
 }
 
+/// The computer's region and 12/24-hour setting as a BCP 47 locale, such as
+/// "en-DE-u-hc-h23" (issue #890). The page shows its times in this locale.
+func hostTimeLocaleIdentifier(locale: Locale = .current) -> String {
+    let template = DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: locale) ?? ""
+    let hourCycle = template.contains("a") ? "h12" : "h23"
+    let language = locale.language.languageCode?.identifier ?? "en"
+    return [language, locale.region?.identifier, "u-hc-" + hourCycle]
+        .compactMap { $0 }
+        .joined(separator: "-")
+}
+
 /// The window's page drives the setup, a firmware update included. WebKit's
 /// default suspends the page's process a few seconds after it loaded in a
 /// window that is behind other windows: the page then stops, the setup waits
@@ -3437,7 +3448,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             buildVersion: Bundle.main.object(
                 forInfoDictionaryKey: "CFBundleVersion"
             ) as? String
-        ) + (providerShortcutRegistered ? "" : providerShortcutUnavailableUserAgentSuffix)
+        ) + " Locale/\(hostTimeLocaleIdentifier())"
+            + (providerShortcutRegistered ? "" : providerShortcutUnavailableUserAgentSuffix)
         webView.navigationDelegate = self
         webView.uiDelegate = self
 
