@@ -176,7 +176,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 	writeDeviceReport := func(device deviceInfo) {
 		checks = appendDisplayStreamDiagnostic(checks, device.Stream)
-		if updateJob, ok := s.latestFirmwareUpdateJob(); ok {
+		if updateJob, ok := s.updateJobs.latest(); ok {
 			checks = append(checks, diagnosticCheck{
 				Name:       "firmware_update",
 				Status:     firmwareUpdateDiagnosticStatus(updateJob),

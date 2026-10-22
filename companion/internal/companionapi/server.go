@@ -242,13 +242,9 @@ type Server struct {
 	preferenceAdapters     []preferenceAdapter
 	updateFirmware         func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
 	fetchMacAppRelease     func(context.Context) (githubRelease, error)
-	installJobsMu          sync.Mutex
-	installJobs            map[string]*themeInstallJob
-	themeInstallActive     bool
-	nextInstallJob         uint64
-	updateJobsMu           sync.Mutex
-	updateJobs             map[string]*firmwareUpdateJob
-	nextUpdateJob          uint64
+	installJobs            *jobStore[themeInstallJob]
+	themeInstallActive     atomic.Bool
+	updateJobs             *jobStore[firmwareUpdateJob]
 	macAppReleaseMu        sync.Mutex
 	macAppReleaseChecked   bool
 	macAppReleaseCheckedAt time.Time
@@ -409,8 +405,8 @@ func New(opts Options) (*Server, error) {
 		},
 		updateFirmware:     firmwareUpdateCommandRunner(opts.PauseDisplayStream != nil),
 		fetchMacAppRelease: fetchLatestMacAppRelease,
-		installJobs:        make(map[string]*themeInstallJob),
-		updateJobs:         make(map[string]*firmwareUpdateJob),
+		installJobs:        newJobStore(cloneThemeInstallJob, func(job *themeInstallJob) time.Time { return job.StartedAt }),
+		updateJobs:         newJobStore(cloneFirmwareUpdateJob, func(job *firmwareUpdateJob) time.Time { return job.StartedAt }),
 	}
 	return server, nil
 }
