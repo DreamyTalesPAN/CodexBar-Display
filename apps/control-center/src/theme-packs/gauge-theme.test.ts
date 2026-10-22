@@ -51,10 +51,10 @@ describe("Gauge 2.0 theme pack", () => {
     const validation = validateThemeSpec(importThemeSpec(JSON.parse(rawSpec)), {}, "live");
     expect(validation.errors).toEqual([]);
     expect(arc).toMatchObject({ ps: "arc", b: "usageSlot1Pace", sl: 1, as: 225, aw: 270, at: 18, rc: "#C9F26B", dc: "#E7A3AC" });
-    expect(manifest).toMatchObject({ usage: "live", assets: [], minFirmware: "1.0.50", version: "0.2.3" });
+    expect(manifest).toMatchObject({ usage: "live", assets: [], minFirmware: "1.0.50", version: "0.2.4" });
     expect(manifest.requiredCapabilities).toEqual(["usage-slots-v1", "color-stops-v1", "progress-arc-v1", "usage-pace-v1"]);
     // Two letters, so no theme a customer saves can share the file name.
-    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-13-[0-9a-f]{8}\.json$/);
+    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-14-[0-9a-f]{8}\.json$/);
     expect(manifest.themeSpec.bytes).toBe(Buffer.byteLength(rawSpec));
     expect(pack.specPath).toBe(manifest.themeSpec.path);
   });
@@ -66,12 +66,12 @@ describe("Gauge 2.0 theme pack", () => {
     const plain = render(frame(91));
     expect(ring(plain)).toEqual([[arc.bg, 270], ["#EDEDED", 245]]);
     expect(plain).not.toContain("<line");
-    expect(shown(plain)).toBe("Claude91%Session leftresets 2h 14mWeekly 87%");
+    expect(shown(plain)).toBe("Claude91%Session leftresets 2h 14mWeekly87%");
     // 6% reserve: the ring fills to the plan (85 %) and the green piece runs to the use.
     const reserve = render(frame(91, {}, paceSession));
     expect(ring(reserve)).toEqual([[arc.bg, 270], ["#EDEDED", 229], ["#C9F26B", 16]]);
     expect(reserve).toContain("<line");
-    expect(shown(reserve)).toBe("Claude91%Session left6% reserveresets 2h 14mWeekly 87%35% reserve");
+    expect(shown(reserve)).toBe("Claude91%Session left6% reserveresets 2h 14mWeekly87%35% reserve");
     // 14% deficit: the hatched piece runs from the use (38 %) to the plan (52 %).
     const deficit = render(frame(38, {}, { delta: 14, state: "deficit", lasts: false }));
     expect(ring(deficit)).toEqual([[arc.bg, 270], ["#EDEDED", 102], [expect.stringMatching(/^url\(#hatch-/), 38]]);
@@ -108,7 +108,7 @@ describe("Gauge 2.0 theme pack", () => {
     expect(shown(render({ ...none, updateNotice: "Update available" }))).toBe("Update available");
     const one = frame(64, { usageSlots: [{ id: "session", label: "Session", percent: 64, resetSecs: 8078 }] });
     expect(shown(render(one))).toBe("Claude64%Session leftresets 2h 14m");
-    expect(shown(render(frame(64)))).toContain("Weekly 87%");
+    expect(shown(render(frame(64)))).toContain("Weekly87%");
   });
 
   it("keeps every line inside its lane on the device", () => {
@@ -126,7 +126,7 @@ describe("Gauge 2.0 theme pack", () => {
     ];
     const seen = new Set<string>();
     for (const data of frames) {
-      for (const p of texts.filter((t) => t.f !== 4)) {
+      for (const p of texts) {
         const value = renderTextPrimitive(p, data);
         seen.add(value);
         const font = p.f ?? 1;
@@ -141,8 +141,8 @@ describe("Gauge 2.0 theme pack", () => {
   });
 
   it("keeps the header above the larger ring and both limit labels clear of it", () => {
-    expect(arc.w).toBe(190);
-    expect(arc.h).toBe(190);
+    expect(arc.w).toBe(216);
+    expect(arc.h).toBe(216);
     const header = texts.find((p) => p.b === "l")!;
     expect(header.y! + 16).toBeLessThan(arc.y!);
     const { cx, cy, radius, thickness } = themeProgressArc(arc, 0)!;
@@ -155,12 +155,12 @@ describe("Gauge 2.0 theme pack", () => {
     const value = renderTextPrimitive(limit, paired);
     const width = themeFirmwareTextMetrics(value, 2, 1)!.width;
     expect(value.trim()).toBe("Claude Weekly");
-    for (const y of [limit.y!, limit.y! + 16]) {
+    for (const y of [limit.y!, limit.y! + limit.h!]) {
       expect(Math.hypot(width / 2, y - cy)).toBeLessThan(inner);
     }
     const footer = texts.find((p) => p.v === "resets {usageSlot1Reset}")!;
     // The 270-degree ring ends at 45 degrees either side of its open bottom.
-    expect(footer.w!).toBeLessThan(2 * (footer.y! - cy));
+    expect(Math.hypot(footer.w! / 2, footer.y! - cy)).toBeLessThan(inner);
     for (const updateNotice of ["Update available", "Open VibeTV Mac App"]) {
       expect(renderTextPrimitive(header, { ...paired, updateNotice })).toBe(updateNotice);
       expect(renderTextPrimitive(footer, { ...paired, updateNotice })).toBe("resets 3d 1h");
