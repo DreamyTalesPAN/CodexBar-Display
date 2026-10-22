@@ -29,6 +29,12 @@ type LiveVibeTVPreviewProps = {
   device: DeviceInfo | null;
   displayFrame: DisplayFrameSnapshot | null;
   onPreviewReady?: () => void;
+  /** Called once the screen no longer reads "Loading preview" (its theme pack is in, or failed). */
+  onScreenSettled?: () => void;
+  /** The screen went (back) to "Loading preview"; it is not settled any more. */
+  onScreenLoading?: () => void;
+  /** Render only the real display output when a 3D case provides the housing. */
+  screenOnly?: boolean;
   updateOwnedDisconnect?: boolean;
   usage: UsageSnapshot | null;
 };
@@ -408,6 +414,9 @@ export function LiveVibeTVPreview({
   device,
   displayFrame,
   onPreviewReady,
+  onScreenSettled,
+  onScreenLoading,
+  screenOnly = false,
   updateOwnedDisconnect = false,
   usage,
 }: LiveVibeTVPreviewProps) {
@@ -567,42 +576,61 @@ export function LiveVibeTVPreview({
     themeSpecPath,
   ]);
 
+  // Whether the screen below is the "Loading preview" placeholder.
+  const showsPackLoading =
+    packStatus === "loading" &&
+    !updateOwnedDisconnect &&
+    deviceConnected &&
+    !(pack?.spec && frame) &&
+    (frame ||
+      (!awaitingProviderSetup && deviceReady && !waitingForUsage));
+  useEffect(() => {
+    if (showsPackLoading) {
+      onScreenLoading?.();
+    } else {
+      onScreenSettled?.();
+    }
+  }, [onScreenLoading, onScreenSettled, showsPackLoading]);
+
+  const screen = updateOwnedDisconnect ? (
+    <FirmwareUpdateRestarting />
+  ) : !deviceConnected ? (
+    <ThemePreviewOffline />
+  ) : pack?.spec && frame ? (
+    <ThemeSpecSVG
+      assets={pack.assets || {}}
+      frame={frame}
+      // In standby VibeTV reports its screensaver as the active theme.
+      screensaver={device?.standby?.active ? pack.name || "" : undefined}
+      spec={pack.spec}
+      themeId={pack.themeId || themeId}
+    />
+  ) : frame ? (
+    <ThemeSpecLoading status={packStatus} themeId={themeId} />
+  ) : awaitingProviderSetup ? (
+    <ThemeSpecLoading
+      message="Waiting for AI setup…"
+      status="loading"
+      themeId={themeId}
+    />
+  ) : !deviceReady && !waitingForUsage ? (
+    <ThemePreviewOffline />
+  ) : waitingForUsage ? (
+    <ThemeSpecLoading
+      message="Waiting for usage…"
+      status="loading"
+      themeId={themeId}
+    />
+  ) : (
+    <ThemeSpecLoading status={packStatus} themeId={themeId} />
+  );
+
+  // The 3D case draws the housing itself and only needs the screen.
+  if (screenOnly) return screen;
+
   return (
     <figure className="w-full max-w-[520px]">
-      <VibeTVCaseShell>
-        {updateOwnedDisconnect ? (
-          <FirmwareUpdateRestarting />
-        ) : !deviceConnected ? (
-          <ThemePreviewOffline />
-        ) : pack?.spec && frame ? (
-          <ThemeSpecSVG
-            assets={pack.assets || {}}
-            frame={frame}
-            // In standby VibeTV reports its screensaver as the active theme.
-            screensaver={device?.standby?.active ? pack.name || "" : undefined}
-            spec={pack.spec}
-            themeId={pack.themeId || themeId}
-          />
-        ) : frame ? (
-          <ThemeSpecLoading status={packStatus} themeId={themeId} />
-        ) : awaitingProviderSetup ? (
-          <ThemeSpecLoading
-            message="Waiting for AI setup…"
-            status="loading"
-            themeId={themeId}
-          />
-        ) : !deviceReady && !waitingForUsage ? (
-          <ThemePreviewOffline />
-        ) : waitingForUsage ? (
-          <ThemeSpecLoading
-            message="Waiting for usage…"
-            status="loading"
-            themeId={themeId}
-          />
-        ) : (
-          <ThemeSpecLoading status={packStatus} themeId={themeId} />
-        )}
-      </VibeTVCaseShell>
+      <VibeTVCaseShell>{screen}</VibeTVCaseShell>
     </figure>
   );
 }

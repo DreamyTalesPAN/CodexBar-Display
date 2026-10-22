@@ -56,7 +56,11 @@ export function PreferenceControl({
               : String(descriptor.value)
           }
         >
-          <SelectTrigger aria-label={descriptor.label} id={descriptor.id}>
+          <SelectTrigger
+            aria-label={descriptor.label}
+            className="data-[size=default]:h-9"
+            id={descriptor.id}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -127,7 +131,7 @@ export function PreferenceControl({
       );
     case "secret":
       return (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-[13px] text-muted-foreground">
           {descriptor.secretState === "configured"
             ? "Configured"
             : "Not configured"}
