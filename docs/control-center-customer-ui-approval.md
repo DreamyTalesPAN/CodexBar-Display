@@ -9620,3 +9620,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #902 as in its own entries plus the entries merged with d2f3fade; nothing else changes.
 - Scope: the merge of d2f3fade and this approval record. Pull request branch #902 only, not merged, not released.
 - What's new: none — merge of d2f3fade, no customer-visible change of its own
+
+## 2026-10-22 — #902: colour-contrast check measures the wrapped dialog title and fails when axe cannot decide
+
+- User approval: no visible change – UI approval not needed (test only: the real-browser contrast check hides the frozen screen behind the opaque dialog so axe measures the title, and counts "incomplete" results as failures)
+- Approved customer-visible result: the dialogs look and behave exactly as before.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` only (`assertDialogContrast`). Pull request #902 only, not merged, not released.
+- What's new: none — test-only accessibility check

@@ -1327,13 +1327,26 @@ const axeSource = await readFile(
 async function assertDialogContrast(page, dialog) {
   await page.addScriptTag({ content: axeSource });
   const failures = await dialog.evaluate(async (node) => {
-    const { violations } = await window.axe.run(node, {
-      runOnly: ["color-contrast"],
-      resultTypes: ["violations"],
-    });
-    return violations.flatMap(({ id, nodes }) =>
-      nodes.map(({ html, failureSummary }) => `${id}: ${html} ${failureSummary}`),
-    );
+    // The dialog is opaque, so only its own colours matter. With the frozen
+    // screen behind it, the lines of a wrapped title see different elements
+    // and axe reports the title "incomplete" instead of measuring it. Hidden,
+    // everything is measured, and anything axe still cannot decide fails.
+    const behind = [...document.body.children].filter((el) => !el.contains(node));
+    const shown = behind.map((el) => el.style.display);
+    for (const el of behind) el.style.display = "none";
+    try {
+      const results = await window.axe.run(node, {
+        runOnly: ["color-contrast"],
+        resultTypes: ["violations", "incomplete"],
+      });
+      return ["violations", "incomplete"].flatMap((type) =>
+        results[type].flatMap(({ id, nodes }) =>
+          nodes.map(({ html, failureSummary }) => `${type} ${id}: ${html} ${failureSummary}`),
+        ),
+      );
+    } finally {
+      behind.forEach((el, i) => (el.style.display = shown[i]));
+    }
   });
   assert(failures.length === 0, `dialog colour contrast:\n${failures.join("\n")}`);
 }
