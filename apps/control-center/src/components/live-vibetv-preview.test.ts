@@ -1324,8 +1324,8 @@ describe("usage pace", () => {
     expect(render(paced(91, { delta: -6, state: "reserve" }), { ...rounded, br: 0 })).not.toContain("<clipPath");
   });
 
-  it("says left for what remains and the mode itself otherwise", () => {
-    expect(boundValue("usageModeShort", paced(91, undefined))).toBe("left");
+  it("says the mode itself, remaining or used", () => {
+    expect(boundValue("usageModeShort", paced(91, undefined))).toBe("remaining");
     expect(boundValue("usageModeShort", paced(9, undefined, { usageMode: "used" }))).toBe("used");
   });
 

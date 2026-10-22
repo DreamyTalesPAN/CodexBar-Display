@@ -20209,3 +20209,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the #909 and calm Settings entries above; nothing else changes.
 - Scope: settings-screen.tsx and its test, plus a guard test that the Two at once card in Setup shows the skeleton like the others. Test build only, not a pull request.
 - What's new: none — integration fix, no customer-visible change of its own
+
+## 2026-10-22 — #592: Themes say remaining instead of left
+
+- User approval: pending — Pace Meter, Gauge and Synthwave write "Session remaining" / "Weekly remaining" instead of "Session left" / "Weekly left" in remaining mode
+- Approved customer-visible result: the usage labels use the same "remaining" wording as the other themes with unchanged font sizes; the text is longer and still fits on the 240 px screen (Gauge wraps a long window name to two lines).
+- Scope: the {usageModeShort} token in firmware_shared/theme_spec_renderer_core.h and the live preview; theme files are unchanged.
+- What's new: none — wording only
