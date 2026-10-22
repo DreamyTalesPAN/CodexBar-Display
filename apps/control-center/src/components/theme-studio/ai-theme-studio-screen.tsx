@@ -1014,8 +1014,13 @@ export function AIThemeStudioScreen({
     return () => observer.disconnect();
   }, [prompt]);
 
+  // Every opening of a panel gets a number. A dismissed key dialog's read can still answer later, so its reports are fenced to the newest opening (as in the Settings row, #896).
+  const [opening, setOpening] = useState(0);
+  const newestOpening = useRef(0);
   function openPanel(next: typeof panel) {
     dialogTrigger.current = window.document.activeElement as HTMLElement;
+    newestOpening.current = opening + 1;
+    setOpening(newestOpening.current);
     setPanel(next);
   }
   function closePanel() {
@@ -1681,7 +1686,7 @@ export function AIThemeStudioScreen({
           <OpenAIKeyForm
               inSetup
               initialConfigured={configured}
-              onConfiguredChange={changeConfigured}
+              onConfiguredChange={(value) => { if (opening === newestOpening.current) changeConfigured(value); }}
               onDismiss={closePanel}
               onConnectingChange={setConnecting}
               onConnected={(kept) => {

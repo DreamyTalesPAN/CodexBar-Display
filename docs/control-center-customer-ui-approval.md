@@ -10279,3 +10279,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 as in its own entries plus the entries merged with 1e1244fe; nothing else changes.
 - Scope: the merge of 1e1244fe and this approval record. Pull request #781 only, not merged, not released.
 - What's new: none — merge of 1e1244fe, no customer-visible change of its own
+
+## 2026-10-22 — #781: a dismissed key dialog's late read cannot undo a saved key in the Theme Studio (Codex review)
+
+- User approval: no visible change – UI approval not needed (bug fix: removes a wrong re-opening of the Add OpenAI key dialog after the key was saved; no text or layout changes)
+- Approved customer-visible result: after a key was saved in a reopened Theme Studio key dialog, Create goes straight to the AI; the key dialog does not open again because an earlier dismissed dialog's answer arrived late.
+- Scope: ai-theme-studio-screen.tsx and its regression test. Pull request #781 only, not merged, not released.
+- What's new: none — race fix, no announcement

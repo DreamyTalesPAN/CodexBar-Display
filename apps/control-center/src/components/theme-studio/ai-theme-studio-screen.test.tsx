@@ -526,6 +526,32 @@ describe("Theme Studio key state against late capability answers (#847)", () => 
     await waitFor(() => expect(planAIThemeLayout).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+
+  it("keeps a saved key ready when a dismissed dialog's read answers after a newer dialog saved it", async () => {
+    const stale = deferred<Awaited<ReturnType<typeof fetchAIThemeCapabilities>>>();
+    vi.mocked(fetchAIThemeCapabilities)
+      .mockResolvedValueOnce(caps(false)) // the screen's mount read
+      .mockReturnValueOnce(stale.promise) // the first dialog's read, held
+      .mockResolvedValueOnce(caps(false)); // the second dialog's read
+    vi.mocked(planAIThemeLayout).mockResolvedValue({ mode: "answer", notes: "Done." } as never);
+    render(<AIThemeStudioScreen initialTheme={theme} />);
+    await sendIdea();
+    fireEvent.click(await screen.findByRole("button", { name: "Not now" }));
+    await sendIdea();
+    fireEvent.change(await screen.findByLabelText("OpenAI key", { selector: "input" }), { target: { value: "sk-test-key" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(caps(true));
+    vi.mocked(saveAIThemeCredential).mockResolvedValue(undefined as never);
+    vi.mocked(verifyAIThemeCredential).mockResolvedValue(true as never);
+    fireEvent.click(screen.getByRole("button", { name: "Connect and continue" }));
+    await waitFor(() => expect(planAIThemeLayout).toHaveBeenCalledTimes(1));
+
+    stale.resolve(caps(false));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await sendIdea();
+    await waitFor(() => expect(planAIThemeLayout).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 });
 
 describe("Theme Studio export notice", () => {
