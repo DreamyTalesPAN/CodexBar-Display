@@ -1294,8 +1294,10 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
   frame.weekly = CurrentFrame().weekly;
   frame.resetSecs = CurrentRemainingSecs();
   frame.usageUnavailable = CurrentFrame().usageUnavailable;
+  frame.footerWindow = CurrentFrame().footerWindow.c_str();
   for (size_t i = 0; i < codexbar_display::themespec::kMaxThemeSpecUsageWindows &&
                      i < codexbar_display::core::kMaxUsageWindows; ++i) {
+    frame.usageWindows[i].id = CurrentFrame().usageWindows[i].id.c_str();
     frame.usageWindows[i].label = CurrentFrame().usageWindows[i].label.c_str();
     frame.usageWindows[i].percent = CurrentFrame().usageWindows[i].percent;
     frame.usageWindows[i].resetSecs =

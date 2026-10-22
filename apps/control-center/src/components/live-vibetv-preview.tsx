@@ -79,6 +79,7 @@ type UsagePaceFrame = { delta?: number; state?: string; lasts?: boolean };
 type UsageWindowFrame = UsageSlotFrame;
 
 type DisplayFrame = {
+  footerWindow?: string;
   v?: number;
   provider?: string;
   label?: string;
@@ -185,6 +186,7 @@ export type ThemePrimitive = {
 };
 
 type FrameData = {
+  footerWindow?: string;
   resetBasisTrusted?: boolean;
   provider: string;
   label: string;
@@ -195,6 +197,7 @@ type FrameData = {
   resetSecs: number;
   usageMode: string;
   usageWindows: Array<{
+    id?: string;
     label: string;
     percent: number;
     resetSecs: number;
@@ -1507,6 +1510,7 @@ export function buildFrameData(
     clampPercent(slot?.percent) === nothingUsedPercent;
   return {
     resetBasisTrusted: basisTrusted,
+    footerWindow: displayFrame.footerWindow,
     provider: displayFrame.provider || "",
     label: displayFrame.label ?? displayFrame.provider ?? "",
     session: clampPercent(displayFrame.session),
@@ -1516,6 +1520,7 @@ export function buildFrameData(
     resetSecs: remainingResetSeconds(displayFrame.resetSecs),
     usageMode: sourceUsageMode,
     usageWindows: slots.map((slot) => ({
+      id: slot.id,
       label: slot.label || "",
       percent: clampPercent(slot.percent),
       resetSecs: remainingResetSeconds(slot.resetSecs),
@@ -1839,7 +1844,10 @@ function displayedResetFooter(
   if (frame.resetBasisTrusted === false) return RESET_UNAVAILABLE;
   let sawAvailable = false;
   let allIdle = true;
-  for (const index of [...slots].sort((a, b) => a - b)) {
+  const ordered = [...slots].sort((a, b) => a - b);
+  const preferred = ordered.find(index => frame.usageWindows[index]?.id === frame.footerWindow &&
+    frame.usageWindows[index]?.available && frame.usageWindows[index].resetSecs > 0);
+  for (const index of preferred === undefined ? ordered : [preferred]) {
     const window = frame.usageWindows[index];
     if (!window?.available) continue;
     sawAvailable = true;

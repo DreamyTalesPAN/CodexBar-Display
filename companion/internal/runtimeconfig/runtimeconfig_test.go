@@ -583,3 +583,21 @@ func TestADiscoveredTargetWithoutPairingIsNotASetUpInstall(t *testing.T) {
 		t.Fatal("pinning an unpaired discovery marked setup complete")
 	}
 }
+
+func TestFooterResetSurvivesRestart(t *testing.T) {
+	home := t.TempDir()
+	if err := Save(home, Config{FooterReset: "secondary"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(home)
+	if err != nil || cfg.FooterReset != "secondary" {
+		t.Fatalf("stored preference: %+v, %v", cfg, err)
+	}
+	for _, value := range []string{"", "invalid", "primary"} {
+		cfg := Config{FooterReset: value}
+		cfg.Normalize()
+		if cfg.FooterReset != "primary" {
+			t.Fatalf("default: %+v", cfg)
+		}
+	}
+}

@@ -159,3 +159,44 @@ func TestStaleReadingSendsNoPace(t *testing.T) {
 		}
 	}
 }
+
+func TestFooterWindowReachesOnlyFirmwareThatAdvertisesIt(t *testing.T) {
+	prepareFastTestEnv(t)
+	now := time.Date(2026, 9, 21, 8, 30, 0, 0, time.UTC)
+	for _, supported := range []bool{false, true} {
+		parsed := testParsedFrame("claude", 8, 73, 12000)
+		parsed.CollectedAt = now
+		parsed.Frame.UsageWindows = pacedUsageWindows()
+		parsed.Frame.UsageWindows[0].ID = "primary"
+		parsed.Frame.UsageWindows[1].ID = "secondary"
+		var sent []byte
+		err := runCycleWithDeps(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, runtimeDeps{
+			now:         func() time.Time { return now },
+			homeDir:     func() (string, error) { return "/home/test", nil },
+			loadConfig:  func(string) (runtimeconfig.Config, error) { return runtimeconfig.Config{FooterReset: "secondary"}, nil },
+			resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+			deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+				return protocol.DeviceCapabilities{
+					Known:                     true,
+					Board:                     "esp8266-smalltv-st7789",
+					NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
+					SupportsResetFooterV1:     supported,
+				}, nil
+			},
+			fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+				return []codexbar.ParsedFrame{parsed}, nil
+			},
+			logf: func(string, ...any) {},
+			sendLine: func(_ string, line []byte) error {
+				sent = append([]byte(nil), line...)
+				return nil
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := bytes.Contains(sent, []byte(`"footerWindow":"secondary"`)); got != supported {
+			t.Fatalf("supported=%t frame=%s", supported, sent)
+		}
+	}
+}

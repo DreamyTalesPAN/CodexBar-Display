@@ -1940,3 +1940,83 @@ func TestOpenProviderListReadsTheInventoryOnceAndPollsDoNot(t *testing.T) {
 		t.Fatalf("a plain poll after the open-list read must not re-read: reads=%d, want 2", reads)
 	}
 }
+
+func TestFooterResetPreferenceStoresChoice(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+		return []codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+		}, nil
+	}
+	renders := 0
+	server.renderDisplayStream = func() { renders++ }
+
+	request := func(method, path, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(method, path, bytes.NewBufferString(body)))
+		return recorder
+	}
+	read := func() preferenceDescriptor {
+		t.Helper()
+		recorder := request(http.MethodGet, "/v1/preferences?section=display", "")
+		var response preferencesResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || recorder.Code != http.StatusOK {
+			t.Fatalf("list display preferences: %d %s", recorder.Code, recorder.Body.String())
+		}
+		for _, item := range response.Items {
+			if item.ID == displayFooterResetPreferenceID {
+				return item
+			}
+		}
+		t.Fatalf("footer preference is not listed: %s", recorder.Body.String())
+		return preferenceDescriptor{}
+	}
+
+	item := read()
+	labels := make([]string, 0, len(item.Options))
+	for _, option := range item.Options {
+		labels = append(labels, option.Value+"="+option.Label)
+	}
+	if item.Label != "Reset in footer" || item.Value != "primary" || item.AllowsDefault ||
+		strings.Join(labels, "|") != "primary=Session reset|secondary=Weekly reset" {
+		t.Fatalf("unexpected footer descriptor: %#v", item)
+	}
+
+	path := "/v1/preferences/" + displayFooterResetPreferenceID
+	if recorder := request(http.MethodPatch, path, `{"value":"secondary"}`); recorder.Code != http.StatusOK {
+		t.Fatalf("choose weekly: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if cfg, _ := server.config(); cfg.FooterReset != "secondary" || read().Value != "secondary" || renders != 1 {
+		t.Fatalf("choice was not stored and rendered: cfg=%s renders=%d", cfg.FooterReset, renders)
+	}
+	for _, invalid := range []string{`"45"`, `30`, `null`} {
+		if recorder := request(http.MethodPatch, path, `{"value":`+invalid+`}`); recorder.Code != http.StatusBadRequest {
+			t.Fatalf("value %s was accepted: %d %s", invalid, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	// The Control Center rewrites the display selection whenever a provider is
+	// switched on or off. That write must leave the choice alone.
+	if recorder := request(http.MethodPatch, "/v1/provider-display", `{"mode":"automatic","providerIds":["codex","claude"]}`); recorder.Code != http.StatusOK {
+		t.Fatalf("patch provider display: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if cfg, _ := server.config(); cfg.FooterReset != "secondary" || cfg.ProviderDisplay == nil {
+		t.Fatalf("provider display write lost the choice: %+v", cfg)
+	}
+
+	if recorder := request(http.MethodPatch, path, `{"value":"primary"}`); recorder.Code != http.StatusOK {
+		t.Fatalf("choose session: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if cfg, _ := server.config(); cfg.FooterReset != "primary" || read().Value != "primary" {
+		t.Fatalf("choice was not cleared: %s", cfg.FooterReset)
+	}
+}
+
+func TestFooterWindowSurvivesSentFramePreview(t *testing.T) {
+	frame, ok := frameFromDisplayStreamLogLine(`sent frame -> cable://vibetv transport=usb usageMode=used footerWindow=secondary provider=claude label=Claude session=20 weekly=30 reset=3600s usageWindows=[{"id":"primary","label":"Session","percent":20,"resetSecs":3600},{"id":"secondary","label":"Weekly","percent":30,"resetSecs":7200}]`)
+	if !ok || frame.FooterWindow != "secondary" {
+		t.Fatalf("preview lost chosen footer: %+v", frame)
+	}
+}

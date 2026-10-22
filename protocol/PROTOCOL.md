@@ -635,3 +635,15 @@ If a board does not emit hello during validation windows, use fallback mode:
 - v1 ships built-in themes (`classic`, `crt`, `mini`).
 - release-gated MVP hardware target remains ESP8266 SmallTV ST7789 (`esp8266_smalltv_st7789`).
 - ESP32 (`lilygo_t_display_s3`) remains experimental/non-blocking.
+
+### Reset footer selection (`reset-footer-v1`)
+
+A device advertising `reset-footer-v1` (or `capabilities.theme.supportsResetFooterV1`)
+accepts the optional frame string `footerWindow`, an existing usage-window id.
+The Companion preference `vibetv.display.footerReset` selects CodexBar's `primary`
+(Session reset, default) or `secondary` (Weekly reset) window; pair frames retain
+their provider-prefixed window id. The Companion omits the field for devices
+without this capability and when no matching window is present. A shared theme
+footer uses the chosen window only when displayed and carrying a trustworthy
+reset; otherwise it retains the first displayed limit with a reset. Explicit
+per-limit countdowns keep their own binding. No reset or usage window is invented.

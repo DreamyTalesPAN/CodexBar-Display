@@ -87,6 +87,25 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 	frame = applyDeviceUsageWindowLimit(frame, caps)
+	frame.FooterWindow = ""
+	cfg, configLoaded := loadRuntimeConfig(deps)
+	if caps.SupportsResetFooterV1 {
+		if configLoaded {
+			// Pair windows prefix the engine id with the provider. Keep the
+			// exact id on the wire; never infer a kind from a label or duration.
+			windows := frame.UsageWindows
+			if len(windows) == 0 {
+				windows = frame.UsageSlots
+			}
+			for _, window := range windows {
+				_, kind, paired := strings.Cut(window.ID, ":")
+				if window.ID == cfg.FooterReset || paired && kind == cfg.FooterReset {
+					frame.FooterWindow = window.ID
+					break
+				}
+			}
+		}
+	}
 	if !caps.SupportsProviderSlotsV1 {
 		// Firmware without provider-slots-v1 would carry these rows as dead
 		// wire bytes against its frame budget.
@@ -94,7 +113,7 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 	}
 	// CodexBar paced a window against a reading that was fresh; a retained or
 	// stale one carries no pace, like the Usage API (Settings "Pace" can also turn it off).
-	if cfg, ok := loadRuntimeConfig(deps); !caps.SupportsUsagePaceV1 || !result.usageFresh || ok && cfg.HidePace {
+	if !caps.SupportsUsagePaceV1 || !result.usageFresh || configLoaded && cfg.HidePace {
 		frame = frame.WithoutUsagePace()
 	}
 	now := deps.now()
@@ -240,8 +259,8 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 // (frameFromDisplayStreamLogLine), so a field missing here is a field the
 // preview sees as empty; its test formats lines with this function.
 func SentFrameLogLine(port, transport, deviceID, source string, fresh bool, frame protocol.Frame, reason, detail, activityDetail string) string {
-	return fmt.Sprintf("sent frame -> %s transport=%s deviceId=%s source=%s fresh=%t usageMode=%s provider=%s label=%s session=%d weekly=%d sessionTokens=%d weekTokens=%d totalTokens=%d tokenTotalsKnown=%t usageUnavailable=%t sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s providerSlots=%s activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q resetTrust=%s resetTrustSecs=%d resetSource=%q\n",
-		port, transport, deviceID, source, fresh, frame.UsageMode, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionTokens, frame.WeekTokens, frame.TotalTokens, frame.TokenTotalsKnown, frame.UsageUnavailable, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), usageSlotsLogValue(frame.ProviderSlots), frame.Activity, frame.Time, frame.Date, frame.Error, reason, detail, activityDetail, frame.ResetTrust, frame.ResetTrustSec, frame.ResetSource)
+	return fmt.Sprintf("sent frame -> %s transport=%s deviceId=%s source=%s fresh=%t usageMode=%s footerWindow=%s provider=%s label=%s session=%d weekly=%d sessionTokens=%d weekTokens=%d totalTokens=%d tokenTotalsKnown=%t usageUnavailable=%t sessionUnavailable=%t weeklyUnavailable=%t reset=%ds usageWindows=%s usageSlots=%s providerSlots=%s activity=%q time=%q date=%q error=%q reason=%s detail=%q activityDetail=%q resetTrust=%s resetTrustSecs=%d resetSource=%q\n",
+		port, transport, deviceID, source, fresh, frame.UsageMode, frame.FooterWindow, frame.Provider, frame.Label, frame.Session, frame.Weekly, frame.SessionTokens, frame.WeekTokens, frame.TotalTokens, frame.TokenTotalsKnown, frame.UsageUnavailable, frame.SessionUnavailable, frame.WeeklyUnavailable, frame.ResetSec, usageWindowsLogValue(frame.UsageWindows), usageSlotsLogValue(frame.UsageSlots), usageSlotsLogValue(frame.ProviderSlots), frame.Activity, frame.Time, frame.Date, frame.Error, reason, detail, activityDetail, frame.ResetTrust, frame.ResetTrustSec, frame.ResetSource)
 }
 
 func usageSlotsLogValue(slots []protocol.UsageSlot) string {

@@ -9709,3 +9709,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Existing #894 footer behavior and #864 settings remain intact.
 - Scope: Merge preview, firmware tests and approval history; retain the newer Gauge pace expectations.
 - What's new: none — integration of existing changes.
+
+## 2026-10-22 — Reset in footer: Session or Weekly preference on #864
+- User approval: pending — add Reset in footer with Session reset and Weekly reset in Limits on VibeTV, including the old-firmware Update needed state
+- Approved customer-visible result: A label and Select choose the footer reset, defaulting to Session reset; a missing, hidden or unavailable chosen reset retains the existing first-displayed-reset behavior. Older firmware disables the row and says Update needed / Update VibeTV to use this.
+- Scope: Companion preference and capability-gated frame, firmware selection and matching Appearance preview; no reset values are invented.
+- What's new: none — preference prepared for review in a stacked draft.

@@ -5142,6 +5142,44 @@ void testFooterWithARowBelowKeepsItsOwnBinding() {
   TEST_ASSERT_EQUAL_STRING("Reset in 4d 4h", sink.commands.back().text.c_str());
 }
 
+void testFooterSelectionRepaintsWithoutUsageChange() {
+ RuntimeState state;
+ SerialConsumeEvent event;
+ const char* first = R"JSON({"v":2,"provider":"claude","footerWindow":"primary","usageWindows":[{"id":"primary","label":"Session","percent":20,"resetSecs":3600},{"id":"secondary","label":"Weekly","percent":30,"resetSecs":7200}],"themeSpec":{"v":1,"id":"footer","rev":1,"p":[{"t":"tx","y":20,"sl":1,"v":"{usageSlot1Label}"},{"t":"tx","y":50,"sl":2,"v":"{usageSlot2Label}"},{"t":"tx","y":200,"v":"Reset in {usageSlot1Reset}"}]}})JSON";
+ TEST_ASSERT_TRUE(ConsumeFrameLine(state,first,1000,event));
+ String next(first);
+ next.replace(next.find("primary"), 7, "secondary");
+ TEST_ASSERT_TRUE(ConsumeFrameLine(state,next.c_str(),1000,event));
+ TEST_ASSERT_EQUAL_STRING("secondary",state.current.footerWindow.c_str());
+ TEST_ASSERT_TRUE(event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageWindowReset);
+}
+
+void testChosenFooterWindow() {
+ FrameData frame;
+ frame.usageWindows[0].id = "primary";
+ frame.usageWindows[0].label = "Session";
+ frame.usageWindows[0].resetSecs = 3600;
+ frame.usageWindows[0].available = true;
+ frame.usageWindows[1].id = "secondary";
+ frame.usageWindows[1].label = "Weekly";
+ frame.usageWindows[1].resetSecs = 7200;
+ frame.usageWindows[1].available = true;
+ frame.footerWindow = "secondary";
+ const char* spec = R"JSON({"v":1,"id":"footer","rev":1,"p":[{"t":"tx","y":20,"sl":1,"v":"{usageSlot1Label}"},{"t":"tx","y":50,"sl":2,"v":"{usageSlot2Label}"},{"t":"tx","y":200,"v":"Reset in {usageSlot1Reset}"}]})JSON";
+ RecordingSink chosen;
+ TEST_ASSERT_TRUE(renderSpec(spec,frame,chosen));
+ TEST_ASSERT_EQUAL_STRING("Weekly resets in 2h 0m",chosen.commands.back().text.c_str());
+ frame.usageWindows[1].resetSecs = 0;
+ RecordingSink fallback;
+ TEST_ASSERT_TRUE(renderSpec(spec,frame,fallback));
+ TEST_ASSERT_EQUAL_STRING("Session resets in 1h 0m",fallback.commands.back().text.c_str());
+ frame.usageWindows[1].resetSecs = 7200;
+ frame.usageWindows[1].available = false;
+ RecordingSink hidden;
+ TEST_ASSERT_TRUE(renderSpec(spec,frame,hidden));
+ TEST_ASSERT_EQUAL_STRING("Session resets in 1h 0m",hidden.commands.back().text.c_str());
+}
+
 }  // namespace
 
 // Defined in test_device_clock.cpp.
@@ -5149,6 +5187,8 @@ void RunDeviceClockTests();
 
 int main() {
   UNITY_BEGIN();
+  RUN_TEST(testChosenFooterWindow);
+  RUN_TEST(testFooterSelectionRepaintsWithoutUsageChange);
   RunDeviceClockTests();
   RUN_TEST(testInvalidSpecsReturnFalse);
   RUN_TEST(testGifLimitsRejectOversizedOrMultipleGifs);

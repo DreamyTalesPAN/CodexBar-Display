@@ -238,6 +238,8 @@ export function SettingsScreen({
   const activeTheme = useActiveThemeLimits(device);
   const providerError =
     providerPicker.preferencesError || providerPicker.displayError;
+  const footerReset = displayPreferences.find(item => item.id === "vibetv.display.footerReset");
+  const footerNeedsUpdate = deviceIsReady(device) && Boolean(device?.firmware) && device?.capabilities?.theme?.supportsResetFooterV1 !== true;
   const rotation = displayPreferences.find(
     (item) => item.id === "vibetv.display.rotateSeconds",
   );
@@ -491,6 +493,12 @@ export function SettingsScreen({
           theme={activeTheme}
           usage={providerPicker.usage}
         />
+        {footerReset ? <>
+          <PreferenceRow descriptor={footerReset}
+            disabled={localActionBusy || device?.capabilities?.theme?.supportsResetFooterV1 !== true}
+            onChange={onDisplayPreferenceChange} />
+          {footerNeedsUpdate ? <p className="text-sm text-muted-foreground">Update needed<br />Update VibeTV to use this.</p> : null}
+        </> : null}
       </SettingsSection>
 
       {standbySupport ? (
