@@ -71,6 +71,7 @@ export type SettingsScreenProps = {
     value: PreferenceValue,
   ) => void | Promise<void>;
   onResetSetup: () => void;
+  onStartSetup?: () => void;
   /** Erases the VibeTV over the USB cable, then starts setup again. */
   onEraseDevice?: () => void;
   /** Opens Support and runs diagnostics there. */
@@ -108,6 +109,7 @@ export function SettingsScreen({
   onConnectionModeChange,
   onDisplayPreferenceChange,
   onResetSetup,
+  onStartSetup,
   onEraseDevice,
   onSaveBrightness,
   providerPicker,
@@ -204,6 +206,7 @@ export function SettingsScreen({
   const usageMode = displayPreferences.find(
     (item) => item.id === "codexbar.usageBarsShowUsed",
   );
+  const dialogError = actionError ?? errorForHost(providerError, windowsHost);
   const rotation = displayPreferences.find(
     (item) => item.id === "vibetv.display.rotateSeconds",
   );
@@ -224,8 +227,10 @@ export function SettingsScreen({
   return (
     <div className="mx-auto w-full max-w-[1040px] pt-6 pb-10">
       <SetupStepFailedDialog
-        error={actionError ?? errorForHost(providerError, windowsHost)}
+        error={dialogError}
         onOpenChange={(open) => !open && onDismissError()}
+        onRetry={dialogError?.code === "pairing_rejected" ? onStartSetup : undefined}
+        retryLabel="Run setup again"
       />
       <SettingsSection id="settings-display-mode" title="Display mode" topAligned>
         {providerPicker.displayNotice ? (
@@ -295,7 +300,7 @@ export function SettingsScreen({
           ) : null}
         </div>
         {providerShortcut ? (
-          <p className="-mt-1 text-[13px] text-muted-foreground">
+          <p className="min-h-[2lh] -mt-1 text-[13px] text-muted-foreground">
             {providerShortcut === "available"
               ? // What a press does now (issue #558): it moves between the
                 // providers Manual offers, so one of them leaves nothing to

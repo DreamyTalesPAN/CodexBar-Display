@@ -94,17 +94,36 @@ export function pairingRejectionForDevice(
         "Follow the recovery steps in Control Center, then press Connect.",
     };
   }
-  return connectionErrorForCustomer({
-    code: "pairing_token_rejected",
+  return {
+    code: "pairing_rejected",
     message: "VibeTV could not connect.",
-    nextAction: "Press Connect again.",
-  });
+    nextAction: "VibeTV no longer accepts this computer. Run setup again to connect it.",
+  };
+}
+
+// Status polls rebuild the error for a condition that is still active. Keep the
+// object already shown, so a dialog the customer closed stays closed; a new
+// occurrence (different text) is a new object and shows again.
+export function sameActiveError(
+  current: ApiError | null | undefined,
+  next: ApiError,
+): ApiError {
+  if (
+    current &&
+    current.code === next.code &&
+    current.message === next.message &&
+    current.nextAction === next.nextAction
+  ) {
+    return current;
+  }
+  return next;
 }
 
 export function isConnectionRecoveryError(error?: ApiError | null): boolean {
   return (
     error?.code === "legacy_pairing_recovery_required" ||
     error?.code === "connect_failed" ||
+    error?.code === "pairing_rejected" ||
     error?.code === "connect_temporarily_unavailable" ||
     error?.code === "pairing_window_closed" ||
     error?.code === "pairing_token_rejected" ||
