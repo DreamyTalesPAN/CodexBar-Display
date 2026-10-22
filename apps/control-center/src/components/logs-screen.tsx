@@ -1,57 +1,13 @@
 "use client";
 
-import {
-  Activity,
-  AlertTriangle,
-  Clock,
-  RefreshCw,
-} from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
+import type { ReactNode } from "react";
+import { SetupDialog } from "./setup/setup-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import {
-  Item,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemMedia,
-  ItemTitle,
-} from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
-import { activeLiveThemeId } from "@/lib/active-theme-upgrade";
 import { copyForHost } from "@/lib/customer-platform";
-import { validateThemeSpec } from "@/lib/theme-studio";
-import {
-  loadUserThemes,
-  type ThemeStudioDocument,
-} from "@/lib/theme-studio-storage";
-import type { ThemeProduct } from "@/lib/themes";
-import {
-  deviceIsCustomerConnected,
-  deviceUsesCable,
-  deviceIsReady,
-  type DeviceInfo,
-  type SupportDiagnostics,
-} from "./control-center-types";
+import type { SupportDiagnostics } from "./control-center-types";
 import { formatCustomerSupportText } from "./customer-support-text";
-import { DiagnosticsPanel } from "./diagnostics-panel";
-import { SetupEventLog } from "./setup-event-log";
+import { DiagnosticsPanel, SUPPORT_FRAME as FRAME } from "./diagnostics-panel";
 import { SupportReportActions } from "./support-report-actions";
 
 export type LogEvent = {
@@ -63,10 +19,12 @@ export type LogEvent = {
 
 export type LogsScreenProps = {
   events?: LogEvent[];
-  device?: DeviceInfo | null;
-  /** The catalog, to name the live theme while a screensaver is on screen. */
-  themes?: ThemeProduct[];
   diagnostics?: SupportDiagnostics | null;
+  supportReport?: SupportDiagnostics | null;
+  diagnosticsRunning?: boolean;
+  onDismissError?: () => void;
+  onCreateSupportReport?: () => void;
+  onStartSetup?: () => void;
   lastError?: {
     code: string;
     message: string;
@@ -74,7 +32,6 @@ export type LogsScreenProps = {
   } | null;
   onLoadDiagnostics?: () => void;
   onRefresh?: () => void;
-  onRunSetupAgain?: () => void;
   onRepairUsageEngine?: () => void;
   repairingUsageEngine?: boolean;
   busyAction?: string | null;
@@ -85,251 +42,150 @@ export type LogsScreenProps = {
 
 export function LogsScreen({
   events = [],
-  device,
-  themes = [],
   diagnostics,
+  supportReport,
+  diagnosticsRunning = false,
+  onDismissError,
+  onCreateSupportReport,
+  onStartSetup,
   lastError,
   onLoadDiagnostics,
   onRefresh,
-  onRunSetupAgain,
   onRepairUsageEngine,
   repairingUsageEngine = false,
   busyAction,
   supportReportBusy = false,
   windowsHost = false,
 }: LogsScreenProps) {
-  const deviceConnected = deviceIsCustomerConnected(device);
-  // Issue #265: only a VibeTV on WiFi reports a signal, and a reading kept
-  // from before it went away says nothing about now.
-  const wifi = deviceConnected ? device?.health?.wifi : undefined;
+  const lastCreated = supportReport?.generatedAt
+    ? createdWhen(supportReport.generatedAt)
+    : "";
   const supportText = (value: string) =>
     copyForHost(formatCustomerSupportText(value), windowsHost);
 
   return (
-    <div className="mx-auto grid max-w-[1180px] gap-4 py-6">
-      <div className="grid items-stretch gap-4 lg:grid-cols-2">
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle asChild><h2>Connected VibeTV</h2></CardTitle>
-            <CardDescription>
-              {deviceConnected
-                ? copyForHost(
-                    "The VibeTV currently controlled by this Mac.",
-                    windowsHost,
-                  )
-                : "No VibeTV is currently connected."}
-            </CardDescription>
-            <CardAction>
-              <Badge variant={deviceConnected ? "default" : "outline"}>
-                {deviceConnected ? "Connected" : "Not connected"}
-              </Badge>
-            </CardAction>
-          </CardHeader>
-          <CardContent className="flex-1">
-            <dl className="grid gap-2 sm:grid-cols-2">
-              <SupportFact
-                label="Device"
-                value={device?.deviceId || device?.board || "Not available"}
-              />
-              {/* A VibeTV on the cable has no address (issue #558). */}
-              {deviceUsesCable(device) ? (
-                <SupportFact label="Connection" value="USB-C cable" />
-              ) : (
-                <SupportFact
-                  label="Address"
-                  value={formatDeviceAddress(device?.target)}
-                />
-              )}
-              <SupportFact
-                label="Firmware"
-                value={device?.firmware || "Not available"}
-              />
-              <SupportFact
-                label="Active theme"
-                value={activeThemeLabel(themes, device)}
-              />
-              {wifi ? (
-                <SupportFact
-                  label="WiFi signal"
-                  value={wifi.weak ? `Weak (${wifi.rssi} dBm)` : `${wifi.rssi} dBm`}
-                />
-              ) : null}
-            </dl>
-          </CardContent>
-          {onRunSetupAgain ? (
-            <CardFooter className="justify-end">
-              <Button
-                className="w-full sm:w-auto"
-                disabled={Boolean(busyAction)}
-                onClick={onRunSetupAgain}
-                type="button"
-                variant="outline"
-              >
-                {busyAction === "reset-setup" ? (
-                  <Spinner data-icon="inline-start" />
-                ) : (
-                  <RefreshCw data-icon="inline-start" aria-hidden />
-                )}
-                {busyAction === "reset-setup" ? "Resetting setup" : "Run setup again"}
-              </Button>
-            </CardFooter>
-          ) : null}
-        </Card>
-
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle asChild><h2>Support report</h2></CardTitle>
-            <CardDescription>
-              Create a diagnostic file when support asks for it.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-1 items-center">
-            <SupportReportActions
-              creating={supportReportBusy}
-              diagnostics={diagnostics}
-              onCreate={onLoadDiagnostics}
-              windowsHost={windowsHost}
-            />
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card size="sm">
-        <CardHeader>
-          <CardTitle asChild><h2>Diagnostics</h2></CardTitle>
-        </CardHeader>
-        <CardContent>
-          <DiagnosticsPanel
-            diagnostics={diagnostics}
-            onRepairUsageEngine={onRepairUsageEngine}
-            onRun={onLoadDiagnostics}
-            repairing={repairingUsageEngine}
-            running={supportReportBusy}
+    <div className="grid max-w-[760px] gap-10 pt-8 pb-10 text-sm leading-normal">
+      <div
+        className={`flex items-center justify-between gap-6 p-5 ${FRAME}`}
+      >
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-semibold">Support report</h2>
+          <p className="text-muted-foreground">
+            A diagnostic file for the support team.
+            {lastCreated ? ` Last created ${lastCreated}.` : ""}
+          </p>
+        </div>
+        <div className="shrink-0">
+          <SupportReportActions
+            creating={supportReportBusy}
+            busyElsewhere={diagnosticsRunning}
+            diagnostics={supportReport}
+            onCreate={onCreateSupportReport}
+            quiet
+            size="sm"
             windowsHost={windowsHost}
           />
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <Card size="sm">
-        <CardHeader>
-          <CardTitle asChild><h2>Setup log</h2></CardTitle>
-        </CardHeader>
-        <CardContent>
-          <SetupEventLog windowsHost={windowsHost} />
-        </CardContent>
-      </Card>
+      <DiagnosticsPanel
+        busyElsewhere={supportReportBusy}
+        diagnostics={diagnostics}
+        onRepairUsageEngine={onRepairUsageEngine}
+        onRun={onLoadDiagnostics}
+        repairing={repairingUsageEngine}
+        running={diagnosticsRunning}
+        windowsHost={windowsHost}
+      />
 
-      <Card size="sm">
-        <CardHeader>
-          <CardTitle asChild><h2>Recent activity</h2></CardTitle>
-          <CardDescription>Connection and setup changes from this session.</CardDescription>
-          {onRefresh ? (
-            <CardAction>
-              <Button disabled={busyAction === "logs"} onClick={onRefresh} size="sm" variant="outline">
-                {busyAction === "logs" ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" aria-hidden />}
-                {busyAction === "logs" ? "Refreshing" : "Refresh"}
-              </Button>
-            </CardAction>
-          ) : null}
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          {lastError ? (
-            <Alert>
-              <AlertTriangle aria-hidden />
-              <AlertTitle>{supportText(lastError.message)}</AlertTitle>
-              <AlertDescription>{supportText(lastError.nextAction)}</AlertDescription>
-            </Alert>
-          ) : null}
+      <SupportSection
+        action={
+          onRefresh ? (
+            <Button
+              className="h-auto px-0 text-sm font-semibold"
+              disabled={busyAction === "logs"}
+              onClick={onRefresh}
+              size="sm"
+              variant="link"
+            >
+              {busyAction === "logs" ? <Spinner data-icon="inline-start" /> : null}
+              {busyAction === "logs" ? "Refreshing" : "Refresh"}
+            </Button>
+          ) : null
+        }
+        title="Recent activity"
+      >
+        {lastError ? (
+          <SetupDialog
+            description={supportText(lastError.nextAction)}
+            onOpenChange={(open) => { if (!open) onDismissError?.(); }}
+            open
+            primaryAction={lastError.code === "pairing_rejected"
+              ? { label: "Run setup again", onSelect: () => { onDismissError?.(); onStartSetup?.(); } }
+              : { label: "OK", onSelect: () => onDismissError?.() }}
+            title={supportText(lastError.message)}
+          />
+        ) : null}
+        <div className={`px-5 py-3.5 ${FRAME}`}>
           {events.length ? (
-            <div className="max-h-[320px] overflow-y-auto rounded-lg border">
-              <ItemGroup className="gap-0 divide-y">
-                {events.map((event) => (
-                  <Item className="rounded-none border-0" key={event.id} role="listitem" size="sm">
-                    <ItemMedia variant="icon"><Activity aria-hidden /></ItemMedia>
-                    <ItemContent>
-                      <ItemTitle>{supportText(event.label)}</ItemTitle>
-                      {event.detail ? <ItemDescription className="line-clamp-none break-words">{supportText(event.detail)}</ItemDescription> : null}
-                    </ItemContent>
-                    <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-                      <Clock size={14} aria-hidden />
-                      <span>{event.timestamp || "Session"}</span>
-                    </div>
-                  </Item>
-                ))}
-              </ItemGroup>
-            </div>
+            <ul className="max-h-[320px] overflow-y-auto font-mono text-[13px] leading-[22px]">
+              {events.map((event, index) => (
+                <li
+                  className={`grid grid-cols-[72px_minmax(0,1fr)] gap-x-3 ${index === 0 ? "text-foreground" : "text-muted-foreground"}`}
+                  key={event.id}
+                >
+                  <span className="text-muted-foreground">{event.timestamp}</span>
+                  <span className="break-words">
+                    <span>{supportText(event.label)}</span>
+                    {event.detail ? (
+                      <>
+                        <span aria-hidden> · </span>
+                        <span>{supportText(event.detail)}</span>
+                      </>
+                    ) : null}
+                  </span>
+                </li>
+              ))}
+            </ul>
           ) : (
-            <Empty className="bg-muted/50 py-6">
-              <EmptyHeader>
-                <EmptyMedia variant="icon"><Activity aria-hidden /></EmptyMedia>
-                <EmptyTitle>No recent activity</EmptyTitle>
-                <EmptyDescription>Connection activity will appear here.</EmptyDescription>
-              </EmptyHeader>
-            </Empty>
+            <div className="grid gap-1">
+              <p className="font-semibold">No recent activity</p>
+              <p className="text-muted-foreground">Connection activity will appear here.</p>
+            </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </SupportSection>
     </div>
   );
 }
 
-function SupportFact({ label, value }: { label: string; value: string }) {
+/** "today at 16:42", or the date when it was another day. */
+function createdWhen(generatedAt: string): string {
+  const created = new Date(generatedAt);
+  if (Number.isNaN(created.getTime())) return "";
+  const time = created.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  return created.toDateString() === new Date().toDateString()
+    ? `today at ${time}`
+    : `on ${created.toLocaleDateString([], { day: "numeric", month: "short" })} at ${time}`;
+}
+
+/** One Support section: its heading (with an optional action) above the content. */
+function SupportSection({
+  action,
+  title,
+  children,
+}: {
+  action?: ReactNode;
+  title: string;
+  children: ReactNode;
+}) {
   return (
-    <div className="min-w-0 rounded-lg bg-muted/50 p-3">
-      <dt className="text-xs font-semibold uppercase text-muted-foreground">{label}</dt>
-      <dd className="mt-1 break-words text-sm font-medium">{value}</dd>
-    </div>
+    <section className="grid content-start gap-3">
+      <div className="flex items-baseline justify-between gap-4">
+        <h2 className="text-[15px] leading-5 font-semibold">{title}</h2>
+        {action}
+      </div>
+      <div className="grid min-w-0 content-start gap-4">{children}</div>
+    </section>
   );
-}
-
-function formatDeviceAddress(value?: string): string {
-  return value?.trim().replace(/^https?:\/\//i, "") || "Not configured";
-}
-
-
-function activeThemeLabel(
-  themes: ThemeProduct[],
-  device: DeviceInfo | null | undefined,
-): string {
-  // The customer's own themes are saved in this browser, by Theme Studio, with
-  // the name they gave them.
-  const saved = loadUserThemes();
-  const ownName = (matches: (document: ThemeStudioDocument) => boolean) =>
-    (saved.ok ? saved.value.themes : saved.data?.themes || []).find(
-      ({ document }) => document.usage !== "screensaver" && matches(document),
-    )?.document.packName;
-  // The file in the live slot says whose theme it is: a saved theme is sent
-  // under a path only it has, also when a later catalog gave one of its themes
-  // the same id. During standby that file is all VibeTV reports of the slot;
-  // the screensaver on screen is not it.
-  const standbyActive = device?.standby?.active === true;
-  const livePath = (
-    standbyActive
-      ? device.standby?.liveThemePath
-      : device?.display?.themeSpec?.path
-  )?.trim();
-  const ownByFile =
-    livePath &&
-    ownName(
-      (document) =>
-        validateThemeSpec(document.spec, document.assets, "live")
-          .themeSpecPath === livePath,
-    );
-  if (ownByFile) {
-    return ownByFile;
-  }
-  const theme = activeLiveThemeId(themes, device)?.trim();
-  if (!theme) {
-    if (standbyActive && livePath) {
-      return "Custom theme";
-    }
-    return deviceIsReady(device) ? "Default" : "Not available";
-  }
-  const own =
-    !themes.some((listed) => listed.themeId === theme) &&
-    ownName((document) => document.spec.themeId === theme);
-  if (own) {
-    return own;
-  }
-  return theme.split(/[-_]+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }

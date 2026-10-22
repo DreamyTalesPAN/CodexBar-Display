@@ -21,6 +21,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themepack"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/timeline"
 )
 
 type themeInstallRequest struct {
@@ -36,6 +37,9 @@ type themeInstallRequest struct {
 	CatalogURL         string `json:"catalogUrl"`
 	SkipFirmwareUpdate *bool  `json:"skipFirmwareUpdate"`
 	Async              bool   `json:"async"`
+	// shown is called once VibeTV confirmed the new live theme while drawing
+	// a usage frame. What runs after it only refreshes the display stream.
+	shown func(themeinstall.Result)
 }
 
 type themeInstallJob struct {
@@ -472,6 +476,12 @@ func (s *Server) runThemeInstall(ctx context.Context, cfg runtimeconfig.Config, 
 		resumeStream()
 		return result, nil
 	}
+	// Issue #911: the customer already sees the theme with their usage, so the
+	// install is done for them. The stream refresh and its check below still
+	// run under the same device locks.
+	if req.shown != nil && result.LiveFrameShown {
+		req.shown(result)
+	}
 	fmt.Fprintln(out, "Refreshing display stream...")
 	resumeStream()
 	streamRefreshStartedAt := time.Now()
@@ -614,17 +624,26 @@ func (s *Server) finishThemeInstall() {
 // step and the job's terminal message use this one wording.
 const themeInstallAwaitingProviderMessage = "Theme installed. VibeTV shows it once AI usage is ready."
 
+// themeInstallTailWaitTime bounds how long a new install waits for the
+// previous one to finish refreshing the display stream after it already
+// reported Installed (#911). After that it is refused as before.
+var themeInstallTailWaitTime = 30 * time.Second
+
 func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runtimeconfig.Config, req themeInstallRequest) {
 	go func() {
-		defer s.finishThemeInstall()
+		released := false
+		release := func() {
+			if !released {
+				released = true
+				s.finishThemeInstall()
+			}
+		}
+		defer release()
 		ctx, cancel := context.WithTimeout(context.Background(), themeInstallJobTime)
 		defer cancel()
 		stage := installText(req.Slot, "theme_install")
-		writer := &themeInstallProgressWriter{server: s, jobID: jobID}
-		result, err := s.runThemeInstall(ctx, cfg, req, writer)
-		finishedAt := time.Now().UTC()
-		if err != nil {
-			_, apiErr := themeInstallErrorPayload(req.Slot, err)
+		fail := func(apiErr apiError) {
+			finishedAt := time.Now().UTC()
 			s.recordSetupEvent(setupEvent{Stage: stage, Status: "failed", Message: apiErr.Message, Code: apiErr.Code, NextAction: apiErr.NextAction})
 			s.installJobs.update(jobID, func(job *themeInstallJob) {
 				job.Phase = "error"
@@ -633,29 +652,106 @@ func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runti
 				job.Error = &apiErr
 				job.say("Theme install failed.")
 			})
+		}
+		if !s.waitForThemeInstallTail(ctx) {
+			fail(apiError{
+				Code:       "theme_install_in_progress",
+				Message:    "A theme or screensaver is already being installed.",
+				NextAction: "Wait for it to finish, then try again.",
+			})
 			return
 		}
-		// A screensaver is stored for standby, not put on screen, so saying it
-		// is active would be wrong.
-		done := "Theme is active on VibeTV."
-		if req.Slot == themepack.UsageScreensaver {
-			done = "Screensaver is ready on VibeTV."
+		writer := &themeInstallProgressWriter{server: s, jobID: jobID}
+		shownEarly := false
+		req.shown = func(result themeinstall.Result) {
+			shownEarly = true
+			s.completeThemeInstallJob(jobID, stage, req.Slot, result)
+			// The next install may start now; it waits for this tail.
+			s.beginThemeInstallTail()
+			release()
 		}
-		s.recordSetupEvent(setupEvent{Stage: stage, Status: "succeeded", Message: done})
-		s.installJobs.update(jobID, func(job *themeInstallJob) {
-			job.Phase = "complete"
-			// Without a ready provider the VibeTV keeps drawing the error frame,
-			// so "active on VibeTV" would contradict the screen the customer is
-			// looking at. The install still succeeded: the provider outcome owns
-			// the final message and says what is still missing.
-			if job.Message != themeInstallAwaitingProviderMessage {
-				job.say(done)
+		result, err := s.runThemeInstall(ctx, cfg, req, writer)
+		if shownEarly {
+			s.endThemeInstallTail()
+			// The job already reported Installed. A stream refresh that fails
+			// afterwards is kept for support and shows in the device status.
+			// The setup log already says Installed, so it gets no "failed"
+			// line after it (#939).
+			if err != nil {
+				_, apiErr := themeInstallErrorPayload(req.Slot, err)
+				s.recordTimeline(timeline.Event{Component: stage, State: "failed", Reason: apiErr.Code})
 			}
-			job.Progress = 100
-			job.FinishedAt = &finishedAt
-			job.Result = &result
-		})
+			return
+		}
+		if err != nil {
+			_, apiErr := themeInstallErrorPayload(req.Slot, err)
+			fail(apiErr)
+			return
+		}
+		s.completeThemeInstallJob(jobID, stage, req.Slot, result)
 	}()
+}
+
+func (s *Server) completeThemeInstallJob(jobID, stage, slot string, result themeinstall.Result) {
+	finishedAt := time.Now().UTC()
+	// A screensaver is stored for standby, not put on screen, so saying it
+	// is active would be wrong.
+	done := "Theme is active on VibeTV."
+	if slot == themepack.UsageScreensaver {
+		done = "Screensaver is ready on VibeTV."
+	}
+	s.recordSetupEvent(setupEvent{Stage: stage, Status: "succeeded", Message: done})
+	s.installJobs.update(jobID, func(job *themeInstallJob) {
+		job.Phase = "complete"
+		// Without a ready provider the VibeTV keeps drawing the error frame,
+		// so "active on VibeTV" would contradict the screen the customer is
+		// looking at. The install still succeeded: the provider outcome owns
+		// the final message and says what is still missing.
+		if job.Message != themeInstallAwaitingProviderMessage {
+			job.say(done)
+		}
+		job.Progress = 100
+		job.FinishedAt = &finishedAt
+		job.Result = &result
+	})
+}
+
+// beginThemeInstallTail marks that an install reported Installed and still
+// refreshes the display stream.
+func (s *Server) beginThemeInstallTail() {
+	s.themeInstallTailMu.Lock()
+	defer s.themeInstallTailMu.Unlock()
+	s.themeInstallTail = make(chan struct{})
+}
+
+func (s *Server) endThemeInstallTail() {
+	s.themeInstallTailMu.Lock()
+	defer s.themeInstallTailMu.Unlock()
+	if s.themeInstallTail != nil {
+		close(s.themeInstallTail)
+		s.themeInstallTail = nil
+	}
+}
+
+// waitForThemeInstallTail reports whether the previous install's stream
+// refresh is over, waiting at most themeInstallTailWaitTime for it.
+func (s *Server) waitForThemeInstallTail(ctx context.Context) bool {
+	s.themeInstallTailMu.Lock()
+	tail := s.themeInstallTail
+	s.themeInstallTailMu.Unlock()
+	if tail == nil {
+		return true
+	}
+	timer := time.NewTimer(themeInstallTailWaitTime)
+	defer timer.Stop()
+	select {
+	case <-tail:
+		return true
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return false
+	}
 }
 
 func cloneThemeInstallJob(job *themeInstallJob) themeInstallJob {
@@ -703,6 +799,11 @@ func (w *themeInstallProgressWriter) noteLine(line string) {
 		return
 	}
 	w.server.installJobs.update(w.jobID, func(job *themeInstallJob) {
+		// A job that reported Installed keeps its message while the
+		// display stream refresh still writes lines (#911).
+		if job.Phase != "installing" {
+			return
+		}
 		message, progress, ok := customerInstallProgress(line, job)
 		if !ok {
 			return

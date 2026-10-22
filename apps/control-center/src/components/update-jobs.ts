@@ -187,7 +187,7 @@ export function themeInstallStatusFromJob(
     themeId,
     title,
     startedAt: job.startedAt || fallback.startedAt || formatTime(),
-    finishedAt: finished ? job.finishedAt || formatTime() : undefined,
+    finishedAt: finished ? job.finishedAt || new Date().toISOString() : undefined,
     message: job.error?.nextAction || job.message || logs[logs.length - 1],
     progress: clampProgress(job.progress),
     logs,
@@ -218,7 +218,7 @@ export function firmwareUpdateStatusFromJob(
     outcome: job.outcome,
     retryAllowed: job.retryPolicy !== "power_cycle",
     startedAt: job.startedAt || fallbackStartedAt,
-    finishedAt: finished ? job.finishedAt || formatTime() : undefined,
+    finishedAt: finished ? job.finishedAt || new Date().toISOString() : undefined,
     message:
       job.error?.nextAction ||
       job.message ||

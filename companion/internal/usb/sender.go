@@ -52,13 +52,12 @@ type Sender struct {
 	silentResetAfter time.Duration
 	requestRetryStep time.Duration
 
-	port          SerialPort
-	path          string
-	hello         protocol.DeviceHello
-	helloSeen     bool
-	helloAt       time.Time
-	capabilities  protocol.DeviceCapabilities
-	capsCollected bool
+	port         SerialPort
+	path         string
+	hello        protocol.DeviceHello
+	helloSeen    bool
+	helloAt      time.Time
+	capabilities protocol.DeviceCapabilities
 }
 
 func NewSender() *Sender {
@@ -164,6 +163,13 @@ func (s *Sender) DeviceHello(path string) (protocol.DeviceHello, error) {
 	return s.deviceHelloWithin(path, s.helloWindow)
 }
 
+// DeviceHelloContext reads a fresh hello within the caller's deadline.
+func (s *Sender) DeviceHelloContext(ctx context.Context, path string) (protocol.DeviceHello, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.deviceHelloLocked(ctx, path, s.helloWindow)
+}
+
 func (s *Sender) deviceHelloWithin(path string, window time.Duration) (protocol.DeviceHello, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -173,6 +179,9 @@ func (s *Sender) deviceHelloWithin(path string, window time.Duration) (protocol.
 func (s *Sender) deviceHelloLocked(ctx context.Context, path string, window time.Duration) (protocol.DeviceHello, error) {
 	if err := ctx.Err(); err != nil {
 		return protocol.DeviceHello{}, err
+	}
+	if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+		return protocol.DeviceHello{}, context.DeadlineExceeded
 	}
 	// Firmware from before the Cable identity contract says hello only while
 	// it boots and never answers a request. Waiting for one held this sender
@@ -249,7 +258,6 @@ func (s *Sender) ensurePort(path string) (bool, error) {
 	s.hello = protocol.DeviceHello{}
 	s.helloSeen = false
 	s.capabilities = protocol.UnknownDeviceCapabilities()
-	s.capsCollected = false
 	return true, nil
 }
 
@@ -262,14 +270,14 @@ func (s *Sender) captureHelloAfterOpenLockedWithin(window time.Duration) {
 }
 
 func (s *Sender) captureHelloAfterOpenLockedContext(ctx context.Context, window time.Duration) {
-	_ = s.port.ResetInputBuffer()
-	s.sleep(s.settleDuration)
 	// Opening a supplier USB adapter can reset a WiFi-mode device. Re-send
 	// hello on the same port while it boots; an early request can be lost.
 	deadline := time.Now().Add(window)
 	if limit, ok := ctx.Deadline(); ok && limit.Before(deadline) {
 		deadline = limit
 	}
+	_ = s.port.ResetInputBuffer()
+	s.sleep(min(s.settleDuration, max(0, time.Until(deadline))))
 	var hello protocol.DeviceHello
 	var carry []byte
 	seen := false
@@ -289,7 +297,7 @@ func (s *Sender) captureHelloAfterOpenLockedContext(ctx context.Context, window 
 		// have to. Firmware from before the Cable identity contract only says
 		// hello while it boots, so a board that stays silent is reset once,
 		// the way opening the port does on macOS.
-		if !reset && s.silentResetAfter > 0 && time.Since(openedAt) >= s.silentResetAfter {
+		if !reset && s.silentResetAfter > 0 && time.Since(openedAt) >= s.silentResetAfter && time.Until(deadline) >= 100*time.Millisecond {
 			reset = true
 			resetBoard(s.port, s.sleep)
 		}
@@ -301,7 +309,6 @@ func (s *Sender) captureHelloAfterOpenLockedContext(ctx context.Context, window 
 	if seen {
 		s.capabilities = protocol.CapabilitiesFromHello(s.hello)
 	}
-	s.capsCollected = true
 	_ = s.port.ResetInputBuffer()
 }
 
@@ -337,15 +344,26 @@ func (s *Sender) ResolvePort(explicit, expectedDeviceID string) (string, error) 
 }
 
 func (s *Sender) ResolveControlPort(explicit, expectedDeviceID string) (string, error) {
+	return s.ResolveControlPortContext(context.Background(), explicit, expectedDeviceID)
+}
+
+// ResolveControlPortContext shares the caller's deadline across all probes.
+func (s *Sender) ResolveControlPortContext(ctx context.Context, explicit, expectedDeviceID string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	readHello := func(path string) (protocol.DeviceHello, error) {
+		return s.DeviceHelloContext(ctx, path)
+	}
 	if err := s.openPortVanished(explicit); err != nil {
 		return "", err
 	}
 	s.resolveMu.Lock()
 	defer s.resolveMu.Unlock()
 	if path, ok := s.currentMatchingPort(explicit, expectedDeviceID, true); ok {
-		return resolveVibeTVCandidatesForControl([]string{path}, path, expectedDeviceID, s.DeviceHello, true)
+		return resolveVibeTVCandidatesForControl([]string{path}, path, expectedDeviceID, readHello, true)
 	}
-	path, err := resolveVibeTVPortForControl(explicit, expectedDeviceID, s.DeviceHello, true)
+	path, err := resolveVibeTVPortForControl(explicit, expectedDeviceID, readHello, true)
 	s.forgetAmbiguousPort(err)
 	return path, err
 }
@@ -593,7 +611,6 @@ func (s *Sender) FactoryReset(path, deviceID string) error {
 	err = readFactoryResetFromPort(s.port, s.helloWindow, deviceID)
 	// The device restarts after erasing, so the old handshake is stale.
 	s.helloSeen = false
-	s.capsCollected = false
 	if err != nil {
 		return fmt.Errorf("erase VibeTV on %s: %w", path, err)
 	}
@@ -726,7 +743,6 @@ func (s *Sender) ConfigureWiFi(path, deviceID, ssid, password string) error {
 	// The firmware owns its reboot. Reopening this USB-UART pulses reset and
 	// can interrupt the first WiFi join; only invalidate the old handshake.
 	s.helloSeen = false
-	s.capsCollected = false
 	return nil
 }
 
@@ -776,7 +792,6 @@ func (s *Sender) closeCurrentLocked() {
 	s.hello = protocol.DeviceHello{}
 	s.helloSeen = false
 	s.capabilities = protocol.UnknownDeviceCapabilities()
-	s.capsCollected = false
 }
 
 func (s *Sender) Close() {
