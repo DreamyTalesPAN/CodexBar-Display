@@ -9129,3 +9129,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: With one VibeTV offered, its chooser row shows the same 3D model as the other setup steps instead of the photo; the photo stays only where WebGL2 is unavailable. With several VibeTVs the 3D model sits on the connected row, or on the first row when none of the rows is the connected one (previously no row showed it in that case).
 - Scope: `apps/control-center/src/components/setup/setup-device-screen.tsx`, `apps/control-center/src/components/setup/setup-device-screen-3d.test.tsx`; no text changes, no hardware writes.
 - What's new: none — correct the requested chooser before customer approval.
+
+## 2026-10-22 — #858: customer-flow display step waits for the real zero
+
+- User approval: no visible change – UI approval not needed (test-only: customer-flow fixture and wait; no product code or copy)
+- Approved customer-visible result: none; the flow script waits for the real 0% and gives switched-on providers without usage a pinned preview, as the companion does.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` only.
+- What's new: none — test-only change; no product change.

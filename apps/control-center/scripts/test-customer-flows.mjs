@@ -12075,7 +12075,10 @@ async function routeCompanionOnline(
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ ...body, previewFrames: previewFramesFromUsageResponse(body) }),
+        body: JSON.stringify({
+          ...body,
+          previewFrames: previewFramesFromUsageResponse(body, currentPreferences),
+        }),
       });
       return;
     }
@@ -12727,15 +12730,23 @@ async function fulfillRouteFromNext(route, targetUrl) {
 }
 
 // The frames the companion builds for the stream, from the fixture usage: a
-// provider's windows keep their values, a real 0% stays 0.
-function previewFramesFromUsageResponse(usageResponse) {
+// provider's windows keep their values, a real 0% stays 0. A provider switched
+// on without usage gets a pinned frame only, as the companion builds it.
+function previewFramesFromUsageResponse(usageResponse, preferences) {
   const providers =
     usageResponse && typeof usageResponse === "object" && Array.isArray(usageResponse.providers)
       ? usageResponse.providers
       : [];
+  const reported = new Set(providers.map((provider) => provider.id));
+  const unreported = (preferences?.items ?? [])
+    .filter((item) => item.value && item.providerId && !reported.has(item.providerId))
+    .map((item) => ({
+      id: item.providerId,
+      pinned: { v: 2, provider: item.providerId, label: item.label, usageUnavailable: true },
+    }));
   return {
     generatedAt: "2026-06-29T10:47:46Z",
-    providers: providers.map((provider) => {
+    providers: [...providers.map((provider) => {
       const frame = {
         v: 2,
         provider: provider.id,
@@ -12752,7 +12763,7 @@ function previewFramesFromUsageResponse(usageResponse) {
         })),
       };
       return { id: provider.id, automatic: frame, pinned: frame };
-    }),
+    }), ...unreported],
   };
 }
 
