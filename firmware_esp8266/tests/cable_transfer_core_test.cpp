@@ -86,6 +86,10 @@ void testStartRefusal() {
           "a different pairing token must be token-mismatch");
   require(CheckStartIdentity(false, true, false, false) == StartRefusal::kTokenMismatch,
           "a device without a stored token must be token-mismatch");
+  // #938: an unpaired device has an empty token, so an empty token from the
+  // Mac "matches". Only authConfigured keeps that from being accepted.
+  require(CheckStartIdentity(false, true, false, true) == StartRefusal::kTokenMismatch,
+          "an unpaired device must be token-mismatch even when the empty token matches");
   require(CheckStartIdentity(false, false, true, false) == StartRefusal::kDeviceMismatch,
           "a different deviceId must be device-mismatch, even with a wrong token");
   require(CheckStartIdentity(true, false, false, false) == StartRefusal::kBusy,
