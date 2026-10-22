@@ -3453,15 +3453,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
   }, [runCompanion]);
 
-  // A fresh Mac reports CodexBar's Used / Remaining as unavailable until the
-  // first serve snapshot arrives (#895). While it is unavailable, each usage
-  // read that lands in Settings asks once more; the read that brings it ends that.
-  const usageModeUnavailable = displayPreferences.some(
-    (item) =>
-      item.id === "codexbar.usageBarsShowUsed" &&
-      item.availability.state === "unavailable",
-  );
-
   const refreshUsage = useCallback(
     (options?: { quiet?: boolean }) => {
       const quiet = Boolean(options?.quiet);
@@ -3487,9 +3478,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           setUsage(payload);
           setUsageError(null);
           setCompanionStatus("online");
-          // #895: a usage read that lands in Settings asks once more while
-          // CodexBar's mode is unknown.
-          if (activeShellTab === "settings" && usageModeUnavailable) {
+          // #895: CodexBar owns Used / Remaining and this read may carry a new
+          // one (unknown on a fresh Mac, or changed in CodexBar itself); a
+          // read that lands in Settings asks the row again.
+          if (activeShellTab === "settings") {
             void refreshDisplayPreferences();
           }
           if (!quiet) {
@@ -3549,7 +3541,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       markCompanionUnavailable,
       refreshDisplayPreferences,
       runCompanion,
-      usageModeUnavailable,
     ],
   );
 

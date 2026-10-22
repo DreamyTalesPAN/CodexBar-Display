@@ -8388,3 +8388,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; Settings shows the same Used / Remaining state as before.
 - Scope: control-center-app.tsx only (usage poll result, moved derivations); pull request branch #877 only.
 - What's new: none — lint fix, no customer-visible change
+
+## 2026-10-22 — #877: Show follows a Used / Remaining change made in CodexBar
+
+- User approval: pending — Settings → Show now follows a Used / Remaining change made in CodexBar itself while Settings stays open (next usage poll), instead of keeping the old choice
+- Approved customer-visible result: pending — Show matches the mode CodexBar delivers, together with the percentages and the VibeTV frame.
+- Scope: control-center-app.tsx (the usage poll in Settings re-reads the display settings) and its test; pull request branch #877 only.
+- What's new: pending — Show stays in step with CodexBar's own Used / Remaining setting

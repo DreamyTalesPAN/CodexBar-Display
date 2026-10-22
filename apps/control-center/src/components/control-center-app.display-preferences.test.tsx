@@ -1374,3 +1374,17 @@ it("shows CodexBar's mode once a usage poll delivers it, without reopening Setti
   expect((screen.getByRole("combobox", { name: "Show" }) as HTMLButtonElement).disabled).toBe(false);
   expect(screen.getByRole("combobox", { name: "Show" }).textContent).toBe("Used");
 });
+
+// #877: the customer changes Used / Remaining in CodexBar itself while Settings
+// stays open. The next usage poll brings the new mode; Show follows it.
+it("follows a change made in CodexBar itself while Settings stays open", async () => {
+  const window = startWindow();
+  window.companion.providers = [claude];
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  expect(screen.getByRole("combobox", { name: "Show" }).textContent).toBe("Used");
+  window.companion.usageMode = { ...usageModePreference, value: "false", effectiveValue: "false" };
+  await window.wait(70);
+  expect(screen.getByRole("combobox", { name: "Show" }).textContent).toBe("Remaining");
+});
