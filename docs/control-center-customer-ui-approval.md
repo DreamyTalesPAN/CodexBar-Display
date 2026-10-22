@@ -18177,3 +18177,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none beyond the fix: "Claude Weekly 3d 1h" that did not fit now reads "Weekly 3d 1h".
 - Scope: Footer wording selection in firmware and preview tries the limit name after the pair label, and a countdown that fits no variant keeps the theme's shrink-fit; native and preview tests with Claude Creature and Pixel Battery footer widths.
 - What's new: none — bug fix; nothing new to announce.
+
+## 2026-10-22 — #592: Claude Creature pace text is one font step larger
+
+- User approval: pending — Claude Creature pace text (for example "40% deficit" and "6% reserve") is drawn in the readable font 2 in one-provider and Two at once layouts instead of the smallest fallback; the pace boxes are wider so the text does not wrap
+- Approved customer-visible result: the pace line under each usage slot is larger and easier to read in both layouts; the sprite, labels and reset line stay where they were.
+- Scope: theme-packs/claude-creature (theme.json rev 12, manifest 1.4.2) and its rebuilt dist packs, one legibility test revision pin. Branch claude/paultest-592a only, not merged, not released.
+- What's new: none — the pace text is a theme size change only; the Theme Library shows no new text
