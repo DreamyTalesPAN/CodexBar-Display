@@ -9662,3 +9662,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Main redesign with this PR's Usage mode section and existing preference behavior.
 - Scope: apps/control-center/src/components/settings-screen.tsx and existing display preference integration; merge integration only.
 - What's new: none — merge integration only.
+
+## 2026-10-22 — #877: standalone approval marker for the merge of main
+
+- User approval: no visible change – UI approval not needed (standalone record for the merge of origin/main d2f3fade into #877; combined merge diff is not parsed by the current gate)
+- Approved customer-visible result: Same as the entries of #877 above; this commit changes documentation only.
+- Scope: Approval record for PR #877, no product changes.
+- What's new: none — standalone documentation marker for the completed main merge
