@@ -9374,3 +9374,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #816 as in its own entries; nothing else changes.
 - Scope: docs/control-center-customer-ui-approval.md only. Pull request branch #816 only, not merged, not released.
 - What's new: none — approval-log wording only, no customer-visible change
+
+## 2026-10-22 — #816: merge main after #784
+
+- User approval: no visible change – UI approval not needed (merge of main after #784 into #816)
+- Approved customer-visible result: Keep main's redesign and this PR's not-found dismissal behavior.
+- Scope: apps/control-center/src/components/control-center-app.tsx and apps/control-center/src/components/control-center-app.not-found-dismissal.test.tsx; merge integration only.
+- What's new: none — merge integration only.
