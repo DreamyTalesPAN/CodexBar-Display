@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
@@ -720,11 +720,13 @@ describe("UpdatesScreen Mac App check that failed during migration", () => {
           message: "Mac App check failed.",
         }}
         device={{ connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.39" }}
+        firmwareUpdate={{ checkedAt: "2026-10-17T10:00:00Z", status: "current", updateAvailable: false }}
         onCheckUpdates={() => undefined}
         requiresMacAppMigration
       />,
     );
-    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+    const dialog = screen.getByRole("dialog", { name: "Could not check for updates" });
+    expect(within(dialog).getByRole("button", { name: "Try again" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Check again" })).toBeNull();
   });
 });

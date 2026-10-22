@@ -10012,3 +10012,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The calm Updates screen shows what the earlier entries describe; a failed firmware check newer than a finished update replaces "Update complete", and the failed-check dialog keeps its "Try again" button.
 - Scope: merge conflict resolution in updates-screen.tsx, test-customer-flows.mjs and this approval record. Pull request #798 only, not merged, not released.
 - What's new: none — integration only
+
+## 2026-10-22 — #798: main's "Try again" regression test follows the calm failed-check dialog
+
+- User approval: no visible change – UI approval not needed (test-only: the #782 test for "Try again" after a failed Mac App check during migration now looks for the button in the failed-check dialog of the calm Updates screen)
+- Approved customer-visible result: nothing changes; the customer sees exactly what the earlier entries describe.
+- Scope: updates-screen.test.tsx only. Pull request #798 only, not merged, not released.
+- What's new: none — test-only
