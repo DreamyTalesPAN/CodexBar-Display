@@ -6583,6 +6583,56 @@ func TestProviderCollectorKeepsValuesLiveWhenTheReplacementAnswersDuringTheColle
 	}
 }
 
+// The marker can change while the usage fetch is blocked: the replacement's
+// first answer ends the grace, a Replace from a manual refresh starts it. A
+// transport error of that fetch is decided by the grace in force around it.
+func TestProviderCollectorKeepsValuesLiveWhenTheReplaceMarkerChangesDuringTheUsageFetch(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	start := time.Date(2026, 10, 22, 10, 28, 0, 0, time.UTC)
+	for name, tc := range map[string]struct{ before, during time.Time }{
+		"the replacement answers": {before: start.Add(time.Second)},
+		"a replace begins":        {during: start.Add(2 * time.Second)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			current := start
+			info := testDashboardServeInfo(1001)
+			failing := false
+			collector := &providerCollector{
+				now:             func() time.Time { return current },
+				logf:            func(string, ...any) {},
+				order:           []string{"codex"},
+				interval:        30 * time.Second,
+				snapshotMaxAge:  10 * time.Minute,
+				persistInterval: time.Minute,
+				providers:       make(map[string]providerSnapshot),
+				dashboard:       dashboardServeFunc(func() codexbar.DashboardServeInfo { return info }),
+				fetchDashboard: func(context.Context, codexbar.DashboardServeInfo, time.Time) ([]codexbar.ParsedFrame, error) {
+					if failing {
+						info.ReplaceStartedAt = tc.during
+						current = current.Add(2 * time.Second)
+						return nil, codexbar.ErrDashboardServeUnavailable
+					}
+					frame := dashboardParsedFrame("codex", "Session", "Weekly", 12, 34)
+					frame.CollectedAt = current
+					return []codexbar.ParsedFrame{frame}, nil
+				},
+			}
+			collector.collectOnce(context.Background())
+			if snapshot := collector.providers["codex"]; snapshot.Retained {
+				t.Fatalf("setup: expected a live Codex reading, got %+v", snapshot)
+			}
+			failing = true
+			info.ReplaceStartedAt = tc.before
+			current = start.Add(3 * time.Second)
+			collector.collectOnce(context.Background())
+			if snapshot := collector.providers["codex"]; snapshot.Retained || collector.lastFetchErr != nil {
+				t.Fatalf("a fetch that failed around the replacement must keep the values live, got %+v err=%v", snapshot, collector.lastFetchErr)
+			}
+		})
+	}
+}
+
 func TestProviderCollectorDashboardOutagePreservesProviderIsolationAndRecovers(t *testing.T) {
 	prepareFastTestEnv(t)
 

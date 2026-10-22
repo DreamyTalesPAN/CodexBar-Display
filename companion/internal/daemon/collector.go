@@ -382,10 +382,15 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 	}
 	defer cancel()
 
+	// The marker is read around the serve read: the replacement's first answer
+	// ends the grace while the fetch is blocked, a Replace can begin during it.
+	// Either way this collection's miss is not an outage.
+	replaceStarted := c.replaceStartedAt()
 	allProviders, sourceMode, err := c.fetchProvidersForCollect(ctx, now)
-	// Decided before the inventory read: the replacement may answer meanwhile,
-	// which ends the grace but does not make this collection's miss an outage.
-	replacing := err != nil && c.serveBeingReplaced(c.now().UTC(), err)
+	if started := c.replaceStartedAt(); started.After(replaceStarted) {
+		replaceStarted = started
+	}
+	replacing := err != nil && serveBeingReplaced(c.now().UTC(), replaceStarted, err)
 	var inventory []codexbar.ProviderSetting
 	inventoryAuthoritative := false
 	if c.fetchInventory != nil {
@@ -626,12 +631,15 @@ func (c *providerCollector) engineRunning() bool {
 // serveBeingReplaced reports a missing answer within serveReplaceGrace of the
 // Companion replacing the engine. An engine that stopped on its own, or a
 // replacement that takes longer, is an outage.
-func (c *providerCollector) serveBeingReplaced(now time.Time, err error) bool {
-	if c.dashboard == nil || !engineSilent(err) {
-		return false
+func serveBeingReplaced(now, started time.Time, err error) bool {
+	return engineSilent(err) && !started.IsZero() && now.Sub(started) < serveReplaceGrace
+}
+
+func (c *providerCollector) replaceStartedAt() time.Time {
+	if c.dashboard == nil {
+		return time.Time{}
 	}
-	started := c.dashboard.Info().ReplaceStartedAt
-	return !started.IsZero() && now.Sub(started) < serveReplaceGrace
+	return c.dashboard.Info().ReplaceStartedAt
 }
 
 func (c *providerCollector) recordEvent(event timeline.Event) {
