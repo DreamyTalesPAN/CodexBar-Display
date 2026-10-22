@@ -16,12 +16,18 @@ import {
 type Props = {
   align?: "start" | "center";
   createLabel?: string;
+  /** Button height: "sm" for the Support page's quieter row. */
+  size?: "default" | "sm";
   creating?: boolean;
   diagnostics?: SupportDiagnostics | null;
   emphasis?: "primary" | "secondary";
   onCreate?: () => void;
+  /** The Support page's quiet row: Copy and Download as text, an outline Create. */
+  quiet?: boolean;
   /** The app runs on Windows, which saves a download without asking where. */
   windowsHost?: boolean;
+  /** Run diagnostics is collecting; the report waits for it. */
+  busyElsewhere?: boolean;
 };
 
 export function SupportReportActions({
@@ -31,7 +37,10 @@ export function SupportReportActions({
   diagnostics,
   emphasis = "primary",
   onCreate,
+  quiet = false,
+  size = "default",
   windowsHost = false,
+  busyElsewhere = false,
 }: Props) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
     "idle",
@@ -58,7 +67,11 @@ export function SupportReportActions({
   const diagnosticsText = diagnostics
     ? serializeSupportReport(diagnostics)
     : "";
-  const createButtonVariant = emphasis === "secondary" ? "secondary" : "default";
+  const createButtonVariant = quiet
+    ? "outline"
+    : emphasis === "secondary"
+      ? "secondary"
+      : "default";
   const statusMessage = creating
     ? "Creating report"
     : copyState === "copied"
@@ -104,6 +117,7 @@ export function SupportReportActions({
       <div
         className={cn(
           "grid w-full gap-3 sm:flex sm:w-auto sm:flex-wrap",
+          quiet && "sm:gap-1",
           align === "center" && "sm:justify-center",
         )}
       >
@@ -111,7 +125,7 @@ export function SupportReportActions({
           <Button
             className="w-full sm:w-auto"
             disabled
-            type="button"
+            size={size} type="button"
             variant={createButtonVariant}
           >
             <Spinner data-icon="inline-start" />
@@ -120,45 +134,45 @@ export function SupportReportActions({
         ) : diagnosticsText ? (
           <>
             <Button
-              className="w-full sm:w-auto"
+              className={cn("w-full sm:w-auto", quiet && "px-3.5 text-sm")}
               onClick={copyDiagnostics}
-              type="button"
-              variant="outline"
+              size={size} type="button"
+              variant={quiet ? "ghost" : "outline"}
             >
-              <Clipboard data-icon="inline-start" aria-hidden />
+              {quiet ? null : <Clipboard data-icon="inline-start" aria-hidden />}
               <span>{copyState === "copied" ? "Copied" : "Copy"}</span>
             </Button>
             <Button
-              className="w-full sm:w-auto"
+              className={cn("w-full sm:w-auto", quiet && "px-3.5 text-sm")}
               onClick={downloadDiagnostics}
-              type="button"
-              variant="outline"
+              size={size} type="button"
+              variant={quiet ? "ghost" : "outline"}
             >
-              <Download data-icon="inline-start" aria-hidden />
+              {quiet ? null : <Download data-icon="inline-start" aria-hidden />}
               <span>{downloaded ? "Downloaded" : "Download"}</span>
             </Button>
             {onCreate ? (
               <Button
-                className="w-full sm:w-auto"
-                disabled={creating}
+                className={cn("w-full sm:w-auto", quiet && "px-3.5 text-sm")}
+                disabled={creating || busyElsewhere}
                 onClick={createDiagnostics}
-                type="button"
+                size={size} type="button"
                 variant={createButtonVariant}
               >
-                <RefreshCw data-icon="inline-start" aria-hidden />
-                <span>Create again</span>
+                {quiet ? null : <RefreshCw data-icon="inline-start" aria-hidden />}
+                <span>{quiet ? "Create new" : "Create again"}</span>
               </Button>
             ) : null}
           </>
         ) : onCreate ? (
           <Button
-            className="w-full sm:w-auto"
-            disabled={creating}
+            className={cn("w-full sm:w-auto", quiet && "px-3.5 text-sm")}
+            disabled={creating || busyElsewhere}
             onClick={createDiagnostics}
-            type="button"
+            size={size} type="button"
             variant={createButtonVariant}
           >
-            <FileText data-icon="inline-start" aria-hidden />
+            {quiet ? null : <FileText data-icon="inline-start" aria-hidden />}
             <span>{createLabel}</span>
           </Button>
         ) : null}
