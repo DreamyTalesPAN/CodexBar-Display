@@ -358,7 +358,6 @@ func readPortLinesUntil(port SerialPort, window time.Duration, carry *[]byte, st
 	if port == nil || window <= 0 || accept == nil {
 		return false, nil
 	}
-	_ = port.SetReadTimeout(helloReadStepTimeout)
 	deadline := time.Now().Add(window)
 	chunk := make([]byte, 128)
 	buffer := make([]byte, 0, helloReadBufferBytes)
@@ -367,6 +366,7 @@ func readPortLinesUntil(port SerialPort, window time.Duration, carry *[]byte, st
 		defer func() { *carry = append((*carry)[:0], buffer...) }()
 	}
 	for time.Now().Before(deadline) {
+		_ = port.SetReadTimeout(min(helloReadStepTimeout, max(time.Nanosecond, time.Until(deadline))))
 		n, err := port.Read(chunk)
 		if n <= 0 {
 			if stopOnError && !isNoDataRead(err) {
