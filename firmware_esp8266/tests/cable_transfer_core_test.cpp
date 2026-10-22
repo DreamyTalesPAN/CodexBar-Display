@@ -71,8 +71,39 @@ void testDecodeChunk() {
   require(transfer::DecodeChunk("0011", "", out, 1) == 0, "hex over capacity must be rejected");
 }
 
+// #870: transfer-start names why it refused, so the Mac can tell a stale
+// pairing token from a busy or different VibeTV. Busy wins (nothing else was
+// checked yet), then the device, then the token; anything else stays the
+// generic transfer-rejected.
+void testStartRefusal() {
+  using transfer::CheckStartIdentity;
+  using transfer::StartRefusal;
+  using transfer::StartRefusalCode;
+
+  require(CheckStartIdentity(false, true, true, true) == StartRefusal::kNone,
+          "a matching, idle, paired device must accept transfer-start");
+  require(CheckStartIdentity(false, true, true, false) == StartRefusal::kTokenMismatch,
+          "a different pairing token must be token-mismatch");
+  require(CheckStartIdentity(false, true, false, false) == StartRefusal::kTokenMismatch,
+          "a device without a stored token must be token-mismatch");
+  require(CheckStartIdentity(false, false, true, false) == StartRefusal::kDeviceMismatch,
+          "a different deviceId must be device-mismatch, even with a wrong token");
+  require(CheckStartIdentity(true, false, false, false) == StartRefusal::kBusy,
+          "a busy device must say busy before judging identity");
+
+  require(std::strcmp(StartRefusalCode(StartRefusal::kTokenMismatch), "token-mismatch") == 0,
+          "token refusal code");
+  require(std::strcmp(StartRefusalCode(StartRefusal::kDeviceMismatch), "device-mismatch") == 0,
+          "device refusal code");
+  require(std::strcmp(StartRefusalCode(StartRefusal::kBusy), "busy") == 0,
+          "busy refusal code");
+  require(std::strcmp(StartRefusalCode(StartRefusal::kNone), "transfer-rejected") == 0,
+          "any other refusal stays transfer-rejected");
+}
+
 int main() {
   testDecodeChunk();
+  testStartRefusal();
 
   transfer::State state;
   transfer::Begin(state, 8, 100);
