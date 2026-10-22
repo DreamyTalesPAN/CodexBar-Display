@@ -3,17 +3,17 @@
   "schemaVersion": 1,
   "id": "token-fire",
   "name": "Token Fire",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "minFirmware": "1.0.40",
   "usage": "screensaver",
   "requiredCapabilities": [
     "usage-slots-v1"
   ],
   "themeSpec": {
-    "path": "/themes/s/tf-6-32c5c037.json",
+    "path": "/themes/s/tf-7-241f52e1.json",
     "file": "theme.json",
     "bytes": 914,
-    "sha256": "32c5c0378d05eda4b0bfa8c384e247e368a02e27d96b34c3ec10f0d1262439be",
+    "sha256": "241f52e1ce65071cbc0a138c8dbf1cbe36085c9295627f670d8a11bf9ef504d2",
     "contentType": "application/json"
   },
   "assets": [

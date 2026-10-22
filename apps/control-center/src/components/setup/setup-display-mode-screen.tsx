@@ -228,7 +228,7 @@ export function SetupDisplayModeScreen({
         }
         // The wide content column would stretch it across the whole window; the
         // other steps' 460px column is the size every calm step ends in.
-        className={cn(CALM_BUTTON_CLASS, "mt-8 max-w-[460px]")}
+        className={cn(CALM_BUTTON_CLASS, "max-w-[460px]")}
         onClick={onContinue}
         type="button"
       >

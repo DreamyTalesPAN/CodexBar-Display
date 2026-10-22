@@ -295,7 +295,7 @@ export function SetupDeviceScreen({
             })}
           </ToggleGroup>
           <Button
-            className={cn(CALM_BUTTON_CLASS, "mt-8")}
+            className={CALM_BUTTON_CLASS}
             disabled={connecting}
             onClick={() => onChooseTransport(connectionChoice)}
             type="button"
@@ -417,7 +417,7 @@ export function SetupDeviceScreen({
               />
             </Field>
             <Button
-              className={cn(CALM_BUTTON_CLASS, "mt-8")}
+              className={CALM_BUTTON_CLASS}
               disabled={wifiScanning || wifiBusy || !wifiName.trim() || passwordMissing}
               type="submit"
             >
@@ -472,7 +472,7 @@ export function SetupDeviceScreen({
 
       {showCandidates ? (
         <Button
-          className={cn(CALM_BUTTON_CLASS, "mt-8")}
+          className={CALM_BUTTON_CLASS}
           disabled={connecting || !selectedTarget}
           onClick={onConnect}
           type="button"

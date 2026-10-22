@@ -551,7 +551,7 @@ export function SetupProvidersScreen({
       />
 
       <Button
-        className={cn(CALM_BUTTON_CLASS, "mt-6")}
+        className={CALM_BUTTON_CLASS}
         // Closed while the completion is on its way. A second press starts a
         // second one, and each of those forces a live provider read before it
         // writes anything -- so the customer paid for the same slow check twice
@@ -650,7 +650,7 @@ function SetupProvidersLoadingScreen({
         ))}
       </ItemGroup>
 
-      <Button className={cn(CALM_BUTTON_CLASS, "mt-8")} disabled type="button">
+      <Button className={CALM_BUTTON_CLASS} disabled type="button">
         <span>Continue</span>
       </Button>
     </SetupWizardScreen>

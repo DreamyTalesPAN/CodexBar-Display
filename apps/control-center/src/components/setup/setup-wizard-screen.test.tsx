@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { SetupWizardScreen } from "./setup-wizard-screen";
+import { CALM_BUTTON_CLASS, SetupWizardScreen } from "./setup-wizard-screen";
 
 function render(props: Partial<Parameters<typeof SetupWizardScreen>[0]> = {}) {
   return renderToStaticMarkup(
@@ -34,6 +34,15 @@ describe("SetupWizardScreen", () => {
     expect(contentClass(html)).not.toContain("my-auto");
     expect(landmarkClass(html)).not.toContain("justify-center");
     expect(landmarkClass(html)).toContain("min-h-svh");
+  });
+
+  // Install, Continue and Connect stood wherever their step's content ended,
+  // mid-window on a tall one. The column fills the window and the shared button
+  // class pushes its button to the bottom of it, for every step at once.
+  it("pins the main action to the bottom of the window, not behind its content", () => {
+    expect(contentClass(render())).toContain("flex-1");
+    expect(contentClass(render({ centered: true }))).not.toContain("flex-1");
+    expect(CALM_BUTTON_CLASS.split(" ")).toContain("mt-auto");
   });
 
   // The app window has no minimum size, so a step whose content outgrows the

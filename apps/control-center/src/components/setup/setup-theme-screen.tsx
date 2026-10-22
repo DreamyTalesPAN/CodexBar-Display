@@ -103,7 +103,7 @@ export function SetupThemeScreen({
 
       {/* The wide column would stretch the button across the window; 460 px is the size every calm step ends in. */}
       <Button
-        className={cn(CALM_BUTTON_CLASS, "mt-6 max-w-[460px]")}
+        className={cn(CALM_BUTTON_CLASS, "max-w-[460px]")}
         disabled={installing || !selected || Boolean(selected.blockedReason)}
         onClick={onInstall}
         type="button"

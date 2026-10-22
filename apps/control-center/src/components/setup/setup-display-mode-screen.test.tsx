@@ -105,8 +105,9 @@ describe("SetupDisplayModeScreen", () => {
     expect(heights[0]).toBeDefined();
     expect(new Set(heights).size).toBe(1);
     for (const mode of ["automatic", "fixed", "pair"] as const) {
-      expect(frame(mode)).toContain("mt-8");
-      expect(frame(mode)).not.toContain("mt-6");
+      const button = frame(mode).match(/<button[^>]*>Continue<\/button>/)?.[0] ?? "";
+      expect(button).toContain("mt-auto");
+      expect(button).not.toMatch(/\bmt-\d/);
     }
   });
 

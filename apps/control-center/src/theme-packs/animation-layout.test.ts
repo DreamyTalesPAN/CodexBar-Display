@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
   buildFrameData, decodeSprite, primitiveUsageSlotVisible, renderTextPrimitive,
-  themeTextFit,
+  themeProgressArc, themeTextFit,
   type FrameData, type ThemePrimitive, type ThemeRenderPack,
 } from "@/components/live-vibetv-preview";
 import { cellHeight, textInk, type Rect } from "./text-ink";
@@ -11,6 +11,8 @@ import { cellHeight, textInk, type Rect } from "./text-ink";
 const root = path.resolve(process.cwd(), "../..");
 const renderDir = path.join(root, "dist/theme-packs/render");
 const themeIds = readdirSync(renderDir).filter((file) => file.endsWith(".json")).map((file) => file.slice(0, -5));
+// The themes a customer can install: the render folder also keeps retired packs (Cozy Meadow) that no catalog lists any more.
+const catalogIds: string[] = JSON.parse(readFileSync(path.join(root, "dist/theme-packs/vibetv-theme-packs-v2.json"), "utf8")).themes.map((theme: { id: string }) => theme.id);
 const clock = new Date("2026-10-22T12:00:00Z");
 const PACE_TICK_OVERHANG = 3; // kPaceTickOverhang in usage_window_contract.h
 
@@ -86,7 +88,13 @@ const PACES = {
   deficit: { delta: 33, state: "deficit", lasts: false },
   "on pace": { delta: 0, state: "on pace", lasts: true },
 };
-type PaceName = keyof typeof PACES;
+// The pace is clamped at 100, so "100% reserve" is the widest sentence a screen is ever asked to draw.
+const WIDE_PACES = {
+  "100% reserve": { delta: -100, state: "reserve", lasts: true },
+  "100% deficit": { delta: 100, state: "deficit", lasts: false },
+};
+const ALL_PACES = { ...PACES, ...WIDE_PACES };
+type PaceName = keyof typeof ALL_PACES;
 
 // Limit names as the Companion sends them, the long ones included: "Fable only" with a real 100% (Two: "Claude Fable only"), and
 // Codex as the only provider (one limit, "Weekly", in slot 1).
@@ -103,19 +111,30 @@ const SCENARIOS: Scenario[] = [
   },
   { name: "Codex alone", solo: { provider: "codex", label: "Codex", limits: [["weekly", "Weekly", 99]] } },
 ];
+// Names that are only reached by the no-shrink guard below: Codex limits that carry the provider ("Codex Weekly remaining" is the
+// longest label there is) and the longest provider names for the title.
+const NAME_SCENARIOS: Scenario[] = [
+  { name: "Codex limit names", solo: { provider: "codex", label: "Codex", limits: [["weekly", "Codex Weekly", 99], ["session", "Codex Session", 99]] } },
+  { name: "Antigravity", solo: { provider: "antigravity", label: "Antigravity", limits: [["weekly", "Weekly", 99], ["session", "Session", 50]] } },
+  { name: "Perplexity", solo: { provider: "perplexity", label: "Perplexity", limits: [["weekly", "Weekly", 99], ["session", "Session", 50]] } },
+];
 
-function frameFor(two: boolean, usageMode: string, pace: PaceName | undefined, footer: number | undefined, percents?: number[], weeklySecs = 424000, scenario = SCENARIOS[0]): FrameData {
+function frameFor(two: boolean, usageMode: string, pace: PaceName | undefined, footer: number | undefined, percents?: number[], weeklySecs = 424000, scenario = SCENARIOS[0], firstSecs = 9100, now = clock, wideTokens = false): FrameData {
   const limits = (two ? scenario.pair : scenario.solo.limits) ?? [];
-  return buildFrameData(clock.toISOString(), {
-    provider: two ? "claude+codex" : scenario.solo.provider, label: two ? "" : scenario.solo.label, usageMode, resetSecs: 9100,
+  return buildFrameData(now.toISOString(), {
+    provider: two ? "claude+codex" : scenario.solo.provider, label: two ? "" : scenario.solo.label, usageMode, resetSecs: firstSecs,
     footerWindow: footer === undefined ? undefined : limits[footer]?.[0],
     usageWindows: limits.map(([id, label, percent], i) => ({
       id, label, percent: percents?.[i] ?? percent,
-      resetSecs: [9100, weeklySecs][i], pace: pace ? PACES[pace] : undefined,
+      resetSecs: [firstSecs, weeklySecs][i], pace: pace ? ALL_PACES[pace] : undefined,
     })),
-    sessionTokens: 1234567, weekTokens: 98765432, totalTokens: 987654321, tokenTotalsKnown: true,
-  }, clock);
+    ...(wideTokens ? { sessionTokens: 8_880_000, weekTokens: 88_800_000, totalTokens: 888_000_000 } : { sessionTokens: 1234567, weekTokens: 98765432, totalTokens: 987654321 }),
+    tokenTotalsKnown: true,
+  }, now);
 }
+
+// [footer limit, seconds to the second limit's reset, seconds to the first limit's reset]
+const FOOTERS = [[undefined, 424000, 9100], [0, 424000, 9100], [0, 424000, 2820], [1, 424000, 9100], [1, 2820, 9100]] as const;
 
 const loadPack = (themeId: string) => JSON.parse(readFileSync(path.join(renderDir, `${themeId}.json`), "utf8")) as ThemeRenderPack;
 
@@ -135,6 +154,24 @@ function facingGap(a: Rect, b: Rect): number | undefined {
   return dx < 0 && dy < 0 ? -1 : dx < 0 ? dy : dy < 0 ? dx : undefined;
 }
 const CLEAR = 3; // px an animation box, a divider or a frame line keeps from a text
+
+// Empty pixels between a text's ink box and the nearest pixel of a progress ring (counted the Chebyshev way, like the gap beside a
+// ring seen on a device). The ring is the band of the arc between its inner and outer radius, from its start angle (clockwise
+// from 12 o'clock) over its sweep.
+function ringGap(t: Rect, arc: NonNullable<ReturnType<typeof themeProgressArc>>): number {
+  // The firmware centres a text in whole pixels: a half pixel goes to the left.
+  const x0 = Math.floor(t.x), y0 = Math.round(t.y), x1 = x0 + Math.round(t.w) - 1, y1 = y0 + Math.round(t.h) - 1;
+  const inner = arc.radius - arc.thickness / 2, outer = arc.radius + arc.thickness / 2;
+  let best = Infinity;
+  for (let y = y0 - CLEAR - 1; y <= y1 + CLEAR + 1; y++) for (let x = x0 - CLEAR - 1; x <= x1 + CLEAR + 1; x++) {
+    const dx = x + 0.5 - arc.cx, dy = y + 0.5 - arc.cy, radius = Math.hypot(dx, dy);
+    const angle = (Math.atan2(dx, -dy) * 180) / Math.PI;
+    if (radius < inner || radius > outer || (angle - arc.start + 720) % 360 > arc.sweep) continue;
+    const distance = Math.max(x0 - x, x - x1, y0 - y, y - y1, 0);
+    if (distance > 0) best = Math.min(best, distance - 1);
+  }
+  return best;
+}
 
 // A bar with the art that frames it (Pixel Battery's outline): the body grown down over every row that is not the flat
 // colour just above the text beneath it.
@@ -159,7 +196,12 @@ function rowGaps(items: Array<Rect & { name: string }>) {
   return rows.slice(1).map((row, i) => ({ gap: row.top - rows[i].bottom, above: rows[i].names.join(" + "), below: row.names.join(" + ") }));
 }
 
-function layoutViolations(pack: ThemeRenderPack): string[] {
+// Open with Paul: Pixel Battery names the limit in its footer at every minute count (pace-themes.test.ts), and "Session reset 47m" then fills
+// the 224 px between the frame lines of its background to the pixel (7 px to 230 px). Staying 3 px clear means "Reset 47m" in that last
+// hour or a new background; the test below fails the day the state is clear, so this entry cannot outlive the decision.
+const LAYOUT_PENDING = [{ theme: "pixel-battery", detail: /^text "Session reset \d+m" .* background art/ }];
+
+function layoutViolations(pack: ThemeRenderPack, themeId: string, pending = false): string[] {
   const prims = pack.spec?.p ?? [];
   const animations = animationBoxes(pack);
   const artAt = staticArt(pack);
@@ -169,16 +211,16 @@ function layoutViolations(pack: ThemeRenderPack): string[] {
   ];
   const found = new Map<string, string>();
   for (const two of [false, true]) for (const scenario of SCENARIOS.filter((s) => !two || s.pair)) for (const usageMode of ["used", "remaining"]) for (const pace of [undefined, ...(Object.keys(PACES) as PaceName[])]) {
-    // The weekly footer also with minutes ("Weekly reset 47m"), the widest sentence with a descender.
-    for (const [footer, weeklySecs] of [[undefined, 424000], [0, 424000], [1, 424000], [1, 2820]] as const) {
-      const state = `${two ? "Two at once" : "One provider"}, ${scenario.name}, ${usageMode}, pace ${pace ?? "off"}, footer ${footer === undefined ? "off" : `${footer} (${weeklySecs} s)`}`;
-      const frame = frameFor(two, usageMode, pace, footer, undefined, weeklySecs, scenario);
+    // The weekly footer also with minutes ("Weekly reset 47m"), the widest sentence with a descender; the first limit's own with minutes.
+    for (const [footer, weeklySecs, firstSecs] of FOOTERS) {
+      const state = `${two ? "Two at once" : "One provider"}, ${scenario.name}, ${usageMode}, pace ${pace ?? "off"}, footer ${footer === undefined ? "off" : `${footer} (${footer === 0 ? firstSecs : weeklySecs} s)`}`;
+      const frame = frameFor(two, usageMode, pace, footer, undefined, weeklySecs, scenario, firstSecs);
       const texts = prims.filter((p) => p.t === "tx" && primitiveUsageSlotVisible(p, frame))
         .map((p) => ({ text: renderTextPrimitive(p, frame, prims), p })).filter(({ text }) => text.trim())
         .map(({ text, p }) => ({ text, p, ...textInk(p, text) }));
       const bars = prims.filter((p) => p.t === "p" && primitiveUsageSlotVisible(p, frame)).map((p) => {
         const o = pace && (p.b ?? "").includes("Pace") ? PACE_TICK_OVERHANG : 0;
-        return { x: (p.x ?? 0) - o, y: (p.y ?? 0) - o, w: (p.w ?? 0) + 2 * o, h: (p.h ?? 0) + 2 * o, slot: slotOf(p), body: { x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 0, h: p.h ?? 0 } };
+        return { x: (p.x ?? 0) - o, y: (p.y ?? 0) - o, w: (p.w ?? 0) + 2 * o, h: (p.h ?? 0) + 2 * o, slot: slotOf(p), body: { x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 0, h: p.h ?? 0 }, ring: (p.progressStyle ?? p.ps) === "arc" ? themeProgressArc(p, 0) : null };
       });
       const note = (key: string, detail: string) => found.has(key) || found.set(key, `${detail} (first in: ${state})`);
       for (const a of animations) {
@@ -192,6 +234,13 @@ function layoutViolations(pack: ThemeRenderPack): string[] {
         for (const d of dividers) if ((facingGap(t, d) ?? CLEAR) < CLEAR) note(`"${t.text}" x divider ${show(d)}`, `text "${t.text}" [${show(t)}] is under ${CLEAR} px from a divider [${show(d)}]`);
         const art = artNearText(t, artAt);
         if (art) note(`"${t.text}" x art`, `text "${t.text}" [${show(t)}] is under ${CLEAR} px from background art ${art}`);
+      }
+      // A footer keeps 3 px from every bar and from a ring: Gauge's "Fable only reset 4d" stood 2 px beside the ends of its ring.
+      for (const t of texts.filter((q) => /Reset/.test(source(q.p)) && !/ResetFull/.test(source(q.p)))) {
+        for (const b of bars) {
+          const gap = b.ring ? ringGap(t, b.ring) : facingGap(t, b);
+          if ((gap ?? CLEAR) < CLEAR) note(`footer "${t.text}" x ${b.ring ? "ring" : `bar ${show(b)}`}`, `footer "${t.text}" [${show(t)}] is ${gap} px from ${b.ring ? "the ring" : "a bar"}, under ${CLEAR} px`);
+        }
       }
       // A glyph that starts on one flat band of the background and ends on another (a descender below the title bar);
       // the first and the last inked row are both looked at, no row of ink across an edge is tolerated.
@@ -240,38 +289,61 @@ function layoutViolations(pack: ThemeRenderPack): string[] {
       }
     }
   }
-  return [...found.values()];
+  return [...found.values()].filter((detail) => LAYOUT_PENDING.some((entry) => entry.theme === themeId && entry.detail.test(detail)) === pending);
 }
 
-// A limit name is drawn at the size its pack declares, whatever it says: shrunk to fit it would stand beside its sibling at half the
-// height ("Fable only remaining" next to "Weekly remaining"). A long name is wrapped or given room, never made smaller.
-function shrunkLabels(pack: ThemeRenderPack): string[] {
+// Every text is drawn at the font and size its theme declares, whatever it says. Shrinking to fit makes "100% reserve" stand beside
+// "35% deficit" at half the height (Mini Classic), "TOTAL TOKENS" and a clock come out smaller than their spec says, and "Fable only
+// remaining" shrinks beside "Weekly remaining". A long text is wrapped (a box of two lines) or given room, never made smaller. All
+// the reachable texts are tried: limit names (the long ones: "Claude Fable only", "Codex Weekly remaining"), both modes, every pace
+// sentence up to "100% reserve" / "100% deficit", every footer ("Fable only reset 4d", minutes), provider names, token counts, the clock.
+//
+// Not tried: status lines that are sentences on purpose and shrink to say so ("No active session", "Reset unavailable") and the update
+// notice that takes the title's place ("Open VibeTV Mac App"); those states are not built here.
+const CLOCKS = [new Date(2026, 9, 22, 8, 8), new Date(2026, 9, 22, 20, 28), new Date(2026, 9, 22, 11, 11)];
+
+// Decisions that are still open with Paul: these texts shrink today and the second test below fails the day one of them stops, so
+// no entry outlives its decision.
+const SHRINK_PENDING: Array<{ theme: string; source: RegExp; why: string }> = [
+  { theme: "pace-meter", source: /Label/, why: "Paul decision pending 2.20/2.21: the mode word in the limit name" },
+  { theme: "synthwave", source: /Label/, why: "Paul decision pending 2.20/2.21: the mode word in the limit name" },
+  { theme: "reset-countdown", source: /ResetFull/, why: "open decision: the countdown is declared at 4 and drawn at 2 (a widened box or a declared 2)" },
+];
+
+function shrunkTexts(themeId: string, pack: ThemeRenderPack, pending = false): string[] {
   const prims = pack.spec?.p ?? [];
+  const open = (p: ThemePrimitive) => SHRINK_PENDING.some((entry) => entry.theme === themeId && entry.source.test(source(p)));
+  const frames: Array<[string, FrameData]> = [];
+  for (const two of [false, true]) for (const scenario of [...SCENARIOS, ...NAME_SCENARIOS].filter((s) => !two || s.pair)) for (const usageMode of ["used", "remaining"]) {
+    for (const pace of [undefined, ...(Object.keys(ALL_PACES) as PaceName[])]) for (const [footer, weeklySecs, firstSecs] of FOOTERS) {
+      frames.push([`${two ? "Two at once" : "One provider"}, ${scenario.name}, ${usageMode}, pace ${pace ?? "off"}, footer ${footer ?? "off"} (${firstSecs}/${weeklySecs} s)`,
+        frameFor(two, usageMode, pace, footer, undefined, weeklySecs, scenario, firstSecs)]);
+    }
+  }
+  for (const now of CLOCKS) for (const wideTokens of [false, true]) {
+    frames.push([`${now.toTimeString().slice(0, 5)}, ${wideTokens ? "wide" : "normal"} token counts`, frameFor(false, "used", undefined, undefined, undefined, 424000, SCENARIOS[0], 9100, now, wideTokens)]);
+  }
   const found = new Map<string, string>();
-  for (const two of [false, true]) for (const scenario of SCENARIOS.filter((s) => !two || s.pair)) for (const usageMode of ["used", "remaining"]) {
-    const frame = frameFor(two, usageMode, undefined, undefined, undefined, undefined, scenario);
-    for (const p of prims.filter((q) => q.t === "tx" && /Label/.test(source(q)) && primitiveUsageSlotVisible(q, frame))) {
+  for (const [state, frame] of frames) {
+    for (const p of prims.filter((q) => q.t === "tx" && primitiveUsageSlotVisible(q, frame) && open(q) === pending)) {
       const text = renderTextPrimitive(p, frame, prims);
+      if (!text.trim()) continue;
       const fit = themeTextFit(text, p.f ?? 1, p.s ?? 1, p.w ?? 0, p.ft === "shrink", p.h ?? 0);
-      const drawn = cellHeight(fit.font) * fit.size, declared = cellHeight(p.f ?? 1) * (p.s ?? 1);
-      if (text.trim() && drawn < declared) found.set(text, `label "${text}" is drawn ${drawn} px high, its sibling at the declared size ${declared} px (first in: ${two ? "Two at once" : "One provider"}, ${scenario.name}, ${usageMode})`);
+      if (fit.font !== (p.f ?? 1) || fit.size !== (p.s ?? 1)) {
+        found.set(`${source(p)} ${text}`, `"${text}" (${source(p)}) is drawn at font ${fit.font} size ${fit.size}, declared font ${p.f ?? 1} size ${p.s ?? 1} (first in: ${state})`);
+      }
     }
   }
   return [...found.values()];
 }
 
-// Whether Pace Meter and Synthwave keep "Fable only remaining" at full size is Paul's decision: it takes the mode word out of the label,
-// a visible change to the normal One screens. Until then both keep ft:"shrink" on their labels, and the second test below fails the day
-// one of them stops shrinking, so this list cannot outlive the decision.
-const LABEL_SHRINK_PENDING = ["pace-meter", "synthwave"];
-
-describe("a limit name is never drawn smaller than its sibling", () => {
-  it.each(themeIds.filter((id) => !LABEL_SHRINK_PENDING.includes(id)))("%s", (themeId) => {
-    expect(shrunkLabels(loadPack(themeId))).toEqual([]);
+describe("no text is drawn smaller than its theme declares", () => {
+  it.each(catalogIds)("%s", (themeId) => {
+    expect(shrunkTexts(themeId, loadPack(themeId))).toEqual([]);
   });
 
-  it.each(LABEL_SHRINK_PENDING)("%s still shrinks a long name (Paul's decision pending): drop it from LABEL_SHRINK_PENDING once fixed", (themeId) => {
-    expect(shrunkLabels(loadPack(themeId))).not.toEqual([]);
+  it.each(SHRINK_PENDING)("$theme still shrinks $source ($why): drop the entry from SHRINK_PENDING once fixed", (entry) => {
+    expect(shrunkTexts(entry.theme, loadPack(entry.theme), true)).not.toEqual([]);
   });
 });
 
@@ -282,6 +354,10 @@ describe("animations, dividers, bars and text of every catalog theme stay apart 
   });
 
   it.each(themeIds)("%s: 3 px clear of dividers, frames and animation, no glyph across a band edge, no 0 px gap beside a roomy one, pace beside its own bar, equal numbers", (themeId) => {
-    expect(layoutViolations(loadPack(themeId))).toEqual([]);
+    expect(layoutViolations(loadPack(themeId), themeId)).toEqual([]);
+  });
+
+  it.each(LAYOUT_PENDING)("$theme still has a footer on its frame line (decision pending): drop the entry from LAYOUT_PENDING once fixed", (entry) => {
+    expect(layoutViolations(loadPack(entry.theme), entry.theme, true)).not.toEqual([]);
   });
 });

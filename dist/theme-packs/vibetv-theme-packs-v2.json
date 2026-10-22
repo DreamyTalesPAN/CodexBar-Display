@@ -87,9 +87,9 @@
       "id": "gauge",
       "title": "Gauge",
       "usage": "live",
-      "version": "0.2.5",
-      "themeRev": 15,
-      "themeSpecPath": "/themes/u/ga-15-9cfc333b.json",
+      "version": "0.2.6",
+      "themeRev": 16,
+      "themeSpecPath": "/themes/u/ga-16-1bfe0b10.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -101,15 +101,16 @@
       "tags": [
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-gauge-v0.2.5.zip",
-      "sha256": "75123fe12c1b6e8103e0377cfd11d0b62361b22659af412f5875412ec981447d",
-      "bytes": 974,
+      "downloadAsset": "vibetv-theme-gauge-v0.2.6.zip",
+      "sha256": "be4faff87f28aac0d533bbad21f10bab9b5c1986cb70d03b8d467fb06b2476d2",
+      "bytes": 970,
       "earlierThemeSpecPaths": [
         "/themes/u/ga-10-317f5a1b.json",
         "/themes/u/ga-11-a3246430.json",
         "/themes/u/ga-12-bfa31611.json",
         "/themes/u/ga-13-37b7873e.json",
         "/themes/u/ga-14-e0dae764.json",
+        "/themes/u/ga-15-9cfc333b.json",
         "/themes/u/ga-2-ad19500f.json"
       ]
     },
@@ -117,9 +118,9 @@
       "id": "mini-classic",
       "title": "Mini Classic",
       "usage": "live",
-      "version": "1.3.3",
-      "themeRev": 13,
-      "themeSpecPath": "/themes/u/mini-13-5af8efb5.json",
+      "version": "1.3.4",
+      "themeRev": 14,
+      "themeSpecPath": "/themes/u/mini-14-435458e6.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -130,13 +131,14 @@
         "animated",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-mini-classic-v1.3.3.zip",
-      "sha256": "fc7d69c756c278efecfffa268f1f6ffd19b6c66d08001badedabeee2f2fdc32d",
-      "bytes": 18608,
+      "downloadAsset": "vibetv-theme-mini-classic-v1.3.4.zip",
+      "sha256": "b3ca7909ce8823742ed5e7402947905c040c34fcb6aec1472e109ad24bbabee1",
+      "bytes": 18609,
       "earlierThemeSpecPaths": [
         "/themes/u/mini-10-f0720a.json",
         "/themes/u/mini-11-93aee45e.json",
         "/themes/u/mini-12-d1bbb23e.json",
+        "/themes/u/mini-13-5af8efb5.json",
         "/themes/u/mini-cl-1-410a37.json",
         "/themes/u/mini-cl-1-b3c3f7.json",
         "/themes/u/mini-cl-1-e4fe6b.json",
@@ -154,9 +156,9 @@
       "id": "night-clock",
       "title": "Night Clock",
       "usage": "screensaver",
-      "version": "0.2.0",
-      "themeRev": 3,
-      "themeSpecPath": "/themes/s/nc-3-e18e4217.json",
+      "version": "0.2.1",
+      "themeRev": 4,
+      "themeSpecPath": "/themes/s/nc-4-96d6f1cf.json",
       "requiresFirmware": "1.0.41",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -166,11 +168,12 @@
         "clock",
         "providers-2"
       ],
-      "downloadAsset": "vibetv-theme-night-clock-v0.2.0.zip",
-      "sha256": "24eff083f41b2b0ebbc677d83fc7f5b44512a5fc2d74a81b870d67bd307ee977",
-      "bytes": 807,
+      "downloadAsset": "vibetv-theme-night-clock-v0.2.1.zip",
+      "sha256": "7e690e7f988c0a1a0fde257770e7b5c67f71229d44d192fa142ddfcd061716e7",
+      "bytes": 809,
       "earlierThemeSpecPaths": [
-        "/themes/s/nc-2-cb6d64ba.json"
+        "/themes/s/nc-2-cb6d64ba.json",
+        "/themes/s/nc-3-e18e4217.json"
       ]
     },
     {
@@ -351,9 +354,9 @@
       "id": "token-fire",
       "title": "Token Fire",
       "usage": "screensaver",
-      "version": "0.2.4",
-      "themeRev": 6,
-      "themeSpecPath": "/themes/s/tf-6-32c5c037.json",
+      "version": "0.2.5",
+      "themeRev": 7,
+      "themeSpecPath": "/themes/s/tf-7-241f52e1.json",
       "requiresFirmware": "1.0.40",
       "requiredCapabilities": [
         "usage-slots-v1"
@@ -363,13 +366,14 @@
         "pixel-art",
         "usage-stats"
       ],
-      "downloadAsset": "vibetv-theme-token-fire-v0.2.4.zip",
-      "sha256": "ca6c3e61d16877f61e901651244627c166a406f6cba10807f5385c7c9cda240f",
-      "bytes": 5028,
+      "downloadAsset": "vibetv-theme-token-fire-v0.2.5.zip",
+      "sha256": "35c5502a228a15c8abc4d4ffb7a20efc00525338e179318002a43944cb1e121b",
+      "bytes": 5029,
       "earlierThemeSpecPaths": [
         "/themes/s/tf-1-874fd8e2.json",
         "/themes/s/tf-2-94d69490.json",
-        "/themes/s/tf-5-9aeed240.json"
+        "/themes/s/tf-5-9aeed240.json",
+        "/themes/s/tf-6-32c5c037.json"
       ]
     }
   ]

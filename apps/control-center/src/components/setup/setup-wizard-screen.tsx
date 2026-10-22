@@ -54,7 +54,7 @@ export function SetupWizardScreen({
       <div
         className={cn(
           "flex w-full flex-col items-center text-center",
-          centered && "my-auto",
+          centered ? "my-auto" : "flex-1",
           contentWidth === "wide" ? "max-w-none" : "max-w-[460px]",
         )}
       >
@@ -97,8 +97,8 @@ export const CALM_SUBTITLE_CLASS = "mt-2.5 text-[13px] empty:hidden";
 /** Plain underlined text link (the master's links: 13px, regular weight). */
 export const CALM_LINK_CLASS =
   "h-auto rounded-none p-0 text-[13px] font-normal text-foreground underline underline-offset-4";
-/** The 44px full-width button every calm step ends in. */
-export const CALM_BUTTON_CLASS = "h-11 w-full text-[13px]";
+/** The 44px full-width button every calm step ends in, pinned to the bottom of the window by the column's flex-1. */
+export const CALM_BUTTON_CLASS = "mt-auto h-11 w-full text-[13px]";
 
 export function SetupWizardTitle({
   children,
