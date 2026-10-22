@@ -9746,3 +9746,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the #918 entries of #921 above; while a manual refresh waits, only the Refresh button shows the spinner and "Refreshing", nothing appears above "Total tokens in the last 30 days".
 - Scope: this approval record only. Pull request branch #921 only, not merged, not released.
 - What's new: none — approval record only
+
+## 2026-10-22 — #917: Run setup again during Create new keeps the existing Support report
+
+- User approval: no visible change – UI approval not needed (bug fix: Paul 2026-10-22 11:37 decided the old report stays after Run setup again; this applies it when Create new is still collecting)
+- Approved customer-visible result: when "Run setup again" completes while Create new is still collecting, the Support report card keeps Copy / Download for the earlier report, as after any other "Run setup again". A collection that fails still behaves as before.
+- Scope: apps/control-center/src/components/control-center-app.tsx, createSupportReport only replaces supportReport when the collection returns a report or an error; its test in control-center-app.support-report-card.test.tsx. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, no customer-visible change of its own
