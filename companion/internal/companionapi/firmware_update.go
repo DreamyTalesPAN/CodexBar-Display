@@ -550,7 +550,8 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 				// The updater already proved the new firmware and identity over
 				// Cable. Connecting it is the setup's Cable step.
 				outcome = "updated"
-			} else if cableUpdate {
+			} else if cableUpdate || (snapshot.Result != nil && samePublicTarget(snapshot.Result.Target, cableDeviceTarget)) {
+				// A WiFi job whose updater found the VibeTV on the cable (#832).
 				outcome, attentionMessage, verifyErr = s.verifyCableFirmwareUpdateResult(ctx, jobID, cfg)
 			} else {
 				outcome, attentionMessage, verifyErr = s.verifyFirmwareUpdateResult(ctx, jobID, cfg)
@@ -637,6 +638,14 @@ func (s *Server) verifyCableFirmwareUpdateResult(ctx context.Context, jobID stri
 		result.Firmware = strings.TrimSpace(hello.Firmware)
 		result.ObservedFirmware = strings.TrimSpace(hello.Firmware)
 	})
+	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" {
+		// The updater can find the same VibeTV on Cable after WiFi times out.
+		// The daemon chooses its transport from config, not the restart target.
+		cfg, err = s.saveCableSelection(hello, cfg.DeviceToken)
+		if err != nil {
+			return "", "", fmt.Errorf("save verified Cable connection: %w", err)
+		}
+	}
 	if !hello.HasFeature(protocol.FeatureCableHealthV1) {
 		return firmwareAttentionOutcome("render"), "Firmware is current, but this VibeTV cannot verify the picture over Cable yet.", nil
 	}

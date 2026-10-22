@@ -21,7 +21,7 @@ func TestClaudeOAuthRefusedWithoutCookiesNeedsBrowserSignIn(t *testing.T) {
 	if claude.SignInURL != "https://claude.ai/login" {
 		t.Fatalf("sign-in URL missing: %+v", claude)
 	}
-	if !strings.Contains(claude.Detail, "claude.ai") || !strings.Contains(claude.NextAction, "browser") {
+	if claude.Detail != "Sign in to Claude in your browser, then close the browser." || !strings.Contains(claude.NextAction, "claude.ai") {
 		t.Fatalf("guidance must name the browser session: %+v", claude)
 	}
 

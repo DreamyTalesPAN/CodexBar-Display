@@ -697,6 +697,37 @@ describe("SettingsScreen standby controls", () => {
     expect(displayMode(null)).not.toContain("Press ");
   });
 
+  // The line wraps to one or two lines by state, and a change of lines moved
+  // everything below it (#579, found in #698). Every state keeps the same
+  // paragraph, with room for two lines.
+  it("keeps the provider shortcut line two lines high in every state", () => {
+    const reserved = '<p class="min-h-[2lh] -mt-1 text-[13px] text-muted-foreground">';
+    const page = (
+      providerShortcut: SettingsScreenProps["providerShortcut"],
+      mode: "automatic" | "fixed" = "automatic",
+      usage: ProviderPickerProps["usage"] = providerPicker.usage,
+      items: ProviderItem[] = [provider("claude", "Claude", true), provider("cursor", "Cursor", true)],
+    ) =>
+      render(
+        standbyDevice, savedStandby,
+        { ...providerPicker, usage, items,
+          display: { mode, providerIds: ["claude"], configured: true, valid: true } },
+        70, "cable", false, [], providerShortcut,
+      );
+
+    // Automatic with two providers and usage wraps to two lines; Manual, an
+    // unread usage and one provider with usage wrap to one, and a press that
+    // is unavailable has its own sentence.
+    expect(page("available")).toContain(reserved);
+    expect(page("available", "fixed")).toContain(reserved);
+    expect(page("available", "automatic", null)).toContain(reserved);
+    expect(page("available", "automatic", providerPicker.usage, [provider("claude", "Claude", true)])).toContain(reserved);
+    expect(page("unavailable")).toContain(reserved);
+
+    // A browser has no global shortcut, so there is no line to keep.
+    expect(page(null)).not.toContain("min-h-[2lh]");
+  });
+
   it("says why Display mode switched to Automatic", () => {
     const notice = "Codex is off, so VibeTV now switches automatically.";
     const html = render(standbyDevice, savedStandby, {

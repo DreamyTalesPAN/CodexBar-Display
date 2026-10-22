@@ -286,10 +286,21 @@ func (s *Server) requestUsageRefresh(now time.Time) {
 	s.usageRefreshMu.Lock()
 	// A click while a refresh is waiting keeps that request: moved to now, it
 	// would turn down the reading the first click is waiting for (#579).
-	if pending := s.usageRefresh.RequestedAt; pending.IsZero() || !now.Before(pending.Add(usageRefreshRequestMaxAge)) {
+	pending := s.usageRefresh.RequestedAt
+	newRequest := pending.IsZero() || !now.Before(pending.Add(usageRefreshRequestMaxAge))
+	if newRequest {
 		s.usageRefresh.RequestedAt = now.UTC()
 	}
 	s.usageRefreshMu.Unlock()
+	// serve keeps each reading for its refresh interval and then answers once
+	// more with it while it measures again, so a wake alone could wait up to a
+	// minute (#918). A fresh serve has no reading yet: the collection after it
+	// starts measures.
+	if newRequest && s.freshUsageService != nil && s.restartUsageService != nil {
+		s.usageServiceReplacePending.Store(true)
+		s.requestUsageServiceReplace("manual usage refresh")
+		return
+	}
 	if s.wakeDisplayStream != nil {
 		s.wakeDisplayStream()
 	}
@@ -353,7 +364,10 @@ func usageHasFreshSnapshotAfter(usage daemon.PersistedUsage, requestedAt time.Ti
 		return false
 	}
 	for _, provider := range usage.Providers {
-		if provider.Stale || provider.CollectedAt.IsZero() || provider.CollectedAt.Before(requestedAt) {
+		if provider.Stale || provider.CollectedAt.IsZero() {
+			return false
+		}
+		if provider.CollectedAt.Before(requestedAt) {
 			return false
 		}
 	}

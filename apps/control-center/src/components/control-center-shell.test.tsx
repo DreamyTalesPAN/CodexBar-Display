@@ -52,6 +52,27 @@ describe("ControlCenterShell", () => {
     expect(page.scrollTop).toBe(0);
   });
 
+  // Issue #579: Settings stayed highlighted while the Appearance group opened
+  // beside it. Opening the group now opens its tab, so one entry is active.
+  it("opens the Appearance tab when its group is clicked", () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }));
+    const onTabChange = vi.fn();
+    render(
+      <TooltipProvider>
+        <ControlCenterShell activeTab="settings" onTabChange={onTabChange}>
+          <div>Settings content</div>
+        </ControlCenterShell>
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+
+    expect(onTabChange).toHaveBeenCalledWith("theme-library");
+    expect(onTabChange).not.toHaveBeenCalledWith("settings");
+  });
+
   // Clicking the tab that is already open is a request to start over at its
   // top; the page does not change tab, so only the click can move it back.
   it("scrolls to the top when the current sidebar entry is clicked again", () => {

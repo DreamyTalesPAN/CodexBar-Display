@@ -132,6 +132,12 @@ function setupProviderNeedsOwnApp(
 }
 
 /**
+ * Copilot has no app of its own: CodexBar reads it with a GitHub sign-in
+ * (#591). VibeTV cannot start that sign-in yet, so its popup says so.
+ */
+const GITHUB_SIGN_IN_PROVIDER_IDS = ["copilot"];
+
+/**
  * The one sentence the provider dialog says, fixed per state the row shows
  * (Paul, 16.10.). Never the engine's own text and no status line beside it:
  * a customer cannot act on "No available fetch strategy". No "Check again"
@@ -145,6 +151,10 @@ export function setupProviderDialogSentence(
   const variant = setupProviderRowVariant(state);
   if (variant === "toggle" || variant === "checking") return null;
   if (variant === "sign_in") {
+    // CodexBar's inventory names it "Copilot" (0.75.0), so name GitHub here.
+    if (GITHUB_SIGN_IN_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase())) {
+      return "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.";
+    }
     return setupProviderNeedsOwnApp(provider)
       ? `VibeTV can't read ${label} until the ${label} app is installed and running.`
       : `Sign in to ${label} so VibeTV can read its usage.`;

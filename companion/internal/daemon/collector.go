@@ -34,6 +34,11 @@ const (
 	// engine must go without answering before a starved computer is named as
 	// the reason (#606). One slow answer is not an incident.
 	systemBusyCycles = 3
+	// serveReplaceGrace is how long after the Companion replaced the usage
+	// engine a missing answer is the replacement still starting rather than
+	// an outage (#918). A fresh serve answered within about 10 s on the test
+	// Mac; one that takes longer shows the cards as stale again.
+	serveReplaceGrace = 15 * time.Second
 )
 
 type providerSnapshot struct {
@@ -395,6 +400,12 @@ func (c *providerCollector) collectOnce(parent context.Context) {
 		return
 	}
 	collectedAt := c.now().UTC()
+	if err != nil && c.serveBeingReplaced(collectedAt, err) {
+		// The Companion stopped the engine to measure again (#918); the new
+		// one has not answered yet. Keep the readings as they were.
+		c.logf("collector fetch-all transport=%s source=%s fresh=false err=%v serve-replacing=true\n", usageSourceOrDefault(c.transportName, "usb"), sourceMode, err)
+		return
+	}
 	if err != nil {
 		updated := false
 		c.mu.Lock()
@@ -610,6 +621,17 @@ func engineSilent(err error) bool {
 
 func (c *providerCollector) engineRunning() bool {
 	return c.dashboard != nil && c.dashboard.Info().Running
+}
+
+// serveBeingReplaced reports a missing answer within serveReplaceGrace of the
+// Companion replacing the engine. An engine that stopped on its own, or a
+// replacement that takes longer, is an outage.
+func (c *providerCollector) serveBeingReplaced(now time.Time, err error) bool {
+	if c.dashboard == nil || !engineSilent(err) {
+		return false
+	}
+	started := c.dashboard.Info().ReplaceStartedAt
+	return !started.IsZero() && now.Sub(started) < serveReplaceGrace
 }
 
 func (c *providerCollector) recordEvent(event timeline.Event) {

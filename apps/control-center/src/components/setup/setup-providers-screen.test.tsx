@@ -11,6 +11,7 @@ import {
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
+import sharedSetupSentences from "./provider-setup-sentences.json";
 import type { PreferenceHealthState, UsageSnapshot } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import {
@@ -119,7 +120,7 @@ describe("SetupProvidersScreen", () => {
     const { rerender } = renderDom(<SetupProvidersScreen {...props} />);
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(within(screen.getByRole("dialog")).getByText(
-      "VibeTV can't read GitHub Copilot until the GitHub Copilot app is installed and running.",
+      "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.",
     )).toBeTruthy();
     expect(screen.queryByText(failed.health.reported)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
@@ -165,6 +166,15 @@ describe("SetupProvidersScreen", () => {
   // Paul, 16.10. ("wieso hab ich hier so viele optionen?"): the popup showed
   // the engine's own text, a status line and a copy action. Every state says
   // one fixed sentence and ends on OK.
+  // The setup log reads the same fixture (companion/internal/codexbar,
+  // provider_setup_sentences_test.go): one sentence per state on both sides.
+  it("says the shared fixture sentence per state, as the setup log does", () => {
+    for (const entry of sharedSetupSentences) {
+      const item = provider({ providerId: entry.providerId, label: entry.label, health: entry.state });
+      expect(setupProviderDialogSentence(item), entry.state).toBe(entry.sentence);
+    }
+  });
+
   // The Companion can start the sign-in of these four only; every other
   // provider is listed without a sign-in button.
   it("starts a sign-in only for Codex, Claude, Cursor and Antigravity", () => {
@@ -176,10 +186,26 @@ describe("SetupProvidersScreen", () => {
     ]);
   });
 
+  // Copilot has no app of its own: CodexBar reads it with a GitHub sign-in,
+  // so the sentence names that sign-in. Every other provider that has no
+  // sign-in in the app keeps the own-app sentence (#591).
+  it("names the GitHub sign-in for Copilot and keeps the own-app sentence for other providers", () => {
+    // CodexBar 0.75.0 names the provider "Copilot" in its inventory.
+    const copilotSignedOut = provider({ providerId: "copilot", label: "Copilot",
+      health: "setup_required", message: "No available fetch strategy for copilot." });
+    const openaiSignedOut = provider({ providerId: "openai", label: "OpenAI",
+      health: "setup_required", message: "No available fetch strategy for openai." });
+    expect(setupProviderDialogSentence(copilotSignedOut))
+      .toBe("GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.");
+    expect(setupProviderDialogSentence(openaiSignedOut)).toBe(
+      "VibeTV can't read OpenAI until the OpenAI app is installed and running.",
+    );
+  });
+
   // A signed-out provider the app cannot sign in says what the customer has
-  // to do (its own app, installed and running) and offers the setup guide
-  // as its signal action beside OK.
-  it("tells a signed-out provider without a sign-in to use its own app", () => {
+  // to do and offers the setup guide as its signal action beside OK. Copilot
+  // has no own app: its sentence names the GitHub sign-in (#591).
+  it("tells a signed-out Copilot that its GitHub sign-in cannot start yet, and keeps the setup guide beside OK", () => {
     const onOpenSetupGuide = vi.fn();
     const failed = { ...copilot, value: true,
       health: { ...copilot.health, reported: "No available fetch strategy for copilot." } };
@@ -189,7 +215,7 @@ describe("SetupProvidersScreen", () => {
       pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
     const dialog = within(screen.getByRole("dialog"));
     expect(dialog.getByText(
-      "VibeTV can't read GitHub Copilot until the GitHub Copilot app is installed and running.",
+      "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.",
     )).toBeTruthy();
     expect(dialog.queryByText("No available fetch strategy for copilot.")).toBeNull();
     expect(dialog.queryByRole("button", { name: /Copy provider message/ })).toBeNull();
