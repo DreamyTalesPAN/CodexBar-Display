@@ -9628,6 +9628,76 @@ issue scope, or release permission never implies UI permission.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` only (`assertDialogContrast`). Pull request #902 only, not merged, not released.
 - What's new: none — test-only accessibility check
 
+## 2026-10-20 — #778: an invalid field with keyboard focus shows the full ink focus ring
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" (to the picture ui/817-invalid-focus/rot-close.png, question "Passt das so?"; the final #817 look is the red focus ring on every invalid field) — entry: #778: an invalid field with keyboard focus shows the full ink focus ring — before → after: a focused invalid field showed the red, reduced invalid ring → the full ink focus ring on a focused invalid field (light and dark), the red border stays and the red ring stays when the field is not focused. Nothing else changes.
+- Approved customer-visible result: Replaced by Paul's correction below (red focus ring on every invalid field); this entry's ink ring is not shipped.
+- Scope: `apps/control-center/src/components/ui/input-group.tsx`, its new test `apps/control-center/src/components/ui/input-group.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #817: red focus ring on invalid fields (Paul's correction of #817)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" (to the picture ui/817-invalid-focus/rot-close.png, question "Passt das so?"; the final #817 look is the red focus ring on every invalid field) — entry: #817: red focus ring on invalid fields (Paul's correction of #817)
+- Approved customer-visible result: #817 invalid fields (input, textarea, select, checkbox, input group) keep the red border and show the full-strength red focus ring under keyboard focus; unfocused invalid fields look as before.
+- Scope: #817 changes `components/ui/input.tsx`, `textarea.tsx`, `select.tsx`, `checkbox.tsx`, `input-group.tsx`, their tests, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #817 focus ring colour on invalid fields, no new content
+
+## 2026-10-20 — #817 waits for Paul's look at the red focus ring
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" (to the picture ui/817-invalid-focus/rot-close.png, question "Passt das so?"; the final #817 look is the red focus ring on every invalid field) — entry: #817 waits for Paul's look at the red focus ring
+- Approved customer-visible result: #817 as in its entries above (red focus ring under keyboard focus, red border kept, one style for every field); this entry adds nothing visible.
+- Scope: this approval record for #817 only. Pull request branch only, not merged, not released.
+- What's new: none — #817 pending marker, no new content
+
+## 2026-10-20 — #817 checked checkbox keeps its red border under keyboard focus (Codex review)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" (to the picture ui/817-invalid-focus/rot-close.png, question "Passt das so?"; the final #817 look is the red focus ring on every invalid field) — entry: #817 checked checkbox keeps its red border under keyboard focus (Codex review)
+- Approved customer-visible result: #817 a checked, invalid checkbox under keyboard focus shows the red border with the red ring, like every other invalid field.
+- Scope: #817 `apps/control-center/src/components/ui/checkbox.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #817 checkbox border fix, no new content
+
+## 2026-10-20 — #817: Paul's approval recorded (the red focus ring on every invalid field (ui/817-invalid-focus/rot-close.png))
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" — #817 approval record for the red focus ring on every invalid field (ui/817-invalid-focus/rot-close.png); the #817 entries above now carry this approval, merge markers are marked as no visible change.
+- Approved customer-visible result: #817 as described in its entries above; nothing else changes.
+- Scope: #817 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #817 approval record only
+
+## 2026-10-20 — #817: result lines of approved entries cleaned up
+
+- User approval: no visible change – UI approval not needed (#817: result lines of approved entries cleaned up: record cleanup, wording only: entries that already carry Paul's approval no longer open their result line with an old status word)
+- Approved customer-visible result: #817 unchanged; only the wording of the approval record.
+- Scope: #817 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #817 record cleanup
+
+## 2026-10-20 — #817: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#817 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #817 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #817 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #817 approval record only
+
+## 2026-10-21 — #817: redundant checkbox focus variant removed
+
+- User approval: no visible change – UI approval not needed (#817 Codex cleanup: redundant checkbox focus variant removed; the existing invalid rule already renders the red border)
+- Approved customer-visible result: an invalid checked checkbox keeps its red border as before; no new text, no layout change.
+- Scope: the checkbox class list and the invalid focus ring test file. Pull request branch #817 only.
+- What's new: none — the removed variant was redundant with aria-invalid:aria-checked:border-destructive
+
+## 2026-10-22 — #817: approval marker after merging main after #784
+
+- User approval: no visible change – UI approval not needed (merge of main after #784; the code is in main, only tests remain)
+- Approved customer-visible result: as in the #817 entries above (the red focus ring on invalid fields, Paul's yes of 2026-10-20 09:05); nothing visible changes in this merge.
+- Scope: the merge of origin/main and this approval record. Pull request branch #817 only, not merged, not released.
+- What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-22 — #817: approval marker after merging main at d2f3fade
+
+- User approval: no visible change – UI approval not needed (merge of main (d2f3fade) into #817; the own entries of #817 keep their approvals)
+- Approved customer-visible result: as in the #817 entries above (the red focus ring on invalid fields, Paul's yes of 2026-10-20 09:05); nothing visible changes in this merge.
+- Scope: the merge of d2f3fade and this approval record. Pull request branch #817 only, not merged, not released.
+- What's new: none — merge of d2f3fade, no customer-visible change of its own
+
 ## 2026-10-22 — #782: approval log wording of the build 7200 record
 
 - User approval: no visible change – UI approval not needed (wording only: the #782 build 7200 record now says "keep their own approval line" instead of the old phrase, same meaning; the app is not touched)
