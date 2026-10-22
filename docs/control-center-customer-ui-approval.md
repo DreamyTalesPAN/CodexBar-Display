@@ -9850,3 +9850,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #822 as in its own entries; nothing else changes.
 - Scope: the merge of origin/main into #822 (conflict hunks in the setup wizard, device dialogs, app shell and their tests) and this approval record. Pull request branch #822 only, not merged, not released.
 - What's new: none — merge of origin/main, no customer-visible change of its own
+
+## 2026-10-22 — #822: usage incident stays back over the WiFi-waiting update offer (Codex P2 check, test only)
+
+- User approval: no visible change – UI approval not needed (test-only: pins that the usage incident does not show over the update offer while "Already on WiFi" waits; the announcement gate from #632 already keeps it back, so no code changed)
+- Approved customer-visible result: No visible change. The usage incident dialog stays hidden while the WiFi-waiting update dialog is open, as before.
+- Scope: `apps/control-center/src/components/setup/setup-wizard.test.tsx` (one new test, one async wait in the late-offer test) and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — test-only change, no new text

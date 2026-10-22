@@ -851,6 +851,23 @@ describe("SetupWizard: direct connection", () => {
     expect(props.onSearchDevices).toHaveBeenCalledTimes(searches + 2);
   });
 
+  it("holds the usage incident back over the WiFi-waiting update offer", async () => {
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "not-found",
+      usageFailure: "setup_incomplete", onRepairUsageService: vi.fn(),
+      onSelectConnectionMode: vi.fn().mockResolvedValue({ status: "waiting_for_wifi" }),
+    });
+    const view = render(<SetupWizard {...props} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Already on WiFi/ }));
+    });
+    view.rerender(<SetupWizard {...props} macAppUpdate={{ onUpdate: vi.fn(), version: "1.0.65" }} />);
+    await act(async () => {});
+    expect(screen.getByRole("dialog", { name: "Update the Mac App first" })).toBeTruthy();
+    expect(screen.queryByText("Finish AI setup on this Mac")).toBeNull();
+  });
+
   it("offers a late Mac App update after the ordinary not-found dialog was dismissed", () => {
     const props = baseProps({
       step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
