@@ -9248,3 +9248,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; no screen changes.
 - Scope: control-center-app.setup-end-tab.test.tsx; pull request branch #893 only.
 - What's new: none — test only
+
+## 2026-10-22 — #905: setup from Settings returns to Settings after a firmware update
+
+- User approval: no visible change – UI approval not needed (bug fix restores the tab the customer started from: a firmware update during a Settings connection change now ends setup on Settings instead of Overview; no text or layout change)
+- Approved customer-visible result: none beyond the corrected tab after setup; no new screens or text.
+- Scope: finishSetup and the Settings connection change in control-center-app.tsx, plus its test in control-center-app.setup-end-tab.test.tsx; pull request branch #893 only.
+- What's new: none — bug fix

@@ -588,10 +588,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
   }, []);
   const finishConnectionChange = useCallback(() => setSettingsWiFiSetup(null), []);
+  // The tab a Settings connection change opened the wizard from (#905).
+  const setupEnteredFromRef = useRef<ActiveTab | null>(null);
   const finishSetup = useCallback(() => {
-    // A firmware update seen during setup moved the app to Updates; setup ends on Overview.
+    // A firmware update seen during setup moved the app to Updates; setup ends on the tab it was entered from, Overview otherwise.
     // Settings (connection change) and Appearance (theme install dialog) stay where they are.
-    if (activeTab === "updates") setActiveTab("overview");
+    if (activeTab === "updates") setActiveTab(setupEnteredFromRef.current ?? "overview");
+    setupEnteredFromRef.current = null;
     rememberCompletedSetup(device?.deviceId);
     setSetupFinishedThisSession(true);
     setHasEnteredControlCenter(true);
@@ -5850,6 +5853,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             onConnectionModeChange={(mode) => {
               void selectSetupConnectionMode(mode, device?.deviceId).then((result) => {
                 if (result.status !== "selected") {
+                  setupEnteredFromRef.current = activeTab;
                   setHasEnteredControlCenter(false);
                   setSettingsWiFiSetup({ status: result.status, deviceId: result.deviceId });
                   if (result.status === "waiting_for_wifi") void searchAndConnect();

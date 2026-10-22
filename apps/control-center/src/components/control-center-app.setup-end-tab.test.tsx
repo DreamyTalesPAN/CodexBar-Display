@@ -233,6 +233,30 @@ it("keeps Settings when the WiFi switch in Settings re-enters the wizard", async
   expect(activeTab("Settings")).toBe(true);
 });
 
+it("returns to Settings when a firmware update during a Settings WiFi switch ends setup (#905)", async () => {
+  const page = await mountApp();
+  await finishSetup(page.wait);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await page.wait(1);
+
+  const modeGroup = screen.getByRole("group", { name: "Connection mode" });
+  fireEvent.click(within(modeGroup).getByRole("button", { name: /WiFi/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Switch to WiFi" }));
+  await page.wait(1);
+  // The WiFi switch leaves the device waiting; the firmware update then runs.
+  statusJobs = {
+    device: { active: true, connected: false, paired: false, ready: false, connectionState: "waiting_for_wifi", deviceId: DEVICE_ID, target: "cable://vibetv" },
+    firmwareUpdate: { id: "fw-1", phase: "installing", progress: 40, logs: [] },
+  };
+  await page.wait(12);
+  statusJobs = {};
+  await page.wait(12);
+  fireEvent.click(screen.getByRole("button", { name: "Connection done" }));
+  await finishSetup(page.wait);
+
+  expect(activeTab("Settings")).toBe(true);
+});
+
 it("keeps Appearance after a reload that opens a theme, while setup is still open", async () => {
   const page = await mountApp({ initialThemeId: "mini-classic" });
 
