@@ -101,10 +101,10 @@ describe("the Pace themes", () => {
 
   it("Pace Meter gives both limit names their own line and omits an untimed run-out note", () => {
     const { text } = renderPack("pace-meter", deficit, [38, 61]);
-    expect(text).toBe("ClaudeSession left38%resets 3h 34m14% deficitWeekly left61%resets 5d 14hOn pace");
-    expect(renderPack("pace-meter", reserve).text).toBe("ClaudeSession left91%resets 3h 34m6% reserveWeekly left87%resets 5d 14h35% reserve");
+    expect(text).toBe("ClaudeSession remaining38%resets 3h 34m14% deficitWeekly remaining61%resets 5d 14hOn pace");
+    expect(renderPack("pace-meter", reserve).text).toBe("ClaudeSession remaining91%resets 3h 34m6% reserveWeekly remaining87%resets 5d 14h35% reserve");
     // Without a pace: percentage, label, countdown and the plain bar stay.
-    expect(renderPack("pace-meter", null).text).toBe("ClaudeSession left91%resets 3h 34mWeekly left87%resets 5d 14h");
+    expect(renderPack("pace-meter", null).text).toBe("ClaudeSession remaining91%resets 3h 34mWeekly remaining87%resets 5d 14h");
   });
 
   it("Pace Meter puts the basis in the pair header and still shows device notices", () => {

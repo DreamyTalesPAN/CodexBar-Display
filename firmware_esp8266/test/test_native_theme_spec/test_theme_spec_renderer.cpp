@@ -4523,7 +4523,7 @@ void testUsagePaceTextsRenderCodexBarPace() {
   }
   TEST_ASSERT_EQUAL_STRING("92%", none[7].c_str());
   TEST_ASSERT_EQUAL_STRING("resets 3h 20m", none[8].c_str());
-  TEST_ASSERT_EQUAL_STRING("Session left", none[9].c_str());
+  TEST_ASSERT_EQUAL_STRING("Session remaining", none[9].c_str());
 
   // Slot 1 in reserve and lasting, slot 2 in deficit and running out.
   frame.usageWindows[0].pace = {-6, 1, codexbar_display::usage_window_contract::kPaceLastsToReset};

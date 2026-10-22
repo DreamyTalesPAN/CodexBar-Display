@@ -66,12 +66,12 @@ describe("Gauge 2.0 theme pack", () => {
     const plain = render(frame(91));
     expect(ring(plain)).toEqual([[arc.bg, 270], ["#EDEDED", 245]]);
     expect(plain).not.toContain("<line");
-    expect(shown(plain)).toBe("Claude91%Session leftresets 2h 14mWeekly87%");
+    expect(shown(plain)).toBe("Claude91%Session remainingresets 2h 14mWeekly87%");
     // 6% reserve: the ring fills to the plan (85 %) and the green piece runs to the use.
     const reserve = render(frame(91, {}, paceSession));
     expect(ring(reserve)).toEqual([[arc.bg, 270], ["#EDEDED", 229], ["#C9F26B", 16]]);
     expect(reserve).toContain("<line");
-    expect(shown(reserve)).toBe("Claude91%Session left6% reserveresets 2h 14mWeekly87%35% reserve");
+    expect(shown(reserve)).toBe("Claude91%Session remaining6% reserveresets 2h 14mWeekly87%35% reserve");
     // 14% deficit: the hatched piece runs from the use (38 %) to the plan (52 %).
     const deficit = render(frame(38, {}, { delta: 14, state: "deficit", lasts: false }));
     expect(ring(deficit)).toEqual([[arc.bg, 270], ["#EDEDED", 102], [expect.stringMatching(/^url\(#hatch-/), 38]]);
@@ -93,7 +93,7 @@ describe("Gauge 2.0 theme pack", () => {
     expect(renderTextPrimitive(reset, frame(42, {}, { delta: 5, state: "deficit", lasts: false }))).toBe("resets 2h 14m");
     // The usage itself is still drawn: the ring and the number do not depend on the reset time.
     const markup = render(frame(42, noReset));
-    expect(shown(markup)).toBe("Claude42%Session leftReset unavailable");
+    expect(shown(markup)).toBe("Claude42%Session remainingReset unavailable");
     expect(ring(markup)).toEqual([[arc.bg, 270], ["#EDEDED", 113]]);
     expect(renderTextPrimitive(number, frame(42, noReset))).toBe("42%");
   });
@@ -107,7 +107,7 @@ describe("Gauge 2.0 theme pack", () => {
     // A notice during startup or a provider error still shows in the title.
     expect(shown(render({ ...none, updateNotice: "Update available" }))).toBe("Update available");
     const one = frame(64, { usageSlots: [{ id: "session", label: "Session", percent: 64, resetSecs: 8078 }] });
-    expect(shown(render(one))).toBe("Claude64%Session leftresets 2h 14m");
+    expect(shown(render(one))).toBe("Claude64%Session remainingresets 2h 14m");
     expect(shown(render(frame(64)))).toContain("Weekly87%");
   });
 
@@ -135,7 +135,7 @@ describe("Gauge 2.0 theme pack", () => {
         expect(width, `${value} in ${p.v ?? p.b}`).toBeLessThanOrEqual(p.w!);
       }
     }
-    for (const value of ["Claude", "Open VibeTV Mac App", "Session left", "Session used", "6% reserve", "14% deficit", "resets 2h 14m", "Reset unavailable"]) {
+    for (const value of ["Claude", "Open VibeTV Mac App", "Session remaining", "Session used", "6% reserve", "14% deficit", "resets 2h 14m", "Reset unavailable"]) {
       expect(seen).toContain(value);
     }
   });
