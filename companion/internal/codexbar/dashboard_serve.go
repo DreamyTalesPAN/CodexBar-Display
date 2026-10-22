@@ -59,7 +59,8 @@ type DashboardServeInfo struct {
 	StartedAt time.Time `json:"startedAt,omitempty"`
 	// ReplaceStartedAt is when the Companion last stopped a running serve to
 	// start a new one (Restart, Replace). The collector reads it to tell the
-	// few seconds until the new one answers from an outage (#918).
+	// few seconds until the new one answers from an outage (#918). The new
+	// serve's first answer clears it (#950).
 	ReplaceStartedAt time.Time `json:"replaceStartedAt,omitempty"`
 }
 
@@ -515,6 +516,7 @@ func (s *DashboardServeSupervisor) setHealth(healthy bool, err error) {
 	s.info.Healthy = healthy
 	if healthy && s.process != nil {
 		s.answered = true
+		s.info.ReplaceStartedAt = time.Time{}
 	}
 	s.info.LastHealthAt = time.Now().UTC()
 	if err != nil {
