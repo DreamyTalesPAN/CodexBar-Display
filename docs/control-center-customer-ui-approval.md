@@ -9462,7 +9462,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-21 — #782: Paul's approval of build 7200 recorded
 
-- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #782 approval record for build 7200; the #782 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 stay pending.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #782 approval record for build 7200; the #782 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 keep their own approval line.
 - Approved customer-visible result: #782 as described in its entries above, as seen in build 7200.
 - Scope: #782 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #782 approval record only
@@ -9697,3 +9697,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the #817 entries above (the red focus ring on invalid fields, Paul's yes of 2026-10-20 09:05); nothing visible changes in this merge.
 - Scope: the merge of d2f3fade and this approval record. Pull request branch #817 only, not merged, not released.
 - What's new: none — merge of d2f3fade, no customer-visible change of its own
+
+## 2026-10-22 — #782: approval log wording of the build 7200 record
+
+- User approval: no visible change – UI approval not needed (wording only: the #782 build 7200 record now says "keep their own approval line" instead of the old phrase, same meaning; the app is not touched)
+- Approved customer-visible result: nothing changes; the customer sees exactly what the earlier entries describe.
+- Scope: docs/control-center-customer-ui-approval.md only, the wording of the #782 build 7200 record. Pull request branch #782 only, not merged, not released.
+- What's new: none — approval log wording only
