@@ -140,9 +140,8 @@ func TestFirmwareCableProbesHonorSharedDeadline(t *testing.T) {
 			const second = "/dev/cu.usbserial-deadline-b"
 			listSerialPorts(t, first, second)
 			port := &deadlineSerialPort{mockSerialPort: newMockSerialPort()}
-			opener := &mockOpener{portsByPath: map[string]SerialPort{
-				first: port, second: newMockSerialPort(),
-			}}
+			otherPort := &deadlineSerialPort{mockSerialPort: newMockSerialPort()}
+			opener := &mockOpener{portsByPath: map[string]SerialPort{first: port, second: otherPort}}
 			sender := NewSenderWithConfig(SenderConfig{
 				Opener: opener, Sleep: func(time.Duration) {}, HelloWindow: 250 * time.Millisecond,
 			})
@@ -165,8 +164,8 @@ func TestFirmwareCableProbesHonorSharedDeadline(t *testing.T) {
 			if port.maxTimeout > 30*time.Millisecond {
 				t.Fatalf("serial read received a fresh timeout beyond the shared budget: %s", port.maxTimeout)
 			}
-			if opener.openCount(second) != 0 {
-				t.Fatal("opened another port after the shared deadline expired")
+			if otherPort.maxTimeout > 30*time.Millisecond {
+				t.Fatalf("the other port's read exceeded the shared budget: %s", otherPort.maxTimeout)
 			}
 		})
 	}
@@ -188,4 +187,47 @@ func (p *deadlineSerialPort) SetReadTimeout(timeout time.Duration) error {
 func (p *deadlineSerialPort) Read([]byte) (int, error) {
 	time.Sleep(p.timeout)
 	return 0, nil
+}
+
+// #886: a silent adapter listed before the VibeTV used the whole shared
+// budget, so the VibeTV behind it was never asked. Every port gets the full
+// remaining window, so a VibeTV that is still booting keeps its chance too.
+func TestControlResolveProbesPortsConcurrentlyWithinSharedBudget(t *testing.T) {
+	const silent = "/dev/cu.usbserial-silent"
+	const vibetv = "/dev/cu.usbserial-vibetv"
+	for name, bootDelay := range map[string]time.Duration{"answers at once": 0, "answers late": 250 * time.Millisecond} {
+		t.Run(name, func(t *testing.T) {
+			listSerialPorts(t, silent, vibetv)
+			booted := newMockSerialPort()
+			started := time.Now()
+			booted.readHook = func(int) {
+				time.Sleep(time.Millisecond)
+				if time.Since(started) < bootDelay {
+					return
+				}
+				booted.mu.Lock()
+				defer booted.mu.Unlock()
+				if len(booted.readQueue) == 0 {
+					booted.readQueue = [][]byte{[]byte(unplugTestHello)}
+				}
+			}
+			sender := NewSenderWithConfig(SenderConfig{
+				Opener: &mockOpener{portsByPath: map[string]SerialPort{
+					silent: &deadlineSerialPort{mockSerialPort: newMockSerialPort()}, vibetv: booted,
+				}},
+				Sleep: func(time.Duration) {}, HelloWindow: 5 * time.Second,
+			})
+			defer sender.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+
+			got, err := sender.ResolveControlPortContext(ctx, "", "5804558")
+			if err != nil || got != vibetv {
+				t.Fatalf("a silent first adapter hid the VibeTV: port=%q err=%v", got, err)
+			}
+			if open, ok := sender.OpenVibeTVPort(); !ok || open != vibetv {
+				t.Fatalf("the answering VibeTV's port must stay open for the caller: %q %v", open, ok)
+			}
+		})
+	}
 }

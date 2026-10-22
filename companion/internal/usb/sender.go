@@ -1,6 +1,7 @@
 package usb
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -352,8 +353,23 @@ func (s *Sender) ResolveControlPortContext(ctx context.Context, explicit, expect
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	// The port this sender holds open is probed through it. Every other port
+	// gets its own short-lived sender, so the ports can be probed at once.
+	var probesMu sync.Mutex
+	probes := map[string]*Sender{}
 	readHello := func(path string) (protocol.DeviceHello, error) {
-		return s.DeviceHelloContext(ctx, path)
+		if open, _ := s.openPath.Load().(string); samePort(open, path) {
+			return s.DeviceHelloContext(ctx, path)
+		}
+		probe := NewSenderWithConfig(SenderConfig{
+			Opener: s.opener, Sleep: s.sleep, SettleDuration: s.settleDuration,
+			HelloWindow: s.helloWindow, WriteTimeout: s.writeTimeout,
+			SilentResetAfter: cmp.Or(s.silentResetAfter, -1),
+		})
+		probesMu.Lock()
+		probes[path] = probe
+		probesMu.Unlock()
+		return probe.DeviceHelloContext(ctx, path)
 	}
 	if err := s.openPortVanished(explicit); err != nil {
 		return "", err
@@ -365,7 +381,29 @@ func (s *Sender) ResolveControlPortContext(ctx context.Context, explicit, expect
 	}
 	path, err := resolveVibeTVPortForControl(explicit, expectedDeviceID, readHello, true)
 	s.forgetAmbiguousPort(err)
+	for probed, probe := range probes {
+		if err == nil && probed == path {
+			s.adopt(probe)
+		} else {
+			probe.Close()
+		}
+	}
 	return path, err
+}
+
+// adopt takes over the open port of a probe sender, so the VibeTV it found
+// stays open for the caller as if this sender had probed it.
+func (s *Sender) adopt(probe *Sender) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	probe.mu.Lock()
+	defer probe.mu.Unlock()
+	s.closeCurrentLocked()
+	s.port, s.path = probe.port, probe.path
+	s.hello, s.helloSeen, s.helloAt, s.capabilities = probe.hello, probe.helloSeen, probe.helloAt, probe.capabilities
+	s.openPath.Store(s.path)
+	s.cablePath.Store(s.path)
+	probe.port = nil
 }
 
 // OpenVibeTVPort returns the open port when it holds a hello-verified VibeTV,

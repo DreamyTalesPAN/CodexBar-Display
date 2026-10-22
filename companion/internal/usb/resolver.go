@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
@@ -369,8 +370,21 @@ func resolveVibeTVCandidatesForControl(
 	// be a claim about a device nobody spoke to and the open error is the
 	// answer. A device that did answer (foreign, old firmware) is still named.
 	var openErr error
-	for _, candidate := range candidates {
-		hello, err := readHello(candidate)
+	// Probe every port at once (#886): a silent adapter holds its read for the
+	// whole window, so one probed first would leave no time for the ports
+	// behind it.
+	type probe struct {
+		hello protocol.DeviceHello
+		err   error
+	}
+	probes := make([]probe, len(candidates))
+	var wg sync.WaitGroup
+	for i, candidate := range candidates {
+		wg.Go(func() { probes[i].hello, probes[i].err = readHello(candidate) })
+	}
+	wg.Wait()
+	for i, candidate := range candidates {
+		hello, err := probes[i].hello, probes[i].err
 		if err != nil {
 			if errcode.Of(err) == errcode.TransportSerialOpen {
 				openErr = err
