@@ -9556,3 +9556,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve main's calm shell and the PR's Updates behavior.
 - Scope: main merge conflict resolution and this approval record.
 - What's new: none — integration only
+
+## 2026-10-22 — #798: committed main-merge approval checkpoint
+
+- User approval: no visible change – UI approval not needed (standalone approval checkpoint for the merge of main after #784 into #798)
+- Approved customer-visible result: Preserve main's calm shell and the PR's existing Updates behavior; no additional change.
+- Scope: docs/control-center-customer-ui-approval.md only; make the merge checkpoint readable by the committed-diff UI gate.
+- What's new: none — documentation-only merge checkpoint
