@@ -878,6 +878,27 @@ describe("SetupWizard: direct connection", () => {
     expect(screen.getByRole("dialog", { name: "Update the Mac App first" })).toBeTruthy();
   });
 
+  // The manual lookup found the VibeTV and the connect started. Nothing in the
+  // scan changed, so the offer must not appear over the connection (Codex, #822).
+  it("does not put a late Mac App update over a manual address that was just found (#822)", async () => {
+    const connect = vi.fn();
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "not-found", deviceCandidates: [],
+      onFindManualTarget: vi.fn().mockResolvedValue({ target: "http://192.168.1.50", deviceId: "9517433" }),
+      connectSteps: { connect, installFirmware: vi.fn() } as unknown as SetupWizardProps["connectSteps"],
+    });
+    const view = render(<SetupWizard {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Enter IP manually" }));
+    view.rerender(<SetupWizard {...props} macAppUpdate={{ onUpdate: vi.fn(), version: "1.0.65" }} />);
+    fireEvent.change(screen.getByLabelText("IP address"), { target: { value: "192.168.1.50" } });
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole("dialog", { name: "Enter IP address" })).getByRole("button", { name: "Connect" }));
+    });
+    expect(connect).toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Update the Mac App first" })).toBeNull();
+  });
+
   it("offers a newer release again after the previous one was dismissed (#822)", () => {
     const onUpdate = vi.fn();
     const props = baseProps({
@@ -2316,6 +2337,23 @@ describe("SetupWizard with a broken usage service", () => {
     );
 
     expect(screen.getByText("We couldn't search for your VibeTV")).toBeTruthy();
+    expect(screen.queryByText("Finish AI setup on this Mac")).toBeNull();
+  });
+
+  // The customer put the not-found help away, so the incident is the next
+  // thing in line. A release answer that arrives then takes the screen first.
+  it("gives way to a late Mac App update offer (#822)", () => {
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "not-found", deviceCandidates: [],
+      usageFailure: "setup_incomplete",
+      onRepairUsageService: vi.fn(),
+    });
+    const view = render(<SetupWizard {...props} />);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByText("Finish AI setup on this Mac")).toBeTruthy();
+    view.rerender(<SetupWizard {...props} macAppUpdate={{ onUpdate: vi.fn(), version: "1.0.65" }} />);
+    expect(screen.getByRole("dialog", { name: "Update the Mac App first" })).toBeTruthy();
     expect(screen.queryByText("Finish AI setup on this Mac")).toBeNull();
   });
 

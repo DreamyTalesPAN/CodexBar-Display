@@ -373,8 +373,9 @@ export function SetupWizard(props: SetupWizardProps) {
     (deviceSearchState === "not-found" || deviceSearchState === "multiple") &&
     !wifiError;
   const searchFailed = searchFoundNoMatch && !notFoundDismissed;
-  // The manual address dialog owns the screen until it closes, so the offer waits for it.
-  const macAppUpdateAfterSearch = searchFoundNoMatch && deviceCandidates.length === 0 && !addressDialogOpen
+  // The manual address dialog owns the screen until it closes, and a connect
+  // that is running or has failed owns it after that, so the offer waits for both.
+  const macAppUpdateAfterSearch = searchFoundNoMatch && deviceCandidates.length === 0 && !addressDialogOpen && connect.state.phase === "idle"
     ? pendingMacAppUpdate
     : undefined;
   // "idle" is before the first scan was started, so like "searching" it has no
@@ -932,6 +933,7 @@ export function SetupWizard(props: SetupWizardProps) {
         connect.failure ||
         wifiError ||
         searchFailed ||
+        (!wifiSetup && macAppUpdateAfterSearch) ||
         (props.searchError && !searchErrorDismissed) ||
         addressDialogOpen
           ? null

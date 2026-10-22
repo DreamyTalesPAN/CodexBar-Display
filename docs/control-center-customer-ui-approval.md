@@ -9409,3 +9409,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The manual address dialog stays the only dialog while it is open; the existing update offer follows after it closes.
 - Scope: setup-wizard.tsx update condition and its red-first regression test.
 - What's new: none — bug fix, not announced to customers
+
+## 2026-10-22 — #822: no update offer over a connect or a usage incident
+
+- User approval: no visible change – UI approval not needed (the late update offer no longer appears over a connect that is running or failed, or on top of the usage incident dialog; it takes the screen once those are done)
+- Approved customer-visible result: The connect screen and the usage incident dialog stay the only dialog while they are up; the existing update offer follows afterwards.
+- Scope: setup-wizard.tsx update condition and usage dialog suppression, with red-first regression tests.
+- What's new: none — bug fix, not announced to customers
