@@ -469,6 +469,73 @@
                         "type"
                       ]
                     }
+                  },
+                  {
+                    "$comment": "usage-pace-v1: text bound to a pace key takes its colour from the pace state",
+                    "allOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "properties": {
+                              "type": {
+                                "enum": [
+                                  "text"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "type"
+                            ]
+                          },
+                          {
+                            "properties": {
+                              "t": {
+                                "enum": [
+                                  "tx"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "t"
+                            ],
+                            "not": {
+                              "required": [
+                                "type"
+                              ]
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "anyOf": [
+                          {
+                            "properties": {
+                              "binding": {
+                                "pattern": "Pace"
+                              }
+                            },
+                            "required": [
+                              "binding"
+                            ]
+                          },
+                          {
+                            "properties": {
+                              "b": {
+                                "pattern": "Pace"
+                              }
+                            },
+                            "required": [
+                              "b"
+                            ],
+                            "not": {
+                              "required": [
+                                "binding"
+                              ]
+                            }
+                          }
+                        ]
+                      }
+                    ]
                   }
                 ]
               }
