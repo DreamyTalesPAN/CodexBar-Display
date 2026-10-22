@@ -9641,3 +9641,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Windows only. The first close of the Control Center window shows one native message box (information icon, OK button) titled "VibeTV Control Center" with the text "VibeTV keeps running in the tray, so your display stays up to date." followed by a blank line and "To open it again, click the VibeTV icon next to the clock. If you don't see it, click the ^ arrow first." It never shows again (marker tray-hint-shown.txt in the app's local data folder).
 - Scope: windows/src-tauri/src/main.rs, show_tray_hint_once called from hide_after_flush. Pull request #919 only, not merged, not released.
 - What's new: none — one-time hint in the Windows shell, not a Control Center notice
+
+## 2026-10-22 — #919: approval marker after merging main at d7250de6
+
+- User approval: no visible change – UI approval not needed (merge of main (d7250de6) into #919; the #883 entry above keeps Paul's approval)
+- Approved customer-visible result: #919 as in its #883 entry plus the entries merged with d7250de6; nothing else changes.
+- Scope: the merge of d7250de6 and this approval record. Pull request #919 only, not merged, not released.
+- What's new: none — merge of d7250de6, no customer-visible change of its own
