@@ -1646,7 +1646,7 @@ export function AIThemeStudioScreen({
             <div className="mt-3 w-full space-y-3">
               {error ? (
                 <p id="ai-theme-error" role="alert" className="text-sm text-destructive [overflow-wrap:anywhere]">
-                  {error}
+                  {copyForHost(error, windowsHost)}
                 </p>
               ) : null}
               {document.spec.primitives.length > 0 &&

@@ -32,7 +32,7 @@ func TestGeminiConsumerShutdownIsNotAnAuthFailure(t *testing.T) {
 	if strings.Contains(strings.ToLower(gemini.NextAction), "sign in") {
 		t.Fatalf("next action must not ask for a sign-in: %q", gemini.NextAction)
 	}
-	if !strings.Contains(gemini.Detail, "no longer supports") {
+	if !strings.Contains(gemini.Detail, "no longer works with this account") {
 		t.Fatalf("detail must state the end of support: %q", gemini.Detail)
 	}
 	// CodexBar's own sentence must survive to the row: it carries the path.
