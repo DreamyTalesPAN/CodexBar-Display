@@ -218,24 +218,26 @@
       "id": "reset-countdown",
       "title": "Reset Countdown",
       "usage": "screensaver",
-      "version": "1.1.8",
-      "themeRev": 7,
-      "themeSpecPath": "/themes/s/rcf-7-0166e5d9.json",
+      "version": "1.1.9",
+      "themeRev": 8,
+      "themeSpecPath": "/themes/s/rcf-8-437d329f.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
-        "usage-pace-v1"
+        "usage-pace-v1",
+        "reset-footer-v1"
       ],
       "tags": [
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-reset-countdown-v1.1.8.zip",
-      "sha256": "e8fa1bdc62a64f3f6d77cd4807ec85df704d8a3a2e11d68299f48d62969d3cd0",
-      "bytes": 2605,
+      "downloadAsset": "vibetv-theme-reset-countdown-v1.1.9.zip",
+      "sha256": "8d83bd4c54a0c328e8f54dbf6af6739fcc82d61f5bd6c4b8f71d3dc600e12591",
+      "bytes": 2616,
       "earlierThemeSpecPaths": [
         "/themes/s/rcf-5-1a2fc7f5.json",
         "/themes/s/rcf-6-03e818f0.json",
+        "/themes/s/rcf-7-0166e5d9.json",
         "/themes/s/reset-1-39352d.json"
       ]
     },

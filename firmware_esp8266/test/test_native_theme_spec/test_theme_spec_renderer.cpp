@@ -882,7 +882,7 @@ void testIdleSlotCountdownCollapsesInsteadOfDoublingThePrefix() {
   // and names the idle state rather than reporting a fault.
   TEST_ASSERT_EQUAL_STRING("No active session", sink.commands[1].text.c_str());
   // A window that does have a deadline is untouched.
-  TEST_ASSERT_EQUAL_STRING("Resets in 4d 0h", sink.commands[2].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Resets in 4d", sink.commands[2].text.c_str());
   // A template carrying another real value keeps substituting in place.
   TEST_ASSERT_EQUAL_STRING("Session No active session", sink.commands[3].text.c_str());
 }
@@ -4805,7 +4805,7 @@ void testUsagePaceTextsRenderCodexBarPace() {
     TEST_ASSERT_EQUAL_STRING(i == 3 ? " | " : "", none[i].c_str());
   }
   TEST_ASSERT_EQUAL_STRING("92%", none[7].c_str());
-  TEST_ASSERT_EQUAL_STRING("resets 3h 20m", none[8].c_str());
+  TEST_ASSERT_EQUAL_STRING("resets 3h", none[8].c_str());
   TEST_ASSERT_EQUAL_STRING("Session remaining", none[9].c_str());
 
   // Slot 1 in reserve and lasting, slot 2 in deficit and running out.
@@ -4819,7 +4819,7 @@ void testUsagePaceTextsRenderCodexBarPace() {
   TEST_ASSERT_EQUAL_STRING("runs out", both[4].c_str());
   TEST_ASSERT_EQUAL_STRING("runs out", both[5].c_str());
   TEST_ASSERT_EQUAL_STRING("", both[6].c_str());
-  TEST_ASSERT_EQUAL_STRING("lasts until reset - resets 3h 20m", both[8].c_str());
+  TEST_ASSERT_EQUAL_STRING("lasts until reset - resets 3h", both[8].c_str());
 
   // A misspelled or unknown pace suffix renders nothing, not a neighbour's text.
   const char* unknown = R"JSON({"v":1,"id":"p","rev":1,"p":[
@@ -5066,6 +5066,32 @@ void testPaceBarRepaintsWhenOnlyTheUsageModeChanges() {
   TEST_ASSERT_TRUE((event.themeSpecChangedFields & codexbar_display::themespec::kThemeSpecFieldUsageMode) != 0);
 }
 
+// Every usageSlotN reset is the largest unit only ("resets 5d", "resets 3h", "resets 45m");
+// usageSlotNResetFull keeps both units for the Reset Countdown theme.
+void testResetShowsLargestUnitUnlessFull() {
+  const char* spec = R"JSON({"v":1,"id":"short","rev":1,"p":[
+    {"t":"tx","x":0,"y":0,"v":"resets {usageSlot1Reset}"},
+    {"t":"tx","x":0,"y":20,"v":"{usageSlot1ResetFull}"}
+  ]})JSON";
+  FrameData frame;
+  frame.usageSlot1Label = frame.usageWindows[0].label = "Session";
+  frame.usageSlot1Percent = frame.usageWindows[0].percent = 91;
+  frame.usageSlot1Available = frame.usageWindows[0].available = true;
+  const int64_t countdowns[] = {432000, 12000, 2700};
+  const char* shortText[] = {"resets 5d", "resets 3h", "resets 45m"};
+  const char* fullText[] = {"5d 0h", "3h 20m", "45m"};
+  for (size_t i = 0; i < 3; ++i) {
+    frame.usageSlot1ResetSecs = frame.usageWindows[0].resetSecs = countdowns[i];
+    std::vector<std::string> texts = renderedTexts(spec, frame);
+    TEST_ASSERT_EQUAL_STRING(shortText[i], texts[0].c_str());
+    TEST_ASSERT_EQUAL_STRING(fullText[i], texts[1].c_str());
+  }
+  // Without a countdown the largest-unit line shows exactly what the full one shows.
+  frame.usageSlot1ResetSecs = frame.usageWindows[0].resetSecs = 0;
+  std::vector<std::string> none = renderedTexts(spec, frame);
+  TEST_ASSERT_EQUAL_STRING(none[1].c_str(), none[0].c_str());
+}
+
 // The provider name without the notice, and the footer line that is the notice while
 // one shows and the reset sentence otherwise (Gauge 2.0).
 void testProviderNameAndPaceFooterAroundTheNotice() {
@@ -5296,7 +5322,7 @@ void testFooterWithARowBelowKeepsItsOwnBinding() {
   ]})JSON";
   RecordingSink sink;
   TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
-  TEST_ASSERT_EQUAL_STRING("Reset in 4d 4h", sink.commands.back().text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Reset in 4d", sink.commands.back().text.c_str());
 }
 
 void testFooterSelectionRepaintsWithoutUsageChange() {
@@ -5599,6 +5625,7 @@ int main() {
   RUN_TEST(testPaceTickOnAFullyThickRingReachesTheCentre);
   RUN_TEST(testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt);
   RUN_TEST(testCountdownRepaintTakesTheBoundPaceAlong);
+  RUN_TEST(testResetShowsLargestUnitUnlessFull);
   RUN_TEST(testProviderNameAndPaceFooterAroundTheNotice);
   RUN_TEST(testTextFitUsesSmallestFontAndTwoLinesWithinExistingHeight);
   RUN_TEST(testKnownUnavailableUsageKeepsNameAndDashWithoutInventingValues);

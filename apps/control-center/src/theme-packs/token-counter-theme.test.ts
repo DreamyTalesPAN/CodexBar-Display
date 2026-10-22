@@ -88,7 +88,7 @@ describe("Token Counter theme pack", () => {
         expect(themeFirmwareTextMetrics(value, 2, size)!.width, value).toBeLessThanOrEqual(p.w!);
       }
     }
-    for (const value of ["Claude", "Open VibeTV Mac App", "Reset in 2h 14m", "Reset in 23h 59m", "Reset unavailable", "No active session"]) {
+    for (const value of ["Claude", "Open VibeTV Mac App", "Reset in 2h", "Reset in 23h", "Reset unavailable", "No active session"]) {
       expect(seen).toContain(value);
     }
   });

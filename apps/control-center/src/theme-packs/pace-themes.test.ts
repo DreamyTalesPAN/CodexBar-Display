@@ -101,10 +101,10 @@ describe("the Pace themes", () => {
 
   it("Pace Meter gives both limit names their own line and omits an untimed run-out note", () => {
     const { text } = renderPack("pace-meter", deficit, [38, 61]);
-    expect(text).toBe("ClaudeSession remaining38%resets 3h 34m14% deficitWeekly remaining61%resets 5d 14hOn pace");
-    expect(renderPack("pace-meter", reserve).text).toBe("ClaudeSession remaining91%resets 3h 34m6% reserveWeekly remaining87%resets 5d 14h35% reserve");
+    expect(text).toBe("ClaudeSession remaining38%resets 3h14% deficitWeekly remaining61%resets 5dOn pace");
+    expect(renderPack("pace-meter", reserve).text).toBe("ClaudeSession remaining91%resets 3h6% reserveWeekly remaining87%resets 5d35% reserve");
     // Without a pace: percentage, label, countdown and the plain bar stay.
-    expect(renderPack("pace-meter", null).text).toBe("ClaudeSession remaining91%resets 3h 34mWeekly remaining87%resets 5d 14h");
+    expect(renderPack("pace-meter", null).text).toBe("ClaudeSession remaining91%resets 3hWeekly remaining87%resets 5d");
   });
 
   it("Pace Meter puts the basis in the pair header and still shows device notices", () => {
@@ -122,7 +122,7 @@ describe("the Pace themes", () => {
     expect(frame.label).toBe("");
     expect(frame.usageSlot1Label).toBe("Codex Weekly");
     expect(frame.usageSlot2Label).toBe("Claude Session");
-    expect(render()).toBe("remainingCodex Weekly 91%resets 3h 34mClaude Session 87%resets 5d 14h");
+    expect(render()).toBe("remainingCodex Weekly 91%resets 3hClaude Session 87%resets 5d");
     expect(render()).not.toContain("Codex + Claude");
     expect(render("Update available")).toBe(`Update available${render().slice("remaining".length)}`);
     expect(render("Open VibeTV Mac App")).toBe(`Open VibeTV Mac App${render().slice("remaining".length)}`);

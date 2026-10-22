@@ -725,7 +725,7 @@ describe("dynamic usage slot preview", () => {
     // A window that does have a deadline is untouched.
     expect(
       renderTextPrimitive({ t: "tx", v: "Resets in {us2r}" }, idle),
-    ).toBe("Resets in 4d 0h");
+    ).toBe("Resets in 4d");
   });
 
   it("uses a legacy render cache only when its path matches the active Custom Theme", async () => {
@@ -1310,6 +1310,18 @@ describe("usage pace", () => {
       usageSlots: [{ id: "session", label: "Session", percent: 91, resetSecs: 0 }],
     });
     expect(boundValue("usageSlot1PaceFooter", none)).toBe(boundValue("usageSlot1Reset", none));
+  });
+
+  it("shows the largest unit on every usage-slot reset, the full countdown only on usageSlotNResetFull", () => {
+    const at = (resetSecs: number) => paced(91, undefined, {
+      usageSlots: [{ id: "session", label: "Session", percent: 91, resetSecs }],
+    });
+    expect(boundValue("usageSlot1Reset", at(432000))).toBe("5d");
+    expect(boundValue("usageSlot1Reset", at(12000))).toBe("3h");
+    expect(boundValue("usageSlot1Reset", at(2700))).toBe("45m");
+    expect(boundValue("usageSlot1ResetFull", at(12000))).toBe("3h 20m");
+    // No countdown: the largest-unit reset shows what the full one shows.
+    expect(boundValue("usageSlot1Reset", at(0))).toBe(boundValue("usageSlot1ResetFull", at(0)));
   });
 
   it("clips a pace piece to the rounded interior of the bar, and only a bar with a piece", () => {

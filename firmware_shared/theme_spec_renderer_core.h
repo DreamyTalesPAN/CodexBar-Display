@@ -564,6 +564,12 @@ inline void FormatDuration(int64_t secs, char* out, size_t outSize) {
   std::snprintf(out, outSize, "%lldm", static_cast<long long>(minutes));
 }
 
+// The largest unit only ("5d", "3h", "45m"): the footer and the short reset binding.
+inline void FormatResetLargestUnit(int64_t secs, char* out, size_t outSize) {
+  FormatDuration(secs, out, outSize);
+  if (char* space = std::strchr(out, ' ')) *space = '\0';
+}
+
 inline const char* SafeText(const char* value) {
   return value == nullptr ? "" : value;
 }
@@ -970,8 +976,10 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
     } else if (std::strcmp(field, "reset") == 0 || std::strcmp(key, resetShort) == 0) {
       if (window.resetSecs <= 0) {
         std::snprintf(out, outSize, "%s", ResetTextFor(ResetSecsAreIdle(window.resetSecs)));
-      } else {
+      } else if (std::strstr(key, "ResetFull") != nullptr) {
         FormatDuration(window.resetSecs, out, outSize);
+      } else {
+        FormatResetLargestUnit(window.resetSecs, out, outSize);
       }
     } else if (std::strncmp(field, "Pace", 4) == 0) {
       // CodexBar computed this pace for the running window; once its
@@ -2263,8 +2271,7 @@ inline bool RenderDisplayedResetFooter(const CompiledThemeSpec& scene,
     allIdle = allIdle && ResetSecsAreIdle(window.resetSecs);
     if (window.resetSecs <= 0 || frame.usageUnavailable) continue;
     char duration[32] = {};
-    FormatDuration(window.resetSecs, duration, sizeof(duration));
-    if (char* space = std::strchr(duration, ' ')) *space = '\0';  // largest unit only
+    FormatResetLargestUnit(window.resetSecs, duration, sizeof(duration));
     // A pair label ("Claude Weekly") is longer than the limit name ("Weekly").
     const char* label = SafeText(window.label);
     const char* limit = std::strchr(frame.provider, '+') != nullptr && std::strchr(label, ' ') != nullptr

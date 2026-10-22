@@ -22,6 +22,7 @@ import { loadLocalThemeRenderPack } from "@/lib/local-theme-render-pack";
 import { importThemeSpec, themeStudioSpecUsageLimitCount } from "@/lib/theme-studio";
 import {
   formatResetCountdown,
+  formatResetLargestUnit,
   remainingResetSecs,
   secondsSince,
 } from "@/lib/reset-countdown";
@@ -1970,7 +1971,7 @@ function displayedResetFooter(
     sawAvailable = true;
     allIdle = allIdle && window.idle;
     if (window.resetSecs > 0) {
-      const duration = formatReset(window.resetSecs, false).split(" ")[0];
+      const duration = formatResetLargestUnit(window.resetSecs);
       // A pair label ("Claude Weekly") is longer than the limit name ("Weekly").
       const limit = frame.provider.includes("+") ? window.label.replace(/^\S+ /, "") : window.label;
       const variants = [`${window.label} reset ${duration}`, `${limit} reset ${duration}`];
@@ -2237,7 +2238,7 @@ export function boundValue(key: string, frame: FrameData): string {
       return window.label;
     }
     if (field === "reset") {
-      return formatReset(window.resetSecs, window.idle);
+      return formatResetLargest(window.resetSecs, window.idle);
     }
     return String(window.percent);
   }
@@ -2277,6 +2278,10 @@ export function boundValue(key: string, frame: FrameData): string {
     case "usageSlot1Reset":
     case "us1r":
       return frame.usageSlot1Available
+        ? formatResetLargest(frame.usageSlot1ResetSecs, frame.usageSlot1Idle)
+        : "";
+    case "usageSlot1ResetFull":
+      return frame.usageSlot1Available
         ? formatReset(frame.usageSlot1ResetSecs, frame.usageSlot1Idle)
         : "";
     case "usageSlot1Available":
@@ -2290,6 +2295,10 @@ export function boundValue(key: string, frame: FrameData): string {
       return frame.usageSlot2Available ? String(frame.usageSlot2Percent) : "";
     case "usageSlot2Reset":
     case "us2r":
+      return frame.usageSlot2Available
+        ? formatResetLargest(frame.usageSlot2ResetSecs, frame.usageSlot2Idle)
+        : "";
+    case "usageSlot2ResetFull":
       return frame.usageSlot2Available
         ? formatReset(frame.usageSlot2ResetSecs, frame.usageSlot2Idle)
         : "";
@@ -3043,4 +3052,12 @@ function formatReset(seconds?: number, idle = false): string {
     return idle ? RESET_IDLE : RESET_UNAVAILABLE;
   }
   return formatResetCountdown(seconds);
+}
+
+// Every usage-slot reset: the largest unit only, the same text as the footer.
+function formatResetLargest(seconds?: number, idle = false): string {
+  if (!seconds || seconds <= 0) {
+    return formatReset(seconds, idle);
+  }
+  return formatResetLargestUnit(seconds);
 }

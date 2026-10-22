@@ -20283,3 +20283,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Active marker sits in the card's title row next to the theme name instead of on the preview picture, so it no longer covers the preview's title; Installed stays on the picture.
 - Scope: theme-library-screen.tsx (Active pill moved from the picture into the title row, one shared pill element) and its test in theme-library-screen.appearance.test.tsx.
 - What's new: none — bug fix only
+
+## 2026-10-22 — #7209: Every usage-slot reset shows the largest unit
+
+- User approval: pending — every theme's per-limit reset line reads only its largest unit ("resets 5d", "Reset in 3h", "Reset 45m") instead of "resets 5d 14h" / "Reset in 3h 20m"; Reset Countdown keeps its full countdown
+- Approved customer-visible result: the reset text of Pace Meter, Mini Classic, Tiny Office, Claude Creature, Pixel Battery, Token Counter and Gauge's per-limit lines shows only the largest unit, rounded down; Reset Countdown keeps "3h 20m"; layout and font sizes are unchanged.
+- Scope: the usage-slot reset binding in firmware_shared/theme_spec_renderer_core.h and the live preview (usageSlotNReset, us1r/us2r, usage.N.reset now largest; new usageSlotNResetFull keeps the full countdown), the Reset Countdown pack (1.1.9, theme revision 8, requires reset-footer-v1), and their tests.
+- What's new: none — wording only

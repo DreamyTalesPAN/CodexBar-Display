@@ -36,3 +36,8 @@ export function formatResetCountdown(seconds: number): string {
   }
   return `${minutes}m`;
 }
+
+/** The largest unit only: "5d", "3h", "45m". The footer and the short reset binding show it. */
+export function formatResetLargestUnit(seconds: number): string {
+  return formatResetCountdown(seconds).split(" ")[0];
+}
