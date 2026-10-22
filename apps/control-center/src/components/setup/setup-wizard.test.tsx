@@ -828,6 +828,94 @@ describe("SetupWizard: direct connection", () => {
     }
   });
 
+  it("pauses WiFi retry scans and their deadline while the update offer is open", async () => {
+    vi.useFakeTimers();
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "not-found",
+      onSelectConnectionMode: vi.fn().mockResolvedValue({ status: "waiting_for_wifi" }),
+    });
+    const view = render(<SetupWizard {...props} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Already on WiFi/ }));
+    });
+    view.rerender(<SetupWizard {...props} macAppUpdate={{ onUpdate: vi.fn(), version: "1.0.65" }} />);
+    expect(screen.getByRole("dialog", { name: "Update the Mac App first" })).toBeTruthy();
+    const searches = vi.mocked(props.onSearchDevices).mock.calls.length;
+    await act(() => vi.advanceTimersByTimeAsync(65_000));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(searches);
+    expect(screen.getByRole("dialog", { name: "Update the Mac App first" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Scan again" }));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(searches + 1);
+    await act(() => vi.advanceTimersByTimeAsync(1500));
+    expect(props.onSearchDevices).toHaveBeenCalledTimes(searches + 2);
+  });
+
+  it("holds the usage incident back over the WiFi-waiting update offer", async () => {
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "not-found",
+      usageFailure: "setup_incomplete", onRepairUsageService: vi.fn(),
+      onSelectConnectionMode: vi.fn().mockResolvedValue({ status: "waiting_for_wifi" }),
+    });
+    const view = render(<SetupWizard {...props} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Already on WiFi/ }));
+    });
+    view.rerender(<SetupWizard {...props} macAppUpdate={{ onUpdate: vi.fn(), version: "1.0.65" }} />);
+    await act(async () => {});
+    expect(screen.getByRole("dialog", { name: "Update the Mac App first" })).toBeTruthy();
+    expect(screen.queryByText("Finish AI setup on this Mac")).toBeNull();
+  });
+
+  it("offers a late Mac App update after the ordinary not-found dialog was dismissed", () => {
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "not-found", deviceCandidates: [],
+    });
+    const view = render(<SetupWizard {...props} />);
+    expect(screen.getByRole("dialog", { name: "We couldn't find your VibeTV" })).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    view.rerender(<SetupWizard {...props} macAppUpdate={{ onUpdate: vi.fn(), version: "1.0.65" }} />);
+    expect(screen.getByRole("dialog", { name: "Update the Mac App first" })).toBeTruthy();
+  });
+
+  it("holds a late Mac App update back while the manual address dialog owns the screen (#822)", () => {
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "not-found", deviceCandidates: [],
+    });
+    const view = render(<SetupWizard {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Enter IP manually" }));
+    view.rerender(<SetupWizard {...props} macAppUpdate={{ onUpdate: vi.fn(), version: "1.0.65" }} />);
+    expect(screen.queryByRole("dialog", { name: "Update the Mac App first" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Enter IP address" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("dialog", { name: "Update the Mac App first" })).toBeTruthy();
+  });
+
+  // The manual lookup found the VibeTV and the connect started. Nothing in the
+  // scan changed, so the offer must not appear over the connection (Codex, #822).
+  it("does not put a late Mac App update over a manual address that was just found (#822)", async () => {
+    const connect = vi.fn();
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "not-found", deviceCandidates: [],
+      onFindManualTarget: vi.fn().mockResolvedValue({ target: "http://192.168.1.50", deviceId: "9517433" }),
+      connectSteps: { connect, installFirmware: vi.fn() } as unknown as SetupWizardProps["connectSteps"],
+    });
+    const view = render(<SetupWizard {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Enter IP manually" }));
+    view.rerender(<SetupWizard {...props} macAppUpdate={{ onUpdate: vi.fn(), version: "1.0.65" }} />);
+    fireEvent.change(screen.getByLabelText("IP address"), { target: { value: "192.168.1.50" } });
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole("dialog", { name: "Enter IP address" })).getByRole("button", { name: "Connect" }));
+    });
+    expect(connect).toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Update the Mac App first" })).toBeNull();
+  });
+
   it("offers a newer release again after the previous one was dismissed (#822)", () => {
     const onUpdate = vi.fn();
     const props = baseProps({
@@ -1282,9 +1370,14 @@ describe("SetupWizard: saved WiFi recovery", () => {
       },
     });
     const { rerender } = render(<SetupWizard {...props} />);
-    await screen.findByRole("button", { name: "Use WiFi instead" });
+    // Issue #915: the WiFi button exists while the cable connection is still
+    // running, but stays disabled until the failed firmware check shows its
+    // dialog. Wait for that dialog instead of clicking a disabled button.
+    await screen.findByRole("dialog");
     fireEvent.keyDown(document, { key: "Escape" });
-    fireEvent.click(screen.getByRole("button", { name: "Use WiFi instead" }));
+    const useWiFi = screen.getByRole("button", { name: "Use WiFi instead" });
+    expect(useWiFi).toHaveProperty("disabled", false);
+    fireEvent.click(useWiFi);
     await waitFor(() => expect(props.onSelectConnectionMode).toHaveBeenCalledWith("wifi", cable.deviceId));
     await waitFor(() => expect(onSearchDevices).toHaveBeenCalledOnce(), { timeout: 2_500 });
     expect(props.onConfigureWiFi).not.toHaveBeenCalled();
@@ -2269,6 +2362,24 @@ describe("SetupWizard with a broken usage service", () => {
     expect(screen.queryByText("Finish AI setup on this Mac")).toBeNull();
   });
 
+  // The customer put the not-found help away, so the incident is the next
+  // thing in line. A release answer that arrives then takes the screen first.
+  it("gives way to a late Mac App update offer (#822)", async () => {
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "not-found", deviceCandidates: [],
+      usageFailure: "setup_incomplete",
+      onRepairUsageService: vi.fn(),
+    });
+    const view = render(<SetupWizard {...props} />);
+    fireEvent.keyDown(document, { key: "Escape" });
+    // The incident waits for the not-found dialog to close: it shows after that observer runs.
+    expect(await screen.findByText("Finish AI setup on this Mac")).toBeTruthy();
+    view.rerender(<SetupWizard {...props} macAppUpdate={{ onUpdate: vi.fn(), version: "1.0.65" }} />);
+    expect(screen.getByRole("dialog", { name: "Update the Mac App first" })).toBeTruthy();
+    expect(screen.queryByText("Finish AI setup on this Mac")).toBeNull();
+  });
+
   // A usage incident raised mid-update offered Repair, which restarts the
   // background service that is running the firmware install.
   it("holds it back while the connect sequence installs firmware", async () => {
@@ -2366,3 +2477,17 @@ describe("SetupWizard: accessibility", () => {
   });
 });
 
+
+it.each(["Escape", "Scan again"])("reports the setup update dismissal to its owner via %s", (action) => {
+  const onDismiss = vi.fn();
+  const props = baseProps({
+    step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+    deviceSearchState: "not-found", deviceCandidates: [],
+    macAppUpdate: { onUpdate: vi.fn(), version: "1.0.65", onDismiss },
+  });
+  render(<SetupWizard {...props} />);
+  const dialog = screen.getByRole("dialog", { name: "Update the Mac App first" });
+  if (action === "Escape") fireEvent.keyDown(dialog, { key: "Escape" });
+  else fireEvent.click(within(dialog).getByRole("button", { name: action }));
+  expect(onDismiss).toHaveBeenCalledTimes(1);
+});

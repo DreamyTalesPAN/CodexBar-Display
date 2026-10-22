@@ -218,7 +218,7 @@ export function firmwareUpdateStatusFromJob(
     outcome: job.outcome,
     retryAllowed: job.retryPolicy !== "power_cycle",
     startedAt: job.startedAt || fallbackStartedAt,
-    finishedAt: finished ? job.finishedAt || formatTime() : undefined,
+    finishedAt: finished ? job.finishedAt || new Date().toISOString() : undefined,
     message:
       job.error?.nextAction ||
       job.message ||

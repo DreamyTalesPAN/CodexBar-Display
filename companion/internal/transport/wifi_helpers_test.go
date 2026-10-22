@@ -164,17 +164,30 @@ func TestUniqueDiscoveryTargetsNormalizesDropsBlanksAndDuplicates(t *testing.T) 
 	}
 }
 
-// bug: probeWiFiHello says a hello without capabilities (issue #526) is not a
-// found VibeTV, but Known is set by any board on a kind:"hello" frame, so
-// isVibeTVHello accepts this one. Skipped until the rule is decided.
+// Issue #526: probeWiFiHello says a hello without capabilities is not a found
+// VibeTV. Known is also set by a board alone, so isVibeTVHello needs the
+// transport from the capabilities block as well.
 func TestIsVibeTVHelloRejectsBoardOnlyHelloWithoutCapabilities(t *testing.T) {
-	t.Skip("bug: isVibeTVHello accepts a board-only hello with no capabilities block (Known is true for any board); see issue #526 comment in probeWiFiHello")
 	var hello protocol.DeviceHello
 	if err := json.Unmarshal([]byte(`{"kind":"hello","board":"esp8266-smalltv-st7789"}`), &hello); err != nil {
 		t.Fatalf("fixture does not parse: %v", err)
 	}
 	if isVibeTVHello(hello) {
 		t.Fatal("a hello without capabilities must not count as a found VibeTV")
+	}
+}
+
+// The WiFi hello of the first WiFi-first firmware in the repository history
+// (2cad00b1): the capabilities block of its wifi branch, complete. Discovery
+// must still find that VibeTV.
+func TestIsVibeTVHelloAcceptsTheOldestWiFiHelloWithCapabilities(t *testing.T) {
+	const body = `{"kind":"hello","protocolVersion":2,"supportedProtocolVersions":[2,1],"preferredProtocolVersion":2,"board":"esp8266-smalltv-st7789","deviceId":"14799300","features":["theme","theme-spec-v1"],"maxFrameBytes":1024,"capabilities":{"display":{"widthPx":240,"heightPx":240,"colorDepthBits":16},"theme":{"supportsThemeSpecV1":true,"maxThemeSpecBytes":1024,"maxThemePrimitives":32,"builtinThemes":["classic","crt","mini"]},"transport":{"active":"wifi","supported":["usb","wifi"]}}}`
+	hello, err := protocol.DecodeWiFiHello(strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !isVibeTVHello(hello) {
+		t.Fatalf("the oldest WiFi hello with capabilities must count as a found VibeTV: %+v", hello)
 	}
 }
 

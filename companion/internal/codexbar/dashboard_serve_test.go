@@ -195,6 +195,9 @@ func TestDashboardServeSupervisorRestartReplacesTheRunningChild(t *testing.T) {
 	if unchanged := supervisor.Info(); unchanged.PID != first.PID {
 		t.Fatalf("a serve running on the current config must keep running, first=%#v now=%#v", first, unchanged)
 	}
+	if skipped := supervisor.Info(); !skipped.ReplaceStartedAt.IsZero() {
+		t.Fatalf("a skipped restart is no replacement, got %v", skipped.ReplaceStartedAt)
+	}
 
 	// A coarse or preserved timestamp can predate startup despite new
 	// settings. The content change must still replace the running child.
@@ -234,6 +237,11 @@ func TestDashboardServeSupervisorRestartReplacesTheRunningChild(t *testing.T) {
 	// one that failed; each replacement of an answering child moves it.
 	if first.StartedAt.IsZero() || !third.StartedAt.After(second.StartedAt) || !second.StartedAt.After(first.StartedAt) {
 		t.Fatalf("StartedAt must follow each replacement: %v %v %v", first.StartedAt, second.StartedAt, third.StartedAt)
+	}
+	// The collector reads ReplaceStartedAt to tell the gap until the new
+	// child answers from an outage (#918).
+	if second.ReplaceStartedAt.IsZero() || !third.ReplaceStartedAt.After(second.ReplaceStartedAt) || third.ReplaceStartedAt.After(third.StartedAt) {
+		t.Fatalf("ReplaceStartedAt must mark each replacement before its child starts: %v %v (started %v)", second.ReplaceStartedAt, third.ReplaceStartedAt, third.StartedAt)
 	}
 }
 
