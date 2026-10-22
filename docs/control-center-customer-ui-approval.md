@@ -9635,6 +9635,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: docs/control-center-customer-ui-approval.md only, the wording of the #782 build 7200 record. Pull request branch #782 only, not merged, not released.
 - What's new: none — approval log wording only
 
+## 2026-10-22 — #915: saved WiFi recovery test waits for the firmware dialog
+
+- User approval: no visible change – UI approval not needed (test-only fix for flaky test #915)
+- Approved customer-visible result: None. The setup wizard is unchanged; only its unit test now waits for the firmware dialog before clicking "Use WiFi instead".
+- Scope: apps/control-center/src/components/setup/setup-wizard.test.tsx, test "rescans and reconnects the same device after reusing its saved network" only. Pull request branch only, not merged, not released.
+- What's new: none — test only, no customer-visible change
+
 ## 2026-10-22 — Usage: Refresh asks for a new reading right away (#918)
 
 - User approval: pending — Marcus' finding from the #782 click test (22.10.2026, build 1321): Refresh stayed on "Refreshing" for about 40 s; his click test of this pull request is still open.

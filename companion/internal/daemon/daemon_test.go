@@ -7119,6 +7119,33 @@ func TestRunDaemonLoopPausesDeviceCyclesDuringMaintenance(t *testing.T) {
 	}
 }
 
+// Issue #832: selecting WiFi while a firmware update holds the maintenance
+// pause must still end the USB worker, or it keeps the cable port open for the
+// update's own cable check.
+func TestRunDaemonLoopReleasesUSBWorkerWhenTargetLeavesCableDuringPause(t *testing.T) {
+	prepareFastTestEnv(t)
+
+	cfg := runtimeconfig.Config{ConnectionMode: "wifi"}
+	deps := runtimeDeps{
+		transportName: "usb", homeDir: func() (string, error) { return t.TempDir(), nil },
+		loadConfig: func(string) (runtimeconfig.Config, error) { return cfg, nil },
+		now:        time.Now, logf: func(string, ...any) {},
+		after: func(time.Duration) <-chan time.Time { return nil },
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := runDaemonLoop(ctx, Options{
+		Interval:          time.Second,
+		PauseDeviceWrites: func() bool { return true },
+	}, deps, func(context.Context) error {
+		t.Error("cycle ran during maintenance pause")
+		return nil
+	})
+	if !errors.Is(err, ErrConnectionModeChanged) {
+		t.Fatalf("paused USB worker kept running after the target left Cable: %v", err)
+	}
+}
+
 // Issue #826: a cycle that is already running when a firmware update takes the
 // device stops at the write gate for the whole update. That wait made the next
 // cycle start look like a wake from sleep, and setup judged the stream failed.
