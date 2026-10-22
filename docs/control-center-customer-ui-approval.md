@@ -8332,3 +8332,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #785 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
 - Scope: the merge of 35152cc8 and this approval record. Pull request branch #785 only, not merged, not released.
 - What's new: none — merge of 35152cc8, no customer-visible change of its own
+
+## 2026-10-22 — #614: Control Center removes two unused theme-asset helpers
+
+- User approval: no visible change – UI approval not needed (removes `formatBytes`, `assetKind` and the type `ThemeStudioAssetKind` from theme-studio-assets.ts; nothing in the app calls them, only their own test did)
+- Approved customer-visible result: none; the app renders and behaves exactly as before.
+- Scope: `apps/control-center/src/lib/theme-studio-assets.ts` and its test. No component, no text, no layout.
+- What's new: none — dead code removed, no customer-visible change

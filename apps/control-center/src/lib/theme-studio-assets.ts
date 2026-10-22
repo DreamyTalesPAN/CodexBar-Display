@@ -9,8 +9,6 @@ const MAX_SPRITE_FRAME_HEIGHT = 64;
 const MAX_SPRITE_FRAMES = 32;
 const MAX_SPRITE_TOTAL_PIXELS = 32768;
 
-export type ThemeStudioAssetKind = "gif" | "sprite";
-
 export type SpriteMetadata = {
   width: number;
   height: number;
@@ -423,23 +421,6 @@ export function themeAssetByteLength(asset: ThemeStudioAsset): number {
     return new TextEncoder().encode(asset.data).byteLength;
   }
   return Math.floor((asset.data.replace(/=+$/, "").length * 3) / 4);
-}
-
-export function formatBytes(value: number): string {
-  if (value < 1024) {
-    return `${value} B`;
-  }
-  return `${Math.round(value / 1024)} KB`;
-}
-
-export function assetKind(path: string): ThemeStudioAssetKind | null {
-  if (/\.gif$/i.test(path)) {
-    return "gif";
-  }
-  if (/\.(cbi|cba)$/i.test(path)) {
-    return "sprite";
-  }
-  return null;
 }
 
 function ensureTrailingNewline(value: string): string {
