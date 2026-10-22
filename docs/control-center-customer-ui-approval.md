@@ -8697,3 +8697,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: nothing changes in the app; the flow now matches the connect dialog of the two entries above.
 - Scope: apps/control-center/scripts/test-customer-flows.mjs, testEnteredControlCenterOpensPairingRecovery only. Pull request branch #782 only, not merged, not released.
 - What's new: none — test only, no customer-visible change
+
+## 2026-10-22 — #782: Run setup again also clears the Support report
+
+- User approval: pending — Codex P2 / Marcus review: after "Run setup again", Support kept Copy / Download for the report made before the reset; Paul decides whether the report should go with the reset
+- Approved customer-visible result: after "Run setup again", the Support report card shows "Create report" again (the existing empty state), like the diagnostics result that the reset already cleared.
+- Scope: apps/control-center/src/components/control-center-app.tsx, resetSetup clears supportReport next to supportDiagnostics. Pull request branch #782 only, not merged, not released.
+- What's new: none — no notice entry until Paul approves
