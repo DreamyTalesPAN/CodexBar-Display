@@ -11254,3 +11254,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No additional change beyond the merged base and the pending footer preference entries.
 - Scope: Approval record only after merging 10f2f21f into #909.
 - What's new: none — approval marker only.
+
+## 2026-10-22 — #909: approval marker after merging claude/592-two-at-once-on-800 at 9ea560c7
+
+- User approval: no visible change – UI approval not needed (merge of claude/592-two-at-once-on-800 (9ea560c7) into #909; the own entries of #909 keep their approvals)
+- Approved customer-visible result: #909 as in its own entries plus the entries merged with 9ea560c7; the reset-in-footer switch stays in Limits on VibeTV and its Update needed line is 13 px like the other small text of the calm Settings.
+- Scope: the merge of 9ea560c7 and this approval record. Pull request branch #909 only, not merged, not released.
+- What's new: none — merge of 9ea560c7, no customer-visible change of its own
