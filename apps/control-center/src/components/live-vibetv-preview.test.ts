@@ -1557,7 +1557,9 @@ describe("footer wording table", () => {
   const now = new Date("2026-10-21T20:20:00Z");
   for (const row of footerWordingCases) {
     for (const mode of ["used", "remaining"] as const) {
-      it(`${row.first}${row.second}, ${row.shown} shown, width ${row.width}${row.untrusted ? ", untrusted" : ""}, ${mode}: ${row.expected}`, () => {
+      for (const explicit of [false, true]) {
+      // usageFooterReset (Gauge's ring line, above its second row) reads like the footer below the rows.
+      it(`${row.first}${row.second}, ${row.shown} shown, width ${row.width}${row.untrusted ? ", untrusted" : ""}, ${mode}${explicit ? ", usageFooterReset" : ""}: ${row.expected}`, () => {
         // Idle means nothing used: 0 in used mode, 100 in remaining mode.
         const nothingUsed = mode === "remaining" ? 100 : 0;
         const window = (label: string, code: string, countdown: number) => ({
@@ -1573,16 +1575,26 @@ describe("footer wording table", () => {
           usageWindows: [window("Session", row.first, 360000), window("Weekly", row.second, 262800)],
         }, now);
         const footer: ThemePrimitive = {
-          t: "tx", y: 204, sl: 1, f: 2, s: 2, ft: "shrink", v: "Reset in {usageSlot1Reset}",
-          ...(row.width > 0 ? { w: row.width } : {}),
+          t: "tx", sl: 1, f: 2, s: 2, ft: "shrink", ...(row.width > 0 ? { w: row.width } : {}),
+          ...(explicit ? { y: 10, b: "usageFooterReset" } : { y: 204, v: "Reset in {usageSlot1Reset}" }),
         };
         // Text lanes like the native table: an unavailable limit keeps its name, so it still counts as displayed.
         const labels: ThemePrimitive[] = [1, 2].slice(0, row.shown).map((sl) => ({ t: "tx", y: 30, sl, v: `{usageSlot${sl}Label}` }));
         const primitives = [...labels, footer];
         expect(renderTextPrimitive(footer, built, primitives)).toBe(row.expected);
       });
+      }
     }
   }
+});
+
+it("usageFooterReset follows the footer window wherever it sits", () => {
+ const now = new Date("2026-10-21T12:00:00Z");
+ const footer: ThemePrimitive = {t:"tx",y:184,sl:1,b:"usageFooterReset"};
+ const rows: ThemePrimitive[] = [{t:"tx",y:122,sl:1},{t:"tx",y:208,sl:2},footer];
+ const at = (footerWindow?: string) => buildFrameData(now.toISOString(), {provider:"claude",...(footerWindow?{footerWindow}:{}),usageWindows:[{id:"session",label:"Session",percent:20,resetSecs:3600},{id:"weekly",label:"Weekly",percent:30,resetSecs:5*86400+3600}]},now);
+ expect(renderTextPrimitive(footer,at(),rows)).toBe("Session reset 1h");
+ expect(renderTextPrimitive(footer,at("weekly"),rows)).toBe("Weekly reset 5d");
 });
 
 it("names the limit and only the largest unit in the footer", () => {

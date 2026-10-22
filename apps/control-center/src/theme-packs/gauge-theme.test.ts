@@ -51,10 +51,10 @@ describe("Gauge 2.0 theme pack", () => {
     const validation = validateThemeSpec(importThemeSpec(JSON.parse(rawSpec)), {}, "live");
     expect(validation.errors).toEqual([]);
     expect(arc).toMatchObject({ ps: "arc", b: "usageSlot1Pace", sl: 1, as: 225, aw: 270, at: 18, rc: "#C9F26B", dc: "#E7A3AC" });
-    expect(manifest).toMatchObject({ usage: "live", assets: [], minFirmware: "1.0.50", version: "0.2.4" });
-    expect(manifest.requiredCapabilities).toEqual(["usage-slots-v1", "color-stops-v1", "progress-arc-v1", "usage-pace-v1"]);
+    expect(manifest).toMatchObject({ usage: "live", assets: [], minFirmware: "1.0.50", version: "0.2.5" });
+    expect(manifest.requiredCapabilities).toEqual(["usage-slots-v1", "color-stops-v1", "progress-arc-v1", "usage-pace-v1", "reset-footer-v1"]);
     // Two letters, so no theme a customer saves can share the file name.
-    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-14-[0-9a-f]{8}\.json$/);
+    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-15-[0-9a-f]{8}\.json$/);
     expect(manifest.themeSpec.bytes).toBe(Buffer.byteLength(rawSpec));
     expect(pack.specPath).toBe(manifest.themeSpec.path);
   });
@@ -66,16 +66,16 @@ describe("Gauge 2.0 theme pack", () => {
     const plain = render(frame(91));
     expect(ring(plain)).toEqual([[arc.bg, 270], ["#EDEDED", 245]]);
     expect(plain).not.toContain("<line");
-    expect(shown(plain)).toBe("Claude91%Session remainingresets 2h 14mWeekly87%");
+    expect(shown(plain)).toBe("Claude91%Session remainingSession reset 2hWeekly87%");
     // 6% reserve: the ring fills to the plan (85 %) and the green piece runs to the use.
     const reserve = render(frame(91, {}, paceSession));
     expect(ring(reserve)).toEqual([[arc.bg, 270], ["#EDEDED", 229], ["#C9F26B", 16]]);
     expect(reserve).toContain("<line");
-    expect(shown(reserve)).toBe("Claude91%Session remaining6% reserveresets 2h 14mWeekly87%35% reserve");
+    expect(shown(reserve)).toBe("Claude91%Session remaining6% reserveSession reset 2hWeekly87%35% reserve");
     // 14% deficit: the hatched piece runs from the use (38 %) to the plan (52 %).
     const deficit = render(frame(38, {}, { delta: 14, state: "deficit", lasts: false }));
     expect(ring(deficit)).toEqual([[arc.bg, 270], ["#EDEDED", 102], [expect.stringMatching(/^url\(#hatch-/), 38]]);
-    expect(shown(deficit).replaceAll(" ", "")).toContain("14%deficitresets2h14m");
+    expect(shown(deficit).replaceAll(" ", "")).toContain("14%deficitSessionreset2h");
     // On pace: the use itself and the tick, no piece.
     const onPace = render(frame(91, {}, { delta: 0, state: "on pace" }));
     expect(ring(onPace)).toEqual([[arc.bg, 270], ["#EDEDED", 245]]);
@@ -84,13 +84,13 @@ describe("Gauge 2.0 theme pack", () => {
   });
 
   it("says that the reset time is missing instead of showing a countdown", () => {
-    const reset = texts.find((p) => p.v === "resets {usageSlot1Reset}")!;
-    expect(renderTextPrimitive(reset, frame(42))).toBe("resets 2h 14m");
-    expect(renderTextPrimitive(reset, frame(42, noReset))).toBe("Reset unavailable");
+    const reset = texts.find((p) => p.b === "usageFooterReset")!;
+    expect(renderTextPrimitive(reset, frame(42), primitives)).toBe("Session reset 2h");
+    expect(renderTextPrimitive(reset, frame(42, noReset), primitives)).toBe("Reset unavailable");
     const idle = { usageSlots: [{ id: "session", label: "Session", percent: 100, resetSecs: 0 }], resetTrust: "live", resetSource: "codexbar", resetTrustSecs: 600 };
-    expect(renderTextPrimitive(reset, frame(100, idle))).toBe("No active session");
+    expect(renderTextPrimitive(reset, frame(100, idle), primitives)).toBe("No active session");
     // Pace never adds an untimed runs-out claim to the reset line.
-    expect(renderTextPrimitive(reset, frame(42, {}, { delta: 5, state: "deficit", lasts: false }))).toBe("resets 2h 14m");
+    expect(renderTextPrimitive(reset, frame(42, {}, { delta: 5, state: "deficit", lasts: false }), primitives)).toBe("Session reset 2h");
     // The usage itself is still drawn: the ring and the number do not depend on the reset time.
     const markup = render(frame(42, noReset));
     expect(shown(markup)).toBe("Claude42%Session remainingReset unavailable");
@@ -107,14 +107,14 @@ describe("Gauge 2.0 theme pack", () => {
     // A notice during startup or a provider error still shows in the title.
     expect(shown(render({ ...none, updateNotice: "Update available" }))).toBe("Update available");
     const one = frame(64, { usageSlots: [{ id: "session", label: "Session", percent: 64, resetSecs: 8078 }] });
-    expect(shown(render(one))).toBe("Claude64%Session remainingresets 2h 14m");
+    expect(shown(render(one))).toBe("Claude64%Session remainingSession reset 2h");
     expect(shown(render(frame(64)))).toContain("Weekly87%");
   });
 
   it("keeps every line inside its lane on the device", () => {
     // The title shows notices; the footer stays a plain reset.
     expect(texts.filter((p) => p.b === "l")).toHaveLength(1);
-    expect(texts.filter((p) => p.v === "resets {usageSlot1Reset}")).toHaveLength(1);
+    expect(texts.filter((p) => p.b === "usageFooterReset")).toHaveLength(1);
     const frames = [
       frame(91), frame(91, {}, paceSession), frame(38, {}, { delta: 14, state: "deficit", lasts: false }),
       frame(50, { updateNotice: "Update available" }), frame(50, { updateNotice: "Open VibeTV Mac App" }), frame(50, { label: "Open VibeTV Mac App" }),
@@ -127,7 +127,7 @@ describe("Gauge 2.0 theme pack", () => {
     const seen = new Set<string>();
     for (const data of frames) {
       for (const p of texts) {
-        const value = renderTextPrimitive(p, data);
+        const value = renderTextPrimitive(p, data, primitives);
         seen.add(value);
         const font = p.f ?? 1;
         const fit = themeTextFit(value, font, p.s!, p.w!, true, p.h ?? 0);
@@ -135,7 +135,7 @@ describe("Gauge 2.0 theme pack", () => {
         expect(width, `${value} in ${p.v ?? p.b}`).toBeLessThanOrEqual(p.w!);
       }
     }
-    for (const value of ["Claude", "Open VibeTV Mac App", "Session remaining", "Session used", "6% reserve", "14% deficit", "resets 2h 14m", "Reset unavailable"]) {
+    for (const value of ["Claude", "Open VibeTV Mac App", "Session remaining", "Session used", "6% reserve", "14% deficit", "Session reset 2h", "Reset unavailable"]) {
       expect(seen).toContain(value);
     }
   });
@@ -158,12 +158,12 @@ describe("Gauge 2.0 theme pack", () => {
     for (const y of [limit.y!, limit.y! + limit.h!]) {
       expect(Math.hypot(width / 2, y - cy)).toBeLessThan(inner);
     }
-    const footer = texts.find((p) => p.v === "resets {usageSlot1Reset}")!;
+    const footer = texts.find((p) => p.b === "usageFooterReset")!;
     // The 270-degree ring ends at 45 degrees either side of its open bottom.
     expect(Math.hypot(footer.w! / 2, footer.y! - cy)).toBeLessThan(inner);
     for (const updateNotice of ["Update available", "Open VibeTV Mac App"]) {
       expect(renderTextPrimitive(header, { ...paired, updateNotice })).toBe(updateNotice);
-      expect(renderTextPrimitive(footer, { ...paired, updateNotice })).toBe("resets 3d 1h");
+      expect(renderTextPrimitive(footer, { ...paired, updateNotice }, primitives)).toBe("Weekly reset 3d");
     }
   });
 

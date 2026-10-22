@@ -647,4 +647,4 @@ their provider-prefixed window id. The Companion omits the field for devices
 without this capability and when no matching window is present. A shared theme
 footer uses the chosen window only when displayed and carrying a trustworthy
 reset; otherwise it retains the first displayed limit with a reset. Explicit
-per-limit countdowns keep their own binding. No reset or usage window is invented.
+per-limit countdowns keep their own binding. The text binding `usageFooterReset` yields the same footer text wherever a theme places it, over the usage rows displayed by its own `usageSlot` rows; themes that use it require `reset-footer-v1`. No reset or usage window is invented.

@@ -651,6 +651,10 @@ inline const char* UsageWindowField(const char* key) {
   return "percent";
 }
 
+// The shared footer text ("Weekly reset 5d") for a reset line the theme places
+// anywhere; it follows every usage window's countdown.
+constexpr const char* kUsageFooterResetBinding = "usageFooterReset";
+
 // A countdown repaints whenever it moves. Compact countdowns: us1r/us2r,
 // pv1r/pv2r.
 inline bool UsageWindowKeyFollowsReset(const char* key) {
@@ -1219,6 +1223,9 @@ inline uint32_t BindingFieldMask(const char* binding) {
   }
   if (ProviderSlotBindingIndex(binding) >= 0) {
     return kThemeSpecFieldProviderSlots;
+  }
+  if (std::strcmp(SafeText(binding), kUsageFooterResetBinding) == 0) {
+    return kThemeSpecFieldUsageWindows | kThemeSpecFieldUsageWindowReset;
   }
   if (UsageWindowBindingIndex(binding) >= 0) {
     // A pace bar's plan moves with the usage mode (delta counts used percent), also
@@ -2205,7 +2212,8 @@ inline bool ResetFooterFits(Sink* sink, const CompiledPrimitive& primitive, cons
 }
 
 // Mirrors displayedResetFooter in the preview. Only a standalone first-limit
-// countdown below the displayed usage rows is a shared footer.
+// countdown below the displayed usage rows is a shared footer; the explicit
+// usageFooterReset binding is one wherever the theme places it.
 inline bool RenderDisplayedResetFooter(const CompiledThemeSpec& scene,
     const CompiledPrimitive& primitive, const FrameData& frame, char* out, size_t outSize,
     Sink* sink = nullptr) {
@@ -2213,18 +2221,21 @@ inline bool RenderDisplayedResetFooter(const CompiledThemeSpec& scene,
   const char* token = nullptr;
   if (std::strncmp(raw, "Reset in ", 9) == 0) token = raw + 9;
   if (std::strncmp(raw, "Resets in ", 10) == 0) token = raw + 10;
+  const bool explicitFooter = std::strcmp(SafeText(primitive.binding), kUsageFooterResetBinding) == 0;
   const bool binding = StringEqualsAny(primitive.binding, "usageSlot1Reset", "us1r", "usage.0.reset");
-  if (primitive.binding != nullptr && !binding) return false;
-  if (!binding && (token == nullptr ||
-      (std::strcmp(token, "{usageSlot1Reset}") != 0 &&
-       std::strcmp(token, "{us1r}") != 0 &&
-       std::strcmp(token, "{usage.0.reset}") != 0))) return false;
+  if (!explicitFooter) {
+    if (primitive.binding != nullptr && !binding) return false;
+    if (!binding && (token == nullptr ||
+        (std::strcmp(token, "{usageSlot1Reset}") != 0 &&
+         std::strcmp(token, "{us1r}") != 0 &&
+         std::strcmp(token, "{usage.0.reset}") != 0))) return false;
+  }
   bool displayed[kMaxThemeSpecUsageWindows] = {};
   for (size_t i = 0; i < scene.primitiveCount; ++i) {
     const CompiledPrimitive& row = scene.primitives[i];
     if (&row == &primitive || row.usageSlot == 0 ||
         !UsageWindowOwnerAvailableFor(frame, row.usageSlot - 1)) continue;
-    if (row.y >= primitive.y) return false;
+    if (!explicitFooter && row.y >= primitive.y) return false;
     displayed[row.usageSlot - 1] = true;
   }
   size_t displayedCount = 0;

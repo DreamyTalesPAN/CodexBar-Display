@@ -1894,7 +1894,8 @@ export function themeShowsTokenTotals(spec?: ThemeSpec | null): boolean {
   });
 }
 
-// A standalone first-limit countdown below the usage rows is the shared footer.
+// A standalone first-limit countdown below the usage rows is the shared footer,
+// and so is usageFooterReset wherever a theme places it.
 // Explicit per-limit lines (with their label or another row below) keep their binding.
 function displayedResetFooter(
   primitive: ThemePrimitive,
@@ -1902,8 +1903,9 @@ function displayedResetFooter(
   primitives: ThemePrimitive[],
 ): string | null {
   const binding = primitive.binding || primitive.b;
+  const explicitFooter = binding === "usageFooterReset";
   const isFooter = binding
-    ? /^(?:usageSlot1Reset|us1r|usage\.0\.reset)$/.test(binding)
+    ? explicitFooter || /^(?:usageSlot1Reset|us1r|usage\.0\.reset)$/.test(binding)
     : /^(?:Reset|Resets) in \{(?:usageSlot1Reset|us1r|usage\.0\.reset)\}$/.test(
         primitive.text || primitive.v || "",
       );
@@ -1913,7 +1915,7 @@ function displayedResetFooter(
     if (row === primitive || !primitiveUsageSlotVisible(row, frame)) continue;
     const index = row.usageIndex ?? row.ui ?? ((row.slot ?? row.sl ?? 0) - 1);
     if (index < 0) continue;
-    if ((row.y || 0) >= (primitive.y || 0)) return null;
+    if (!explicitFooter && (row.y || 0) >= (primitive.y || 0)) return null;
     slots.add(index);
   }
   if (slots.size === 0) return null;

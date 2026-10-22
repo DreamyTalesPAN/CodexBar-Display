@@ -80,27 +80,29 @@
       "id": "gauge",
       "title": "Gauge",
       "usage": "live",
-      "version": "0.2.4",
-      "themeRev": 14,
-      "themeSpecPath": "/themes/u/ga-14-e0dae764.json",
+      "version": "0.2.5",
+      "themeRev": 15,
+      "themeSpecPath": "/themes/u/ga-15-9cfc333b.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
         "color-stops-v1",
         "progress-arc-v1",
-        "usage-pace-v1"
+        "usage-pace-v1",
+        "reset-footer-v1"
       ],
       "tags": [
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-gauge-v0.2.4.zip",
-      "sha256": "7ee4da40067496ca7bbce1adc580cd1db260fcc139d2789ec8ba61093adb126c",
-      "bytes": 966,
+      "downloadAsset": "vibetv-theme-gauge-v0.2.5.zip",
+      "sha256": "75123fe12c1b6e8103e0377cfd11d0b62361b22659af412f5875412ec981447d",
+      "bytes": 974,
       "earlierThemeSpecPaths": [
         "/themes/u/ga-10-317f5a1b.json",
         "/themes/u/ga-11-a3246430.json",
         "/themes/u/ga-12-bfa31611.json",
         "/themes/u/ga-13-37b7873e.json",
+        "/themes/u/ga-14-e0dae764.json",
         "/themes/u/ga-2-ad19500f.json"
       ]
     },
