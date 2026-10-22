@@ -20318,3 +20318,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Each limit name is bottom-aligned just above its own bar, never on a divider line, in the 26 px font; a name too long for one line (for example "Claude Weekly (Sonnet)") shows in the 16 px font instead of the 8 px font. Pace text moves to the percent column. Clippy's and Tiny Office's art is drawn smaller and Synthwave's grid floor is cropped to make the room.
 - Scope: the font fallback of themeTextFit in live-vibetv-preview.tsx (same step as the device's FitText) and the layouts of the four theme packs.
 - What's new: none — layout only
+
+## 2026-10-22 — #7210: Night Clock shows only the largest reset unit; Pixel Battery keeps the limit name in minutes
+
+- User approval: pending — Night Clock's "Next resets" shows "6d" and "4d" (or "3h", "1h") instead of "6d 4h" and "4d 23h", and Pixel Battery's footer reads "Session reset 55m" instead of "Reset 55m" in the last hour
+- Approved customer-visible result: Every theme except Reset Countdown shows only the largest unit of a reset: Night Clock's two provider rows read "6d" / "4d" or "3h" / "1h" in the live preview and on the device; Pixel Battery's footer names the limit ("Session reset 55m") at every minute count, as it already did from one hour on.
+- Scope: the provider-slot reset bindings (pv1r, pv2r, providerSlotNReset) in live-vibetv-preview.tsx and in the firmware renderer, and the footer width of Pixel Battery 1.17.4.
+- What's new: none — Night Clock and Pixel Battery text only

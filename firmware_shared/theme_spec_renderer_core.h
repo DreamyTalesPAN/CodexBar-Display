@@ -564,7 +564,7 @@ inline void FormatDuration(int64_t secs, char* out, size_t outSize) {
   std::snprintf(out, outSize, "%lldm", static_cast<long long>(minutes));
 }
 
-// The largest unit only ("5d", "3h", "45m"): the footer and the short reset binding.
+// The largest unit only ("5d", "3h", "45m"): the footer and every reset binding but ResetFull.
 inline void FormatResetLargestUnit(int64_t secs, char* out, size_t outSize) {
   FormatDuration(secs, out, outSize);
   if (char* space = std::strchr(out, ' ')) *space = '\0';
@@ -948,7 +948,7 @@ inline void BoundValue(const char* key, const FrameData& frame, char* out, size_
         // A provider slot is only sent with a deadline, so it is never idle.
         std::snprintf(out, outSize, "%s", kResetUnavailableText);
       } else {
-        FormatDuration(slot.resetSecs, out, outSize);
+        FormatResetLargestUnit(slot.resetSecs, out, outSize);
       }
     } else {
       std::snprintf(out, outSize, "%d", ClampPct(slot.percent));

@@ -917,7 +917,7 @@ void testIdleCountdownCollapsesForCompactResetAliases() {
   TEST_ASSERT_EQUAL_UINT32(4, sink.commands.size());
   TEST_ASSERT_EQUAL_STRING("No active session", sink.commands[1].text.c_str());
   TEST_ASSERT_EQUAL_STRING("No active session", sink.commands[2].text.c_str());
-  TEST_ASSERT_EQUAL_STRING("Resets in 3h 0m", sink.commands[3].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("Resets in 3h", sink.commands[3].text.c_str());
 }
 
 // The idle wording is only for a reading the device stands behind. A countdown
@@ -1090,7 +1090,7 @@ void testProviderSlotBindingsRenderLabelAndFormattedReset() {
   TEST_ASSERT_TRUE(renderSpec(spec, frame, oneProviderSink));
   TEST_ASSERT_EQUAL_UINT32(3, oneProviderSink.commands.size());
   TEST_ASSERT_EQUAL_STRING("Claude", oneProviderSink.commands[1].text.c_str());
-  TEST_ASSERT_EQUAL_STRING("1h 0m", oneProviderSink.commands[2].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("1h", oneProviderSink.commands[2].text.c_str());
 
   frame.providerSlots[1].label = "Codex";
   frame.providerSlots[1].resetSecs = 12000;
@@ -1099,7 +1099,7 @@ void testProviderSlotBindingsRenderLabelAndFormattedReset() {
   TEST_ASSERT_TRUE(renderSpec(spec, frame, twoProviderSink));
   TEST_ASSERT_EQUAL_UINT32(5, twoProviderSink.commands.size());
   TEST_ASSERT_EQUAL_STRING("Codex", twoProviderSink.commands[3].text.c_str());
-  TEST_ASSERT_EQUAL_STRING("3h 20m", twoProviderSink.commands[4].text.c_str());
+  TEST_ASSERT_EQUAL_STRING("3h", twoProviderSink.commands[4].text.c_str());
 }
 
 void testProviderSlotsParseTickAndTriggerLiveRedraw() {
@@ -5071,9 +5071,14 @@ void testPaceBarRepaintsWhenOnlyTheUsageModeChanges() {
 void testResetShowsLargestUnitUnlessFull() {
   const char* spec = R"JSON({"v":1,"id":"short","rev":1,"p":[
     {"t":"tx","x":0,"y":0,"v":"resets {usageSlot1Reset}"},
-    {"t":"tx","x":0,"y":20,"v":"{usageSlot1ResetFull}"}
+    {"t":"tx","x":0,"y":20,"v":"{usageSlot1ResetFull}"},
+    {"t":"tx","x":0,"y":40,"b":"pv1r"},
+    {"t":"tx","x":0,"y":60,"v":"{providerSlot2Reset}"}
   ]})JSON";
   FrameData frame;
+  frame.providerSlots[0].label = "Codex";
+  frame.providerSlots[0].available = frame.providerSlots[1].available = true;
+  frame.providerSlots[1].label = "Claude";
   frame.usageSlot1Label = frame.usageWindows[0].label = "Session";
   frame.usageSlot1Percent = frame.usageWindows[0].percent = 91;
   frame.usageSlot1Available = frame.usageWindows[0].available = true;
@@ -5085,6 +5090,11 @@ void testResetShowsLargestUnitUnlessFull() {
     std::vector<std::string> texts = renderedTexts(spec, frame);
     TEST_ASSERT_EQUAL_STRING(shortText[i], texts[0].c_str());
     TEST_ASSERT_EQUAL_STRING(fullText[i], texts[1].c_str());
+    // The provider-slot countdowns (Night Clock) read the same largest unit.
+    frame.providerSlots[0].resetSecs = frame.providerSlots[1].resetSecs = countdowns[i];
+    texts = renderedTexts(spec, frame);
+    TEST_ASSERT_EQUAL_STRING(shortText[i] + 7, texts[2].c_str());
+    TEST_ASSERT_EQUAL_STRING(shortText[i] + 7, texts[3].c_str());
   }
   // Without a countdown the largest-unit line shows exactly what the full one shows.
   frame.usageSlot1ResetSecs = frame.usageWindows[0].resetSecs = 0;

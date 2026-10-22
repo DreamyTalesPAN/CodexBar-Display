@@ -191,9 +191,9 @@
       "id": "pixel-battery",
       "title": "Pixel Battery",
       "usage": "live",
-      "version": "1.17.3",
-      "themeRev": 20,
-      "themeSpecPath": "/themes/u/pba-20-09a7a514.json",
+      "version": "1.17.4",
+      "themeRev": 21,
+      "themeSpecPath": "/themes/u/pba-21-d20fb73b.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -206,15 +206,16 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-pixel-battery-v1.17.3.zip",
-      "sha256": "3ac09fe0b75add760310b317e1aa3151f433211eafad2434cd3140547a6a8551",
-      "bytes": 2937,
+      "downloadAsset": "vibetv-theme-pixel-battery-v1.17.4.zip",
+      "sha256": "91ba53f9200b9c1f7cde16e4f6343dc514d703733d225399ca1b0dd05a48d003",
+      "bytes": 2938,
       "earlierThemeSpecPaths": [
         "/themes/u/pba-15-9e62e5.json",
         "/themes/u/pba-16-f46829.json",
         "/themes/u/pba-17-6714a0.json",
         "/themes/u/pba-18-cb568cbf.json",
-        "/themes/u/pba-19-941e3302.json"
+        "/themes/u/pba-19-941e3302.json",
+        "/themes/u/pba-20-09a7a514.json"
       ]
     },
     {

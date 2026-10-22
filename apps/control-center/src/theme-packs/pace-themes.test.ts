@@ -133,4 +133,16 @@ describe("the Pace themes", () => {
     expect(svg).toContain('fill="#F97316"'); // 38 % left
     expect(svg).toContain('fill="#FACC15"'); // 61 % left
   });
+
+  it("Pixel Battery names the limit in its footer at every minute count, not only from one hour on", () => {
+    const pack = JSON.parse(readFileSync(path.join(root, "dist/theme-packs/render/pixel-battery.json"), "utf8")) as ThemeRenderPack;
+    for (let minutes = 1; minutes < 60; minutes++) {
+      const frame = buildFrameData(clock.toISOString(), {
+        provider: "claude", label: "Claude", usageMode: "remaining",
+        usageSlots: [{ id: "session", label: "Session", percent: 90, resetSecs: minutes * 60 }, { id: "weekly", label: "Weekly", percent: 50, resetSecs: 484800 }],
+      }, clock);
+      const text = renderToStaticMarkup(createElement(ThemeSpecPreview, { pack, themeId: "pixel-battery", status: "ready", animate: false, frame })).replace(/<[^>]*>/g, "");
+      expect(text.replaceAll(" ", ""), `${minutes}m`).toContain(`Sessionreset${minutes}m`);
+    }
+  });
 });

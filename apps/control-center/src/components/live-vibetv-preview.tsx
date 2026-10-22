@@ -2316,7 +2316,7 @@ export function boundValue(key: string, frame: FrameData): string {
     case "providerSlot1Reset":
     case "pv1r":
       return frame.providerSlots[0]?.available
-        ? formatReset(frame.providerSlots[0].resetSecs, frame.providerSlots[0].idle)
+        ? formatResetLargest(frame.providerSlots[0].resetSecs, frame.providerSlots[0].idle)
         : "";
     case "providerSlot1Available":
     case "pv1a":
@@ -2332,7 +2332,7 @@ export function boundValue(key: string, frame: FrameData): string {
     case "providerSlot2Reset":
     case "pv2r":
       return frame.providerSlots[1]?.available
-        ? formatReset(frame.providerSlots[1].resetSecs, frame.providerSlots[1].idle)
+        ? formatResetLargest(frame.providerSlots[1].resetSecs, frame.providerSlots[1].idle)
         : "";
     case "providerSlot2Available":
     case "pv2a":

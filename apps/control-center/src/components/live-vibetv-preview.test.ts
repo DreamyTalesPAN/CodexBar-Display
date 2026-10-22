@@ -1324,6 +1324,22 @@ describe("usage pace", () => {
     expect(boundValue("usageSlot1Reset", at(0))).toBe(boundValue("usageSlot1ResetFull", at(0)));
   });
 
+  it("shows the largest unit on the provider-slot resets too (Night Clock)", () => {
+    const at = (resetSecs: number) => buildFrameData("2026-07-24T12:00:00Z", {
+      v: 2,
+      provider: "claude+codex",
+      providerSlots: [
+        { id: "codex", label: "Codex", percent: 40, resetSecs },
+        { id: "claude", label: "Claude", percent: 77, resetSecs: resetSecs + 3600 },
+      ],
+    }, new Date("2026-07-24T12:00:00Z"));
+    expect(boundValue("pv1r", at(532800))).toBe("6d");
+    expect(boundValue("providerSlot2Reset", at(431400))).toBe("5d");
+    expect(boundValue("pv1r", at(12000))).toBe("3h");
+    expect(boundValue("pv2r", at(2700))).toBe("1h");
+    expect(boundValue("pv1r", at(2700))).toBe("45m");
+  });
+
   it("clips a pace piece to the rounded interior of the bar, and only a bar with a piece", () => {
     const render = (frame: ReturnType<typeof paced>, primitive: ThemePrimitive) =>
       renderToStaticMarkup(
