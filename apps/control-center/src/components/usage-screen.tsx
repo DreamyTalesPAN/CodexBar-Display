@@ -89,8 +89,8 @@ export function UsageScreen({
     !usageError &&
     hasProviders &&
     !tokenUsageReady;
-  // A requested refresh that still waits for its reading: a small spinner by
-  // the token total, not a notice above the page (Paul, 2026-10-09).
+  // A requested refresh that still waits for its reading shows on the Refresh
+  // button alone, so nothing above the token total appears or moves (#918).
   const refreshPending = usage?.refresh?.state === "refreshing";
   const refreshNotice = usageRefreshNotice(usage?.refresh, {
     companionStatus,
@@ -175,7 +175,6 @@ export function UsageScreen({
           <TokenUsageOverTimePanel
             onRefresh={onRefresh}
             providers={providers}
-            refreshPending={refreshPending}
             refreshing={refreshing || refreshPending}
             updating={tokenUsageUpdating}
           />
@@ -246,13 +245,11 @@ function usageRefreshNotice(
 function TokenUsageOverTimePanel({
   onRefresh,
   providers,
-  refreshPending,
   refreshing,
   updating,
 }: {
   onRefresh?: () => void;
   providers: UsageProviderInfo[];
-  refreshPending: boolean;
   refreshing: boolean;
   updating: boolean;
 }) {
@@ -284,16 +281,6 @@ function TokenUsageOverTimePanel({
           >
             <Spinner className="size-3" data-icon="inline-start" />
             Still counting
-          </Badge>
-        ) : refreshPending ? (
-          <Badge
-            aria-live="polite"
-            className="mb-3"
-            data-testid="usage-refresh-pending"
-            variant="secondary"
-          >
-            <Spinner className="size-3" data-icon="inline-start" />
-            Refreshing
           </Badge>
         ) : null}
         <h2

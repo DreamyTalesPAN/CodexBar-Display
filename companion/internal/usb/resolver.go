@@ -133,6 +133,11 @@ func ResolveVibeTVControlPort(explicit, expectedDeviceID string) (string, error)
 	return defaultSender.ResolveControlPort(explicit, expectedDeviceID)
 }
 
+// ResolveVibeTVControlPortContext bounds all candidate probes by ctx.
+func ResolveVibeTVControlPortContext(ctx context.Context, explicit, expectedDeviceID string) (string, error) {
+	return defaultSender.ResolveControlPortContext(ctx, explicit, expectedDeviceID)
+}
+
 // OpenVibeTVPort returns the open port of an already verified VibeTV, if any.
 func OpenVibeTVPort() (string, bool) {
 	return defaultSender.OpenVibeTVPort()
