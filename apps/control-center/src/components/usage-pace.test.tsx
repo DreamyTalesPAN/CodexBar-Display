@@ -39,6 +39,16 @@ function segment(container: HTMLElement, tone: string) {
 describe("pace in the lane bar", () => {
   afterEach(cleanup);
 
+  it("shows 96% used with exactly 40% deficit from 56 to 96", () => {
+    const { container, getByText } = renderProvider({ windows: [{
+      id: "weekly", label: "Weekly", usedPercent: 96, stage: "farAhead",
+      deltaPercent: 40, expectedUsedPercent: 56,
+    }] });
+    expect(segment(container, "deficit")?.style.left).toBe("56%");
+    expect(segment(container, "deficit")?.style.width).toBe("40%");
+    expect(getByText("40% deficit")).toBeTruthy();
+  });
+
   it("puts the tick at CodexBar's expected-used percent", () => {
     const { container } = renderProvider({
       windows: [
@@ -74,7 +84,7 @@ describe("pace in the lane bar", () => {
     expect(piece?.style.left).toBe("40%");
     expect(piece?.style.width).toBe("10%");
     expect(segment(container, "deficit")).toBeNull();
-    expect(getByText("10% in reserve").className).toContain("text-success-foreground");
+    expect(getByText("10% reserve").className).toContain("text-success-foreground");
   });
 
   it("draws deficit as a red hatched piece", () => {
@@ -96,7 +106,7 @@ describe("pace in the lane bar", () => {
     expect(piece?.style.width).toBe("12%");
     expect(piece?.style.backgroundImage).toContain("repeating-linear-gradient");
     expect(segment(container, "reserve")).toBeNull();
-    expect(getByText("12% in deficit").className).toContain("text-destructive");
+    expect(getByText("12% deficit").className).toContain("text-destructive");
   });
 
   // The Companion already flips expectedUsedPercent with the mode, so the tick
@@ -130,8 +140,8 @@ describe("pace in the lane bar", () => {
     expect([deficit?.style.left, deficit?.style.width]).toEqual(["52%", "12%"]);
     const reserve = segment(container, "reserve");
     expect([reserve?.style.left, reserve?.style.width]).toEqual(["85%", "6%"]);
-    expect(getByText("12% in deficit")).toBeTruthy();
-    expect(getByText("6% in reserve")).toBeTruthy();
+    expect(getByText("12% deficit")).toBeTruthy();
+    expect(getByText("6% reserve")).toBeTruthy();
   });
 
   it("says On pace only for onTrack, with the tick and no piece", () => {
@@ -182,7 +192,7 @@ describe("pace in the lane bar", () => {
       })),
     });
     expect(ticks(container)).toHaveLength(0);
-    expect(container.textContent).not.toMatch(/in reserve|in deficit|On pace/);
+    expect(container.textContent).not.toMatch(/reserve|deficit|On pace/);
   });
 
   it.each([-100, 100])("keeps the inclusive delta boundary %s", (deltaPercent) => {
@@ -193,7 +203,7 @@ describe("pace in the lane bar", () => {
       }],
     });
     expect(ticks(container)).toHaveLength(1);
-    expect(container.textContent).toContain(`100% in ${deltaPercent < 0 ? "reserve" : "deficit"}`);
+    expect(container.textContent).toContain(`100% ${deltaPercent < 0 ? "reserve" : "deficit"}`);
   });
 
   it("adds CodexBar's run-out time to the deficit line", () => {
@@ -212,7 +222,7 @@ describe("pace in the lane bar", () => {
         },
       ],
     });
-    expect(getByText("54% in deficit · runs out in 2d 15h").className).toContain("text-destructive");
+    expect(getByText("54% deficit · runs out in 2d 15h").className).toContain("text-destructive");
   });
 
   it("draws no pace for a lane CodexBar sent no pace for", () => {
@@ -221,7 +231,7 @@ describe("pace in the lane bar", () => {
     });
     expect(ticks(container)).toHaveLength(0);
     expect(container.querySelector("[data-pace-segment]")).toBeNull();
-    expect(container.textContent).not.toMatch(/in reserve|in deficit|On pace/);
+    expect(container.textContent).not.toMatch(/reserve|deficit|On pace/);
   });
 
   it("draws no pace without an expected-used percent or a delta, or with a stage it does not know", () => {
@@ -233,7 +243,7 @@ describe("pace in the lane bar", () => {
       ],
     });
     expect(ticks(container)).toHaveLength(0);
-    expect(container.textContent).not.toMatch(/in reserve|in deficit|On pace/);
+    expect(container.textContent).not.toMatch(/reserve|deficit|On pace/);
   });
 
   it("draws no pace on the Fable only lane", () => {
@@ -260,7 +270,7 @@ describe("pace in the lane bar", () => {
       ],
     });
     expect(ticks(container)).toHaveLength(0);
-    expect(container.textContent).not.toMatch(/in reserve/);
+    expect(container.textContent).not.toMatch(/reserve/);
   });
 
   it("draws no pace once the lane's reset has passed since the reading", () => {

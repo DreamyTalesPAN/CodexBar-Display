@@ -1180,13 +1180,13 @@ describe("usage pace", () => {
 
   it("says reserve, deficit and on pace as ready sentences", () => {
     const reserve = paced(91, { delta: -6, state: "reserve", lasts: true });
-    expect(boundValue("usageSlot1PaceText", reserve)).toBe("6% in reserve");
+    expect(boundValue("usageSlot1PaceText", reserve)).toBe("6% reserve");
     expect(boundValue("usageSlot1PaceShort", reserve)).toBe("6% reserve");
     expect(boundValue("usageSlot1PaceLasts", reserve)).toBe("lasts until reset");
     expect(boundValue("usageSlot1PaceLastsSep", reserve)).toBe("lasts until reset - ");
     expect(boundValue("usageSlot1PaceRunsOut", reserve)).toBe("");
     const deficit = paced(38, { delta: 14, state: "deficit", lasts: false });
-    expect(boundValue("usageSlot1PaceText", deficit)).toBe("14% in deficit");
+    expect(boundValue("usageSlot1PaceText", deficit)).toBe("14% deficit");
     expect(boundValue("usageSlot1PaceShort", deficit)).toBe("14% deficit");
     expect(boundValue("usageSlot1PaceRunsOut", deficit)).toBe("runs out");
     const onPace = paced(91, { delta: -1, state: "on pace" });
@@ -1208,7 +1208,7 @@ describe("usage pace", () => {
   it("reads every spelling of a pace binding the firmware reads", () => {
     const frame = paced(91, { delta: -6, state: "reserve", lasts: true });
     for (const key of ["usageSlot1PaceText", "us1PaceText", "usage.0.PaceText"]) {
-      expect(boundValue(key, frame), key).toBe("6% in reserve");
+      expect(boundValue(key, frame), key).toBe("6% reserve");
     }
     expect(boundValue("us1PaceLastsSep", frame)).toBe("lasts until reset - ");
     for (const binding of ["usageSlot1Pace", "us1Pace", "usage.0.Pace"]) {
@@ -1230,7 +1230,7 @@ describe("usage pace", () => {
         usageSlots: [{ id: "session", label: "Session", percent: 91, resetSecs: 12000, pace: { delta: -6, state: "reserve" } }] },
       new Date(clock.getTime() + 120_000),
     );
-    expect(boundValue("usageSlot1PaceText", expired)).toBe("6% in reserve");
+    expect(boundValue("usageSlot1PaceText", expired)).toBe("6% reserve");
     expect(boundValue("usageSlot1PaceText", later)).toBe("");
   });
 
@@ -1289,12 +1289,36 @@ describe("usage pace", () => {
     expect(boundValue("usageModeShort", paced(9, undefined, { usageMode: "used" }))).toBe("used");
   });
 
+  it("draws 96% used with 40% deficit from 56 to 96, even inside segments", () => {
+    const frame = paced(96, { delta: 40, state: "deficit" }, { usageMode: "used" });
+    expect(paceBarMarks(bar, frame, 96)).toEqual({ fillTo: 56, pieceTo: 96, planAt: 56, hatched: true });
+    const svg = renderToStaticMarkup(createElement(ThemeSpecPreview, {
+      pack: { spec: { p: [{ ...bar, x: 0, y: 0, w: 102, h: 12, ps: "segments", sg: 10, gg: 1, c: "#123456" }] } },
+      status: "ready", themeId: "x", animate: false, frame,
+    }));
+    expect(svg).toMatch(/<rect fill="#123456"[^>]*width="6" x="51"/);
+    expect(svg).toMatch(/<rect fill="url\(#[^"]+\)"[^>]*width="3" x="57"/);
+    expect(svg).toMatch(/<rect fill="url\(#[^"]+\)"[^>]*width="6" x="91"/);
+    expect(boundValue("usageSlot1PaceText", frame)).toBe("40% deficit");
+  });
+
+  it("draws a 6% reserve as a partial segment, without rounding it to 10%", () => {
+    const frame = paced(50, { delta: -6, state: "reserve" }, { usageMode: "used" });
+    const svg = renderToStaticMarkup(createElement(ThemeSpecPreview, {
+      pack: { spec: { p: [{ ...bar, x: 0, y: 0, w: 102, h: 12, ps: "segments", sg: 10, gg: 1, rc: "#654321" }] } },
+      status: "ready", themeId: "x", animate: false, frame,
+    }));
+    expect(svg).toMatch(/<rect fill="#654321"[^>]*width="6" x="51"/);
+    expect(svg).not.toContain("<pattern");
+    expect(boundValue("usageSlot1PaceText", frame)).toBe("6% reserve");
+  });
+
   it("fills to the smaller of use and plan and puts the piece up to the larger", () => {
-    // 91 % left with 6 % in reserve: 85 % was planned.
+    // 91 % left with 6 % reserve: 85 % was planned.
     expect(paceBarMarks(bar, paced(91, { delta: -6, state: "reserve" }), 91)).toEqual({
       fillTo: 85, pieceTo: 91, planAt: 85, hatched: false,
     });
-    // 38 % left with 14 % in deficit: 52 % was planned to be left.
+    // 38 % left with 14 % deficit: 52 % was planned to be left.
     expect(paceBarMarks(bar, paced(38, { delta: 14, state: "deficit" }), 38)).toEqual({
       fillTo: 38, pieceTo: 52, planAt: 52, hatched: true,
     });
@@ -1491,4 +1515,77 @@ it("prefers the selected footer window only when displayed with a reset", () => 
  expect(renderTextPrimitive(footer,frame,[rows[0],footer])).toBe("Session resets in 1h 0m");
  frame.usageWindows[1].resetSecs = 0;
  expect(renderTextPrimitive(footer,frame,rows)).toBe("Session resets in 1h 0m");
+});
+
+// The pace bar table, row for row the same as paceBarRows in
+// firmware_esp8266/test/test_native_theme_spec/test_theme_spec_renderer.cpp.
+// The plan is clamped to 0..100, so a deficit larger than the use plans 0.
+const paceBarRows: Array<{
+  mode: "used" | "remaining";
+  percent: number;
+  delta: number;
+  state: "reserve" | "on pace" | "deficit";
+  fill: number;
+  piece: number;
+  plan: number;
+  hatched: boolean;
+}> = [
+  { mode: "used", percent: 0, delta: -6, state: "reserve", fill: 0, piece: 6, plan: 6, hatched: false },
+  { mode: "used", percent: 1, delta: -6, state: "reserve", fill: 1, piece: 7, plan: 7, hatched: false },
+  { mode: "used", percent: 50, delta: -6, state: "reserve", fill: 50, piece: 56, plan: 56, hatched: false },
+  { mode: "used", percent: 99, delta: -6, state: "reserve", fill: 99, piece: 100, plan: 100, hatched: false },
+  { mode: "used", percent: 100, delta: -6, state: "reserve", fill: 100, piece: 100, plan: 100, hatched: false },
+  { mode: "used", percent: 0, delta: 14, state: "deficit", fill: 0, piece: 0, plan: 0, hatched: true },
+  { mode: "used", percent: 1, delta: 14, state: "deficit", fill: 0, piece: 1, plan: 0, hatched: true },
+  { mode: "used", percent: 50, delta: 14, state: "deficit", fill: 36, piece: 50, plan: 36, hatched: true },
+  { mode: "used", percent: 99, delta: 14, state: "deficit", fill: 85, piece: 99, plan: 85, hatched: true },
+  { mode: "used", percent: 100, delta: 14, state: "deficit", fill: 86, piece: 100, plan: 86, hatched: true },
+  { mode: "used", percent: 0, delta: -1, state: "on pace", fill: 0, piece: 0, plan: 1, hatched: false },
+  { mode: "used", percent: 1, delta: -1, state: "on pace", fill: 1, piece: 1, plan: 2, hatched: false },
+  { mode: "used", percent: 50, delta: -1, state: "on pace", fill: 50, piece: 50, plan: 51, hatched: false },
+  { mode: "used", percent: 99, delta: -1, state: "on pace", fill: 99, piece: 99, plan: 100, hatched: false },
+  { mode: "used", percent: 100, delta: -1, state: "on pace", fill: 100, piece: 100, plan: 100, hatched: false },
+  { mode: "remaining", percent: 100, delta: -6, state: "reserve", fill: 94, piece: 100, plan: 94, hatched: false },
+  { mode: "remaining", percent: 99, delta: -6, state: "reserve", fill: 93, piece: 99, plan: 93, hatched: false },
+  { mode: "remaining", percent: 50, delta: -6, state: "reserve", fill: 44, piece: 50, plan: 44, hatched: false },
+  { mode: "remaining", percent: 1, delta: -6, state: "reserve", fill: 0, piece: 1, plan: 0, hatched: false },
+  { mode: "remaining", percent: 0, delta: -6, state: "reserve", fill: 0, piece: 0, plan: 0, hatched: false },
+  { mode: "remaining", percent: 100, delta: 14, state: "deficit", fill: 100, piece: 100, plan: 100, hatched: true },
+  { mode: "remaining", percent: 99, delta: 14, state: "deficit", fill: 99, piece: 100, plan: 100, hatched: true },
+  { mode: "remaining", percent: 50, delta: 14, state: "deficit", fill: 50, piece: 64, plan: 64, hatched: true },
+  { mode: "remaining", percent: 1, delta: 14, state: "deficit", fill: 1, piece: 15, plan: 15, hatched: true },
+  { mode: "remaining", percent: 0, delta: 14, state: "deficit", fill: 0, piece: 14, plan: 14, hatched: true },
+  { mode: "remaining", percent: 100, delta: -1, state: "on pace", fill: 100, piece: 100, plan: 99, hatched: false },
+  { mode: "remaining", percent: 99, delta: -1, state: "on pace", fill: 99, piece: 99, plan: 98, hatched: false },
+  { mode: "remaining", percent: 50, delta: -1, state: "on pace", fill: 50, piece: 50, plan: 49, hatched: false },
+  { mode: "remaining", percent: 1, delta: -1, state: "on pace", fill: 1, piece: 1, plan: 0, hatched: false },
+  { mode: "remaining", percent: 0, delta: -1, state: "on pace", fill: 0, piece: 0, plan: 0, hatched: false },
+];
+
+describe("pace bar table", () => {
+  const clock = new Date("2026-10-19T12:00:00Z");
+  const bar: ThemePrimitive = { t: "p", x: 0, y: 0, w: 100, h: 10, b: "usageSlot1Pace" };
+  for (const row of paceBarRows) {
+    it(`${row.mode} ${row.percent}% with ${row.state} ${row.delta}`, () => {
+      const frame = buildFrameData(clock.toISOString(), {
+        provider: "claude",
+        usageMode: row.mode,
+        usageSlots: [
+          {
+            id: "session",
+            label: "Session",
+            percent: row.percent,
+            resetSecs: 12000,
+            pace: { delta: row.delta, state: row.state, lasts: true },
+          },
+        ],
+      }, clock);
+      expect(paceBarMarks(bar, frame, row.percent)).toEqual({
+        fillTo: row.fill,
+        pieceTo: row.piece,
+        planAt: row.plan,
+        hatched: row.hatched,
+      });
+    });
+  }
 });
