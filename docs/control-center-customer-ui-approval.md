@@ -8346,3 +8346,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; times and dates keep the computer's locale as before, and an invalid tag shows de-DE instead of a blank screen.
 - Scope: hostTimeLocale in control-center-runtime.ts with its regression test.
 - What's new: none — crash guard only
+
+## 2026-10-22 — #890: update-check test expects the de-DE host-time format
+
+- User approval: no visible change – UI approval not needed (test only: the update-check test formats its expected "Last checked" time with de-DE, the app's fallback, instead of the CI runner's locale)
+- Approved customer-visible result: none; the app renders the same times as before.
+- Scope: control-center-app.update-check.test.tsx, test helper only.
+- What's new: none — test only

@@ -36,7 +36,8 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function lastChecked(value: string): string {
-  return `Last checked ${new Intl.DateTimeFormat(undefined, {
+  // The app's fallback when no shell passes a locale (issue #890).
+  return `Last checked ${new Intl.DateTimeFormat("de-DE", {
     dateStyle: "medium",
     timeStyle: "medium",
   }).format(new Date(value))}`;
