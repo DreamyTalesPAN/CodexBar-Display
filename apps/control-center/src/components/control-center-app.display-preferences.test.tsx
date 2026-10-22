@@ -1424,6 +1424,24 @@ it("shows CodexBar's mode once a usage poll delivers it, without reopening Setti
   expect(screen.getByRole("combobox", { name: "Show" }).textContent).toBe("Used");
 });
 
+// #895: the poll that first delivers CodexBar's mode may start on Overview and
+// land after the customer opened Settings; the row asks again then.
+it("shows CodexBar's mode from a usage poll that started before Settings was opened", async () => {
+  const window = startWindow();
+  window.companion.providers = [claude];
+  await window.wait(10);
+  window.companion.usageModeKnown = false;
+  let serveAnswered = () => {};
+  window.companion.holdUsageRead = new Promise<void>((resolve) => { serveAnswered = resolve; });
+  await window.wait(30);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  expect((screen.getByRole("combobox", { name: "Show" }) as HTMLButtonElement).disabled).toBe(true);
+  serveAnswered();
+  await window.wait(1);
+  expect((screen.getByRole("combobox", { name: "Show" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
 // #877: the customer changes Used / Remaining in CodexBar itself while Settings
 // stays open. The next usage poll brings the new mode; Show follows it.
 it("follows a change made in CodexBar itself while Settings stays open", async () => {

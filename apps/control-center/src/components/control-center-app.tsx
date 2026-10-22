@@ -3438,6 +3438,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     ? "overview"
     : activeTab;
 
+  // A usage read can land after the customer moved to another tab.
+  const activeShellTabRef = useRef(activeShellTab);
+  useEffect(() => {
+    activeShellTabRef.current = activeShellTab;
+  }, [activeShellTab]);
+
   const refreshDisplayPreferences = useCallback(async () => {
     // Start after the changes that are on their way: a read beside one finds
     // the value from before it and may answer after it.
@@ -3497,7 +3503,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           // #895: CodexBar owns Used / Remaining and this read may carry a new
           // one (unknown on a fresh Mac, or changed in CodexBar itself); a
           // read that lands in Settings asks the row again.
-          if (activeShellTab === "settings") {
+          if (activeShellTabRef.current === "settings") {
             void refreshDisplayPreferences();
           }
           if (!quiet) {
@@ -3551,7 +3557,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       return read;
     },
     [
-      activeShellTab,
       addEvent,
       markCompanionAccessBlocked,
       markCompanionUnavailable,

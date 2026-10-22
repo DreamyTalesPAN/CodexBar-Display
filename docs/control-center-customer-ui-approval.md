@@ -9669,3 +9669,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Same as the entries of #877 above; this commit changes documentation only.
 - Scope: Approval record for PR #877, no product changes.
 - What's new: none — standalone documentation marker for the completed main merge
+
+## 2026-10-22 — #877: Show follows a usage read that lands after Settings opened
+
+- User approval: no visible change – UI approval not needed (Codex review fix: the Show row asks again when the usage read lands in Settings, even if the read started on another tab)
+- Approved customer-visible result: Same as the entries of #877 above; the Show row no longer stays unavailable or stale in this narrow case.
+- Scope: Control Center usage read checks the current tab at completion; one regression test.
+- What's new: none — fixes a missed refresh of the Show row.
