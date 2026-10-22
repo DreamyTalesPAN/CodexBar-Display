@@ -46,7 +46,9 @@ type UsageMetadata struct {
 	Secondary        *RateWindow       `json:"secondary"`
 	Tertiary         *RateWindow       `json:"tertiary"`
 	ExtraRateWindows []NamedRateWindow `json:"extraRateWindows"`
-	Extra            []NamedRateWindow `json:"extra"`
+	// Win-CodexBar's /usage sends snake_case keys.
+	ExtraRateWindowsSnake []NamedRateWindow `json:"extra_rate_windows"`
+	Extra                 []NamedRateWindow `json:"extra"`
 }
 
 type RateWindow struct {
@@ -199,8 +201,10 @@ func indexUsageMetadata(usage UsageMetadata) map[string]usageWindowMetadata {
 	addStructuralWindow(index, "session", usage.Primary)
 	addStructuralWindow(index, "weekly", usage.Secondary)
 	addStructuralWindow(index, "tertiary", usage.Tertiary)
-	for _, extra := range append(usage.ExtraRateWindows, usage.Extra...) {
-		addNamedWindow(index, extra)
+	for _, extras := range [][]NamedRateWindow{usage.ExtraRateWindows, usage.ExtraRateWindowsSnake, usage.Extra} {
+		for _, extra := range extras {
+			addNamedWindow(index, extra)
+		}
 	}
 	return index
 }

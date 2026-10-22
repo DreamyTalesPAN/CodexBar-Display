@@ -81,6 +81,23 @@ func TestNormalizeDropsInformationalWindows(t *testing.T) {
 	}
 }
 
+func TestNormalizeKeepsWinCodexBarSnakeCaseExtraWindows(t *testing.T) {
+	result := normalizeFixture(t, `{"schemaVersion":1,"providers":[{"id":"cursor","windows":[
+		{"kind":"session","label":"Plan","usedPercent":0},
+		{"kind":"cursor-grok-bot","label":"Grok Bot","usedPercent":42}
+	]}]}`, `[{"provider":"cursor","usage":{
+		"primary":{"used_percent":0,"is_informational":false},
+		"extra_rate_windows":[
+			{"id":"cursor-grok-bot","title":"Grok Bot","window":{"used_percent":42,"is_informational":false}}
+		]
+	}}]`, "cursor")
+
+	assertWindowLabels(t, result.Windows, "Plan", "Grok Bot")
+	if result.Windows[1].UsedPercent != 42 {
+		t.Fatalf("expected Grok Bot usage, got %+v", result.Windows[1])
+	}
+}
+
 func TestNormalizeMarksProviderWithOnlyFilteredWindowsUnavailable(t *testing.T) {
 	zero := 0.0
 	unknown := false
