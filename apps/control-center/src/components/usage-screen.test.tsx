@@ -1412,6 +1412,39 @@ describe("UsageScreen", () => {
     actions.cursor.onAction();
     expect(onSignIn).toHaveBeenCalledTimes(2);
   });
+
+  it("shows a signed-out provider as an empty Sign in needed tile beside a ready one (#558)", () => {
+    const pref = (providerId: string, state: string) =>
+      ({
+        id: `codexbar.providers.${providerId}.enabled`,
+        section: "providers",
+        type: "boolean",
+        providerId,
+        label: providerId.charAt(0).toUpperCase() + providerId.slice(1),
+        value: true,
+        health: { state, service: "unknown", message: "" },
+      }) as unknown as PreferenceDescriptor;
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        providerActions={usageProviderActionsFor(
+          [pref("claude", "healthy"), pref("codex", "auth_required")],
+          { onOpenSettings: vi.fn() },
+        )}
+        usage={{
+          ok: true,
+          tokenUsageReady: true,
+          currentProvider: "claude",
+          providers: [
+            { id: "claude", label: "Claude", source: "oauth", session: 20, weekly: 40, usageMode: "used" },
+          ],
+        }}
+      />,
+    );
+    expect(html).toContain("Codex");
+    expect(html).toContain('aria-label="Sign in needed for Codex"');
+    expect(html).not.toContain('aria-label="Sign in needed for Claude"');
+  });
 });
 
 describe("token chart days (#579)", () => {

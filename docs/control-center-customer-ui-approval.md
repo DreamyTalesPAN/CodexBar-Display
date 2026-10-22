@@ -9227,6 +9227,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 3dc0a15b and this approval record. Pull request branch #783 only, not merged, not released.
 - What's new: none — merge of 3dc0a15b, no customer-visible change of its own
 
+## 2026-10-22 — #783: a signed-out provider keeps its empty Sign in needed tile (#558)
+
+- User approval: no visible change – UI approval not needed (test only: pins the existing empty Sign in needed tile for a signed-out provider beside a ready one)
+- Approved customer-visible result: none new; the Usage page already shows the Codex tile with Sign in needed and no numbers.
+- Scope: one regression test in usage-screen.test.tsx. Pull request branch #783 only, not merged, not released.
+- What's new: none — test only
+
 ## 2026-10-19 — Pace on Usage (#789, stacked on #783)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: Paul reviews (pace on Usage per the approved master + 19.10. decisions)
