@@ -104,7 +104,8 @@ import {
 import { useCompanionRelease } from "./companion-installer-actions";
 import { LogsScreen } from "./logs-screen";
 import { WithLatestDisplayFrame } from "./live-vibetv-preview";
-import { OverviewScreen } from "./overview-screen";
+import { OverviewScreen, useOverviewNotice } from "./overview-screen";
+import { VibeTVNotFoundDialog, vibetvNotFound } from "./vibetv-not-found-dialog";
 import {
   PROVIDER_RECONCILE_WINDOW_MS,
   providerUsageNeedsReconcile,
@@ -322,6 +323,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const [appearanceSection, setAppearanceSection] = useState<AppearanceSection>(
     initialThemeIsScreensaver ? "screensavers" : "themes",
   );
+  const [themeStudioOpen, setThemeStudioOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>(
     initialThemeId ? "theme-library" : "overview",
   );
@@ -528,6 +530,15 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerDisplayRevisionRef = useRef(0);
   const providerDisplayWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const providerPreferencesReadRef = useRef<Promise<void> | null>(null);
+  const providerPreferencesReadFreshRef = useRef(false);
+  // A visible provider list owes CodexBar one fresh read. It stays owed until
+  // that read succeeds, so a failed one is retried by the next poll.
+  const providerListFreshOwedRef = useRef(false);
+  // Counts the openings of the provider list. A fresh read satisfies only the
+  // opening it was sent for.
+  const providerListOpeningRef = useRef(0);
+  const providerPreferencesReadOpeningRef = useRef(0);
+  const providerListShownRef = useRef(false);
   const quietUsageReadRef = useRef<Promise<void> | null>(null);
   const providerPreferencesRevisionRef = useRef(0);
   const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
@@ -601,8 +612,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // Its start time keys the incident; null while there is none.
   const [systemBusySince, setSystemBusySince] = useState<string | null>(null);
   const [systemBusyDismissed, dismissSystemBusy] = useSystemBusyDismissal(systemBusySince);
-  // "Run setup again" asks first, from Settings and from Support alike.
+  // "Run setup again" asks first, from Settings and from the not-found dialog alike.
   const [setupAgainRequested, setSetupAgainRequested] = useState(false);
+  const [vibetvNotFoundDismissed, setVibetvNotFoundDismissed] = useState(false);
   // The "What's new" entries this customer has seen, null while nothing is
   // stored, and whether Updates has opened the notice again.
   const [whatsNewSeen, setWhatsNewSeen] = useState(seenWhatsNew);
@@ -671,7 +683,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       id: "session-start",
       label: "Control Center opened",
       detail: "This session started.",
-      at: "Session",
+      at: formatTime(),
       tone: "unknown",
     },
   ]);
@@ -1327,7 +1339,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         setThemeInstallStatus({
           ...initialStatus,
           phase: "error",
-          finishedAt: formatTime(),
+          finishedAt: new Date().toISOString(),
           message: normalized.nextAction,
           progress: 100,
           logs: [
@@ -2515,7 +2527,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           startedAt,
           finishedAt:
             phase === "complete" || phase === "error"
-              ? formatTime()
+              ? new Date().toISOString()
               : undefined,
           message: job.message || logs[logs.length - 1],
           progress: clampProgress(job.progress),
@@ -2614,7 +2626,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           } satisfies ApiError;
         }
         setLastInstall(result);
-        const finishedAt = formatTime();
+        const finishedAt = new Date().toISOString();
         setThemeInstallStatus({
           phase: "complete",
           themeId: theme.themeId,
@@ -2661,7 +2673,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           themeId: theme.themeId,
           title: theme.title,
           startedAt,
-          finishedAt: formatTime(),
+          finishedAt: new Date().toISOString(),
           message: normalized.nextAction,
           progress: 100,
           logs: [...initialLogs, normalized.message, normalized.nextAction],
@@ -3482,11 +3494,23 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   );
 
   const refreshProviderPreferences = useCallback(
-    (options?: { quiet?: boolean }) => {
-      if (providerPreferencesReadRef.current) {
-        return providerPreferencesReadRef.current;
+    (options?: { quiet?: boolean; fresh?: boolean }) => {
+      const inFlight = providerPreferencesReadRef.current;
+      const fresh = Boolean(options?.fresh) || providerListFreshOwedRef.current;
+      const opening = providerListOpeningRef.current;
+      // A plain poll joins any read in flight. A fresh read joins only a fresh
+      // read sent for this opening of the list; behind a plain one, or one
+      // from an earlier opening, it waits for that read to settle and then
+      // asks CodexBar itself, so the plugin list it returns is the one shown.
+      if (
+        inFlight &&
+        (!fresh ||
+          (providerPreferencesReadFreshRef.current &&
+            providerPreferencesReadOpeningRef.current === opening))
+      ) {
+        return inFlight;
       }
-      const read = (async () => {
+      const readNow = async () => {
         // Start after older writes, then ignore the result if a newer write
         // begins beside this GET. Otherwise a pre-write snapshot can replace
         // the PATCH-confirmed row and feed the stale provider back into the
@@ -3503,7 +3527,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         try {
           const payload = await runCompanion<{
             items: PreferenceDescriptor[];
-          }>("/v1/preferences?section=providers", undefined, {
+          }>(`/v1/preferences?section=providers${fresh ? "&fresh=1" : ""}`, undefined, {
             preserveLastError: Boolean(options?.quiet),
           });
           if (
@@ -3516,6 +3540,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           providerPreferencesRef.current = items;
           setProviderPreferences(items);
           setProviderPreferencesError(null);
+          if (fresh && opening === providerListOpeningRef.current) {
+            providerListFreshOwedRef.current = false;
+          }
         } catch (error) {
           if (
             setupGeneration !== setupGenerationRef.current ||
@@ -3527,8 +3554,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             normalizeCaughtError(error, "Provider settings need attention."),
           );
         }
-      })();
+      };
+      const read: Promise<void> = inFlight
+        ? inFlight.then(readNow, readNow)
+        : readNow();
       providerPreferencesReadRef.current = read;
+      providerPreferencesReadFreshRef.current = fresh;
+      providerPreferencesReadOpeningRef.current = opening;
       void read.finally(() => {
         if (providerPreferencesReadRef.current === read) {
           providerPreferencesReadRef.current = null;
@@ -4653,9 +4685,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     !themeSetupComplete &&
     (themeSetupEntryRequired || themeSetupSessionMatches);
   const macAppUpdatePromptedFor = useRef("");
+  // Mac only: there vibetv://check-for-updates opens Sparkle's dialog, which
+  // asks the customer. The Windows App installs the update behind the same
+  // link without a question, so it installs at launch only (#565) and
+  // otherwise when the customer clicks Update or the tray item.
   useEffect(() => {
     if (
       hostedSetup ||
+      windowsHost ||
       !macAppUpdateAvailable ||
       !macAppUpdateOfferedVersion ||
       firmwareUpdateInProgress ||
@@ -5166,6 +5203,26 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           deviceCompletedThemeSetup(device)
         )),
   });
+
+  // The provider list is read fresh (fresh=1) once when it becomes visible:
+  // the Providers setup step, or Settings once the customer is inside. Plugins
+  // installed or removed while the engine ran show up then; plain polls keep
+  // the engine's cached inventory until that fresh read has succeeded.
+  const providerListVisible =
+    companionStatus === "online" &&
+    (setupStep === "providers" ||
+      (hasEnteredControlCenter && activeShellTab === "settings"));
+  useEffect(() => {
+    if (providerListShownRef.current === providerListVisible) {
+      return;
+    }
+    providerListShownRef.current = providerListVisible;
+    providerListFreshOwedRef.current = providerListVisible;
+    if (providerListVisible) {
+      providerListOpeningRef.current += 1;
+      void refreshProviderPreferences({ quiet: true });
+    }
+  }, [providerListVisible, refreshProviderPreferences]);
   // Once setup has admitted the customer to the Control Center, it never owns
   // the window again. Theme and screensaver installs can temporarily make the
   // device unready; that is install progress, not a new customer setup.
@@ -5219,17 +5276,40 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     !lostDevicePickerOpen &&
     !setupOwnsScreen &&
     !(usageFailure && !usageFailureHidden);
+  // The Overview notices (#265, #498) wait while the busy notice is due.
+  const overviewNotice = useOverviewNotice(device, systemBusyOpen);
   // The notice opens by itself on Overview, and again from Updates, once
   // nothing else asks for the customer: not during setup or a firmware update,
   // and under no other dialog. It stays on the page it was opened on: other
   // pages have dialogs of their own.
+  // Not found is one dialog like the others: it waits behind the same
+  // higher-priority dialogs, and it is not shown during a firmware update.
+  // A "Not now" comes back the next time VibeTV is found and lost again.
+  if (!vibetvNotFound(device) && vibetvNotFoundDismissed) {
+    setVibetvNotFoundDismissed(false);
+  }
+  const vibetvNotFoundOpen =
+    activeShellTab === "overview" &&
+    vibetvNotFound(device) &&
+    !vibetvNotFoundDismissed &&
+    !systemBusyOpen &&
+    !setupAgainRequested &&
+    !setupOwnsScreen &&
+    !firmwareUpdateInProgress &&
+    !needsRuntimeRecovery &&
+    !lostDevicePickerOpen &&
+    !(usageFailure && !usageFailureHidden);
   const somethingElseAsks =
+    vibetvNotFoundOpen ||
+    setupAgainRequested ||
     setupOwnsScreen ||
     firmwareUpdateInProgress ||
     needsRuntimeRecovery ||
     lostDevicePickerOpen ||
     (usageFailure && !usageFailureHidden) ||
-    systemBusyOpen;
+    systemBusyOpen ||
+    // The Overview notice (#265, #498) asks first; What's new follows it.
+    (activeShellTab === "overview" && overviewNotice.notice !== null);
   const whatsNewEntries = (somethingElseAsks
     ? []
     : whatsNewReopened && activeShellTab === "updates"
@@ -5679,6 +5759,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         activeTab={activeShellTab}
         activeAppearanceSection={appearanceSection}
         disabledTabs={disabledTabs}
+        themeStudioOpen={themeStudioOpen}
         updateAvailable={anyUpdateAvailable}
         onAppearanceSectionChange={setAppearanceSection}
         onTabChange={(tab) => {
@@ -5699,7 +5780,25 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 companionStatus={companionStatus}
                 device={device}
                 displayFrame={displayFrame}
+                firmwareUpdate={
+                  firmwareUpdateAvailable
+                    ? "available"
+                    : effectiveFirmwareUpdate?.status === "current"
+                      ? "current"
+                      : undefined
+                }
                 firmwareUpdateStatus={firmwareUpdateStatus}
+                macAppUpdate={
+                  macAppUpdateAvailable
+                    ? "available"
+                    : companionRelease?.status === "available" &&
+                        companionRelease.installedVersion
+                      ? "current"
+                      : undefined
+                }
+                notice={overviewNotice.notice}
+                onCloseNotice={overviewNotice.close}
+                themes={catalog.themes}
                 usage={usage}
                 windowsHost={windowsHost}
               />
@@ -5728,7 +5827,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               setProviderDisplayError(null);
               setProviderPreferencesError(null);
             }}
-            automaticPreviews={setupPreviews}
             brightness={brightness}
             busyAction={
               firmwareUpdateInProgress ? "firmware-update" : busyAction
@@ -5806,6 +5904,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             usage={
               appearanceSection === "screensavers" ? "screensaver" : "live"
             }
+            onStudioOpenChange={setThemeStudioOpen}
             onOpenScreensaverSettings={() => {
               shownAfterPageOpensRef.current = "settings-screensaver";
               setActiveTab("settings");
@@ -5844,15 +5943,12 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         {activeShellTab === "logs" ? (
           <LogsScreen
             busyAction={busyAction}
-            device={device}
-            themes={catalog.themes}
             diagnostics={supportDiagnostics}
             events={logs}
             lastError={errorForHost(lastError, windowsHost)}
             onLoadDiagnostics={loadSupportDiagnostics}
             onRefresh={checkCompanion}
             onRepairUsageEngine={retryUsageService}
-            onRunSetupAgain={() => setSetupAgainRequested(true)}
             repairingUsageEngine={busyAction === "usage-service-repair"}
             supportReportBusy={supportReportBusy}
             windowsHost={windowsHost}
@@ -5921,6 +6017,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         />
       ) : null}
       {systemBusyOpen ? <SystemBusyDialog onClose={dismissSystemBusy} /> : null}
+      {vibetvNotFoundOpen ? (
+        <VibeTVNotFoundDialog
+          onDismiss={() => setVibetvNotFoundDismissed(true)}
+          onRunSetupAgain={() => {
+            setVibetvNotFoundDismissed(true);
+            setSetupAgainRequested(true);
+          }}
+          windowsHost={windowsHost}
+        />
+      ) : null}
       {setupAgainRequested ? (
         <SetupDialog
           description="You connect VibeTV and choose your AI providers and display mode again. VibeTV keeps its WiFi details, settings and themes."

@@ -193,12 +193,6 @@ func TestWindowsSetupRestoresEnabledTaskOnFailure(t *testing.T) {
 				findCodexbar:   func() (string, error) { return "fixture", nil },
 				lookPath:       func(name string) (string, error) { return name, nil },
 				serviceForHome: func(string) service.Manager { return manager },
-				listPorts: func() ([]string, error) {
-					if tc.cancelled {
-						cancel()
-					}
-					return nil, errors.New("disconnected")
-				},
 			})
 			if err == nil {
 				t.Fatal("expected setup failure")
