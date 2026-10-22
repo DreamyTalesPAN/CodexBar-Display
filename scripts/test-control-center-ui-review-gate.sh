@@ -1081,7 +1081,7 @@ test_crlf_approval_log() {
   commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
     "Change customer-facing UI"
   approval_entry "Valid in CRLF" >> "$repo/$APPROVAL_LOG"
-  sed -i '' 's/$/\r/' "$repo/$APPROVAL_LOG"
+  perl -pi -e 's/\n/\r\n/' "$repo/$APPROVAL_LOG"
   git -C "$repo" add "$APPROVAL_LOG"
   git -C "$repo" commit -q -m "Approve with CRLF"
   expect_gate_success "$repo"
@@ -1095,7 +1095,7 @@ test_crlf_approval_log() {
   git -C "$repo" update-ref refs/remotes/origin/main HEAD
   commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
     "Change customer-facing UI"
-  sed -i '' 's/$/\r/' "$repo/$APPROVAL_LOG"
+  perl -pi -e 's/\n/\r\n/' "$repo/$APPROVAL_LOG"
   git -C "$repo" add "$APPROVAL_LOG"
   git -C "$repo" commit -q -m "Convert to CRLF"
   commit_approval "$repo" "Valid after CRLF"
