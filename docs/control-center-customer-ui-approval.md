@@ -10005,3 +10005,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The failure dialog opens only when the Mac App check itself failed, or the app is outside /Applications and its DMG check failed.
 - Scope: updates-screen.tsx macAppCheckFailed condition and its red-first regression test in updates-screen.calm.test.tsx.
 - What's new: none — bug fix, not announced to customers
+
+## 2026-10-22 — #798: merge of main after #782 and #902 into the calm Updates screen
+
+- User approval: no visible change – UI approval not needed (integration only: main's failed-check-replaces-"Update complete" rule, "Try again" wording and hidden progress bar once complete are carried over into the calm Updates layout)
+- Approved customer-visible result: The calm Updates screen shows what the earlier entries describe; a failed firmware check newer than a finished update replaces "Update complete", and the failed-check dialog keeps its "Try again" button.
+- Scope: merge conflict resolution in updates-screen.tsx, test-customer-flows.mjs and this approval record. Pull request #798 only, not merged, not released.
+- What's new: none — integration only
