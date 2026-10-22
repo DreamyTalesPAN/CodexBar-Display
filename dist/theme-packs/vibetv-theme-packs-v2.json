@@ -46,9 +46,9 @@
       "id": "clippy",
       "title": "Clippy",
       "usage": "live",
-      "version": "1.2.7",
-      "themeRev": 13,
-      "themeSpecPath": "/themes/u/cp-13-b6a98b9f.json",
+      "version": "1.2.8",
+      "themeRev": 14,
+      "themeSpecPath": "/themes/u/cp-14-34d85a79.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -61,8 +61,8 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-clippy-v1.2.7.zip",
-      "sha256": "1fc39c12bdaad66c48d5da0677364f051647e659fd5502d2a3b5d909400b4562",
+      "downloadAsset": "vibetv-theme-clippy-v1.2.8.zip",
+      "sha256": "c69ca894705251fc5bd91b2c4d5814b5efd7ae2e5889e649459a6b6445aa07fb",
       "bytes": 18695,
       "earlierThemeSpecPaths": [
         "/themes/u/clippy-1-5d86bb.json",
@@ -77,6 +77,7 @@
         "/themes/u/cp-10-d86e631f.json",
         "/themes/u/cp-11-820d61d9.json",
         "/themes/u/cp-12-e681c449.json",
+        "/themes/u/cp-13-b6a98b9f.json",
         "/themes/u/cp-7-8e3b005e.json",
         "/themes/u/cp-8-e3fbe9a5.json",
         "/themes/u/cp-9-47bef231.json"
@@ -197,9 +198,9 @@
       "id": "pixel-battery",
       "title": "Pixel Battery",
       "usage": "live",
-      "version": "1.17.6",
-      "themeRev": 23,
-      "themeSpecPath": "/themes/u/pba-23-78dfe69a.json",
+      "version": "1.17.7",
+      "themeRev": 24,
+      "themeSpecPath": "/themes/u/pba-24-613b62bb.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -212,9 +213,9 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-pixel-battery-v1.17.6.zip",
-      "sha256": "9665693cc62ad120fe1b5fbe095fdd089300759394cf9cc49ae02c4124bfa135",
-      "bytes": 2936,
+      "downloadAsset": "vibetv-theme-pixel-battery-v1.17.7.zip",
+      "sha256": "daf69c67cfd6ac842a6786fb850919edb37be095e413d6d4993b8b0d6b4ce423",
+      "bytes": 2938,
       "earlierThemeSpecPaths": [
         "/themes/u/pba-15-9e62e5.json",
         "/themes/u/pba-16-f46829.json",
@@ -223,7 +224,8 @@
         "/themes/u/pba-19-941e3302.json",
         "/themes/u/pba-20-09a7a514.json",
         "/themes/u/pba-21-d20fb73b.json",
-        "/themes/u/pba-22-a9d080fe.json"
+        "/themes/u/pba-22-a9d080fe.json",
+        "/themes/u/pba-23-78dfe69a.json"
       ]
     },
     {
@@ -294,9 +296,9 @@
       "id": "tiny-office",
       "title": "Tiny Office",
       "usage": "live",
-      "version": "0.7.7",
-      "themeRev": 15,
-      "themeSpecPath": "/themes/u/to-15-45022ccc.json",
+      "version": "0.7.8",
+      "themeRev": 16,
+      "themeSpecPath": "/themes/u/to-16-97923746.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -308,8 +310,8 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-tiny-office-v0.7.7.zip",
-      "sha256": "cf00b658cda53095d1fe4ae0720d6ebb9db1f1f128489c7e18481aff81480c25",
+      "downloadAsset": "vibetv-theme-tiny-office-v0.7.8.zip",
+      "sha256": "c17ab1bacfcbb00b55d2ca998a3de916425d61a06cae3f1764314fa44169dfc1",
       "bytes": 7621,
       "earlierThemeSpecPaths": [
         "/themes/u/to-10-53728b81.json",
@@ -317,6 +319,7 @@
         "/themes/u/to-12-5d257b7b.json",
         "/themes/u/to-13-02cfea41.json",
         "/themes/u/to-14-282c98d8.json",
+        "/themes/u/to-15-45022ccc.json",
         "/themes/u/to-6-6eed22ed.json",
         "/themes/u/to-7-d7799cec.json",
         "/themes/u/to-8-fdeaccda.json",

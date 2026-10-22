@@ -88,14 +88,29 @@ const PACES = {
 };
 type PaceName = keyof typeof PACES;
 
-function frameFor(two: boolean, usageMode: string, pace: PaceName | undefined, footer: number | undefined, percents?: number[], weeklySecs = 424000): FrameData {
-  const ids = two ? ["claude:session", "codex:weekly"] : ["session", "weekly"];
-  const labels = two ? ["Claude Session", "Codex Weekly"] : ["Session", "Weekly"];
+// Limit names as the Companion sends them, the long ones included: "Fable only" with a real 100% (Two: "Claude Fable only"), and
+// Codex as the only provider (one limit, "Weekly", in slot 1).
+type Limit = [id: string, label: string, percent: number];
+type Scenario = { name: string; solo: { provider: string; label: string; limits: Limit[] }; pair?: Limit[] };
+const SCENARIOS: Scenario[] = [
+  {
+    name: "Session and Weekly", solo: { provider: "claude", label: "Claude", limits: [["session", "Session", 73], ["weekly", "Weekly", 100]] },
+    pair: [["claude:session", "Claude Session", 73], ["codex:weekly", "Codex Weekly", 100]], // 100: the widest number in the second limit
+  },
+  {
+    name: "Fable only", solo: { provider: "claude", label: "Claude", limits: [["weekly", "Weekly", 32], ["claude-weekly-scoped-fable", "Fable only", 100]] },
+    pair: [["claude:claude-weekly-scoped-fable", "Claude Fable only", 100], ["codex:weekly", "Codex Weekly", 99]],
+  },
+  { name: "Codex alone", solo: { provider: "codex", label: "Codex", limits: [["weekly", "Weekly", 99]] } },
+];
+
+function frameFor(two: boolean, usageMode: string, pace: PaceName | undefined, footer: number | undefined, percents?: number[], weeklySecs = 424000, scenario = SCENARIOS[0]): FrameData {
+  const limits = (two ? scenario.pair : scenario.solo.limits) ?? [];
   return buildFrameData(clock.toISOString(), {
-    provider: two ? "claude+codex" : "claude", label: two ? "" : "Claude", usageMode, resetSecs: 9100,
-    footerWindow: footer === undefined ? undefined : ids[footer],
-    usageWindows: ids.map((id, i) => ({
-      id, label: labels[i], percent: percents?.[i] ?? [73, 100][i], // the widest number in the second limit
+    provider: two ? "claude+codex" : scenario.solo.provider, label: two ? "" : scenario.solo.label, usageMode, resetSecs: 9100,
+    footerWindow: footer === undefined ? undefined : limits[footer]?.[0],
+    usageWindows: limits.map(([id, label, percent], i) => ({
+      id, label, percent: percents?.[i] ?? percent,
       resetSecs: [9100, weeklySecs][i], pace: pace ? PACES[pace] : undefined,
     })),
     sessionTokens: 1234567, weekTokens: 98765432, totalTokens: 987654321, tokenTotalsKnown: true,
@@ -153,11 +168,11 @@ function layoutViolations(pack: ThemeRenderPack): string[] {
     ...bakedDividers(pack),
   ];
   const found = new Map<string, string>();
-  for (const two of [false, true]) for (const usageMode of ["used", "remaining"]) for (const pace of [undefined, ...(Object.keys(PACES) as PaceName[])]) {
+  for (const two of [false, true]) for (const scenario of SCENARIOS.filter((s) => !two || s.pair)) for (const usageMode of ["used", "remaining"]) for (const pace of [undefined, ...(Object.keys(PACES) as PaceName[])]) {
     // The weekly footer also with minutes ("Weekly reset 47m"), the widest sentence with a descender.
     for (const [footer, weeklySecs] of [[undefined, 424000], [0, 424000], [1, 424000], [1, 2820]] as const) {
-      const state = `${two ? "Two at once" : "One provider"}, ${usageMode}, pace ${pace ?? "off"}, footer ${footer === undefined ? "off" : `${footer} (${weeklySecs} s)`}`;
-      const frame = frameFor(two, usageMode, pace, footer, undefined, weeklySecs);
+      const state = `${two ? "Two at once" : "One provider"}, ${scenario.name}, ${usageMode}, pace ${pace ?? "off"}, footer ${footer === undefined ? "off" : `${footer} (${weeklySecs} s)`}`;
+      const frame = frameFor(two, usageMode, pace, footer, undefined, weeklySecs, scenario);
       const texts = prims.filter((p) => p.t === "tx" && primitiveUsageSlotVisible(p, frame))
         .map((p) => ({ text: renderTextPrimitive(p, frame, prims), p })).filter(({ text }) => text.trim())
         .map(({ text, p }) => ({ text, p, ...textInk(p, text) }));
@@ -227,6 +242,38 @@ function layoutViolations(pack: ThemeRenderPack): string[] {
   }
   return [...found.values()];
 }
+
+// A limit name is drawn at the size its pack declares, whatever it says: shrunk to fit it would stand beside its sibling at half the
+// height ("Fable only remaining" next to "Weekly remaining"). A long name is wrapped or given room, never made smaller.
+function shrunkLabels(pack: ThemeRenderPack): string[] {
+  const prims = pack.spec?.p ?? [];
+  const found = new Map<string, string>();
+  for (const two of [false, true]) for (const scenario of SCENARIOS.filter((s) => !two || s.pair)) for (const usageMode of ["used", "remaining"]) {
+    const frame = frameFor(two, usageMode, undefined, undefined, undefined, undefined, scenario);
+    for (const p of prims.filter((q) => q.t === "tx" && /Label/.test(source(q)) && primitiveUsageSlotVisible(q, frame))) {
+      const text = renderTextPrimitive(p, frame, prims);
+      const fit = themeTextFit(text, p.f ?? 1, p.s ?? 1, p.w ?? 0, p.ft === "shrink", p.h ?? 0);
+      const drawn = cellHeight(fit.font) * fit.size, declared = cellHeight(p.f ?? 1) * (p.s ?? 1);
+      if (text.trim() && drawn < declared) found.set(text, `label "${text}" is drawn ${drawn} px high, its sibling at the declared size ${declared} px (first in: ${two ? "Two at once" : "One provider"}, ${scenario.name}, ${usageMode})`);
+    }
+  }
+  return [...found.values()];
+}
+
+// Whether Pace Meter and Synthwave keep "Fable only remaining" at full size is Paul's decision: it takes the mode word out of the label,
+// a visible change to the normal One screens. Until then both keep ft:"shrink" on their labels, and the second test below fails the day
+// one of them stops shrinking, so this list cannot outlive the decision.
+const LABEL_SHRINK_PENDING = ["pace-meter", "synthwave"];
+
+describe("a limit name is never drawn smaller than its sibling", () => {
+  it.each(themeIds.filter((id) => !LABEL_SHRINK_PENDING.includes(id)))("%s", (themeId) => {
+    expect(shrunkLabels(loadPack(themeId))).toEqual([]);
+  });
+
+  it.each(LABEL_SHRINK_PENDING)("%s still shrinks a long name (Paul's decision pending): drop it from LABEL_SHRINK_PENDING once fixed", (themeId) => {
+    expect(shrunkLabels(loadPack(themeId))).not.toEqual([]);
+  });
+});
 
 describe("animations, dividers, bars and text of every catalog theme stay apart and calm", () => {
   it("covers the animated themes", () => {
