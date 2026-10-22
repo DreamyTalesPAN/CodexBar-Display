@@ -46,7 +46,7 @@
   --sidebar-accent: #444933;
   --sidebar-accent-foreground: #EDEDED;
   --sidebar-border: #444933;
-  --sidebar-ring: #CCFF00;
+  --sidebar-ring: #EDEDED;
 }
 
 @theme inline {
@@ -83,6 +83,9 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  /* Calm type: the one body size for buttons, cards, labels and inputs (#713). */
+  --text-body: 13px;
+  --text-body--line-height: 1.25rem;
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -175,12 +178,12 @@ textarea {
   --sidebar-accent: #444933;
   --sidebar-accent-foreground: #EDEDED;
   --sidebar-border: #444933;
-  --sidebar-ring: #CCFF00;
+  --sidebar-ring: #EDEDED;
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
   }
   body {
     @apply bg-background text-foreground;
