@@ -48,6 +48,8 @@ const IDLE_UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 // argument and this note, and the app comes back in the tray only.
 const AFTER_IDLE_UPDATE_ARG: &str = "--after-idle-update";
 const IDLE_UPDATE_RELAUNCH_MARKER: &str = "idle-update-relaunch.txt";
+// Issue #883: written at the first close, so the tray hint shows only once.
+const TRAY_HINT_MARKER: &str = "tray-hint-shown.txt";
 
 const MENU_OPEN: &str = "open";
 const MENU_RELOAD: &str = "reload";
@@ -966,6 +968,7 @@ fn hide_after_flush(app: &AppHandle) {
             // (count 0) is still told apart from "no release".
             shell.released_at.store(presented + 1, Ordering::SeqCst);
             let _ = window.destroy();
+            show_tray_hint_once(&handle);
         } else {
             // Reopened from the tray or a second launch meanwhile: keep it open.
             shell.closes.fetch_sub(1, Ordering::SeqCst);
@@ -976,6 +979,47 @@ fn hide_after_flush(app: &AppHandle) {
 // A close stands only when nothing presented the window since it was requested.
 fn close_stands(presented_at_request: u64, presented_after_flush: u64) -> bool {
     presented_at_request == presented_after_flush
+}
+
+// Issue #883: the tray icon often sits behind the ^ next to the clock, so a
+// customer who closed the window may think VibeTV quit. The first close says
+// where it went, once: the marker is written before the box shows, and a
+// marker that cannot be written means no box (better silent than every time).
+fn show_tray_hint_once(app: &AppHandle) {
+    let Ok(folder) = app.path().app_local_data_dir() else {
+        return;
+    };
+    let _ = std::fs::create_dir_all(&folder);
+    let first = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(folder.join(TRAY_HINT_MARKER))
+        .is_ok();
+    if !first {
+        return;
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            MB_ICONINFORMATION, MB_OK, MB_SETFOREGROUND, MB_TOPMOST, MessageBoxW,
+        };
+        let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+        let title = wide("VibeTV Control Center");
+        let text = wide(
+            "VibeTV keeps running in the tray, so your display stays up to date.\n\n\
+             To open it again, click the VibeTV icon next to the clock. \
+             If you don't see it, click the ^ arrow first.",
+        );
+        // SAFETY: both strings are NUL-terminated and outlive the call; no owner window.
+        unsafe {
+            MessageBoxW(
+                std::ptr::null_mut(),
+                text.as_ptr(),
+                title.as_ptr(),
+                MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST,
+            );
+        }
+    }
 }
 
 // Issue #424: Ctrl+Alt+Shift+P shows the next provider on VibeTV from any app.
