@@ -119,7 +119,7 @@ describe("SetupProvidersScreen", () => {
     const { rerender } = renderDom(<SetupProvidersScreen {...props} />);
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(within(screen.getByRole("dialog")).getByText(
-      "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer.",
+      "VibeTV can't read GitHub Copilot until the GitHub Copilot app is installed and running.",
     )).toBeTruthy();
     expect(screen.queryByText(failed.health.reported)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
@@ -177,7 +177,7 @@ describe("SetupProvidersScreen", () => {
   });
 
   // A signed-out provider the app cannot sign in says what the customer has
-  // to do (its own app, installed and signed in) and offers the setup guide
+  // to do (its own app, installed and running) and offers the setup guide
   // as its signal action beside OK.
   it("tells a signed-out provider without a sign-in to use its own app", () => {
     const onOpenSetupGuide = vi.fn();
@@ -189,12 +189,14 @@ describe("SetupProvidersScreen", () => {
       pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
     const dialog = within(screen.getByRole("dialog"));
     expect(dialog.getByText(
-      "VibeTV reads GitHub Copilot usage from GitHub Copilot's own app, so make sure it is installed and signed in on this computer.",
+      "VibeTV can't read GitHub Copilot until the GitHub Copilot app is installed and running.",
     )).toBeTruthy();
     expect(dialog.queryByText("No available fetch strategy for copilot.")).toBeNull();
     expect(dialog.queryByRole("button", { name: /Copy provider message/ })).toBeNull();
     expect(dialog.getAllByRole("button").map((button) => button.textContent))
-      .toEqual(["OK", "Open setup guide", "Close"]);
+      .toEqual(["Close", "Open setup guide"]);
+    // Frame 39 of the template: "<Provider> needs its own app", Close beside the guide.
+    expect(dialog.getByRole("heading", { name: "GitHub Copilot needs a GitHub sign-in" })).toBeTruthy();
     fireEvent.click(dialog.getByRole("button", { name: "Open setup guide" }));
     expect(onOpenSetupGuide).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -380,6 +382,24 @@ describe("SetupProvidersScreen", () => {
     expect(html).toContain("Provider 9");
     expect(html).not.toContain("Provider 10");
     expect(html).toContain("Show more providers (4 left)");
+  });
+
+  // Calm rule: a link is ink with an underline, like the other links in Settings.
+  it("shows the more-providers control as an underlined link", () => {
+    const many = Array.from({ length: 14 }, (_, index) =>
+      provider({
+        health: "healthy",
+        label: `Provider ${index}`,
+        providerId: `p${index}`,
+      }),
+    );
+    const html = render({ providers: many });
+    const control = html.match(/<button[^>]*>(?:(?!<\/button>)[\s\S])*Show more providers/)?.[0] ?? "";
+    const opening = control.slice(0, control.indexOf(">"));
+
+    expect(opening).toContain("underline");
+    expect(opening).toContain("font-normal");
+    expect(opening).not.toContain("font-semibold");
   });
 
   it("does not offer more when everything already fits", () => {

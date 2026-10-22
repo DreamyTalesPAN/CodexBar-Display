@@ -40,10 +40,11 @@ function otherDialogOpen(ownTitles: string[]): boolean {
     typeof document !== "undefined" &&
     Array.from(
       document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),
-    ).some(
-      (dialog) =>
-        !ownTitles.some((title) => dialog.textContent?.includes(title)),
-    )
+    ).some((dialog) => !ownTitles.some((title) =>
+      title === systemBusyCopy.title
+        ? dialog.getAttribute("data-notice-kind") === "system-busy"
+        : dialog.querySelector('[data-slot="dialog-title"]')?.textContent === title,
+    ))
   );
 }
 
@@ -73,6 +74,7 @@ export function SystemBusyDialog({ onClose }: { onClose: () => void }) {
   }
   return (
     <SetupDialog
+      noticeKind="system-busy"
       description={systemBusyCopy.description}
       onOpenChange={(open) => {
         if (!open) {

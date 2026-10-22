@@ -1,5 +1,3 @@
-import { TriangleAlert } from "lucide-react";
-
 import type { ApiError } from "../control-center-types";
 import { SetupDialog } from "./setup-dialog";
 
@@ -37,7 +35,6 @@ export function SetupStepFailedDialog({
   return (
     <SetupDialog
       description={visibleError.nextAction}
-      icon={TriangleAlert}
       onOpenChange={onOpenChange}
       open
       primaryAction={
@@ -51,7 +48,7 @@ export function SetupStepFailedDialog({
             }
           : { label: "OK", onSelect: () => onOpenChange(false) }
       }
-      showCloseButton={dismissible}
+      showCloseButton={dismissible && Boolean(onRetry)}
       title={visibleError.message}
     />
   );
