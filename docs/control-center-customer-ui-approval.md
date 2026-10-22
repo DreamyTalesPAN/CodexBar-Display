@@ -10469,3 +10469,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Main's calm redesign with #802's existing single Appearance page and filters retained.
 - Scope: Conflict resolution on PR #802; no release or hardware changes.
 - What's new: none — merge of main, no new customer-visible behaviour
+
+## 2026-10-22 — #802: standalone approval marker for the main integration
+
+- User approval: no visible change – UI approval not needed (standalone record for main-after-784 merge 6f5af875; combined merge diff is not parsed by the current gate)
+- Approved customer-visible result: Same Appearance behaviour and main layout as the tested merge; this commit changes documentation only.
+- Scope: Approval record for PR #802, no product changes.
+- What's new: none — standalone documentation marker for the completed main merge
