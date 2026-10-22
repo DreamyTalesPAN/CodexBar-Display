@@ -44,7 +44,6 @@ const rotation: PreferenceDescriptor = {
 
 function props(overrides: Partial<SettingsScreenProps> = {}): SettingsScreenProps {
   return {
-    automaticPreviews: [],
     brightness: 20,
     busyAction: null,
     connectionMode: "cable",
@@ -217,10 +216,6 @@ describe("SettingsScreen display sources", () => {
     (unavailable) => {
       const base = props();
       render(<SettingsScreen {...base}
-        automaticPreviews={[
-          { providerLabel: "Codex", resetLabel: null, windows: [{ label: "Session", percent: 37 }] },
-          { providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: null }] },
-        ]}
         providerPicker={{
           ...base.providerPicker,
           items: [item("codex", "Codex"), item("claude", "Claude")],
@@ -237,8 +232,6 @@ describe("SettingsScreen display sources", () => {
 
       const pair = screen.getByRole("button", { name: /Two at once/ });
       expect(pair.getAttribute("aria-pressed")).toBe("true");
-      expect(pair.textContent).toContain("Claude Session--");
-      expect(pair.textContent).not.toContain("82%");
       expect(screen.getByRole("combobox", { name: "Provider 1" }).textContent).toBe("Claude");
       expect(screen.getByRole("combobox", { name: "Provider 2" }).textContent).toBe("Codex");
       expect(base.providerPicker.onDisplayChange).not.toHaveBeenCalled();

@@ -43,6 +43,13 @@ function panels(html: string): { automatic: string; manual: string } {
 }
 
 describe("SetupDisplayModeScreen", () => {
+  it("titles the screen in sentence case, as Settings does", () => {
+    const html = render();
+
+    expect(html).toContain(">Display mode</h1>");
+    expect(html).not.toContain("Display Mode</h1>");
+  });
+
   it("explains both display modes", () => {
     const html = render();
 
@@ -50,9 +57,9 @@ describe("SetupDisplayModeScreen", () => {
     expect(html).toContain(
       "VibeTV switches between your providers based on recent activity and usage.",
     );
-    expect(html).toContain("One provider");
+    expect(html).toContain("Manual");
     expect(html).toContain(
-      "VibeTV always shows the one provider you pick.",
+      "VibeTV always shows the one provider you pick — nothing else.",
     );
   });
 

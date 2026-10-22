@@ -2,36 +2,36 @@
   "claude-creature": {
     "svgSha256": "681081057114e0c5f7f7d213bb5bb6476abdbbbcce37dad60b3e0f5cb90bff1f",
     "cardSize": [
-      140,
-      142
+      284.7,
+      284.7
     ]
   },
   "clippy": {
     "svgSha256": "27be5f765b004248fce6e9f99294b559fc413f7d133b7cfbe8159e93bb31b036",
     "cardSize": [
-      140,
-      142
+      284.7,
+      284.7
     ]
   },
   "cozy-meadow": {
     "svgSha256": "fab81c28d686e3ffa0f9a05ed456749177135f2ff912287b1b1ac35bc8eec63c",
     "cardSize": [
-      140,
-      142
+      284.7,
+      284.7
     ]
   },
   "mini-classic": {
     "svgSha256": "31731a6e7f865262f098ea0f83c588b8b2e86a118c1815521e953c7b3f10f810",
     "cardSize": [
-      140,
-      142
+      284.7,
+      284.7
     ]
   },
   "synthwave": {
     "svgSha256": "4470be18247372f1cbebad6131f2d5edf2b3c4d796f40c08298d341979281f47",
     "cardSize": [
-      140,
-      142
+      284.7,
+      284.7
     ]
   }
 }

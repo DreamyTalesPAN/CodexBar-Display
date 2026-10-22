@@ -354,8 +354,9 @@ describe("ThemeLibraryScreen Appearance sections", () => {
           usage={usage}
         />,
       );
+    // A finished install's label may come after its check icon.
     const button = (html: string, title: string) =>
-      html.match(new RegExp(`<button[^>]*title="${title}"[^>]*>([^<]*)<`));
+      html.match(new RegExp(`<button[^>]*title="${title}"[^>]*>(?:<svg[\\s\\S]*?</svg>)?([^<]*)<`));
 
     const live = button(render("live", earlier), "Update Live Theme");
     expect(live?.[1]).toBe("Update");
@@ -448,8 +449,9 @@ describe("ThemeLibraryScreen Appearance sections", () => {
   it("keeps the existing Themes list restricted to live packs", () => {
     const html = renderLibrary("live");
 
-    expect(html).toContain(">Themes<");
-    expect(html).toContain(
+    // The page title is the shell's header (Themes); no second title here.
+    expect(html).not.toMatch(/<h2[^>]*>Themes</);
+    expect(html).not.toContain(
       "Customize how your live usage screen looks while VibeTV is active.",
     );
     expect(html).toContain("Create theme");
@@ -460,8 +462,9 @@ describe("ThemeLibraryScreen Appearance sections", () => {
   it("shows only screensaver packs and the screensaver create action", () => {
     const html = renderLibrary("screensaver");
 
-    expect(html).toContain(">Screensavers<");
-    expect(html).toContain(
+    // The page title is the shell's header (Screensavers); no second title here.
+    expect(html).not.toMatch(/<h2[^>]*>Screensavers</);
+    expect(html).not.toContain(
       "Choose what appears when VibeTV enters standby after being idle.",
     );
     expect(html).toContain("Create screensaver");
@@ -471,8 +474,8 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     expect(html).toContain("Night Clock");
     expect(html).not.toContain("Live Theme");
     // Switched off is a normal state, not an error (#548): one muted line.
-    const line = html.match(/<p [^>]*>(?=<span>Screensaver is off\.)/)?.[0];
-    expect(line).toContain("bg-muted");
+    const line = html.match(/<p [^>]*>(?=Screensaver is off\.)/)?.[0];
+    expect(line).toContain("text-muted-foreground");
     expect(line).not.toContain("destructive");
   });
 
@@ -507,10 +510,10 @@ describe("ThemeLibraryScreen Appearance sections", () => {
 
     // Sentence case, like every other button of the app.
     expect(html).toContain(">Turn on first<");
-    expect(html).toContain(">Turn on in Settings</a>");
+    expect(html).toContain(">Settings</a>");
     // The Design System link (dark ink, underline, olive on hover), not lime on grey.
     // Dark mode hovers in the light olive #A9C76A: #506600 has only 1.44:1 on the dark grey.
-    const link = html.match(/<a class="([^"]*)"[^>]*>Turn on in Settings<\/a>/)?.[1] ?? "";
+    const link = html.match(/<a class="([^"]*)"[^>]*>Settings<\/a>/)?.[1] ?? "";
     expect(link.split(" ")).toEqual(expect.arrayContaining(["text-foreground", "underline", "hover:text-[var(--vibetv-support)]", "dark:hover:text-[#A9C76A]"]));
     expect(link).not.toContain("text-primary");
   });

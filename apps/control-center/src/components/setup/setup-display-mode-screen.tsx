@@ -63,8 +63,6 @@ type SetupDisplayModeScreenProps = {
   automaticPreviews?: SetupDisplayModePreview[];
   /** Live usage of the provider Manual is pinned to right now. */
   manualPreview: SetupDisplayModePreview | null;
-  /** Set when this VibeTV cannot show Two at once: the card is off and says this. */
-  pairNote?: string | null;
   /** Live usage of the two providers Two at once shows together. */
   pairPreview?: SetupDisplayModePreview | null;
   /** Enabled providers for the pair, including those awaiting fresh usage. */
@@ -120,7 +118,7 @@ export function SetupDisplayModeScreen({
       onCreateSupportReport={onCreateSupportReport}
       windowsHost={windowsHost}
     >
-      <SetupWizardTitle>Display Mode</SetupWizardTitle>
+      <SetupWizardTitle>Display mode</SetupWizardTitle>
       <SetupWizardSubtitle>
         Show one or multiple AI Providers. You can change this any time.
       </SetupWizardSubtitle>
@@ -179,7 +177,6 @@ type DisplayModeChoiceProps = Pick<
   | "onSelectMode"
   | "onSelectPair"
   | "onSelectProvider"
-  | "pairNote"
   | "pairPreview"
   | "pairProviderIds"
   | "pairProviders"
@@ -190,11 +187,13 @@ type DisplayModeChoiceProps = Pick<
   /** Settings says so when Automatic follows a timer instead of activity. */
   automaticDescription?: string;
   className?: string;
+  /** Settings frames the chosen card and provider in ink, not lime. */
+  ink?: boolean;
 };
 
 /**
  * The display-mode choice itself: cards showing what each mode would put on
- * the device, the provider One provider is pinned to, and the two providers
+ * the device, the provider Manual is pinned to, and the two providers
  * Two at once shows together.
  *
  * Lives outside the wizard screen because Settings offers the same choice. One
@@ -206,12 +205,12 @@ export function DisplayModeChoice({
   automaticPreview,
   automaticPreviews,
   className,
+  ink = false,
   manualPreview,
   mode,
   onSelectMode,
   onSelectPair,
   onSelectProvider,
-  pairNote = null,
   pairPreview = null,
   pairProviderIds = [],
   providers,
@@ -239,6 +238,7 @@ export function DisplayModeChoice({
         <ModeCard
           description={automaticDescription}
           disabled={saving}
+          ink={ink}
           onSelect={() => onSelectMode("automatic")}
           selected={mode === "automatic"}
           title="Automatic"
@@ -246,18 +246,19 @@ export function DisplayModeChoice({
           <PreviewTile frames={rotation} index={index} />
         </ModeCard>
         <ModeCard
-          description="VibeTV always shows the one provider you pick."
+          description="VibeTV always shows the one provider you pick — nothing else."
           disabled={saving}
+          ink={ink}
           onSelect={() => onSelectMode("fixed")}
           selected={mode === "fixed"}
-          title="One provider"
+          title="Manual"
         >
           <PreviewTile frames={manualPreview ? [manualPreview] : []} index={0} />
         </ModeCard>
         {offersPair ? (
           <ModeCard
-            description={pairNote ?? "VibeTV shows two providers together, one limit each."}
-            disabled={saving || pairNote !== null}
+            description="VibeTV shows two providers together, one limit each."
+            disabled={saving}
             onSelect={() => onSelectMode("pair")}
             selected={mode === "pair"}
             title="Two at once"
@@ -301,7 +302,7 @@ export function DisplayModeChoice({
           {providers.map((provider) => (
             <Item
               asChild
-              className={selectedItemClass(provider.id === selectedProviderId)}
+              className={selectedItemClass(provider.id === selectedProviderId, ink)}
               key={provider.id}
               variant="outline"
             >
@@ -442,6 +443,7 @@ function ModeCard({
   children,
   description,
   disabled = false,
+  ink = false,
   onSelect,
   selected,
   title,
@@ -449,6 +451,7 @@ function ModeCard({
   children: ReactNode;
   description: string;
   disabled?: boolean;
+  ink?: boolean;
   onSelect: () => void;
   selected: boolean;
   title: string;
@@ -458,7 +461,7 @@ function ModeCard({
       asChild
       // The row stretches both cards to one height; a shorter description
       // must not move its preview down.
-      className={cn(selectedItemClass(selected), "items-start overflow-hidden p-0")}
+      className={cn(selectedItemClass(selected, ink), "items-start overflow-hidden p-0")}
       variant="outline"
     >
       <button

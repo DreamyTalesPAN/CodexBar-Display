@@ -3,9 +3,9 @@
 import {
   Activity,
   BarChart3,
-  ChevronRight,
+  ChevronDown,
   FileText,
-  Grid2X2,
+  Palette,
   RefreshCw,
   SlidersHorizontal,
 } from "lucide-react";
@@ -52,7 +52,14 @@ type ControlCenterShellProps = {
   hiddenTabs?: ActiveTab[];
   headerAction?: ReactNode;
   updateAvailable?: boolean;
+  /** The open Theme Studio draws its own header row, so the shell keeps only a hidden title. */
+  themeStudioOpen?: boolean;
 };
+
+// Hover is a weaker tint than the active fill, so a hovered entry never
+// reads as a second active one.
+const WEAK_HOVER =
+  "hover:bg-sidebar-accent/45 data-open:hover:bg-sidebar-accent/45";
 
 const NAV_ITEMS: ShellNavItem[] = [
   {
@@ -73,7 +80,7 @@ const NAV_ITEMS: ShellNavItem[] = [
   {
     id: "theme-library",
     label: "Appearance",
-    icon: <Grid2X2 aria-hidden />,
+    icon: <Palette aria-hidden />,
   },
   {
     id: "updates",
@@ -97,7 +104,16 @@ export function ControlCenterShell({
   hiddenTabs = [],
   headerAction,
   updateAvailable = false,
+  themeStudioOpen = false,
 }: ControlCenterShellProps) {
+  // On Appearance the page title is the open sub-page (one title, no second
+  // heading below it); the open Studio keeps the "Appearance" title, hidden.
+  const pageTitle =
+    activeTab === "theme-library" && !themeStudioOpen
+      ? activeAppearanceSection === "screensavers"
+        ? "Screensavers"
+        : "Themes"
+      : NAV_ITEMS.find((item) => item.id === activeTab)?.label || "Overview";
   const disabledTabSet = new Set(disabledTabs);
   const isTabDisabled = (tab: ActiveTab) => disabledTabSet.has(tab);
   // The window scrolls, not the tab. A link far down one tab that opens
@@ -115,21 +131,21 @@ export function ControlCenterShell({
   };
   // Usage: the page margin grows with the window, 48 px up to 96 px (7197
   // template point 3, 4cqw of the page area; "@container" is on SidebarInset).
-  // lg: too, because this shell still sets lg:px-10 on header and content.
+  // Override the shell margins only on Usage.
   const growingMargin = activeTab === "usage";
   return (
     <SidebarProvider
       className="control-center-shell overflow-x-hidden bg-background text-foreground"
       style={
         {
-          "--sidebar-width": "16.625rem",
+          "--sidebar-width": "14.5rem",
           "--sidebar-width-icon": "4rem",
         } as CSSProperties
       }
     >
       <div className="control-center-shell__layout flex min-h-svh w-full">
         <Sidebar className="control-center-shell__sidebar" collapsible="icon">
-          <SidebarHeader className="border-b border-sidebar-border p-4 group-data-[collapsible=icon]:p-2">
+          <SidebarHeader className="px-3.5 pt-7 pb-7 group-data-[collapsible=icon]:p-2">
             <BrandHomeButton onClick={() => selectTab("overview")}>
               <ControlCenterBrand className="group-data-[collapsible=icon]:hidden" />
               <ControlCenterBrand
@@ -153,27 +169,36 @@ export function ControlCenterShell({
         </Sidebar>
 
         <SidebarInset className="@container control-center-shell control-center-shell__main min-w-0">
-          <header className={cn(
-              "control-center-shell__header flex min-h-[72px] items-center justify-between gap-4 bg-background px-4 py-3 md:h-[86px] md:px-6 lg:px-10 lg:py-0",
-              growingMargin &&
-                "md:px-[clamp(48px,4cqw,96px)] lg:px-[clamp(48px,4cqw,96px)]",
-            )}>
-            <div className="flex min-w-0 items-center gap-3">
-              <SidebarTrigger aria-label="Open navigation" className="shrink-0" />
-              <h1 className="truncate text-base font-semibold text-foreground md:text-xl">
-                {NAV_ITEMS.find((item) => item.id === activeTab)?.label ||
-                  "Overview"}
-              </h1>
-            </div>
+          {themeStudioOpen ? (
+            // The Studio's own row (back arrow, design name, File, Save) is the header; the title stays for screen readers.
+            <h1 className="sr-only">{pageTitle}</h1>
+          ) : (
+            <header className={cn("control-center-shell__header mt-9 flex h-10 items-center justify-between gap-4 bg-background px-5 sm:px-7 lg:px-12", growingMargin && "md:px-[clamp(48px,4cqw,96px)] lg:px-[clamp(48px,4cqw,96px)]")}>
+              <div className="flex min-w-0 items-center gap-3">
+                <SidebarTrigger
+                  aria-label="Open navigation"
+                  className={cn(
+                    "-m-1 size-7 shrink-0 p-0 text-muted-foreground hover:bg-transparent hover:text-foreground [&_svg]:size-5",
+                    // The template draws no toggle beside Updates and Support; a narrow window keeps it, it is the only way to the menu there.
+                    (activeTab === "updates" || activeTab === "logs") && "md:hidden",
+                  )}
+                />
+                <h1 className="truncate text-[28px] leading-none font-semibold tracking-[-0.01em] text-foreground">
+                  {pageTitle}
+                </h1>
+              </div>
 
-            {headerAction}
-          </header>
+              {headerAction}
+            </header>
+          )}
 
           <div
             className={cn(
-              "control-center-shell__content px-5 py-0 sm:px-7 lg:px-10",
-              growingMargin &&
-                "md:px-[clamp(48px,4cqw,96px)] lg:px-[clamp(48px,4cqw,96px)]",
+              "control-center-shell__content px-5 sm:px-7 lg:px-12",
+              themeStudioOpen ? "pt-9" : "py-0",
+              growingMargin && "md:px-[clamp(48px,4cqw,96px)] lg:px-[clamp(48px,4cqw,96px)]",
+              // Overview fills the window's height: its numbers sit at the bottom (#784 point 1).
+              activeTab === "overview" && !themeStudioOpen && "flex flex-1 flex-col",
             )}
           >
             {children}
@@ -196,7 +221,7 @@ function BrandHomeButton({
   return (
     <SidebarMenuButton
       aria-label="Go to Overview"
-      className="h-14 w-full justify-start rounded-none px-2 hover:bg-sidebar-accent group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+      className="h-auto w-full justify-start rounded-none px-2.5 py-0 hover:bg-transparent group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
       onClick={() => {
         onClick();
         if (isMobile) {
@@ -234,10 +259,10 @@ function ControlCenterNavigation({
   );
 
   return (
-    <SidebarGroup className="p-3 group-data-[collapsible=icon]:p-2">
+    <SidebarGroup className="px-3.5 py-0 group-data-[collapsible=icon]:p-2">
       <SidebarGroupContent>
         <nav aria-label={isMobile ? "Control Center mobile" : "Control Center"}>
-          <SidebarMenu className="gap-1">
+          <SidebarMenu className="gap-0.5">
             {visibleNavItems.map((item) => {
               const appearance = item.id === "theme-library";
               const disabled = isTabDisabled(item.id);
@@ -318,24 +343,18 @@ function ShellNavButton({
   notify?: boolean;
   onClick: () => void;
 }) {
-  const { isMobile, setOpenMobile, state } = useSidebar();
-  // In the icon-collapsed sidebar the Appearance submenu is hidden, so the
-  // collapsed click must navigate directly instead of toggling an invisible
-  // Collapsible.
-  const collapsedToIcons = !isMobile && state === "collapsed";
+  const { isMobile, setOpenMobile } = useSidebar();
 
   const button = (
     <SidebarMenuButton
       aria-current={active && current ? "page" : undefined}
-      className="h-11 rounded-[var(--radius-control)] px-3 text-sm data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:[&_svg]:text-sidebar-primary group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11! [&_svg]:size-5!"
+      className={`h-[34px] gap-2.5 rounded-[var(--radius-control)] px-2.5 text-[13px] font-normal text-sidebar-foreground opacity-[.72] hover:opacity-100 ${active ? "" : WEAK_HOVER} data-active:bg-sidebar-accent data-active:font-normal data-active:text-sidebar-accent-foreground data-active:opacity-100 group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-11! group-data-[collapsible=icon]:justify-center [&_svg]:size-4!`}
       disabled={disabled}
       isActive={active}
       onClick={() => {
-        // An open Appearance entry toggles its submenu and also starts over at
-        // the top (Codex review of #677); the submenu itself stays a toggle.
-        if (!collapsible || collapsedToIcons || active) {
-          onClick();
-        }
+        // Opening the Appearance group also opens its tab, so only one entry
+        // is highlighted (issue #579). The group still toggles beside it.
+        onClick();
         if (isMobile && !collapsible) {
           setOpenMobile(false);
         }
@@ -344,9 +363,9 @@ function ShellNavButton({
       type="button"
     >
       {item.icon}
-      <span className="min-w-0 truncate">{item.label}</span>
+      <span className="min-w-0 truncate group-data-[collapsible=icon]:sr-only">{item.label}</span>
       {collapsible ? (
-        <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+        <ChevronDown className="ml-auto size-3.5! opacity-80 transition-transform duration-200 group-data-[collapsible=icon]:hidden group-data-[state=open]/collapsible:rotate-180" />
       ) : null}
     </SidebarMenuButton>
   );
@@ -364,7 +383,7 @@ function ShellNavButton({
           className="top-1/2! -translate-y-1/2"
           role="img"
         >
-          <span className="size-2 rounded-full bg-sidebar-primary" />
+          <span className="size-2 rounded-full bg-sidebar-foreground" />
         </SidebarMenuBadge>
       ) : null}
     </>
@@ -387,7 +406,7 @@ function AppearanceNavButton({
   return (
     <SidebarMenuSubButton
       asChild
-      className="h-11 w-full data-active:bg-transparent! data-active:font-semibold data-active:text-sidebar-accent-foreground"
+      className={`h-[34px] w-full text-[13px]! ${active ? "" : WEAK_HOVER} data-active:bg-transparent! data-active:font-semibold data-active:text-sidebar-accent-foreground`}
       isActive={active}
     >
       <button
