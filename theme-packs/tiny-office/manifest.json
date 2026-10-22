@@ -3,7 +3,7 @@
   "schemaVersion": 1,
   "id": "tiny-office",
   "name": "Tiny Office",
-  "version": "0.7.6",
+  "version": "0.7.7",
   "minFirmware": "1.0.50",
   "usage": "live",
   "requiredCapabilities": [
@@ -12,10 +12,10 @@
     "usage-pace-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/to-14-282c98d8.json",
+    "path": "/themes/u/to-15-45022ccc.json",
     "file": "theme.json",
-    "bytes": 1714,
-    "sha256": "282c98d898d3d48ff82f2ddde76d2e5344d6a68945047c82ad23b975726fa8ab",
+    "bytes": 1713,
+    "sha256": "45022ccc0604dcbe9281b673518290c54c4915332db524800ca5ecbbecb790da",
     "contentType": "application/json"
   },
   "assets": [
@@ -23,21 +23,21 @@
       "path": "/themes/u/to-bg.cbi",
       "file": "assets/to-bg.cbi",
       "bytes": 269,
-      "sha256": "a9e6fe8ac6a80436ab7018599e7dbc6e51faccb3d5f6a2ad668da61c94d8bd1b",
+      "sha256": "d7927c70fff52fe446e75c3b88641fcc8b10d96c0fab80e93a4db6ed4818205b",
       "contentType": "text/plain"
     },
     {
       "path": "/themes/u/to-i.cbi",
       "file": "assets/to-i.cbi",
-      "bytes": 3429,
-      "sha256": "2ef9a680f9f0bd8a63e5dba821abc49848710dc8765da63187c627c84730034d",
+      "bytes": 3164,
+      "sha256": "5c7010f6cbd77d4f391ab93c9370cf5afc893ca5d9541e8889e13c5dd1b74a8b",
       "contentType": "text/plain"
     },
     {
       "path": "/themes/u/to-c.cbi",
       "file": "assets/to-c.cbi",
-      "bytes": 3712,
-      "sha256": "883235245707c13636a202ef6e60f15ad65f00c330204c0225eafd1ab90136fd",
+      "bytes": 3453,
+      "sha256": "33585c18d2ccea3db3127c069905e6ea48e514220e5a75f86eb79c8728307e8e",
       "contentType": "text/plain"
     },
     {

@@ -17,7 +17,8 @@ function inkRows(text: string, font: number): [number, number] {
 
 export const cellHeight = (font: number) => (font === 4 ? 26 : font === 2 ? 16 : 8);
 
-// What the text of a primitive paints: the cell width of the fitted lines, the rows that carry ink.
+// What the text of a primitive paints: the cell width of the fitted lines, less the empty column GLCD and Font16 keep at
+// the right of every cell and at the left of a "1", the rows that carry ink.
 export function textInk(p: ThemePrimitive, text: string): Rect {
   const maxSize = p.s ?? 1, lane = p.w ?? 0;
   const { font, size, lines } = themeTextFit(text, p.f ?? 1, maxSize, lane, p.ft === "shrink", p.h ?? 0);
@@ -27,5 +28,6 @@ export function textInk(p: ThemePrimitive, text: string): Rect {
   const y = themeTextAlignedY(p.y ?? 0, themeTextValignBoxHeight(p.h ?? 0, p.f ?? 1, maxSize), cell * lines.length, p.va);
   const top = y + inkRows(lines[0], font)[0] * size;
   const bottom = y + cell * (lines.length - 1) + (inkRows(lines[lines.length - 1], font)[1] + 1) * size;
-  return { x, y: top, w: width, h: bottom - top };
+  const gap = font === 4 ? 0 : size, lead = lines.every((line) => line.startsWith("1")) ? gap : 0;
+  return { x: x + lead, y: top, w: width - gap - lead, h: bottom - top };
 }
