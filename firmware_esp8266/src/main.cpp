@@ -4130,9 +4130,16 @@ bool startCableTransfer(JsonDocument& doc) {
       : 0;
   String destination = String(doc["path"] | "");
   destination.trim();
-  if (serialRequestBusy() || strcmp(expectedDeviceID, deviceID.c_str()) != 0 ||
-      !deviceAuthConfigured() || strcmp(token, deviceAuthToken.c_str()) != 0 ||
-      (expectedBytes == 0 && strcmp(sink, "prepare-theme") != 0)) {
+  const auto refusal = codexbar_display::esp8266::cable_transfer::CheckStartIdentity(
+      serialRequestBusy(),
+      strcmp(expectedDeviceID, deviceID.c_str()) == 0,
+      deviceAuthConfigured(),
+      strcmp(token, deviceAuthToken.c_str()) == 0);
+  if (refusal != codexbar_display::esp8266::cable_transfer::StartRefusal::kNone) {
+    emitSerialError(codexbar_display::esp8266::cable_transfer::StartRefusalCode(refusal));
+    return true;
+  }
+  if (expectedBytes == 0 && strcmp(sink, "prepare-theme") != 0) {
     emitSerialError("transfer-rejected");
     return true;
   }
