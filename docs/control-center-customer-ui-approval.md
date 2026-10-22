@@ -9409,3 +9409,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none new; the existing "Update Mac App" offer shows the correct version number in that rare case.
 - Scope: control-center-app.tsx offered-version order, with its regression test.
 - What's new: none — the existing update offer names the right version
+
+## 2026-10-22 — #897 test: a late-update event without a version string is ignored
+
+- User approval: no visible change – UI approval not needed (test only)
+- Approved customer-visible result: none; the existing "Update Mac App" offer is unchanged.
+- Scope: control-center-runtime.test.ts, a regression case for onNativeMacAppUpdateFound; no production change.
+- What's new: none — test only
