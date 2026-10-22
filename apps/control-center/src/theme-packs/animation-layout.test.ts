@@ -65,6 +65,23 @@ function bakedDividers(pack: ThemeRenderPack): Rect[] {
   });
 }
 
+// The colour the first background sprite (a full-screen CBI) paints under a pixel; rows and columns map the way the
+// device scales a sprite: sprite row r covers the pixels floor(r*H/h) up to floor((r+1)*H/h).
+function backgroundColourAt(pack: ThemeRenderPack): (x: number, y: number) => string | undefined {
+  const p = (pack.spec?.p ?? []).find((q) => q.t === "sp" && q.a?.endsWith(".cbi") && (q.w ?? 0) >= 200 && (q.h ?? 0) >= 200);
+  const asset = p?.a ? pack.assets?.[p.a] : undefined;
+  const sprite = asset?.data.startsWith("CBI1") ? decodeSprite(asset.data) : null;
+  if (!p || !sprite) return () => undefined;
+  const at = (v: number, size: number, spriteSize: number) => Math.ceil(((v + 1) * spriteSize) / size) - 1;
+  return (x, y) => {
+    const col = at(x - (p.x ?? 0), p.w ?? 0, sprite.width), row = at(y - (p.y ?? 0), p.h ?? 0, sprite.height);
+    return sprite.frames[0].find((run) => run.y === row && run.x <= col && col < run.x + run.width)?.color;
+  };
+}
+
+// Sum of the channel differences of two #RRGGBB colours: a frame line of #141418 on #0A0A0B is not an edge anyone sees.
+const contrast = (a: string, b: string) => [1, 3, 5].reduce((sum, i) => sum + Math.abs(parseInt(a.slice(i, i + 2), 16) - parseInt(b.slice(i, i + 2), 16)), 0);
+
 function frameFor(two: boolean, usageMode: string, pace: boolean, footer: number | undefined): FrameData {
   const ids = two ? ["claude:session", "codex:weekly"] : ["session", "weekly"];
   const labels = two ? ["Claude Session", "Codex Weekly"] : ["Session", "Weekly"];
@@ -90,6 +107,7 @@ const animationBoxes = (pack: ThemeRenderPack) => (pack.spec?.p ?? [])
 function layoutViolations(pack: ThemeRenderPack): string[] {
   const prims = pack.spec?.p ?? [];
   const animations = animationBoxes(pack);
+  const backgroundAt = backgroundColourAt(pack);
   const dividers = [
     ...prims.filter((p) => p.t === "r" && Math.min(p.w ?? 0, p.h ?? 0) <= 4).map((p) => ({ x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 0, h: p.h ?? 0 })),
     ...bakedDividers(pack),
@@ -112,6 +130,15 @@ function layoutViolations(pack: ThemeRenderPack): string[] {
         for (const b of bars) if (hit(a, b)) note(`${a.name} x bar ${show(b)}`, `animation ${a.name} [${show(a)}] overlaps a bar [${show(b)}]`);
         for (const d of dividers) if (hit(a, d)) note(`${a.name} x divider ${show(d)}`, `animation ${a.name} [${show(a)}] overlaps a divider [${show(d)}]`);
       }
+      // A glyph that starts on one flat band of the background and ends on another (a descender below the title bar);
+      // the ink rect is within one row of the real glyphs, so the rows next to its edges stay out of it.
+      for (const t of texts) {
+        const cols = [t.x + 1, t.x + t.w / 2, t.x + t.w - 2].map(Math.floor);
+        const top = cols.map((x) => backgroundAt(x, t.y + 1)), bottom = cols.map((x) => backgroundAt(x, t.y + t.h - 2));
+        if (top[0] && bottom[0] && top.every((c) => c === top[0]) && bottom.every((c) => c === bottom[0]) && contrast(top[0], bottom[0]) >= 96) {
+          note(`"${t.text}" crosses a band edge`, `text "${t.text}" [${show(t)}] starts on ${top[0]} and ends on ${bottom[0]}, across the edge of a background band`);
+        }
+      }
       texts.forEach((a, i) => texts.slice(i + 1).forEach((b) => {
         if (hit(a, b)) note(`"${a.text}" x "${b.text}"`, `text "${a.text}" [${show(a)}] overlaps text "${b.text}" [${show(b)}]`);
       }));
@@ -126,7 +153,7 @@ describe("animations, dividers, bars and text of every catalog theme stay apart"
     expect(animated).toEqual(expect.arrayContaining(["claude-creature", "clippy", "mini-classic", "tiny-office", "token-fire"]));
   });
 
-  it.each(themeIds)("%s: no animation box on a divider, text or bar, no two texts on each other", (themeId) => {
+  it.each(themeIds)("%s: no animation box on a divider, text or bar, no two texts on each other, no glyph across a band edge", (themeId) => {
     expect(layoutViolations(loadPack(themeId))).toEqual([]);
   });
 });

@@ -20339,3 +20339,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Clippy's animation no longer touches a divider or the title: one divider sits between Session and Weekly, each pace text stands in the bar row of its own limit, and title, animation, limit names, bars and divider are spaced by the same 9 px; Claude Creature's animation is a little smaller so a pace text such as "14% reserve" stays whole beside it.
 - Scope: the theme packs Clippy 1.2.5 (layout, background without baked dividers) and Claude Creature 1.4.4 (animation box 58×58), plus the layout guard test animation-layout.test.ts over every catalog theme.
 - What's new: none — Clippy and Claude Creature layout only
+
+## 2026-10-22 — #7210: Clippy keeps its long bars, equal spacing and a title bar that holds its descenders
+
+- User approval: pending — Paul's review 22.10.2026 of Clippy 1.2.5: the usage bars were half as long because the pace text stood in the bar row, the "g" of the title word was cut at the edge of the blue title bar, and a small dark dash hung under the animation
+- Approved customer-visible result: Clippy's usage bars are as long as before (to just before the percent); each pace text stands left-aligned directly under its own bar; the title bar is taller so "remaining" and "used" stay inside it; the animation has no stray pixels under it; title bar, animation, limit names, pace texts and divider are spaced by the same 5 px.
+- Scope: the theme pack Clippy 1.2.6 (layout, taller title bar in the background, animation canvas cropped to its 64×58 inked rows) and the layout guard test animation-layout.test.ts (a glyph must not cross a band edge of the background).
+- What's new: none — Clippy layout only
