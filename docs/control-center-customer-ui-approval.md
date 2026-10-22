@@ -9662,3 +9662,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #921 as in its own entries plus the entries merged with 75139f6c; nothing else changes.
 - Scope: the merge of 75139f6c and this approval record. Pull request branch #921 only, not merged, not released.
 - What's new: none — merge of 75139f6c, no customer-visible change of its own
+
+## 2026-10-22 — #921: Paul approves dropping the "Refreshing" badge by the token total
+
+- User approval: approved by Paul in the communicator chat, 2026-10-22: "ja" (to whether it is ok that the small "Refreshing" badge by the token total, which he asked for on 2026-10-09, goes away and only the Refresh button shows "Refreshing"; pictures usage-2-refreshing.png and usage-1-idle.png of f3cb4803).
+- Approved customer-visible result: as in the #918 entries of #921 above; while a manual refresh waits, only the Refresh button shows the spinner and "Refreshing", nothing appears above "Total tokens in the last 30 days".
+- Scope: this approval record only. Pull request branch #921 only, not merged, not released.
+- What's new: none — approval record only
