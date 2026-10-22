@@ -8399,7 +8399,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-21 — #813: Paul's approval of build 7200 recorded
 
-- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #813 approval record for build 7200; the #813 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 stay pending.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #813 approval record for build 7200; the #813 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 keep their own approval line.
 - Approved customer-visible result: #813 as described in its entries above, as seen in build 7200.
 - Scope: #813 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #813 approval record only
@@ -8459,3 +8459,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #813 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
 - Scope: the merge of 3dc0a15b and this approval record. Pull request branch #813 only, not merged, not released.
 - What's new: none — merge of 3dc0a15b, no customer-visible change of its own
+
+## 2026-10-22 — #813: approval-log wording after Paul's 7200 quote
+
+- User approval: no visible change – UI approval not needed (approval-log wording only: the text after Paul's 7200 quote on the #813 approval record; the quote and date are unchanged)
+- Approved customer-visible result: #813 as in its own entries; nothing else changes.
+- Scope: docs/control-center-customer-ui-approval.md only. Pull request branch #813 only, not merged, not released.
+- What's new: none — approval-log wording only, no customer-visible change
