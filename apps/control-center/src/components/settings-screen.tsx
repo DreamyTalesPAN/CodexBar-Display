@@ -398,13 +398,6 @@ export function SettingsScreen({
             </div>
           ) : null}
         </div>
-        {usageMode ? (
-          <PreferenceRow
-            descriptor={usageMode}
-            disabled={localActionBusy}
-            onChange={onDisplayPreferenceChange}
-          />
-        ) : null}
         {providerShortcut ? (
           // Two lines are always kept: the text wraps to one line (Manual, or
           // usage not read yet) or two (Automatic with usage), and a change of
@@ -428,6 +421,19 @@ export function SettingsScreen({
           </p>
         ) : null}
       </SettingsSection>
+
+      {usageMode ? (
+        <>
+          <ItemSeparator className="my-0" />
+          <SettingsSection id="settings-usage-mode" title="Usage mode">
+            <PreferenceRow
+              descriptor={usageMode}
+              disabled={localActionBusy}
+              onChange={onDisplayPreferenceChange}
+            />
+          </SettingsSection>
+        </>
+      ) : null}
 
       {displayMode !== "pair" ? (
         <>

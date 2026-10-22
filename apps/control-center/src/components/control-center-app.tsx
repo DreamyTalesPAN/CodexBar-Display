@@ -3528,15 +3528,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     }
   }, [runCompanion]);
 
-  // A fresh Mac reports CodexBar's Used / Remaining as unavailable until the
-  // first serve snapshot arrives (#895). While it is unavailable, each usage
-  // read that lands in Settings asks once more; the read that brings it ends that.
-  const usageModeUnavailable = displayPreferences.some(
-    (item) =>
-      item.id === "codexbar.usageBarsShowUsed" &&
-      item.availability.state === "unavailable",
-  );
-
   const refreshUsage = useCallback(
     (options?: { quiet?: boolean }) => {
       const quiet = Boolean(options?.quiet);
@@ -3567,9 +3558,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           setPreviewFrames(frames ?? null);
           setUsageError(null);
           setCompanionStatus("online");
-          // #895: a usage read that lands in Settings asks once more while
-          // CodexBar's mode is unknown.
-          if (activeShellTab === "settings" && usageModeUnavailable) {
+          // #895: CodexBar owns Used / Remaining and this read may carry a new
+          // one (unknown on a fresh Mac, or changed in CodexBar itself); a
+          // read that lands in Settings asks the row again.
+          if (activeShellTab === "settings") {
             void refreshDisplayPreferences();
           }
           if (!quiet) {
@@ -3629,7 +3621,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       markCompanionUnavailable,
       refreshDisplayPreferences,
       runCompanion,
-      usageModeUnavailable,
     ],
   );
 
@@ -3806,10 +3797,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             }.`,
             tone: "ready",
           });
-          // A usage read started before this save still carries the old
-          // display mode. Retire it and ask once with the stored preference.
-          usageGenerationRef.current += 1;
-          quietUsageReadRef.current = null;
+          // A usage read started before a Used / Remaining save still carries
+          // the old display mode. Retire it and ask once with the stored
+          // preference; other saves leave a running manual refresh alone (#906).
+          if (item.id === "codexbar.usageBarsShowUsed") {
+            usageGenerationRef.current += 1;
+            quietUsageReadRef.current = null;
+          }
           void refreshUsage({ quiet: true });
         } catch (error) {
           const normalized = normalizeCaughtError(
