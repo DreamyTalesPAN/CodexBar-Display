@@ -20294,6 +20294,6 @@ issue scope, or release permission never implies UI permission.
 ## 2026-10-22 — #7209: Setup theme grid fills the window height
 
 - User approval: pending — the theme cards of the setup theme step use the window's height down to Install, instead of a fixed box that leaves the lower part of the window empty
-- Approved customer-visible result: the card area grows with the window, so on a 1440×900 or 1280×800 window the second card row is fully shown and Install sits right under the cards with no page scrolling; the fade stays at the bottom edge of the card area, and cards keep their 200 px size and grid.
+- Approved customer-visible result: the card area is as tall as the window allows, so Install sits right under the cards with no page scrolling on a 1440×900 or 1280×800 window; on 1440×900 both card rows are shown in full, on 1280×800 the second row's title line sits under the fade at the bottom edge; cards keep their 200 px size and grid.
 - Scope: the max-height of the theme grid in setup-theme-screen.tsx (viewport-based instead of a fixed 440 px box).
 - What's new: none — layout only
