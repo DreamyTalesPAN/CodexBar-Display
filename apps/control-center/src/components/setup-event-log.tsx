@@ -58,7 +58,7 @@ const STATUS: Record<
   succeeded: { icon: CircleCheck, text: "Done" },
   skipped: { icon: CircleMinus, text: "Skipped", className: "text-muted-foreground" },
   retry: { icon: RotateCw, text: "Retrying" },
-  failed: { icon: CircleX, text: "Failed", className: "text-destructive" },
+  failed: { icon: CircleX, text: "Failed" },
 };
 
 /**
@@ -153,6 +153,8 @@ export function SetupEventList({
 }) {
   const scrollRef = useRef<HTMLOListElement | null>(null);
   const [following, setFollowing] = useState(true);
+  // Only older entries above the view are faded; at the oldest entry the top row is shown whole.
+  const [atStart, setAtStart] = useState(true);
   const events = log?.events ?? [];
   const newest = events.at(-1);
 
@@ -160,6 +162,9 @@ export function SetupEventList({
     const node = scrollRef.current;
     if (node && following) {
       node.scrollTop = node.scrollHeight;
+    }
+    if (node) {
+      setAtStart(node.scrollTop <= 0);
     }
   }, [following, newest?.seq, newest?.count]);
 
@@ -176,14 +181,16 @@ export function SetupEventList({
       <ol
         aria-label="Setup log"
         aria-live="polite"
-        className={
+        className={cn(
           calm
-            ? "mx-1 mt-1.5 mb-1 max-h-[280px] overflow-y-auto border-t px-1.5 pt-2.5 pb-1 font-mono text-[13px] leading-6 text-muted-foreground"
-            : "max-h-[280px] overflow-y-auto rounded-lg border font-mono text-xs"
-        }
+            ? "mx-1 mt-1.5 mb-1 max-h-[280px] overflow-y-auto overscroll-contain border-t px-1.5 pt-2.5 pb-1 font-mono text-[13px] leading-6 text-muted-foreground"
+            : "max-h-[280px] overflow-y-auto overscroll-contain rounded-lg border font-mono text-xs",
+          !atStart && "[mask-image:linear-gradient(to_bottom,transparent,black_14px)]",
+        )}
         onScroll={(event) => {
           const node = event.currentTarget;
           setFollowing(node.scrollHeight - node.scrollTop - node.clientHeight < 8);
+          setAtStart(node.scrollTop <= 0);
         }}
         ref={scrollRef}
         tabIndex={0}

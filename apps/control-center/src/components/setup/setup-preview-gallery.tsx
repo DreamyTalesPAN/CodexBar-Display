@@ -562,12 +562,12 @@ export function SetupPreviewGallery() {
               }),
             )}
             <SetupConnectFailedDialog
-              description="It was found, but the connection could not be completed. Keep VibeTV powered on, then search again."
+              description="VibeTV answered, but the connection did not finish. Check that it is on the same WiFi, then search again."
               onEnterAddressManually={() => setActive("02b")}
               onOpenChange={setDialogOpen}
               onSearchAgain={() => goTo("02")}
               open={dialogOpen}
-              title="VibeTV could not connect"
+              title="We couldn't connect to your VibeTV"
             />
           </>
         );

@@ -156,8 +156,8 @@ export function useSetupConnect(
             code: api?.code,
             description:
               api?.nextAction ||
-              "Keep VibeTV powered on, then search again.",
-            title: api?.message || "VibeTV could not connect",
+              "VibeTV answered, but the connection did not finish. Check that it is on the same WiFi, then search again.",
+            title: api?.message || "We couldn't connect to your VibeTV",
           },
           api?.message || "connection could not be completed",
         );

@@ -19,7 +19,7 @@ func TestRunInstallUpdateCableRescueFindsAVibeTVThatReturnsToItsFirstPort(t *tes
 	findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
 		return usb.CableDevice{}, errors.New("no VibeTV with pre-Cable firmware answered hello")
 	}
-	readCableFirmwareHelloFn = func(string) (protocol.DeviceHello, error) {
+	readCableFirmwareHelloFn = func(context.Context, string) (protocol.DeviceHello, error) {
 		return protocol.DeviceHello{}, errors.New("no hello")
 	}
 	flashCableRescueFn = func(_ context.Context, _ string, _ []byte, opts usb.ROMFlashOptions) error {
