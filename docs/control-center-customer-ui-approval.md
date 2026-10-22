@@ -9402,3 +9402,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: A newly available version still offers the existing update dialog once, independently of the ordinary help dialog's dismissal.
 - Scope: setup-wizard.tsx update branch and its red-first regression test.
 - What's new: none — bug fix, not announced to customers
+
+## 2026-10-22 — #822: late update offer waits for the manual address dialog
+
+- User approval: no visible change – UI approval not needed (a late Mac App update no longer stacks over the open Enter IP address dialog; it is offered once that dialog closes)
+- Approved customer-visible result: The manual address dialog stays the only dialog while it is open; the existing update offer follows after it closes.
+- Scope: setup-wizard.tsx update condition and its red-first regression test.
+- What's new: none — bug fix, not announced to customers

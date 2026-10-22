@@ -373,7 +373,8 @@ export function SetupWizard(props: SetupWizardProps) {
     (deviceSearchState === "not-found" || deviceSearchState === "multiple") &&
     !wifiError;
   const searchFailed = searchFoundNoMatch && !notFoundDismissed;
-  const macAppUpdateAfterSearch = searchFoundNoMatch && deviceCandidates.length === 0
+  // The manual address dialog owns the screen until it closes, so the offer waits for it.
+  const macAppUpdateAfterSearch = searchFoundNoMatch && deviceCandidates.length === 0 && !addressDialogOpen
     ? pendingMacAppUpdate
     : undefined;
   // "idle" is before the first scan was started, so like "searching" it has no

@@ -864,6 +864,20 @@ describe("SetupWizard: direct connection", () => {
     expect(screen.getByRole("dialog", { name: "Update the Mac App first" })).toBeTruthy();
   });
 
+  it("holds a late Mac App update back while the manual address dialog owns the screen (#822)", () => {
+    const props = baseProps({
+      step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
+      deviceSearchState: "not-found", deviceCandidates: [],
+    });
+    const view = render(<SetupWizard {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Enter IP manually" }));
+    view.rerender(<SetupWizard {...props} macAppUpdate={{ onUpdate: vi.fn(), version: "1.0.65" }} />);
+    expect(screen.queryByRole("dialog", { name: "Update the Mac App first" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Enter IP address" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("dialog", { name: "Update the Mac App first" })).toBeTruthy();
+  });
+
   it("offers a newer release again after the previous one was dismissed (#822)", () => {
     const onUpdate = vi.fn();
     const props = baseProps({
