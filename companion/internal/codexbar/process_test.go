@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 )
 
 // Re-exec the Go test binary instead of relying on /bin/sh on the host.
@@ -32,7 +34,18 @@ func TestMain(m *testing.M) {
 	// would otherwise carry from one test into the next (reuseEngineAnswers).
 	// A test of that reuse switches it on itself.
 	reuseEngineAnswers = false
-	os.Exit(m.Run())
+	// A temporary home for the whole package (#932): config bootstrap tests
+	// must not create or lock the real user's CodexBar config.
+	os.Unsetenv("CODEXBAR_CONFIG")
+	os.Exit(testenv.Main(m))
+}
+
+func TestPackageTestsKeepCodexBarConfigInTempHome(t *testing.T) {
+	path, err := macConfigPath("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	testenv.RequireTempPath(t, path)
 }
 
 func testBinary(t *testing.T) string {
