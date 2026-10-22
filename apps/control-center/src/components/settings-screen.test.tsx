@@ -890,3 +890,15 @@ describe("SettingsScreen standby controls", () => {
     );
   });
 });
+
+it("shows Reset in footer in Limits and disables it on old firmware", () => {
+ const preference: PreferenceDescriptor = {...rotation,id:"vibetv.display.footerReset",label:"Reset in footer",value:"primary",effectiveValue:"primary",options:[{value:"primary",label:"Session reset"},{value:"secondary",label:"Weekly reset"}]};
+ for (const supported of [false,true]) {
+  const markup=render({...standbyDevice,firmware:"1.0.1",capabilities:{theme:{supportsResetFooterV1:supported}}},savedStandby,providerPicker,70,"cable",false,[preference]);
+  const section=markup.slice(markup.indexOf("Limits on VibeTV"),markup.indexOf("</section>",markup.indexOf("Limits on VibeTV")));
+  expect(section).toContain("Reset in footer");
+  expect(section).toContain('role="combobox"');
+  expect(/<button[^>]*\sdisabled(?:=|[ >])/.test(section)).toBe(!supported);
+  expect(section.includes("Update VibeTV to use this.")).toBe(!supported);
+ }
+});

@@ -1104,6 +1104,13 @@ class ThemeSpecSink final : public themespec::Sink {
     PrimitiveLayer().FillRect(rect);
   }
 
+  int MeasureText(const char* text, int font, int size) override {
+    TFT_eSPI& tft = Tft();
+    tft.setTextFont(font);
+    tft.setTextSize(size);
+    return tft.textWidth(text);
+  }
+
   void DrawText(const themespec::TextCommand& cmd) override {
     primitive::TextCommand text;
     text.text = cmd.text;
@@ -1287,8 +1294,10 @@ themespec::FrameData currentThemeSpecFrameData(const char* updateNoticeText = nu
   frame.weekly = CurrentFrame().weekly;
   frame.resetSecs = CurrentRemainingSecs();
   frame.usageUnavailable = CurrentFrame().usageUnavailable;
+  frame.footerWindow = CurrentFrame().footerWindow.c_str();
   for (size_t i = 0; i < codexbar_display::themespec::kMaxThemeSpecUsageWindows &&
                      i < codexbar_display::core::kMaxUsageWindows; ++i) {
+    frame.usageWindows[i].id = CurrentFrame().usageWindows[i].id.c_str();
     frame.usageWindows[i].label = CurrentFrame().usageWindows[i].label.c_str();
     frame.usageWindows[i].percent = CurrentFrame().usageWindows[i].percent;
     frame.usageWindows[i].resetSecs =

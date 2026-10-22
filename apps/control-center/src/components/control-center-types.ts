@@ -374,6 +374,7 @@ export type DeviceInfo = {
       supportsTextValignV1?: boolean;
       supportsProgressArcV1?: boolean;
       supportsUsagePaceV1?: boolean;
+      supportsResetFooterV1?: boolean;
       maxUsageWindows?: number;
       supportsStoredThemes?: boolean;
       maxThemeSpecBytes?: number;
@@ -664,12 +665,13 @@ export function deviceIsReady(device: DeviceInfo | null | undefined) {
  */
 export function deviceLacks(
   device: DeviceInfo | null | undefined,
-  need: "pace" | "pair",
+  need: "pace" | "pair" | "footer",
 ) {
   if (!deviceIsReady(device)) {
     return false;
   }
   const theme = device?.capabilities?.theme;
+  if (need === "footer") return theme?.supportsResetFooterV1 !== true;
   return need === "pace"
     ? theme?.supportsUsagePaceV1 !== true
     : theme?.supportsUsageWindowsV1 !== true ||

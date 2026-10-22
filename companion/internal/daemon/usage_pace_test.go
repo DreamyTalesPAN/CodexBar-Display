@@ -3,6 +3,8 @@ package daemon
 import (
 	"bytes"
 	"context"
+	dashboardusage "github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/codexbar/dashboard"
+	"os"
 	"testing"
 	"time"
 
@@ -156,6 +158,70 @@ func TestStaleReadingSendsNoPace(t *testing.T) {
 		}
 		if got := bytes.Contains(sent, []byte(`"pace"`)); got == stale {
 			t.Fatalf("stale=%t sent pace=%t:\n%s", stale, got, sent)
+		}
+	}
+}
+
+func TestFooterWindowReachesOnlyFirmwareThatAdvertisesIt(t *testing.T) {
+	prepareFastTestEnv(t)
+	raw, err := os.ReadFile("../codexbar/testdata/cli/codexbar-macos-0.75.0/serve-snapshot.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := dashboardusage.DecodeSnapshot(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := [][]string{{"primary", "secondary"}}
+	for _, provider := range snapshot.Providers {
+		if provider.ID == "claude" {
+			ids = append(ids, []string{provider.Windows[0].Kind, provider.Windows[1].Kind})
+		}
+	}
+	if len(ids) != 2 {
+		t.Fatal("fixture has no Claude windows")
+	}
+	for _, windowIDs := range ids {
+		now := time.Date(2026, 9, 21, 8, 30, 0, 0, time.UTC)
+		for _, supported := range []bool{false, true} {
+			for _, prefix := range []string{"", "claude:"} {
+				for index, preference := range []string{"primary", "secondary"} {
+					parsed := testParsedFrame("claude", 8, 73, 12000)
+					parsed.CollectedAt = now
+					parsed.Frame.UsageWindows = pacedUsageWindows()
+					parsed.Frame.UsageWindows[0].ID = prefix + windowIDs[0]
+					parsed.Frame.UsageWindows[1].ID = prefix + windowIDs[1]
+					var sent []byte
+					err := runCycleWithDeps(context.Background(), "", &runtimeState{selector: codexbar.NewProviderSelector()}, runtimeDeps{
+						now:         func() time.Time { return now },
+						homeDir:     func() (string, error) { return "/home/test", nil },
+						loadConfig:  func(string) (runtimeconfig.Config, error) { return runtimeconfig.Config{FooterReset: preference}, nil },
+						resolvePort: func(string) (string, error) { return "/dev/cu.usbmodem-test", nil },
+						deviceCaps: func(string) (protocol.DeviceCapabilities, error) {
+							return protocol.DeviceCapabilities{
+								Known:                     true,
+								Board:                     "esp8266-smalltv-st7789",
+								NegotiatedProtocolVersion: protocol.ProtocolVersionV2,
+								SupportsResetFooterV1:     supported,
+							}, nil
+						},
+						fetchProviders: func(context.Context) ([]codexbar.ParsedFrame, error) {
+							return []codexbar.ParsedFrame{parsed}, nil
+						},
+						logf: func(string, ...any) {},
+						sendLine: func(_ string, line []byte) error {
+							sent = append([]byte(nil), line...)
+							return nil
+						},
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+					if got := bytes.Contains(sent, []byte(`"footerWindow":"`+prefix+windowIDs[index]+`"`)); got != supported {
+						t.Fatalf("supported=%t frame=%s", supported, sent)
+					}
+				}
+			}
 		}
 	}
 }

@@ -392,3 +392,18 @@ func TestDeviceHelloNormalizeLeavesCallerSlicesUnchanged(t *testing.T) {
 		t.Fatalf("Normalize wrote into the caller's auth block: %+v", *auth)
 	}
 }
+
+func TestResetFooterCapability(t *testing.T) {
+	for _, raw := range []string{
+		`{"features":["reset-footer-v1"]}`,
+		`{"capabilities":{"theme":{"supportsResetFooterV1":true}}}`,
+	} {
+		var hello DeviceHello
+		if err := json.Unmarshal([]byte(raw), &hello); err != nil {
+			t.Fatal(err)
+		}
+		if !CapabilitiesFromHello(hello).SupportsResetFooterV1 {
+			t.Fatalf("capability missing: %s", raw)
+		}
+	}
+}
