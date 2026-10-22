@@ -86,8 +86,11 @@ func restateLastGoodWhenNotFresh(state *runtimeState, deps runtimeDeps, result c
 		// The values are old because the computer is starved (#606).
 		frame.Label = SystemBusyLabel
 	}
-	if cfg, ok := loadRuntimeConfig(deps); ok && cfg.HidePace {
-		frame = frame.WithoutUsagePace()
+	if cfg, ok := loadRuntimeConfig(deps); ok {
+		result.footerReset = cfg.FooterReset
+		if cfg.HidePace {
+			frame = frame.WithoutUsagePace()
+		}
 	}
 	return authoritativeFrame, frame, result
 }
@@ -98,8 +101,7 @@ func prepareDeviceFrame(frame protocol.Frame, result cycleResult, caps protocol.
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 	frame = applyDeviceUsageWindowLimit(frame, caps)
 	frame.FooterWindow = ""
-	cfg, configLoaded := loadRuntimeConfig(deps)
-	if caps.SupportsResetFooterV1 && configLoaded {
+	if caps.SupportsResetFooterV1 && result.footerReset != "" {
 		// Pair windows prefix the engine id with the provider. Keep the
 		// exact id on the wire; never infer a kind from a label or duration.
 		windows := frame.UsageWindows
@@ -108,13 +110,13 @@ func prepareDeviceFrame(frame protocol.Frame, result cycleResult, caps protocol.
 		}
 		// CodexBar CLI calls these primary/secondary; its dashboard calls
 		// the same structural windows session/weekly. Preserve the source id.
-		dashboardKind := map[string]string{"primary": "session", "secondary": "weekly"}[cfg.FooterReset]
+		dashboardKind := map[string]string{"primary": "session", "secondary": "weekly"}[result.footerReset]
 		for _, window := range windows {
 			kind := window.ID
 			if _, pairedKind, paired := strings.Cut(window.ID, ":"); paired {
 				kind = pairedKind
 			}
-			if kind == cfg.FooterReset || dashboardKind != "" && kind == dashboardKind {
+			if kind == result.footerReset || dashboardKind != "" && kind == dashboardKind {
 				frame.FooterWindow = window.ID
 				break
 			}
@@ -123,9 +125,7 @@ func prepareDeviceFrame(frame protocol.Frame, result cycleResult, caps protocol.
 	if !caps.SupportsProviderSlotsV1 {
 		frame.ProviderSlots = nil
 	}
-	// CodexBar paced a window against a reading that was fresh; a retained or
-	// stale one carries no pace, like the Usage API (Settings "Pace" can also turn it off).
-	if !caps.SupportsUsagePaceV1 || !result.usageFresh || configLoaded && cfg.HidePace {
+	if !caps.SupportsUsagePaceV1 || !result.usageFresh {
 		frame = frame.WithoutUsagePace()
 	}
 	frame = attachClockFields(frame, now)

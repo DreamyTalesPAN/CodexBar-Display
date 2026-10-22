@@ -504,6 +504,23 @@ describe("SetupDisplayModeScreen", () => {
       expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
     });
 
+    it("draws the Two at once card as a skeleton too until every frame is there", () => {
+      themePack = readyPack;
+      const html = render({
+        automaticPreview: framed("Codex"),
+        automaticPreviews: [framed("Codex"), framed("Cursor"), unframed("Claude")],
+        manualPreview: framed("Codex"),
+        onSelectPair: vi.fn(),
+        pairPreview: framed("Codex"),
+        providers: threeProviders,
+        theme: { id: "claude-creature" },
+      });
+
+      expect(html).toContain("Two at once");
+      expect(html).not.toContain('data-state="live"');
+      expect(html.match(/data-state="skeleton"/g)).toHaveLength(3);
+    });
+
     it("shows the real tiles and opens Continue once all three frames are there", () => {
       themePack = readyPack;
       const html = render({

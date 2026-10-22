@@ -460,6 +460,18 @@ export function SettingsScreen({
               theme={activeTheme}
               usage={providerPicker.usage}
             />
+          {footerReset ? (
+            <>
+              <PreferenceRow
+                descriptor={footerReset}
+                disabled={localActionBusy || device?.capabilities?.theme?.supportsResetFooterV1 !== true}
+                onChange={onDisplayPreferenceChange}
+              />
+              {footerNeedsUpdate ? (
+                <p className="text-sm text-muted-foreground">{UPDATE_NEEDED_NOTE}</p>
+              ) : null}
+            </>
+          ) : null}
           </SettingsSection>
         </>
       ) : null}
@@ -504,18 +516,6 @@ export function SettingsScreen({
                 : `${brightness}%`
           }
         />
-        {footerReset ? (
-          <>
-            <PreferenceRow
-              descriptor={footerReset}
-              disabled={localActionBusy || device?.capabilities?.theme?.supportsResetFooterV1 !== true}
-              onChange={onDisplayPreferenceChange}
-            />
-            {footerNeedsUpdate ? (
-              <p className="text-sm text-muted-foreground">{UPDATE_NEEDED_NOTE}</p>
-            ) : null}
-          </>
-        ) : null}
       </SettingsSection>
 
       {standbySupport ? (

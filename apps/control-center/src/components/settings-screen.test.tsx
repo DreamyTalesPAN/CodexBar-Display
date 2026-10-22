@@ -36,6 +36,12 @@ const standbyDevice: DeviceInfo = {
   capabilities: { standby: { supported: true } },
 };
 
+// Firmware that can draw two usage windows, so Two at once is offered.
+const pairDevice: DeviceInfo = {
+  ...standbyDevice,
+  capabilities: { ...standbyDevice.capabilities, theme: { supportsUsageWindowsV1: true, maxUsageWindows: 2 } },
+};
+
 const savedStandby: StandbySettings = {
   enabled: false,
   timeoutMinutes: 10,
@@ -401,7 +407,7 @@ describe("SettingsScreen standby controls", () => {
   });
 
   it("leaves eligible display mode radios usable when no write is in flight", () => {
-    const html = render(standbyDevice, savedStandby, {
+    const html = render(pairDevice, savedStandby, {
       ...providerPicker,
       items: [provider("claude", "Claude", true), provider("codex", "Codex", true)],
     });
@@ -429,7 +435,7 @@ describe("SettingsScreen standby controls", () => {
   );
 
   it("keeps an already saved pair selectable and visible during a provider gap", () => {
-    const html = render(standbyDevice, savedStandby, {
+    const html = render(pairDevice, savedStandby, {
       ...providerPicker,
       display: { mode: "pair", providerIds: ["claude", "codex"], configured: true, valid: true },
       items: [provider("claude", "Claude", true)],
@@ -695,7 +701,7 @@ describe("SettingsScreen standby controls", () => {
   // Variante A (#592): three radios; the chosen one carries its source rows.
   it("shows Display mode as three radios with the source rows under the chosen one", () => {
     const section = (mode: "automatic" | "fixed" | "pair", providerIds = ["claude"]) => {
-      const html = render(standbyDevice, savedStandby, {
+      const html = render(pairDevice, savedStandby, {
         ...providerPicker,
         display: { mode, providerIds, configured: true, valid: true },
         items: [provider("claude", "Claude", true), provider("codex", "Codex", true)],

@@ -20202,3 +20202,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the entries of the merged branches as recorded above; nothing else changes.
 - Scope: the merge of #877 Usage mode, #858 skeleton cards, #909/#864/#894 and the 592a themes onto build9, and this approval record. Test build only, not a pull request.
 - What's new: none — integration merge, no customer-visible change of its own
+
+## 2026-10-22 — build11: Reset in footer sits in Limits; Settings tests use pair-capable firmware
+
+- User approval: no visible change – UI approval not needed (integration fix for build11: placement of the #909 row inside the Limits section and test devices, same wording)
+- Approved customer-visible result: as in the #909 and calm Settings entries above; nothing else changes.
+- Scope: settings-screen.tsx and its test, plus a guard test that the Two at once card in Setup shows the skeleton like the others. Test build only, not a pull request.
+- What's new: none — integration fix, no customer-visible change of its own

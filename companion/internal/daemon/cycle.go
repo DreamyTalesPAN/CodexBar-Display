@@ -48,6 +48,7 @@ type cycleResult struct {
 	collectedAt     time.Time
 	selectionReason string
 	selectionDetail string
+	footerReset     string // Settings choice of the reset line; empty while the config is unreadable
 	failureKind     runtimeErrorKind
 	failureOp       string
 	failureErr      error
