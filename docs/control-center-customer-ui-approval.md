@@ -9462,7 +9462,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-21 — #782: Paul's approval of build 7200 recorded
 
-- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #782 approval record for build 7200; the #782 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 stay pending.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #782 approval record for build 7200; the #782 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 keep their own approval line.
 - Approved customer-visible result: #782 as described in its entries above, as seen in build 7200.
 - Scope: #782 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #782 approval record only
@@ -9600,9 +9600,44 @@ issue scope, or release permission never implies UI permission.
 - Scope: apps/control-center/src/components/control-center-app.tsx, resetSetup no longer clears supportReport. Pull request branch #782 only, not merged, not released.
 - What's new: none — reverts the clearing, no customer-visible change of its own
 
+## 2026-10-22 — #902: axe checks for the setup firmware, recovery and provider dialogs
+
+- User approval: no visible change – UI approval not needed (#902 adds accessibility tests for the setup firmware, recovery and provider dialogs; no component change)
+- Approved customer-visible result: the dialogs look and behave exactly as before.
+- Scope: `setup-dialogs.axe.test.tsx` only. Pull request #902 only, not merged, not released.
+- What's new: none — test-only accessibility baseline
+
+## 2026-10-22 — #902: real-browser colour-contrast check for the setup firmware and recovery dialogs
+
+- User approval: no visible change – UI approval not needed (test only: the customer-flow script runs axe color-contrast on the firmware and recovery dialogs; no component change)
+- Approved customer-visible result: the dialogs look and behave exactly as before.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` only. Pull request #902 only, not merged, not released.
+- What's new: none — test-only accessibility check
+
+## 2026-10-22 — #902: approval marker after merging main at d2f3fade
+
+- User approval: no visible change – UI approval not needed (merge of main (d2f3fade) into #902; the own entries of #902 keep their approvals)
+- Approved customer-visible result: #902 as in its own entries plus the entries merged with d2f3fade; nothing else changes.
+- Scope: the merge of d2f3fade and this approval record. Pull request branch #902 only, not merged, not released.
+- What's new: none — merge of d2f3fade, no customer-visible change of its own
+
+## 2026-10-22 — #902: colour-contrast check measures the wrapped dialog title and fails when axe cannot decide
+
+- User approval: no visible change – UI approval not needed (test only: the real-browser contrast check hides the frozen screen behind the opaque dialog so axe measures the title, and counts "incomplete" results as failures)
+- Approved customer-visible result: the dialogs look and behave exactly as before.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` only (`assertDialogContrast`). Pull request #902 only, not merged, not released.
+- What's new: none — test-only accessibility check
+
+## 2026-10-22 — #782: approval log wording of the build 7200 record
+
+- User approval: no visible change – UI approval not needed (wording only: the #782 build 7200 record now says "keep their own approval line" instead of the old phrase, same meaning; the app is not touched)
+- Approved customer-visible result: nothing changes; the customer sees exactly what the earlier entries describe.
+- Scope: docs/control-center-customer-ui-approval.md only, the wording of the #782 build 7200 record. Pull request branch #782 only, not merged, not released.
+- What's new: none — approval log wording only
+
 ## 2026-10-22 — #883: Windows one-time hint that VibeTV keeps running in the tray
 
-- User approval: approved by Marcus via the Orchestrator, 2026-10-22, question 125 answer "a" — this exact title and text, shown once at the first close, also once for existing customers after the update.
+- User approval: approved by Paul: "ja passt"
 - Approved customer-visible result: Windows only. The first close of the Control Center window shows one native message box (information icon, OK button) titled "VibeTV Control Center" with the text "VibeTV keeps running in the tray, so your display stays up to date." followed by a blank line and "To open it again, click the VibeTV icon next to the clock. If you don't see it, click the ^ arrow first." It never shows again (marker tray-hint-shown.txt in the app's local data folder).
 - Scope: windows/src-tauri/src/main.rs, show_tray_hint_once called from hide_after_flush. Pull request #919 only, not merged, not released.
 - What's new: none — one-time hint in the Windows shell, not a Control Center notice
