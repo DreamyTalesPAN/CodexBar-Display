@@ -8402,3 +8402,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none; the refresh the customer asked for shows its result as before.
 - Scope: control-center-app.tsx (the save path of display preferences) and its test; pull request branch #877 only.
 - What's new: none — bug fix, no customer-visible text or layout change
+
+## 2026-10-22 — #877: Used / Remaining gets its own Usage mode section
+
+- User approval: pending — Paul's test of build 7206 (22.10. ~09:30): Used / Remaining moves out of Display mode into its own "Usage mode" section right after it, label on the left, switch on the right
+- Approved customer-visible result: pending — Settings shows a "Usage mode" section after "Display mode" with the Used / Remaining switch (same control, same preference); Display mode no longer contains it; AI providers stays last.
+- Scope: settings-screen.tsx (section move only) and its test; pull request branch #877 only.
+- What's new: none — the existing Used / Remaining switch moved into its own section, nothing new to use

@@ -379,13 +379,6 @@ export function SettingsScreen({
             onChange={onDisplayPreferenceChange}
           />
         ) : null}
-        {usageMode ? (
-          <PreferenceRow
-            descriptor={usageMode}
-            disabled={localActionBusy}
-            onChange={onDisplayPreferenceChange}
-          />
-        ) : null}
         {providerShortcut ? (
           <p className="text-sm text-muted-foreground">
             {providerShortcut === "available"
@@ -406,6 +399,19 @@ export function SettingsScreen({
           </p>
         ) : null}
       </SettingsSection>
+
+      {usageMode ? (
+        <>
+          <ItemSeparator className="my-0" />
+          <SettingsSection id="settings-usage-mode" title="Usage mode">
+            <PreferenceRow
+              descriptor={usageMode}
+              disabled={localActionBusy}
+              onChange={onDisplayPreferenceChange}
+            />
+          </SettingsSection>
+        </>
+      ) : null}
 
       {standbySupport ? (
         <>
