@@ -1539,8 +1539,7 @@ describe("SetupWizard: one enabled provider", () => {
       <SetupWizard {...baseProps({ step: "theme", onDisplayContinue })} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(shownStep()).toBe("Display mode");
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(shownStep()).toBe("Choose AI providers");
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Continue" }));
@@ -1604,7 +1603,10 @@ describe("SetupWizard: one enabled provider", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(shownStep()).toBe("Display mode");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    });
+    expect(onDisplayContinue).not.toHaveBeenCalled();
   });
 
   it("evaluates the current selection again after going back", async () => {
@@ -1629,6 +1631,7 @@ describe("SetupWizard: one enabled provider", () => {
     expect(shownStep()).toBe("Display mode");
 
     // Two became one: the remaining provider is saved and the step skipped.
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     const one = [{ ...provider(), value: false }, provider("claude", "Claude")];
     rerender(<SetupWizard {...props} providers={one} />);
@@ -1679,6 +1682,8 @@ describe("SetupWizard: going back", () => {
     expect(shownStep()).toBe("Display mode");
 
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(shownStep()).toBe("Choose your theme");
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(shownStep()).toBe("Choose AI providers");
 
     // Continue waits for the companion to accept it before releasing the step.
@@ -1695,7 +1700,6 @@ describe("SetupWizard: going back", () => {
     render(
       <SetupWizard {...baseProps({ step: "theme", onProvidersContinue })} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(shownStep()).toBe("Choose AI providers");
 
@@ -1715,7 +1719,6 @@ describe("SetupWizard: going back", () => {
     const onProvidersContinue = vi.fn(async () => "display" as const);
     const props = baseProps({ step: "theme", onProvidersContinue });
     const { rerender } = render(<SetupWizard {...props} />);
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(shownStep()).toBe("Choose AI providers");
 
@@ -1762,6 +1765,7 @@ describe("SetupWizard: going back", () => {
     });
     render(<SetupWizard {...props} />);
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(shownStep()).toBe("Choose AI providers");
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(shownStep()).toBe("Choose your VibeTV");
@@ -1774,16 +1778,15 @@ describe("SetupWizard: going back", () => {
   });
 
   // A save that did not land must not read as one that did: the rollback
-  // restores the old selection, so the derived step stays on theme and the
+  // restores the old selection, so the derived step stays on display and the
   // customer would be carried off the display step believing it was kept.
   it("keeps the display step when the save is refused", async () => {
     const onDisplayContinue = vi.fn(async () => false);
     render(
       <SetupWizard
-        {...baseProps({ step: "theme", onDisplayContinue, automaticPreviews: [answeredCodex] })}
+        {...baseProps({ step: "display", onDisplayContinue, automaticPreviews: [answeredCodex] })}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(shownStep()).toBe("Display mode");
 
     await act(async () => {
@@ -1798,16 +1801,15 @@ describe("SetupWizard: going back", () => {
     const onDisplayContinue = vi.fn(async () => true);
     render(
       <SetupWizard
-        {...baseProps({ step: "theme", onDisplayContinue, automaticPreviews: [answeredCodex] })}
+        {...baseProps({ step: "display", onDisplayContinue, automaticPreviews: [answeredCodex] })}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     });
-
-    expect(shownStep()).toBe("Choose your theme");
+    expect(onDisplayContinue).toHaveBeenCalled();
+    expect(shownStep()).toBe("Display mode");
   });
 
   // The save can still be running when the customer leaves the step, and Back
@@ -1823,20 +1825,19 @@ describe("SetupWizard: going back", () => {
         }),
     );
     render(
-      <SetupWizard {...baseProps({ step: "theme", onDisplayContinue })} />,
+      <SetupWizard {...baseProps({ step: "display", onDisplayContinue })} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(shownStep()).toBe("Display mode");
 
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(shownStep()).toBe("Choose AI providers");
+    expect(shownStep()).toBe("Choose your theme");
 
     await act(async () => {
       settle(true);
     });
 
-    expect(shownStep()).toBe("Choose AI providers");
+    expect(shownStep()).toBe("Choose your theme");
   });
 
   it("keeps a Back press made while provider completion was running", async () => {
@@ -1851,6 +1852,7 @@ describe("SetupWizard: going back", () => {
       <SetupWizard {...baseProps({ step: "display", onProvidersContinue })} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(shownStep()).toBe("Welcome");
@@ -1861,35 +1863,22 @@ describe("SetupWizard: going back", () => {
   });
 
   // The display choice is written optimistically, and the derived step reads
-  // that as done. Moving on for it would put the customer on the theme step --
-  // picking, even installing -- on a write that can still roll back.
+  // that as done. Moving on for it would put the customer on the live step on
+  // a write that can still roll back.
   it("holds the display step while its save is in flight", () => {
     const { rerender } = render(
       <SetupWizard
-        {...baseProps({ step: "theme", displaySavePending: true })}
+        {...baseProps({ step: "live", displaySavePending: true })}
       />,
     );
     expect(shownStep()).toBe("Display mode");
 
     rerender(
       <SetupWizard
-        {...baseProps({ step: "theme", displaySavePending: false })}
+        {...baseProps({ step: "live", displaySavePending: false })}
       />,
     );
-    expect(shownStep()).toBe("Choose your theme");
-  });
-
-  it("releases the theme step the same way", async () => {
-    render(<SetupWizard {...baseProps({ step: "theme", automaticPreviews: [answeredCodex] })} />);
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(shownStep()).toBe("Display mode");
-
-    // The display save is awaited before the step is released, so this one
-    // settles a microtask later than the provider step's Continue.
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-    });
-    expect(shownStep()).toBe("Choose your theme");
+    expect(shownStep()).toBe("Your VibeTV is live");
   });
 });
 

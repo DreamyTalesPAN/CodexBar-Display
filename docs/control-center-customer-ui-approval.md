@@ -20209,3 +20209,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: as in the #909 and calm Settings entries above; nothing else changes.
 - Scope: settings-screen.tsx and its test, plus a guard test that the Two at once card in Setup shows the skeleton like the others. Test build only, not a pull request.
 - What's new: none — integration fix, no customer-visible change of its own
+
+## 2026-10-22 — 7208: Setup asks for the theme before the display mode, provider picks at the setup width
+
+- User approval: pending — Setup shows "Choose your theme" before "Display mode", so the display cards draw the chosen theme; "Show this provider" and the Two at once pickers use the 460 px width of the other setup elements instead of the full width
+- Approved customer-visible result: the display mode cards show the chosen theme with the Companion's frames, and the provider pickers line up with the other setup elements.
+- Scope: setup-step.ts (step order), setup-wizard.tsx, setup-display-mode-screen.tsx and their tests. Test build only, not a pull request.
+- What's new: none — setup order and layout only

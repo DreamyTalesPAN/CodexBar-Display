@@ -337,13 +337,13 @@ export function SetupWizard(props: SetupWizardProps) {
       : "device";
   // The display choice is written optimistically so it does not flicker, and
   // the derived step reads that optimism as done -- which would put the
-  // customer on the theme step, picking or even installing, on the strength of
-  // a write that can still roll back. Held here rather than in
+  // customer on the live step on the strength of a write that can still roll
+  // back. Held here rather than in
   // `setupDisplayIsConfigured`: that value also decides whether setup owns the
   // screen at all, so waiting there threw a customer out of Settings and back
   // into the wizard for the length of every display save.
   const step =
-    props.displaySavePending && derived === "theme" ? "display" : derived;
+    props.displaySavePending && derived === "live" ? "display" : derived;
   // Issue #423: with exactly one provider switched on there is nothing to
   // choose on the display step, so it is skipped in both directions. The
   // toggles decide, not which providers happen to have data.
@@ -352,8 +352,7 @@ export function SetupWizard(props: SetupWizardProps) {
   // The skip chose for the customer. Once a second provider is on, the choice
   // is theirs again, so the next Continue shows the display step.
   const displayChoiceSkipped = useRef(false);
-  const back =
-    step === "theme" && soleProvider ? "providers" : previousSetupStep(step);
+  const back = previousSetupStep(step);
   // Counted so a write started before a Back press cannot undo it: the display
   // save can still be running when the customer leaves, and its continuation
   // used to release the override and carry them forward from the step they had
@@ -362,7 +361,7 @@ export function SetupWizard(props: SetupWizardProps) {
   const goBack = back
     ? () => {
         navigations.current += 1;
-        if (step === "theme" && back === "providers") {
+        if (step === "theme" && soleProvider) {
           displayChoiceSkipped.current = true;
         }
         if (back === "device") {
@@ -1079,8 +1078,9 @@ export function SetupWizard(props: SetupWizardProps) {
     )
       ? savedProviderId
       : (props.displayProviders[0]?.id ?? null);
-    // The tiles draw the theme VibeTV is showing. The device's own report wins;
-    // before it names one, the theme picked on the previous step stands in.
+    // The tiles draw the theme VibeTV is showing, which the theme step just
+    // installed. The device's own report wins; before it names one, the theme
+    // picked there stands in.
     const deviceThemeId = activeThemeId(props.device);
     const pickedTheme = props.themes.find(
       (theme) => theme.id === props.selectedThemeId,
