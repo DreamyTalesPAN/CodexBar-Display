@@ -32,6 +32,9 @@ func TestMain(m *testing.M) {
 	// would otherwise carry from one test into the next (reuseEngineAnswers).
 	// A test of that reuse switches it on itself.
 	reuseEngineAnswers = false
+	// Likewise the Claude Code source sync (#834): only its own tests run it,
+	// so no other test can rewrite a config it did not expect to change.
+	claudeCodeSourceSync = false
 	os.Exit(m.Run())
 }
 

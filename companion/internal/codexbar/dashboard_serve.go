@@ -307,6 +307,10 @@ func (s *DashboardServeSupervisor) runOnce(ctx context.Context) error {
 			if checkHealth() {
 				return s.stopUnhealthyDashboardServeChild(endpoint, cmd, waitc)
 			}
+			// Serve reads Claude's source from this config on every
+			// refresh: keep it on Claude Code's login while that is
+			// signed in, and hand it back once it is not (#834).
+			maybePreferClaudeCode("", environmentValue(env, "CODEXBAR_CONFIG"))
 		case <-ctx.Done():
 			select {
 			case err := <-waitc:

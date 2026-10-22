@@ -125,7 +125,11 @@ func EnsureConfig(home string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return ensureConfigFile(path)
+	path, err = ensureConfigFile(path)
+	if err == nil {
+		maybePreferClaudeCode(home, path)
+	}
+	return path, err
 }
 
 // macConfigPath follows CodexBar's explicit config and XDG overrides, then

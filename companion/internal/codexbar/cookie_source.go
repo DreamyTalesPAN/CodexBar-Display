@@ -24,7 +24,7 @@ var configWriteMu sync.Mutex
 // use it to change the file the way CodexBar itself might at that moment.
 var beforeConfigReplace = func() {}
 
-var errConfigChanged = errors.New("CodexBar config kept changing while switching to browser cookies")
+var errConfigChanged = errors.New("CodexBar config kept changing while VibeTV updated it")
 
 // UseBrowserCookies switches a provider whose CodexBar config pins a saved
 // cookie (cookieSource "manual") back to CodexBar's automatic browser import.
@@ -44,6 +44,19 @@ func UseBrowserCookies(home, providerID string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	return editConfigProviders(path, func(provider map[string]any) bool {
+		if provider["id"] == providerID && provider["cookieSource"] == "manual" {
+			provider["cookieSource"] = "auto"
+			return true
+		}
+		return false
+	})
+}
+
+// editConfigProviders applies edit to every provider entry of the CodexBar
+// config at path and replaces the file when edit changed one. It reports
+// whether the config changed; a missing config is left alone.
+func editConfigProviders(path string, edit func(provider map[string]any) bool) (bool, error) {
 	configWriteMu.Lock()
 	defer configWriteMu.Unlock()
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
@@ -68,7 +81,7 @@ func UseBrowserCookies(home, providerID string) (bool, error) {
 		return false, err
 	}
 	for attempt := 0; attempt < 3; attempt++ {
-		changed, err := switchCookieSource(target, providerID)
+		changed, err := rewriteConfigProviders(target, edit)
 		if !errors.Is(err, errConfigChanged) {
 			return changed, err
 		}
@@ -76,7 +89,7 @@ func UseBrowserCookies(home, providerID string) (bool, error) {
 	return false, errConfigChanged
 }
 
-func switchCookieSource(path, providerID string) (bool, error) {
+func rewriteConfigProviders(path string, edit func(provider map[string]any) bool) (bool, error) {
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
@@ -109,8 +122,7 @@ func switchCookieSource(path, providerID string) (bool, error) {
 		if _, hasID := provider["id"].(string); !ok || !hasID {
 			return false, errors.New("CodexBar config has a provider entry without an id")
 		}
-		if provider["id"] == providerID && provider["cookieSource"] == "manual" {
-			provider["cookieSource"] = "auto"
+		if edit(provider) {
 			changed = true
 		}
 	}
