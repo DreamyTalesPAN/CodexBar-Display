@@ -11176,3 +11176,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #864 as in its own entries plus the entries merged with dd826fe5; nothing else changes.
 - Scope: the merge of dd826fe5 and this approval record. Pull request branch #864 only, not merged, not released.
 - What's new: none — merge of dd826fe5, no customer-visible change of its own
+
+## 2026-10-22 — #864: approval marker after merging claude/usage-pace at 94b4c6c2
+
+- User approval: pending — #864's Settings rebuilt on the calm Settings of its base (#800 with main): Two at once is a third radio row under Automatic and Manual with the pickers "Provider 1" and "Provider 2", and "Limits on VibeTV" stands after Display mode and Pace, before Brightness; the base's wording wins over #864's own: the mode is called "Manual" (not "One provider") with the description "VibeTV always shows the one provider you pick — nothing else." in Settings and in setup, and the shortcut line says "This switches to Manual."; Settings shows no previews on its cards; none of this is seen by Paul
+- Approved customer-visible result: nothing is approved yet. Two at once, its two pickers, the line "Update needed. Update VibeTV to use this." and Limits on VibeTV keep the wording of the entries above; only their place in the calm Settings changed.
+- Scope: the merge of 94b4c6c2, `settings-screen.tsx` and its tests, `setup-display-mode-screen.tsx` (its unused `pairNote` goes), the mode name in tests and `test-customer-flows.mjs`, the Companion's message `Choose Automatic, Manual or Two at once.` and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — the visible parts still wait for the Claude Design round
