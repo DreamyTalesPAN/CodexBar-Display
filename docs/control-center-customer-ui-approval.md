@@ -9674,3 +9674,38 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: in Two at once, a theme that draws token numbers gets the same "Shows -- while token history is unavailable. See Usage." line that one-provider mode already shows, because Two at once frames carry no token totals; nothing else changes.
 - Scope: Theme Library hint for Two at once (usage-screen.tsx helper, control-center-app.tsx call site, tests). Pull request branch #864 only, not merged, not released.
 - What's new: none — the hint text already exists; only the case in which it shows is extended to Two at once
+## 2026-10-21 — footer-first-reset: Use the first displayed reset in the shared footer
+- User approval: pending — Paul asked ~22:20 „hier unten steht keine reset time, das tritt auch bei anderen themes auf, bspw. cozy coder“; footer-first-reset implementation awaits visual review.
+- Approved customer-visible result: Mini Classic with idle Session and Weekly reset in 3d 1h shows “Weekly resets in 3d 1h”; Cozy Meadow displays only Session and keeps “No active session”, never borrowing the hidden Weekly reset; unavailable deadlines remain unavailable.
+- Scope: Central firmware and Control Center preview footer rendering, with matching regression tests; no provider semantics or theme-specific rules.
+- What's new: none — correction of the existing reset footer.
+
+## 2026-10-21 — #894: Keep the reset footer at its theme font size
+- User approval: pending — #894 fixed-size footer wording refinement requested after the smaller Mini Classic screenshot; exact final wording awaits visual approval.
+- Approved customer-visible result: At the original footer font size, use “Weekly resets in 3d 1h” when it fits, otherwise “Weekly 3d 1h”; “Resets 3d 1h” is allowed only with one displayed limit. Mini Classic shows “Weekly 3d 1h” at font 2 size 2 in used and remaining mode. Cozy Meadow with idle Session still shows “No active session” at its original font size; Gauge shows “Session 2h 14m”. If no permitted wording fits, retain the font and existing clipping rather than shrink or hide a multi-limit name.
+- Scope: Central firmware and preview footer rendering, font measurement and focused regression tests; no theme-specific cases, provider or hardware changes.
+- What's new: none — preserve the existing footer font size while shortening reset wording.
+
+## 2026-10-21 — #894: Shrink idle reset footers again
+- User approval: no visible change – UI approval not needed (bug fix: idle footer shrinks again as before #894)
+- Approved customer-visible result: Idle "No active session" and "Reset unavailable" footers fit their theme width again by shrinking, as before #894; countdown footers keep their fixed size and wording.
+- Scope: Firmware and Control Center preview footer shrink opt-out limited to countdown wording; focused regression tests in both.
+- What's new: none — restores the pre-#894 shrink for idle and unavailable footers.
+
+## 2026-10-21 — #894: Footer wording table tests
+- User approval: no visible change – UI approval not needed (test-only: footer wording table in firmware and preview)
+- Approved customer-visible result: none; the rendered footer wording is unchanged.
+- Scope: Table-driven footer wording tests (countdown, idle, unavailable; used and remaining; one and two displayed limits; hidden limits) in the native firmware suite and the Control Center preview suite.
+- What's new: none — tests only.
+
+## 2026-10-22 — #894: Pair footer is never clipped
+- User approval: no visible change – UI approval not needed (bug fix: a Two-at-once footer text no longer runs past the screen edge; it names the limit without the provider, then shrinks)
+- Approved customer-visible result: none beyond the fix: "Claude Weekly 3d 1h" that did not fit now reads "Weekly 3d 1h".
+- Scope: Footer wording selection in firmware and preview tries the limit name after the pair label, and a countdown that fits no variant keeps the theme's shrink-fit; native and preview tests with Claude Creature and Pixel Battery footer widths.
+- What's new: none — bug fix; nothing new to announce.
+
+## 2026-10-22 — #894 on #864: Integrate footer renderer
+- User approval: no visible change – UI approval not needed (merge existing footer renderer onto the approved Limits settings base; retain pace tests)
+- Approved customer-visible result: Existing #894 footer behavior and #864 settings remain intact.
+- Scope: Merge preview, firmware tests and approval history; retain the newer Gauge pace expectations.
+- What's new: none — integration of existing changes.
