@@ -275,8 +275,8 @@ export function ThemeLibraryScreen({
   onInstallCustomTheme,
   onSelectTheme,
   onInstallTheme,
-  onOpenScreensaverSettings,
   onStudioOpenChange,
+  onOpenScreensaverSettings,
   windowsHost = false,
 }: ThemeLibraryScreenProps) {
   const screensavers = usage === "screensaver";

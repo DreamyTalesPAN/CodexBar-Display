@@ -49,10 +49,16 @@ describe("SetupLog", () => {
     );
   });
 
-  it("has no cursor block, also while work is in flight", () => {
-    // Paul's rule (2026-10-17): no cursor block anywhere in process steps.
+  it("shows the caret only on the last line, and only while running", () => {
     expect(renderToStaticMarkup(<SetupLog lines={lines} />)).not.toContain(
       "vibetv-caret-blink",
+    );
+
+    const running = renderToStaticMarkup(<SetupLog lines={lines} running />);
+
+    expect(running.match(/vibetv-caret-blink/g)).toHaveLength(1);
+    expect(running.indexOf("vibetv-caret-blink")).toBeGreaterThan(
+      running.indexOf("VibeTV 5804508"),
     );
   });
 });

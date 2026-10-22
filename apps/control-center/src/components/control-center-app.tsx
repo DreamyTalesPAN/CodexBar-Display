@@ -5135,7 +5135,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : "not connected yet";
 
   // The log reads as an order of events, not as a set of statuses: everything
-  // above the newest line is dimmed, and the newest one is shown in full.
+  // above the newest line is dimmed, and the newest one carries the caret.
   // Tying the dimming to whether each step had finished made three lines flip
   // back and forth while the customer watched, for no information they could
   // act on.

@@ -123,6 +123,7 @@ export function SetupThemeScreen({
       <SetupLog
         className="mt-4"
         lines={installLogLines(installLogs)}
+        running={installing}
       />
     </SetupWizardScreen>
   );

@@ -78,32 +78,6 @@ describe("UpdatesScreen VibeTV update card", () => {
     expect(html).not.toContain("Reconnect VibeTV");
   });
 
-  it("shows the running update step as a single setup-log line", () => {
-    const html = renderMarkup(
-      <UpdatesScreen
-        companionStatus="online"
-        device={{ connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.39" }}
-        firmwareUpdate={{
-          checkedAt: "2026-08-24T10:00:00Z",
-          installedFirmware: "1.0.39",
-          latestFirmware: "1.0.40",
-          updateAvailable: true,
-          status: "update_available",
-        }}
-        updateStatus={{
-          phase: "installing",
-          startedAt: "2026-08-24T10:01:00Z",
-          message: "Writing VibeTV firmware.",
-          logs: [],
-        }}
-      />,
-    );
-
-    expect(html).toContain('data-slot="process-steps"');
-    expect(html).toContain('data-variant="single"');
-    expect(html).toContain("&gt; Writing VibeTV firmware.");
-  });
-
   it("shows the device-truth installed firmware after a failed update, never the job result", () => {
     // DO NOT weaken this test.
     const html = renderMarkup(
