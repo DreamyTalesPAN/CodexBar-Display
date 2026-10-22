@@ -884,10 +884,10 @@ func TestBrowserSignInHealthScanDoesNotOverrideUsageEvidence(t *testing.T) {
 	}
 
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) { return daemon.PersistedUsage{}, false }
-	// The sentence approved for this row on 2026-09-17, from the health scan
-	// and from the exact check alike: a dismissed message opens again when its
-	// text changes, and the exact check ages out after five minutes.
-	const guidance = "Claude usage needs a signed-in claude.ai session in your browser. Sign in to claude.ai in your browser, close the browser."
+	// The fixed provider sentence (the Setup log says the same), from the health
+	// scan and from the exact check alike: a dismissed message opens again when
+	// its text changes, and the exact check ages out after five minutes.
+	const guidance = "Sign in to Claude in your browser, then close the browser."
 	for _, source := range []string{"health scan", "exact check"} {
 		items = server.providerDescriptors(scanned)
 		if len(items) != 1 || items[0].Health.State != "browser_sign_in_required" ||

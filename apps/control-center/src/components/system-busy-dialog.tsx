@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useWaitsForPageDialog } from "./announcement-gate";
 import { SetupDialog } from "./setup/setup-dialog";
 
 /**
@@ -27,30 +28,23 @@ export function useSystemBusyDismissal(
   return [since !== null && since === dismissedSince, () => setDismissedSince(since)];
 }
 
-/**
- * Whether a dialog other than this one is open. The busy dialog comes up on
- * its own, so a page's own dialog (Run setup again, a theme preview, a
- * factory reset, a delete confirmation) can open under it, or be open when it
- * comes; it waits for that one instead of covering it, and returns once it is
- * closed. The first answer is read before the first render, so the busy dialog
- * never mounts over a dialog that was already open.
- */
 function otherDialogOpen(ownTitles: string[]): boolean {
   return (
     typeof document !== "undefined" &&
     Array.from(
       document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),
-    ).some(
-      (dialog) =>
-        !ownTitles.some((title) => dialog.textContent?.includes(title)),
-    )
+    ).some((dialog) => !ownTitles.some((title) =>
+      title === systemBusyCopy.title
+        ? dialog.getAttribute("data-notice-kind") === "system-busy"
+        : dialog.querySelector('[data-slot="dialog-title"]')?.textContent === title,
+    ))
   );
 }
 
 /**
- * Whether a dialog other than the ones titled `ownTitles` is open. Shared with
- * the provider overlay; each names the dialogs it waits for, so the two never
- * hide each other.
+ * Whether a dialog other than the ones titled `ownTitles` is open. Only the
+ * provider overlay uses it: it waits for any page dialog but not for the busy
+ * notice, which waits for it (announcement-gate).
  */
 export function useOtherDialogOpen(ownTitles: string[]): boolean {
   const key = ownTitles.join("\n");
@@ -66,13 +60,18 @@ export function useOtherDialogOpen(ownTitles: string[]): boolean {
   return open;
 }
 
-/** The computer is too starved for the usage engine to answer (#606). */
+/**
+ * The computer is too starved for the usage engine to answer (#606). An
+ * announcement: it waits while a page dialog is open (#632).
+ */
 export function SystemBusyDialog({ onClose }: { onClose: () => void }) {
-  if (useOtherDialogOpen([systemBusyCopy.title])) {
+  if (useWaitsForPageDialog()) {
     return null;
   }
   return (
     <SetupDialog
+      announcement
+      noticeKind="system-busy"
       description={systemBusyCopy.description}
       onOpenChange={(open) => {
         if (!open) {
@@ -81,6 +80,11 @@ export function SystemBusyDialog({ onClose }: { onClose: () => void }) {
       }}
       open
       primaryAction={{ label: systemBusyCopy.action, onSelect: onClose }}
+      // An announcement over whatever the customer is doing: the app behind
+      // it keeps working, and the customer's own dialog keeps the focus when
+      // both open together (#632).
+      onOpenAutoFocus={(event) => event.preventDefault()}
+      scrim={false}
       showCloseButton={false}
       title={systemBusyCopy.title}
     />

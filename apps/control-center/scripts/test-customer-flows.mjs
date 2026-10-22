@@ -1043,7 +1043,7 @@ async function main() {
       browser,
       appContext.appUrl,
     );
-    await testOverviewSeparatesMacAppAndFirmwareVersions(
+    await testOverviewShowsOnlyTheVibeTV(
       browser,
       appContext.appUrl,
     );
@@ -1310,6 +1310,39 @@ async function startTestApp({
   return { app, appUrl };
 }
 
+// The axe unit checks switch color-contrast off (jsdom has no colours). Here
+// the real browser computes it for a rendered dialog (issue #214).
+const axeSource = await readFile(
+  join(root, "node_modules", "axe-core", "axe.min.js"),
+  "utf8",
+);
+async function assertDialogContrast(page, dialog) {
+  await page.addScriptTag({ content: axeSource });
+  const failures = await dialog.evaluate(async (node) => {
+    // The dialog is opaque, so only its own colours matter. With the frozen
+    // screen behind it, the lines of a wrapped title see different elements
+    // and axe reports the title "incomplete" instead of measuring it. Hidden,
+    // everything is measured, and anything axe still cannot decide fails.
+    const behind = [...document.body.children].filter((el) => !el.contains(node));
+    const shown = behind.map((el) => el.style.display);
+    for (const el of behind) el.style.display = "none";
+    try {
+      const results = await window.axe.run(node, {
+        runOnly: ["color-contrast"],
+        resultTypes: ["violations", "incomplete"],
+      });
+      return ["violations", "incomplete"].flatMap((type) =>
+        results[type].flatMap(({ id, nodes }) =>
+          nodes.map(({ html, failureSummary }) => `${type} ${id}: ${html} ${failureSummary}`),
+        ),
+      );
+    } finally {
+      behind.forEach((el, i) => (el.style.display = shown[i]));
+    }
+  });
+  assert(failures.length === 0, `dialog colour contrast:\n${failures.join("\n")}`);
+}
+
 async function newCustomerPage(browser, appUrl, options) {
   const page = await browser.newPage(options);
   await markWhatsNewRead(page);
@@ -1571,6 +1604,7 @@ async function testFirmwareOnboardingTerminalStates(browser, appUrl) {
       await dialog.waitFor({ timeout: 10_000 });
       assert(await dialog.getByRole("button", { name: "Create support report" }).isEnabled(), "Terminal attention must release busy state for support");
       assert((await dialog.getByRole("button", { name: /try.*again/i }).count()) === 0, "Verified firmware must not offer another flash");
+      await assertDialogContrast(page, dialog);
     }
     const terminalPolls = polls;
     await page.waitForTimeout(1600);
@@ -1729,6 +1763,7 @@ async function testConnectFirmwareUpdateFailureOffersRetry(browser, appUrl) {
     name: "Firmware update did not finish",
   });
   await failure.waitFor({ timeout: 20_000 });
+  await assertDialogContrast(page, failure);
   await failure
     .getByText("Unplug VibeTV from power, plug it back in, then try again.", {
       exact: true,
@@ -1759,7 +1794,7 @@ async function testConnectFirmwareUpdateFailureOffersRetry(browser, appUrl) {
   // does nothing, because the connect sequence looks its candidate up in a
   // device list the successful connect already emptied. Encoding either
   // outcome here would freeze a defect into the suite.
-  await failure.getByRole("button", { name: "Close" }).click();
+  await failure.press("Escape");
   await failure.waitFor({ state: "detached", timeout: 10_000 });
   await waitForSetupDeviceStep(page);
   await page
@@ -1971,7 +2006,7 @@ async function testConnectedUnreadyDeviceKeepsSettingsAvailable(
     "Settings must stay available while a connected VibeTV is temporarily not ready",
   );
   await settingsButton.click();
-  await page.getByRole("heading", { name: "Display", exact: true }).waitFor({
+  await page.getByRole("heading", { name: "Brightness", exact: true }).waitFor({
     timeout: 10_000,
   });
   await waitForCondition(
@@ -2717,9 +2752,8 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     await page
       .getByRole("heading", { name: "VibeTV is connected" })
       .waitFor({ timeout: 10_000 });
-    // The preferences arrive after the page: then the overlay can open.
     await closeProviderOverlays(page);
-    await page.getByText("Live", { exact: true }).waitFor({ timeout: 10_000 });
+    await page.getByRole("img", { name: /^Rendered VibeTV / }).waitFor({ timeout: 15_000 });
     assert(
       (await page.getByText("AI provider", { exact: true }).count()) === 0,
       "Overview must not guess or show an AI provider",
@@ -3403,9 +3437,8 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
     "a service outage must stay quiet while it can still come back on its own",
   );
   // Once the grace is over the app steps in, and then it says so -- over
-  // whatever the customer was doing. Its scrim swallows clicks, so the session
-  // is only usable again once it is dismissed -- which it must be, rather than
-  // trapping the customer behind it.
+  // whatever the customer was doing. Its grey backdrop is a look only and
+  // takes no clicks, and the dialog can be dismissed as well.
   const recovery = page.locator('[role="dialog"][data-state="open"]');
   await recovery.waitFor({ timeout: 45_000 });
   const recoveryTitle = (
@@ -3418,6 +3451,7 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
     ].includes(recoveryTitle),
     `A background service outage must announce itself, got ${JSON.stringify(recoveryTitle)}`,
   );
+  await assertDialogContrast(page, recovery);
   // The announcement must not take the app it is reporting on: the tabs stay
   // reachable while the dialog is still standing.
   await clickNavigation(page, "Usage");
@@ -3426,11 +3460,11 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
     "the recovery dialog must stay up while the customer keeps working",
   );
 
-  await recovery.getByRole("button", { name: "Close" }).click();
+  await recovery.press("Escape");
   await recovery.waitFor({ state: "detached", timeout: 10_000 });
 
   await clickNavigation(page, "Overview");
-  await page.getByText("Not reachable", { exact: true }).waitFor({
+  await page.getByRole("heading", { name: "VibeTV status", exact: true }).waitFor({
     timeout: 12_000,
   });
   await clickNavigation(page, "Usage");
@@ -3888,9 +3922,10 @@ async function testEnteredControlCenterOpensPairingRecovery(browser, appUrl) {
   await page.getByRole("navigation", { name: "Control Center" }).waitFor({
     timeout: 15_000,
   });
+  // The Overview has no status tiles any more (calm Overview, #713); the
+  // not-connected state is its heading.
   await page
-    .getByText("Not connected", { exact: true })
-    .first()
+    .getByRole("heading", { name: "VibeTV status", exact: true })
     .waitFor({ timeout: 20_000 });
   assert(
     selectRequests.length === 0,
@@ -3910,9 +3945,9 @@ async function testEnteredControlCenterOpensPairingRecovery(browser, appUrl) {
   await clickNavigation(page, "Settings");
   const pairingError = page.getByRole("dialog");
   await pairingError.waitFor({ timeout: 10_000 });
-  await pairingError.getByRole("button", { name: "OK", exact: true }).click();
-  await pairingError.waitFor({ state: "detached", timeout: 5_000 });
-  await runSetupAgain(page);
+  await pairingError
+    .getByRole("button", { name: "Run setup again", exact: true })
+    .click();
   await waitForSetupDeviceStep(page, 20_000);
   await setupDeviceCards(page).first().waitFor({ timeout: 10_000 });
   await setupConnectButton(page).click();
@@ -4689,7 +4724,7 @@ async function testDismissedUsageIncidentSurvivesProbeRefresh(browser, appUrl) {
   );
   await usageDialog.waitFor({ timeout: 10_000 });
 
-  await usageDialog.getByRole("button", { name: "Close" }).click();
+  await usageDialog.press("Escape");
   await usageDialog.waitFor({ state: "detached", timeout: 5_000 });
 
   // One probe refresh: a "checking" answer, then the same failing verdict.
@@ -6079,10 +6114,14 @@ async function testLocalOverviewRecoversWhenDeviceBecomesReady(
   const installRequests = [];
   const repairRequests = [];
   const deviceReadRequests = [];
+  let statusPolls = 0;
   await routeCompanionOnline(page, installRequests, () => {}, {
     device: reachableUnreadyDevice,
     statusDeviceSequence: [reachableUnreadyDevice, companionDevice],
     onRequest: (pathname, method) => {
+      if (pathname === "/v1/status") {
+        statusPolls += 1;
+      }
       if (pathname === "/v1/device/repair" && method === "POST") {
         repairRequests.push(pathname);
       }
@@ -6096,7 +6135,15 @@ async function testLocalOverviewRecoversWhenDeviceBecomesReady(
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
-  await page.getByText("Live", { exact: true }).waitFor({
+  // The heading shows before the ready status is polled: wait for that poll.
+  await waitForCondition(
+    () => statusPolls >= 2,
+    "expected the ready status response to be served",
+    15_000,
+  );
+  // The Overview shows the live VibeTV (calm Overview, #713): no offline placeholder.
+  await page.getByLabel("VibeTV live preview is offline").waitFor({
+    state: "detached",
     timeout: 12_000,
   });
   assert(
@@ -6198,7 +6245,7 @@ async function testUsageServiceFailureAfterSetupOffersRecovery(
     .getByRole("button", { name: "Create support report" })
     .waitFor();
 
-  await usageDialog.getByRole("button", { name: "Close" }).click();
+  await usageDialog.press("Escape");
   await usageDialog.waitFor({ state: "detached", timeout: 10_000 });
   // Hiding the announcement must give the app back, not leave it behind a scrim.
   await clickNavigation(page, "Usage");
@@ -6253,8 +6300,8 @@ async function testWindowsAppDoesNotSpeakOfAMac(browser, appUrl) {
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 10_000,
   });
+  // The calm Overview has no "App" tile any more (#713); the heading above is the wait.
   const main = page.getByRole("main");
-  await main.getByText("App", { exact: true }).first().waitFor();
   assert(
     !(await main.innerText()).includes("Mac"),
     "The Windows Overview must not name a Mac",
@@ -6269,7 +6316,7 @@ async function testWindowsAppDoesNotSpeakOfAMac(browser, appUrl) {
     !(await usageDialog.innerText()).includes("Mac"),
     "The Windows usage dialog must not name a Mac",
   );
-  await usageDialog.getByRole("button", { name: "Close" }).click();
+  await usageDialog.press("Escape");
   await usageDialog.waitFor({ state: "detached", timeout: 10_000 });
 
   for (const tab of ["Usage", "Settings", "Appearance", "Updates", "Support"]) {
@@ -6484,7 +6531,7 @@ async function testSetupUnlocksWhenThemeInstallGateDisabled(browser, appUrl) {
   });
   await clickNavigation(page, "Themes");
   await page
-    .getByRole("heading", { name: "Themes" })
+    .getByRole("heading", { level: 1, name: "Themes", exact: true })
     .waitFor({ timeout: 10_000 });
   await page.getByText("Fixture Synthwave Theme").waitFor({ timeout: 10_000 });
   await page.getByText("Fixture Clippy Theme").waitFor({ timeout: 10_000 });
@@ -6537,7 +6584,7 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
     await page.getByText("Fixture Night Clock Screensaver").waitFor();
     // The switch is in Settings only (#643): Screensavers says it is off
     // and links there.
-    await page.getByText("Screensaver is off.", { exact: true }).waitFor();
+    await page.getByText("Screensaver is off.").waitFor();
     assert(
       (await page
         .locator("main.control-center-shell")
@@ -6557,7 +6604,8 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
       "Appearance sections must stay in the sidebar, not become content tabs",
     );
     await page
-      .getByRole("link", { name: "Turn on in Settings", exact: true })
+      .locator("main.control-center-shell")
+      .getByRole("link", { name: "Settings", exact: true })
       .click();
     await page
       .getByRole("heading", { name: "Screensaver", exact: true })
@@ -6580,7 +6628,7 @@ async function testAppearanceSidebarNavigation(browser, appUrl) {
       .waitFor({ timeout: 10_000 });
     await page.getByText("Fixture Night Clock Screensaver").waitFor();
     assert(
-      (await page.getByText("Screensaver is off.", { exact: true }).count()) === 0,
+      (await page.getByText("Screensaver is off.").count()) === 0,
       "Screensavers must drop the off line once the screensaver is on",
     );
 
@@ -6759,7 +6807,7 @@ async function testSettingsStayCustomerOnly(browser, appUrl) {
     "expected settings refresh before opening Settings",
   );
   await clickNavigation(page, "Settings");
-  await page.getByRole("heading", { name: "Display", exact: true }).waitFor({
+  await page.getByRole("heading", { name: "Brightness", exact: true }).waitFor({
     timeout: 10_000,
   });
   await waitForCondition(
@@ -8610,7 +8658,7 @@ async function testLegacyMigrationCanRetryFailedRelease(
   await page.getByRole("heading", { name: "Update check failed" }).waitFor({
     timeout: 10_000,
   });
-  const retry = page.getByRole("button", { name: "Check again" });
+  const retry = page.getByRole("button", { name: "Try again" });
   await retry.waitFor({ timeout: 10_000 });
   assert(
     await retry.isEnabled(),
@@ -8626,7 +8674,7 @@ async function testLegacyMigrationCanRetryFailedRelease(
     timeout: 10_000,
   });
   assert(
-    await page.getByRole("button", { name: "Check again" }).isEnabled(),
+    await page.getByRole("button", { name: "Try again" }).isEnabled(),
     "A repeated hosted release failure must leave retry available",
   );
   assert(
@@ -9694,8 +9742,8 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
     name: "Create report",
   });
   assert(
-    (await createReportButton.getAttribute("data-variant")) === "default",
-    "Support screen should keep Create report primary",
+    (await createReportButton.getAttribute("data-variant")) === "outline",
+    "Support screen shows Create report as the calm outline button",
   );
   await createReportButton.click();
   await page.getByRole("button", { name: "Copy", exact: true }).waitFor({
@@ -9704,13 +9752,13 @@ async function testSupportReportExportsAppearAfterReportLoads(browser, appUrl) {
   await page.getByRole("button", { name: "Download", exact: true }).waitFor({
     timeout: 10_000,
   });
-  const createAgainButton = page.getByRole("button", { name: "Create again" });
+  const createAgainButton = page.getByRole("button", { name: "Create new" });
   await createAgainButton.waitFor({
     timeout: 10_000,
   });
   assert(
-    (await createAgainButton.getAttribute("data-variant")) === "default",
-    "Support screen should keep Create again primary",
+    (await createAgainButton.getAttribute("data-variant")) === "outline",
+    "Support screen shows Create new as the calm outline button",
   );
   for (const hiddenDetail of [
     "Background runtime",
@@ -9825,7 +9873,7 @@ async function testSavedAddressReconnectsReadOnly(browser, appUrl) {
   await page.close();
 }
 
-async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
+async function testOverviewShowsOnlyTheVibeTV(browser, appUrl) {
   const page = await newCustomerPage(browser, appUrl, {
     viewport: desktopViewport,
   });
@@ -9896,10 +9944,18 @@ async function testOverviewSeparatesMacAppAndFirmwareVersions(browser, appUrl) {
 
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await page.getByText("VibeTV is connected").waitFor({ timeout: 10_000 });
-  await page.getByText("Mac App").waitFor({ timeout: 10_000 });
-  await page.getByText("Online 1.0.33").waitFor({ timeout: 10_000 });
-  await page.getByText("VibeTV firmware").waitFor({ timeout: 10_000 });
-  await page.getByText("1.0.32").waitFor({ timeout: 10_000 });
+  // The calm Overview shows the VibeTV and four quiet figures under it.
+  for (const label of ["Mac App", "VibeTV", "Display", "Firmware"]) {
+    assert(
+      (await page.getByRole("term").filter({ hasText: label }).count()) === 1,
+      `Overview must show the ${label} figure`,
+    );
+  }
+  assert(
+    (await page.locator("dl").getByText("1.0.33", { exact: true }).count()) === 1 &&
+      (await page.locator("dl").getByText("1.0.32", { exact: true }).count()) === 1,
+    "Overview must show the Mac App and firmware versions",
+  );
   await page
     .getByRole("img", {
       name: /Rendered VibeTV theme synthwave showing Codex, Weekly 0% used, Codex Spark Weekly 63% used/,
@@ -10438,7 +10494,8 @@ async function testNativeThemeStudio(browser, appUrl, screensaver) {
   await page.getByRole("button", { name: screensaver ? "Create screensaver" : "Create theme", exact: true }).click();
   await page.getByLabel("Your idea", { exact: true }).waitFor();
   await page.locator('[data-slot="sidebar"][data-state="collapsed"]').waitFor();
-  assert(await page.locator(".control-center-shell__header").isVisible(), "Studio stays inside the native shell");
+  // The open Studio draws its own header row; the shell's Appearance header is not drawn.
+  assert(!(await page.locator(".control-center-shell__header").isVisible()), "Studio draws its own header, not the shell's");
   await page.getByLabel("Your idea", { exact: true }).fill("Make it blue");
   await page.getByRole("button", { name: "Create", exact: true }).click();
   await page.getByLabel("OpenAI key", { exact: true }).fill("fixture-key-not-a-secret");
@@ -10743,7 +10800,7 @@ async function testThemeInstallStatusStaysCustomerOnly(browser, appUrl) {
   );
   const popup = page.getByRole("dialog", { name: "Theme install failed.", exact: true });
   await captureMigrationScreenshot(page, "13-theme-install-error-popup.png");
-  await popup.getByRole("button", { name: "Close", exact: true }).click();
+  await popup.press("Escape");
   await page.waitForTimeout(250);
   assert(await popup.count() === 0, "Acknowledged theme failure must stay dismissed through polling");
   await page.getByRole("button", { name: "Try again", exact: true }).click();
@@ -10865,7 +10922,7 @@ async function testCustomerLogsStayCustomerOnly(browser, appUrl) {
     .getByRole("dialog", { name: "Theme install failed.", exact: true })
     .waitFor({ timeout: 10_000 });
 
-  await page.getByRole("dialog", { name: "Theme install failed.", exact: true }).getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("dialog", { name: "Theme install failed.", exact: true }).press("Escape");
   await clickNavigation(page, "Support");
   await page.getByRole("heading", { name: "Recent activity" }).waitFor({
     timeout: 10_000,
@@ -10925,7 +10982,7 @@ async function testUnpairedThemeDeepLinkWaitsForWifiConfirmation(
     waitUntil: "domcontentloaded",
   });
   await connectDiscoveredVibeTV(page);
-  await page.getByRole("heading", { name: "Themes" }).waitFor({
+  await page.getByRole("heading", { level: 1, name: "Themes", exact: true }).waitFor({
     timeout: 20_000,
   });
   assert(
@@ -13419,7 +13476,8 @@ async function clickNavigation(page, name) {
 
 // "Run setup again" asks first (#546); these flows are about what follows.
 async function runSetupAgain(page) {
-  const button = page.getByRole("button", { name: "Run setup again" });
+  // Settings words the button "Run setup", Support "Run setup again".
+  const button = page.getByRole("button", { name: /^Run setup( again)?$/ });
   await button.waitFor({ timeout: 10_000 });
   await button.click();
   await page

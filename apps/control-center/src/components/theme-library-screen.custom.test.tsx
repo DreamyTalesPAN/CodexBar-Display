@@ -151,9 +151,10 @@ describe("ThemeLibraryScreen custom themes", () => {
     const question = document.querySelector('[role="alertdialog"]')!;
     expect(question.contains(document.activeElement)).toBe(true);
     await expectNoAxeViolations(document.body.innerHTML);
-    // Cancel has focus.
+    // The question has focus itself, with no ring on Cancel until a Tab.
+    expect(document.activeElement).toBe(question);
     await act(async () => {
-      (document.activeElement as HTMLButtonElement).click();
+      Array.from(question.querySelectorAll("button")).find((b) => b.textContent === "Cancel")!.click();
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(document.activeElement).toBe(opener);
@@ -431,9 +432,10 @@ describe("ThemeLibraryScreen custom themes", () => {
       });
 
       // The page's own title is worded for the list; the message is not touched.
-      expect(host.textContent).toContain("Screensaver action failed");
-      expect(host.textContent).toContain("Dark Theme uses a theme file that is too large.");
-      expect(host.textContent).not.toContain("Dark Screensaver");
+      // The error is an overlay dialog, portalled to the body, not page text.
+      expect(document.body.textContent).toContain("Screensaver action failed");
+      expect(document.body.textContent).toContain("Dark Theme uses a theme file that is too large.");
+      expect(document.body.textContent).not.toContain("Dark Screensaver");
       await act(async () => root.unmount());
     } finally {
       ownScreensaver.packName = savedName;

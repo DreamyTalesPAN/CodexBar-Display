@@ -18,7 +18,6 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 function props(overrides: Partial<SettingsScreenProps> = {}): SettingsScreenProps {
   return {
-    automaticPreviews: [],
     brightness: 20,
     busyAction: null,
     connectionMode: "cable",
@@ -162,7 +161,7 @@ describe("Settings connection cards", () => {
 describe("Settings confirmations", () => {
   it("has no accessibility violations in the factory reset and connection questions", async () => {
     render(<SettingsScreen {...props({ onEraseDevice: vi.fn() })} />);
-    fireEvent.click(screen.getByRole("button", { name: "Reset to factory settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset…" }));
     expect(screen.getByRole("dialog", { name: "Reset VibeTV to factory settings?" })).toBeTruthy();
     await expectNoAxeViolations(document.body.innerHTML);
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -173,7 +172,7 @@ describe("Settings confirmations", () => {
 
   it("moves focus into the factory reset question and back to its button", async () => {
     render(<SettingsScreen {...props({ onEraseDevice: vi.fn() })} />);
-    const opener = screen.getByRole("button", { name: "Reset to factory settings" });
+    const opener = screen.getByRole("button", { name: "Reset…" });
     opener.focus();
     fireEvent.click(opener);
     expect(screen.getByRole("dialog").contains(document.activeElement)).toBe(true);

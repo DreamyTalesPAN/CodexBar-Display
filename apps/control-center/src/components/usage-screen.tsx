@@ -169,8 +169,8 @@ export function UsageScreen({
     !usageError &&
     shownProviders.length > 0 &&
     !tokenUsageReady;
-  // A requested refresh that still waits for its reading: a small spinner by
-  // the token total, not a notice above the page (Paul, 2026-10-09).
+  // A requested refresh that still waits for its reading shows on the Refresh
+  // button alone, so nothing above the token total appears or moves (#918).
   const refreshPending = usage?.refresh?.state === "refreshing";
   // An action tile is content too: no "still loading" notice beside it.
   const refreshNotice = usageRefreshNotice(usage?.refresh, {
@@ -206,9 +206,10 @@ export function UsageScreen({
           <TokenUsageOverTimePanel
             onRefresh={onRefresh}
             providers={shownProviders}
-            refreshPending={refreshPending}
             refreshing={refreshing || refreshPending}
-            updating={tokenUsageUpdating}
+            updating={tokenUsageUpdating && shownProviders.some(
+              (provider) => provider.cost != null && provider.costSettled !== true,
+            )}
           />
         ) : tokenUsagePending ? (
           <TokenUsageSkeleton providerCount={shownProviders.length} />
@@ -237,7 +238,6 @@ export function UsageScreen({
       {usageErrorDialogOpen && usageError ? (
         <SetupDialog
           description={usageError.nextAction}
-          icon={AlertTriangle}
           onOpenChange={(open) => {
             if (!open) onDismissUsageError?.();
           }}
@@ -257,7 +257,7 @@ export function UsageScreen({
               : undefined
           }
           title={usageError.message}
-          tone="error"
+
         />
       ) : null}
       {tokenHistoryDialogOpen ? (
@@ -271,7 +271,6 @@ export function UsageScreen({
                 )
               : "Complete local token history is not available for every selected provider. Available usage limits are shown below."
           }
-          icon={Info}
           onOpenChange={(open) => {
             if (!open) onDismissTokenHistory?.();
           }}
@@ -291,7 +290,7 @@ export function UsageScreen({
               : undefined
           }
           title="Token history is unavailable"
-          tone="neutral"
+
         />
       ) : null}
     </div>
@@ -444,13 +443,11 @@ function UsageRefreshButton({
 function TokenUsageOverTimePanel({
   onRefresh,
   providers,
-  refreshPending,
   refreshing,
   updating,
 }: {
   onRefresh?: () => void;
   providers: UsageProviderInfo[];
-  refreshPending: boolean;
   refreshing: boolean;
   updating: boolean;
 }) {
@@ -486,15 +483,6 @@ function TokenUsageOverTimePanel({
               >
                 <Spinner className="size-3" data-icon="inline-start" />
                 Still counting
-              </Badge>
-            ) : refreshPending ? (
-              <Badge
-                aria-live="polite"
-                data-testid="usage-refresh-pending"
-                variant="secondary"
-              >
-                <Spinner className="size-3" data-icon="inline-start" />
-                Refreshing
               </Badge>
             ) : null}
           </div>

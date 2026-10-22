@@ -383,6 +383,10 @@ func TestPrepareThemeInstallRequiresDeviceAcknowledgement(t *testing.T) {
 	}{
 		{"prepared", `{"kind":"transfer","status":"prepared","next":0}`, false},
 		{"rejected", `{"kind":"error","code":"transfer-rejected"}`, true},
+		// #870: newer firmware names the refusal; each is still a rejection.
+		{"token mismatch", `{"kind":"error","code":"token-mismatch"}`, true},
+		{"device mismatch", `{"kind":"error","code":"device-mismatch"}`, true},
+		{"busy", `{"kind":"error","code":"busy"}`, true},
 		{"wrong acknowledgement", `{"kind":"transfer","status":"complete","next":0}`, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -392,6 +396,9 @@ func TestPrepareThemeInstallRequiresDeviceAcknowledgement(t *testing.T) {
 			err := sender.PrepareThemeInstall(context.Background(), "/dev/mock", "device", "token", "live")
 			if (err != nil) != test.wantError {
 				t.Fatalf("prepare: %v", err)
+			}
+			if strings.Contains(test.reply, `"kind":"error"`) && !errors.Is(err, errCableTransferRejected) {
+				t.Fatalf("an error reply must be a Cable rejection: %v", err)
 			}
 			if len(port.writePayloads) != 1 {
 				t.Fatalf("unexpected writes: %d", len(port.writePayloads))

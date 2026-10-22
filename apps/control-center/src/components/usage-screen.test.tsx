@@ -427,7 +427,7 @@ describe("UsageScreen", () => {
     expect(reversed.series.map((item) => item.color)).toEqual(["var(--chart-3)", "var(--chart-1)"]);
   });
 
-  it("shows a small Refreshing mark by the token total while a manual refresh waits, and no notice", () => {
+  it("marks a manual refresh that waits on the Refresh button alone, with nothing above the title (#918)", () => {
     const html = renderToStaticMarkup(
       <UsageScreen
         companionStatus="online"
@@ -441,16 +441,12 @@ describe("UsageScreen", () => {
       />,
     );
 
-    expect(html).toContain('data-testid="usage-refresh-pending"');
-    expect(html).not.toContain("Refreshing usage");
+    expect(html).not.toContain('data-testid="usage-refresh-pending"');
+    // The calm Refresh button is an icon: its spinner is the only mark.
+    expect(html).not.toContain("Refreshing");
+    expect(html.match(/<button[^>]*aria-label="Refresh"[^>]*>/)?.[0]).toContain('aria-busy="true"');
     expect(html).not.toContain("Current values stay visible");
     expect(html).toContain("Codex");
-    // No mark without a pending refresh.
-    expect(
-      renderToStaticMarkup(
-        <UsageScreen companionStatus="online" onRefresh={vi.fn()} usage={usage} />,
-      ),
-    ).not.toContain('data-testid="usage-refresh-pending"');
   });
 
   it("does not show the global loading banner when unavailable refresh has token history", () => {
@@ -1327,6 +1323,26 @@ describe("UsageScreen", () => {
     expect(html).toContain("<span>9</span>");
     expect(html).not.toContain("1,243");
     expect(html.match(/data-testid="usage-legend".*?<\/div>/)?.[0]).not.toContain("Codex");
+  });
+
+  it.each([true, false, undefined])("scopes the counting badge to shown provider history (%s)", (costSettled) => {
+    const html = renderToStaticMarkup(
+      <UsageScreen
+        companionStatus="online"
+        hiddenProviderIds={["codex"]}
+        usage={{
+          ...usage,
+          tokenUsageUpdating: true,
+          providers: [
+            { ...usage.providers[0], costSettled: false },
+            { ...usage.providers[0], id: "claude", label: "Claude", costSettled,
+              cost: { daily: [{ day: "2026-07-22", totalTokens: 9 }] } },
+          ],
+        }}
+      />,
+    );
+    expect(html).toContain("<span>9</span>");
+    expect(html.includes('data-testid="token-history-updating"')).toBe(costSettled !== true);
   });
 
   it("shows no still-loading notice beside an action tile", () => {

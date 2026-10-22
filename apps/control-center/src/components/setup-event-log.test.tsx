@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
 import type { SetupLog } from "./control-center-types";
@@ -49,11 +49,34 @@ describe("SetupEventList", () => {
     expect(items[0]).toMatch(/\d\d:\d\d:\d\d/);
   });
 
+  // The newest line sits at the bottom of a fixed box, so the row at the top
+  // is usually cut. While older entries are above the view, the top edge fades
+  // as the setup wizard log does, instead of showing half a row. At the oldest
+  // entry nothing is above, so the first row is not faded.
+  it("fades the top edge only while older entries are scrolled out of view", () => {
+    render(<SetupEventList log={log} />);
+    const list = screen.getByRole("list", { name: "Setup log" });
+    expect(list.className).not.toContain("mask-image");
+
+    Object.defineProperty(list, "scrollTop", { configurable: true, value: 40 });
+    fireEvent.scroll(list);
+    expect(list.className).toContain("mask-image");
+
+    Object.defineProperty(list, "scrollTop", { configurable: true, value: 0 });
+    fireEvent.scroll(list);
+    expect(list.className).not.toContain("mask-image");
+  });
+
   it("shows compacted repeats as a count", () => {
     render(<SetupEventList log={log} />);
     expect(rows()[1]).toContain("3 times");
     expect(rows()[1]).not.toContain("×");
     expect(rows()[1]).toContain("Repeated 3 times");
+  });
+
+  it("shows a past failed step in the normal text colour, not red", () => {
+    render(<SetupEventList log={log} />);
+    expect(screen.getByText("Failed").parentElement?.className).not.toContain("text-destructive");
   });
 
   it("never shows the engine's product name", () => {
@@ -127,6 +150,14 @@ describe("SetupEventLog", () => {
       </SetupEventsContext.Provider>,
     );
   }
+
+  it("keeps the wheel at the end of the list from moving the page behind it", async () => {
+    const load = vi.fn().mockResolvedValue(log);
+    mount(load);
+    await act(async () => {});
+    const list = screen.getByRole("list", { name: "Setup log" });
+    expect(list.className).toContain("overscroll-contain");
+  });
 
   it("shows the empty state when an older Mac App has no setup log", async () => {
     const load = vi.fn().mockRejectedValue({ code: "HTTP_404", message: "Request failed." });

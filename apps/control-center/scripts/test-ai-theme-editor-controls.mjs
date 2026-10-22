@@ -130,13 +130,19 @@ try {
   const last = (await snapshot()).spec.primitives.length;
   await canvas.getByRole("button", { name: `Select Clock ${last}`, exact: true }).click();
   await page.getByRole("button", {name:"Details",exact:true}).click();
-  const reading = page.getByLabel("Live information to show", { exact: true });
-  const options = await reading.locator("option").evaluateAll((nodes) => nodes.map((node) => node.value));
+  const reading = page.getByRole("combobox", { name: "Live information to show", exact: true });
+  const chooseReading = async (name) => {
+    await reading.click();
+    await page.getByRole("option", { name, exact: true }).click();
+  };
+  await reading.click();
+  const options = await page.getByRole("option").allTextContents();
+  await page.keyboard.press("Escape");
   for (const key of options) {
-    await reading.selectOption(key);
+    await chooseReading(key);
     assert.deepEqual((await page.getByRole("alert").allTextContents()).filter((value) => value.trim()), [], `No validation error for ${key}`);
   }
-  await reading.selectOption("weekly");
+  await chooseReading("Weekly usage");
   current = await snapshot();
   assert.equal(current.spec.primitives.at(-1).text, "{weekly}%");
   assert.equal(current.spec.primitives.at(-1).slot, 2);

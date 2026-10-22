@@ -90,8 +90,49 @@ func TestInstallUsesValidInMemoryPackBytes(t *testing.T) {
 	if result.ThemeID != "synthwave" || result.ActivePath != activePath {
 		t.Fatalf("unexpected in-memory install result: %+v", result)
 	}
+	if !result.LiveFrameShown {
+		t.Fatalf("a confirmed theme drawn with a usage frame must say so (#911): %+v", result)
+	}
 	if !strings.Contains(out.String(), "Theme source: local upload") {
 		t.Fatalf("expected local upload source log, got:\n%s", out.String())
+	}
+}
+
+// Issue #911: without a usage frame VibeTV does not show the customer their
+// usage yet, so the install must not claim it does.
+func TestInstallWithoutUsageFrameDoesNotReportLiveFrameShown(t *testing.T) {
+	withFastActivationRetries(t)
+	packBytes := zipMinimalThemePack(t, writeMinimalThemePack(t))
+	const activePath = "/themes/u/synth.json"
+	currentActivePath := "/themes/u/claude.json"
+	server := themeInstallDeviceServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/theme/active":
+			currentActivePath = activePath
+			w.WriteHeader(http.StatusOK)
+		case "/health":
+			writeThemeHealth(t, w, currentActivePath)
+		}
+	})
+	defer server.Close()
+
+	var out bytes.Buffer
+	result, err := Install(context.Background(), Options{
+		PackBytes:          packBytes,
+		Target:             server.URL,
+		SkipFirmwareUpdate: true,
+		Out:                &out,
+		HTTPClient:         server.Client(),
+		UploadSettleDelay:  -1,
+		FetchLiveFrame: func(context.Context) (protocol.Frame, error) {
+			return protocol.Frame{}, errors.New("no provider ready")
+		},
+	})
+	if err != nil {
+		t.Fatalf("Install returned error: %v\nlogs:\n%s", err, out.String())
+	}
+	if result.LiveFrameShown {
+		t.Fatalf("install without a usage frame reported it shown: %+v", result)
 	}
 }
 
@@ -121,6 +162,9 @@ func TestInstallUsesOneCableUploadPathAndActivatesOnlyTheStoredSpec(t *testing.T
 	}
 	if result.Target != "cable://vibetv" || result.ActivePath != "/themes/u/synth.json" {
 		t.Fatalf("unexpected Cable result %+v", result)
+	}
+	if result.LiveFrameShown {
+		t.Fatalf("Cable install sends no usage frame and must not report one: %+v", result)
 	}
 	if len(uploads) < 1 {
 		t.Fatal("expected Cable uploads")
@@ -714,7 +758,7 @@ func TestActivateAndVerifyThemeDoesNotRetryPossibleDeviceReboot(t *testing.T) {
 	wifi := transportlayer.NewWiFiTransportWithClient(server.Client())
 	target := server.URL
 	var out bytes.Buffer
-	err := activateAndVerifyTheme(
+	_, err := activateAndVerifyTheme(
 		context.Background(),
 		wifi,
 		&target,
@@ -775,6 +819,57 @@ func TestInstallReactivatesWhenHealthStillShowsPreviousTheme(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Theme activation did not settle, retrying") {
 		t.Fatalf("missing stale-health retry log:\n%s", out.String())
+	}
+}
+
+// Issue #911: a usage frame VibeTV accepted on the first attempt still counts
+// when the retry cannot resend it but the render then settles.
+func TestInstallKeepsLiveFrameShownFromEarlierActivationAttempt(t *testing.T) {
+	withFastActivationRetries(t)
+	packDir := writeMinimalThemePack(t)
+	const activePath = "/themes/u/synth.json"
+	var activationAttempts int
+	currentActivePath := "/themes/u/claude.json"
+	server := themeInstallDeviceServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/theme/active":
+			activationAttempts++
+			if activationAttempts >= 2 {
+				currentActivePath = activePath
+			}
+			w.WriteHeader(http.StatusOK)
+		case "/health":
+			writeThemeHealth(t, w, currentActivePath)
+		}
+	})
+	defer server.Close()
+
+	var out bytes.Buffer
+	result, err := Install(context.Background(), Options{
+		PackURL:            packDir,
+		Target:             server.URL,
+		SkipFirmwareUpdate: true,
+		Out:                &out,
+		HTTPClient:         server.Client(),
+		UploadSettleDelay:  -1,
+		FetchLiveFrame: func(ctx context.Context) (protocol.Frame, error) {
+			if activationAttempts >= 2 {
+				return protocol.Frame{}, errors.New("usage unavailable")
+			}
+			return testLiveFrame(ctx)
+		},
+	})
+	if err != nil {
+		t.Fatalf("Install returned error: %v\nlogs:\n%s", err, out.String())
+	}
+	if activationAttempts != 2 {
+		t.Fatalf("expected activation to be retried after stale health, got attempts=%d", activationAttempts)
+	}
+	if !strings.Contains(out.String(), "Live usage frame: skipped") {
+		t.Fatalf("expected the retry to skip the frame:\n%s", out.String())
+	}
+	if !result.LiveFrameShown {
+		t.Fatalf("the frame accepted on the first attempt must still count: %+v", result)
 	}
 }
 

@@ -3153,6 +3153,9 @@ func TestStatusSeparatesMacAppAndRuntimeVersions(t *testing.T) {
 }
 
 func TestStatusReportsMacAppUpdateCheckFailure(t *testing.T) {
+	original := providerCopyGOOS
+	t.Cleanup(func() { providerCopyGOOS = original })
+	providerCopyGOOS = "darwin"
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
 		return githubRelease{}, errors.New("release api unavailable")
@@ -3468,7 +3471,7 @@ func TestUsageManualRefreshReportsRefreshingForOldCollectorSnapshot(t *testing.T
 			Providers: []daemon.ProviderUsageSnapshot{{
 				Provider:    "codex",
 				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 36, UsageMode: "used"},
-				CollectedAt: now.Add(-time.Minute),
+				CollectedAt: now.Add(-2 * time.Minute),
 			}},
 		}, true
 	}
@@ -3495,7 +3498,7 @@ func TestUsageManualRefreshExpiresWithoutNewCollectorSnapshot(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	requestedAt := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
 	now := requestedAt
-	collectedAt := requestedAt.Add(-time.Minute)
+	collectedAt := requestedAt.Add(-2 * time.Minute)
 	server.now = func() time.Time { return now }
 	server.wakeDisplayStream = func() {}
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
@@ -3555,7 +3558,9 @@ func TestUsageManualRefreshExpiresWithoutNewCollectorSnapshot(t *testing.T) {
 	}
 }
 
-func TestUsageManualRefreshDoesNotCompleteForCachedDashboardSnapshotReread(t *testing.T) {
+// A snapshot collected before the click, however recent, does not end a manual
+// refresh: only values collected after the click do.
+func TestUsageManualRefreshKeepsRefreshingForSnapshotCollectedBeforeClick(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
 	snapshotProducedAt := now.Add(-15 * time.Second)
@@ -3582,7 +3587,46 @@ func TestUsageManualRefreshDoesNotCompleteForCachedDashboardSnapshotReread(t *te
 		t.Fatalf("decode response: %v", err)
 	}
 	if rec.Code != http.StatusOK || got.Refresh.State != "refreshing" || got.Providers[0].Weekly != 42 {
-		t.Fatalf("cached dashboard reread must not complete manual refresh, status=%d got %+v", rec.Code, got)
+		t.Fatalf("snapshot collected before the click must keep manual refresh running, status=%d got %+v", rec.Code, got)
+	}
+}
+
+// Only a reading collected at or after the click ends a manual refresh.
+func TestUsageManualRefreshEndsOnlyWithReadingCollectedAfterClick(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	collectedAt := now.Add(-time.Second)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         collectedAt,
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 36, UsageMode: "used"},
+				CollectedAt: collectedAt,
+			}},
+		}, true
+	}
+
+	read := func(path string) usageResponse {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		var got usageResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode %s: %v", path, err)
+		}
+		return got
+	}
+
+	if got := read("/v1/usage?refresh=1"); got.Refresh.State != "refreshing" || got.Providers[0].Weekly != 36 {
+		t.Fatalf("reading collected before the click must keep manual refresh running, got %+v", got.Refresh)
+	}
+	collectedAt = now
+	if got := read("/v1/usage"); got.Refresh.State != "fresh" {
+		t.Fatalf("reading collected at the click must end manual refresh, got %+v", got.Refresh)
 	}
 }
 
@@ -3615,6 +3659,38 @@ func TestUsageManualRefreshReportsFreshForNewCollectorSnapshot(t *testing.T) {
 	}
 }
 
+// A failed attempt recorded before the click is not a reading, so it must not
+// end the refresh (#579).
+func TestUsageManualRefreshKeepsRefreshingForRecentNoReadingSnapshot(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.wakeDisplayStream = func() {}
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt:         now,
+			CurrentProvider: "codex",
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", UsageMode: "used"},
+				CollectedAt: now.Add(-15 * time.Second),
+				NoReading:   true,
+			}},
+		}, true
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/usage?refresh=1", nil))
+
+	var got usageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if rec.Code != http.StatusOK || got.Refresh.State != "refreshing" {
+		t.Fatalf("recent NoReading snapshot must not end manual refresh, status=%d got %+v", rec.Code, got.Refresh)
+	}
+}
+
 // A second click on Refresh while the first is still waiting must not move the
 // request: the reading that answers the first click would otherwise count as
 // too old, and the wait would start again (#579).
@@ -3622,7 +3698,7 @@ func TestUsageManualRefreshSecondClickKeepsTheFirstRequest(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	firstClick := time.Date(2026, 10, 8, 14, 0, 0, 0, time.UTC)
 	now := firstClick
-	collectedAt := firstClick.Add(-time.Minute)
+	collectedAt := firstClick.Add(-2 * time.Minute)
 	server.now = func() time.Time { return now }
 	var wakeCount int
 	server.wakeDisplayStream = func() { wakeCount++ }
@@ -3661,8 +3737,9 @@ func TestUsageManualRefreshSecondClickKeepsTheFirstRequest(t *testing.T) {
 		t.Fatalf("each click must wake the collector, got %d", wakeCount)
 	}
 
-	// With no request pending, the next click starts a new one.
-	now = firstClick.Add(20 * time.Second)
+	// With no request pending, the next click starts a new one. The reading
+	// from before the first click cannot end this one.
+	now = firstClick.Add(80 * time.Second)
 	if got := read("/v1/usage?refresh=1"); got.State != "refreshing" || got.RequestedAt != now.Format(time.RFC3339) {
 		t.Fatalf("a click after a finished refresh must start a new one, got %+v", got)
 	}
@@ -3674,12 +3751,72 @@ func TestUsageManualRefreshSecondClickKeepsTheFirstRequest(t *testing.T) {
 	}
 }
 
+// serve keeps each reading for its refresh interval, so a wake alone could
+// wait up to a minute for new values (#918). A click starts a fresh serve,
+// whose first read measures; a click while that refresh waits starts none.
+func TestUsageManualRefreshStartsAFreshUsageServiceOnce(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 10, 22, 14, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	fresh := make(chan struct{}, 4)
+	woke := make(chan struct{}, 4)
+	server.restartUsageService = func(context.Context) error { return nil }
+	server.freshUsageService = func(context.Context) error { fresh <- struct{}{}; return nil }
+	server.wakeDisplayStream = func() { woke <- struct{}{} }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt: now.Add(-30 * time.Second),
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 24, UsageMode: "used"},
+				CollectedAt: now.Add(-30 * time.Second),
+			}},
+		}, true
+	}
+	get := func(path string) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status %d", path, rec.Code)
+		}
+	}
+	waitFor := func(ch chan struct{}, what string) {
+		t.Helper()
+		select {
+		case <-ch:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s did not happen", what)
+		}
+	}
+	nothingOn := func(ch chan struct{}, what string) {
+		t.Helper()
+		select {
+		case <-ch:
+			t.Fatalf("unexpected %s", what)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
+	get("/v1/usage")
+	nothingOn(fresh, "fresh usage service for a plain usage read")
+
+	get("/v1/usage?refresh=1")
+	waitFor(fresh, "fresh usage service after the click")
+	waitFor(woke, "collection after the fresh usage service")
+
+	now = now.Add(5 * time.Second)
+	get("/v1/usage?refresh=1")
+	waitFor(woke, "wake for the second click")
+	nothingOn(fresh, "second fresh usage service while the first refresh waits")
+}
+
 func TestUsageManualRefreshWaitsForEveryProvider(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
 	server.now = func() time.Time { return now }
 	server.wakeDisplayStream = func() {}
-	old := now.Add(-time.Minute)
+	old := now.Add(-2 * time.Minute)
 	usage := daemon.PersistedUsage{
 		SavedAt: now,
 		Providers: []daemon.ProviderUsageSnapshot{
@@ -5273,6 +5410,9 @@ func TestControlCenterStaticServesIndexAndAssets(t *testing.T) {
 		"_next/static/app.js": {
 			Data: []byte(`console.log("control-center")`),
 		},
+		"models/vibetv-native.glb": {
+			Data: []byte("glTF-model"),
+		},
 		"install/synthwave.html": {
 			Data: []byte(`<!doctype html><div id="root">Install Synthwave</div>`),
 		},
@@ -5304,6 +5444,13 @@ func TestControlCenterStaticServesIndexAndAssets(t *testing.T) {
 	}
 	if got := asset.Header().Get("Cache-Control"); got != "" {
 		t.Fatalf("expected hashed static asset to retain default caching, got Cache-Control %q", got)
+	}
+
+	model := httptest.NewRecorder()
+	modelReq := httptest.NewRequest(http.MethodGet, "/models/vibetv-native.glb", nil)
+	server.Handler().ServeHTTP(model, modelReq)
+	if model.Code != http.StatusOK || model.Body.String() != "glTF-model" {
+		t.Fatalf("expected embedded 3D model, got %d body=%s", model.Code, model.Body.String())
 	}
 
 	install := httptest.NewRecorder()
@@ -12873,6 +13020,146 @@ func TestFirmwareUpdateCableRequiresVerifiedRender(t *testing.T) {
 	}
 }
 
+// Issue #832: a WiFi job whose updater found the VibeTV on the cable reports
+// the cable as its verified target. The parent verifies there; the WiFi address
+// does not answer on a VibeTV that boots in cable mode.
+func TestFirmwareUpdateWiFiJobVerifiesOverCableWhenUpdaterReportsCable(t *testing.T) {
+	testFirmwareUpdateWiFiJobCableResult(t, "cable")
+}
+
+func TestReview855WiFiModeHelloCannotPersistCable(t *testing.T) {
+	testFirmwareUpdateWiFiJobCableResult(t, "wifi")
+}
+
+func testFirmwareUpdateWiFiJobCableResult(t *testing.T, deviceMode string) {
+	t.Helper()
+	const deviceID = "wifi-job-cable-result"
+	var wifiHits atomic.Int32
+	wifi := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wifiHits.Add(1)
+		if r.URL.Path == "/hello" {
+			_, _ = fmt.Fprintf(w, `{"kind":"hello","protocolVersion":2,"board":"esp8266-smalltv-st7789","firmware":"1.0.46","deviceId":%q}`, deviceID)
+			return
+		}
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	defer wifi.Close()
+	server := newTestServer(t, runtimeconfig.Config{ConnectionMode: "wifi", DeviceTarget: wifi.URL, DeviceID: deviceID, DeviceToken: "pair-token"})
+	server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock-cable", nil }
+	server.readCableHello = func(string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{
+			Kind: "hello", DeviceID: deviceID, Board: "esp8266-smalltv-st7789", Firmware: "1.0.47",
+			Features:     []string{protocol.FeatureCableHealthV1},
+			Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{Active: "usb", Mode: deviceMode}},
+		}, nil
+	}
+	server.streamStatus = func(context.Context, string) displayStreamInfo { return displayStreamInfo{} }
+	server.readCableHealth = func(string, string) (deviceHealth, error) {
+		return deviceHealth{OK: true}, nil
+	}
+	server.refreshStream = func(context.Context, string) error {
+		cfg, err := server.config()
+		if err != nil {
+			return err
+		}
+		if cfg.ConnectionMode != "cable" {
+			return errors.New("stream worker still uses WiFi")
+		}
+		return nil
+	}
+	server.waitStreamAfter = func(_ context.Context, target string, _ time.Time) displayStreamInfo {
+		cfg, err := server.config()
+		if err != nil || cfg.ConnectionMode != "cable" {
+			return displayStreamInfo{}
+		}
+		return displayStreamInfo{Healthy: true, Running: true, Target: target, LastTarget: target}
+	}
+	server.waitRender = func(_ context.Context, _ string, _ string, health deviceHealth) (deviceHealth, error) {
+		return health, nil
+	}
+
+	server.updateFirmware = func(_ context.Context, _ string, _ runtimeconfig.Config, _ firmwareUpdateRequest, out io.Writer) error {
+		wifiHits.Store(0)
+		_, _ = io.WriteString(out, `CODEX_FIRMWARE_UPDATE_EVENT {"stage":"verifying_health","phase":"installing","outcome":"updated","firmware":"1.0.47","observedFirmware":"1.0.47","target":"cable://vibetv","deviceId":"`+deviceID+`","artifactValidated":true,"uploadAccepted":true,"helloVerified":true}`+"\n")
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/updates/install", strings.NewReader(`{}`)))
+	var started firmwareUpdateJobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	var job firmwareUpdateJob
+	for attempt := 0; attempt < 200; attempt++ {
+		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		if job.Phase != "installing" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if deviceMode == "wifi" {
+		if job.Phase != "error" || job.Error == nil {
+			t.Fatalf("WiFi-mode serial hello must be rejected before Cable selection: %+v", job)
+		}
+	} else if job.Phase != "complete" || job.Result == nil || !job.Result.HelloVerified || !job.Result.HealthVerified || !job.Result.StreamVerified || job.Result.Target != cableDeviceTarget {
+		t.Fatalf("a cable-verified WiFi job must not fail on the WiFi address: %+v", job)
+	}
+	cfg, err := server.config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	known, ok := cfg.KnownDevice(deviceID)
+	if cfg.ConnectionMode != deviceMode || cfg.DeviceID != deviceID || cfg.DeviceToken != "pair-token" || cfg.DeviceTarget != wifi.URL || !ok || known.Target != wifi.URL || known.DeviceToken != "pair-token" {
+		t.Fatalf("Cable fallback lost the saved WiFi binding: %+v", cfg)
+	}
+	if hits := wifiHits.Load(); hits != 0 {
+		t.Fatalf("the WiFi address was asked %d times, the cable had the answer", hits)
+	}
+}
+
+// A verified Cable identity is still the selected connection when optional
+// health verification ends in attention (Codex review on #855).
+func TestFirmwareUpdateCableSelectionSurvivesHealthAttention(t *testing.T) {
+	previous := firmwareHealthVerifyTime
+	firmwareHealthVerifyTime = 0
+	t.Cleanup(func() { firmwareHealthVerifyTime = previous })
+	for _, hasHealth := range []bool{false, true} {
+		t.Run(fmt.Sprintf("health-supported=%v", hasHealth), func(t *testing.T) {
+			cfg := runtimeconfig.Config{ConnectionMode: "wifi", DeviceTarget: "http://192.0.2.1", DeviceID: "device-a", DeviceToken: "pair-token"}
+			server := newTestServer(t, cfg)
+			server.resolveCablePort = func(string, string) (string, error) { return "/dev/mock-cable", nil }
+			server.readCableHello = func(string) (protocol.DeviceHello, error) {
+				hello := protocol.DeviceHello{
+					Kind: "hello", DeviceID: cfg.DeviceID, Firmware: "1.0.47",
+					Capabilities: protocol.CapabilityBlock{Transport: protocol.TransportCapabilities{Active: "usb", Mode: "cable"}},
+				}
+				if hasHealth {
+					hello.Features = []string{protocol.FeatureCableHealthV1}
+				}
+				return hello, nil
+			}
+			server.readCableHealth = func(string, string) (deviceHealth, error) {
+				return deviceHealth{}, errors.New("health unavailable")
+			}
+			job := server.createFirmwareUpdateJob()
+			server.updateFirmwareVerification(job.ID, func(result *firmwareUpdateResult) {
+				result.DeviceID, result.Firmware, result.Target = cfg.DeviceID, "1.0.47", cableDeviceTarget
+			})
+			server.deviceMaintenanceMu.Lock()
+			_, attention, err := server.verifyCableFirmwareUpdateResult(context.Background(), job.ID, cfg)
+			server.deviceMaintenanceMu.Unlock()
+			if err != nil || attention == "" {
+				t.Fatalf("health must remain unverified: attention=%q err=%v", attention, err)
+			}
+			saved, err := server.config()
+			if err != nil || saved.ConnectionMode != "cable" || saved.DeviceTarget != cfg.DeviceTarget || saved.DeviceToken != cfg.DeviceToken {
+				t.Fatalf("health attention lost the verified Cable selection: cfg=%+v err=%v", saved, err)
+			}
+		})
+	}
+}
+
 // Issue #835, Beelink Windows over USB, 2026-10-20: after an update the only
 // frame inside the picture check carried the same values the screen already
 // showed. The firmware redraws only when a frame changes the screen, so the
@@ -14514,6 +14801,33 @@ func TestStatusKeepsExactFinalMacAppReleaseCurrent(t *testing.T) {
 	}
 }
 
+// Issue #558: the Windows app's update card and report said "Mac App".
+func TestMacAppReleaseMessageNamesTheWindowsApp(t *testing.T) {
+	original := providerCopyGOOS
+	t.Cleanup(func() { providerCopyGOOS = original })
+	t.Setenv(macAppVersionEnv, "1.0.44")
+	t.Setenv(macAppBuildEnv, "4400")
+
+	cases := []struct {
+		goos, latest, want string
+	}{
+		{"darwin", "v1.0.44", "Mac App is up to date."},
+		{"windows", "v1.0.44", "App is up to date."},
+		{"darwin", "v1.0.45", "Mac App update is available."},
+		{"windows", "v1.0.45", "App update is available."},
+	}
+	for _, tc := range cases {
+		providerCopyGOOS = tc.goos
+		server := newTestServer(t, runtimeconfig.Config{})
+		server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+			return githubRelease{TagName: tc.latest}, nil
+		}
+		if got := server.macAppReleaseInfo(context.Background()).Message; got != tc.want {
+			t.Fatalf("%s with latest %s: message = %q, want %q", tc.goos, tc.latest, got, tc.want)
+		}
+	}
+}
+
 func TestCompareMacAppReleaseVersionsSemVerPrecedence(t *testing.T) {
 	cases := []struct {
 		left  string
@@ -15931,7 +16245,7 @@ func TestDeviceSearchOffersAHalfWrittenVibeTVForItsRescue(t *testing.T) {
 			}
 			if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
 				ChipMAC: "0000aabb11223344",
-				Port: "COM4", Ports: []string{"COM1", "COM4"}, Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+				Port:    "COM4", Ports: []string{"COM1", "COM4"}, Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
 				ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-tc.age),
 			}); err != nil {
 				t.Fatal(err)
@@ -16018,7 +16332,7 @@ func TestFirmwareLatestNamesTheCachedRescueTarget(t *testing.T) {
 	sum := sha256.Sum256([]byte("cable firmware"))
 	if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
 		ChipMAC: "0000aabb11223344",
-		Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+		Port:    "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
 		ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-time.Minute),
 	}); err != nil {
 		t.Fatal(err)
@@ -16067,7 +16381,7 @@ func TestFirmwareLatestNamesTheCachedRescueTarget(t *testing.T) {
 	cabled := newTestServer(t, runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "other"})
 	if err := firmwareupdate.SaveRescueMarker(cabled.home, firmwareupdate.RescueMarker{
 		ChipMAC: "0000aabb11223344",
-		Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+		Port:    "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
 		ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-time.Minute),
 	}); err != nil {
 		t.Fatal(err)
@@ -16134,7 +16448,7 @@ func TestFirmwareLatestRescueCheckDoesNotProbeDuringAnUpdate(t *testing.T) {
 	sum := sha256.Sum256([]byte("cable firmware"))
 	if err := firmwareupdate.SaveRescueMarker(server.home, firmwareupdate.RescueMarker{
 		ChipMAC: "0000aabb11223344",
-		Port: "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
+		Port:    "COM4", Board: "esp8266-smalltv-st7789", Firmware: "1.0.0", TargetFirmware: "1.0.9",
 		ImagePath: imagePath, ImageSHA256: hex.EncodeToString(sum[:]), WriteStartedAt: time.Now().Add(-time.Minute),
 	}); err != nil {
 		t.Fatal(err)

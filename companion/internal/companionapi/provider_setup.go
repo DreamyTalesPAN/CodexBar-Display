@@ -908,12 +908,16 @@ func (s *Server) providerReadinessFor(providerID string) (providerReadinessRecor
 	return record, ok
 }
 
-func providerDiagnosticCheck(setup codexbar.ProviderSetup) diagnosticCheck {
+// providerDiagnosticCheck is the provider check for the support report (engine
+// true) and for the setup log (engine false). The customer reads the setup
+// log, so it gets each state's fixed sentence and never CodexBar's own text
+// (Paul, 16.10.; #579). The support report keeps the engine sentence (#500).
+func providerDiagnosticCheck(setup codexbar.ProviderSetup, engine bool) diagnosticCheck {
 	if setup.Status == codexbar.ProviderReady {
 		check := diagnosticCheck{Name: "provider_setup", Status: "pass", Detail: "An AI provider is delivering usage data."}
 		// One working provider must not hide another one the customer was told
 		// to report: a throttled Claude next to a working Codex is the case.
-		if others := failingProviderDiagnostics(setup.Providers); others != "" {
+		if others := failingProviderDiagnostics(setup.Providers, engine); others != "" {
 			check.Detail += " Other providers need attention: " + others
 		}
 		return check
@@ -927,14 +931,14 @@ func providerDiagnosticCheck(setup codexbar.ProviderSetup) diagnosticCheck {
 	}
 	if len(setup.Providers) > 0 {
 		provider := setup.Providers[0]
-		check.Detail = providerDiagnosticDetail(provider)
+		check.Detail = providerDiagnosticDetail(provider, engine)
 		if provider.NextAction != "" {
 			check.NextAction = provider.NextAction
 		}
 		if provider.Status != "" {
 			check.ErrorCode = provider.Status
 		}
-		if others := failingProviderDiagnostics(setup.Providers[1:]); others != "" {
+		if others := failingProviderDiagnostics(setup.Providers[1:], engine); others != "" {
 			check.Detail += " Other providers need attention: " + others
 		}
 	}
@@ -944,9 +948,9 @@ func providerDiagnosticCheck(setup codexbar.ProviderSetup) diagnosticCheck {
 // providerDiagnosticDetail is the row's own sentence plus CodexBar's. The
 // engine sentence names every source that failed; without it a support report
 // only says which category the app chose.
-func providerDiagnosticDetail(provider codexbar.ProviderReadiness) string {
+func providerDiagnosticDetail(provider codexbar.ProviderReadiness, engine bool) string {
 	detail := provider.Detail
-	if reported := reportedProviderMessage(provider.Reported); reported != "" {
+	if reported := reportedProviderMessage(provider.Reported); engine && reported != "" {
 		detail = strings.TrimSpace(detail + " Provider message: " + reported)
 	}
 	return detail
@@ -954,7 +958,7 @@ func providerDiagnosticDetail(provider codexbar.ProviderReadiness) string {
 
 // failingProviderDiagnostics lists every switched-on provider that is not
 // delivering usage, so a support report covers each of them.
-func failingProviderDiagnostics(providers []codexbar.ProviderReadiness) string {
+func failingProviderDiagnostics(providers []codexbar.ProviderReadiness, engine bool) string {
 	var parts []string
 	for _, provider := range providers {
 		if provider.Status == codexbar.ProviderReady || (provider.Enabled != nil && !*provider.Enabled) {
@@ -964,7 +968,7 @@ func failingProviderDiagnostics(providers []codexbar.ProviderReadiness) string {
 		if label == "" {
 			label = provider.ID
 		}
-		parts = append(parts, label+": "+providerDiagnosticDetail(provider))
+		parts = append(parts, label+": "+providerDiagnosticDetail(provider, engine))
 	}
 	return strings.Join(parts, " | ")
 }

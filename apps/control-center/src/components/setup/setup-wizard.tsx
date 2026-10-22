@@ -17,9 +17,11 @@ import { copyForHost } from "@/lib/customer-platform";
 import { useSetupConnect, type SetupConnectSteps } from "./setup-connect";
 import { connectLogLines } from "./setup-connect-log";
 import {
+  type MacAppUpdateOffer,
   SetupAddressDialog,
   SetupConnectFailedDialog,
   SetupDeviceNotFoundDialog,
+  SetupMacAppUpdateDialog,
   SetupCableHelpDialog,
 } from "./setup-device-dialogs";
 import { SetupDialog } from "./setup-dialog";
@@ -70,6 +72,8 @@ export type SetupWizardProps = {
   onDismissUsageFailure?: () => void;
   /** The app runs on Windows, where "this Mac" reads "this computer". */
   windowsHost?: boolean;
+  /** A newer Mac App exists; offered on the "VibeTV not found" pages (#561). */
+  macAppUpdate?: MacAppUpdateOffer;
   automaticPreviews: SetupDisplayModePreview[];
   connectSteps: SetupConnectSteps;
   connectionMode: string;
@@ -198,6 +202,9 @@ export function SetupWizard(props: SetupWizardProps) {
   const [wifiError, setWiFiError] = useState<string | null>(null);
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
   const [notFoundDismissed, setNotFoundDismissed] = useState(false);
+  // Offered once: after "Scan again" or closing it, not-found shows its usual help (#561).
+  const [macAppUpdateDismissed, setMacAppUpdateDismissed] = useState(false);
+  const pendingMacAppUpdate = macAppUpdateDismissed ? undefined : props.macAppUpdate;
   // The completion this step asked for is still on its way. Held here rather
   // than passed in: the wizard is what awaits it.
   const [providersContinuing, setProvidersContinuing] = useState(false);
@@ -730,6 +737,8 @@ export function SetupWizard(props: SetupWizardProps) {
           connecting={connecting}
           connectPhase={connect.state.phase}
           logLines={connectLogLines(connect.state, props.firmwareWrittenPercent)}
+          macAppUpdate={pendingMacAppUpdate}
+          onDismissMacAppUpdate={() => setMacAppUpdateDismissed(true)}
           onConnect={startConnect}
           onBack={
             connect.state.phase === "idle" &&
@@ -784,9 +793,19 @@ export function SetupWizard(props: SetupWizardProps) {
             open
             onOpenChange={(open) => !open && setWiFiError(null)}
             primaryAction={{ label: "OK", onSelect: () => setWiFiError(null) }}
+            showCloseButton={false}
           />
         ) : null}
-        {searchFailed && !wifiSetup && !props.connectionMode && !preferredTransport ? (
+        {searchFailed && !wifiSetup && pendingMacAppUpdate ? (
+          <SetupMacAppUpdateDialog
+            offer={pendingMacAppUpdate}
+            onDismiss={() => setMacAppUpdateDismissed(true)}
+            onScanAgain={() => {
+              setMacAppUpdateDismissed(true);
+              searchAgain();
+            }}
+          />
+        ) : searchFailed && !wifiSetup && !props.connectionMode && !preferredTransport ? (
           <SetupCableHelpDialog
             onEnterAddressManually={openAddressDialog}
             onScanAgain={searchAgain}
