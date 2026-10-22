@@ -665,6 +665,30 @@ func TestSetupEventLogStartsFreshAfterAnOldSessionOrAReset(t *testing.T) {
 	}
 }
 
+func TestSetupLogRestartEntryCarriesTheServiceStart(t *testing.T) {
+	path := t.TempDir() + "/setup-log.json"
+	start := time.Date(2026, 10, 5, 14, 27, 0, 0, time.UTC)
+
+	first := &setupEventLog{path: path}
+	first.record(start, setupEvent{Stage: "device_search", Status: "succeeded", Message: "Found 1 VibeTV."})
+
+	// The service started at 14:30, the next event came at 14:35.
+	serviceStart := start.Add(3 * time.Minute)
+	second := &setupEventLog{path: path, startedAt: serviceStart}
+	second.record(start.Add(8*time.Minute), setupEvent{Stage: "provider_check", Status: "succeeded", Message: "Codex is ready."})
+	got := second.snapshot(start.Add(8 * time.Minute))
+
+	if len(got.Events) != 3 || got.Events[1].Stage != "service_restart" {
+		t.Fatalf("events = %+v, want the restart between the two", got.Events)
+	}
+	if at, want := got.Events[1].At, serviceStart.Format(time.RFC3339); at != want {
+		t.Fatalf("restart entry at %s, want the service start %s", at, want)
+	}
+	if at, want := got.Events[2].At, start.Add(8*time.Minute).Format(time.RFC3339); at != want {
+		t.Fatalf("provider check at %s, want its own time %s", at, want)
+	}
+}
+
 func TestSetupLogDoesNotCallACableRescueAFailedSearch(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	step := server.setupStep("device_search", "Searching for VibeTV.", "", func(w http.ResponseWriter, r *http.Request) {

@@ -66,7 +66,7 @@ npx vitest run src/components/usage-screen.test.tsx
 | Setup, every step in its frame | `setup/setup-wizard.test.tsx` | welcome, device, providers, display, theme, live |
 | Setup, device step | `setup/setup-device-screen.test.tsx` | found VibeTVs, connection choice, WiFi form, connecting |
 | Setup, providers step | `setup/setup-providers-screen.test.tsx` | list, no match, loading, provider message |
-| Setup dialogs | `setup/setup-device-dialogs.test.tsx`, `setup/setup-help-menu-log.test.tsx` | cable help, VibeTV not found, IP address, Help menu with the setup log |
+| Setup dialogs | `setup/setup-device-dialogs.test.tsx`, `setup/setup-help-menu-log.test.tsx`, `setup/setup-dialogs.axe.test.tsx` | cable help, VibeTV not found, IP address, Help menu with the setup log, firmware check failed, Mac App restarting, firmware update failed (also with attention needed), recovery repairing and failed, step failed with and without a retry |
 | Overview | `overview-screen.test.tsx` | connected, not connected |
 | Usage | `usage-screen.test.tsx` | usage, refreshing, unavailable limits, no provider |
 | Themes | `theme-library-screen.test.tsx`, `theme-library-screen.custom.test.tsx` | Themes, Screensavers, empty list, install running, own theme, delete question |

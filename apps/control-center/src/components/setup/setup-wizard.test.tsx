@@ -2342,7 +2342,7 @@ describe("SetupWizard with a broken usage service", () => {
 
   // The customer put the not-found help away, so the incident is the next
   // thing in line. A release answer that arrives then takes the screen first.
-  it("gives way to a late Mac App update offer (#822)", () => {
+  it("gives way to a late Mac App update offer (#822)", async () => {
     const props = baseProps({
       step: "device", connectionMode: "cable", connectionModeChoiceRequired: false,
       deviceSearchState: "not-found", deviceCandidates: [],
@@ -2351,7 +2351,8 @@ describe("SetupWizard with a broken usage service", () => {
     });
     const view = render(<SetupWizard {...props} />);
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.getByText("Finish AI setup on this Mac")).toBeTruthy();
+    // The incident waits for the not-found dialog to close: it shows after that observer runs.
+    expect(await screen.findByText("Finish AI setup on this Mac")).toBeTruthy();
     view.rerender(<SetupWizard {...props} macAppUpdate={{ onUpdate: vi.fn(), version: "1.0.65" }} />);
     expect(screen.getByRole("dialog", { name: "Update the Mac App first" })).toBeTruthy();
     expect(screen.queryByText("Finish AI setup on this Mac")).toBeNull();
