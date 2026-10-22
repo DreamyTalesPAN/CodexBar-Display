@@ -1,18 +1,17 @@
 "use client";
 
 import {
-  Edit3,
+  Check,
   Library,
   Lock,
   Monitor,
   Plus,
   RefreshCw,
   ShieldCheck,
-  Trash2,
   Wifi,
 } from "lucide-react";
-import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentProps, ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   AlertDescription,
@@ -32,18 +31,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import {
   Item,
   ItemActions,
@@ -55,6 +48,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Progress } from "@/components/ui/progress";
+import { SetupDialog } from "@/components/setup/setup-dialog";
 import { Spinner } from "@/components/ui/spinner";
 import {
   activeLiveThemeId,
@@ -200,11 +194,44 @@ export type ThemeLibraryScreenProps = {
   onSelectTheme: (themeId: string) => void;
   onInstallCustomTheme: (payload: ThemeStudioInstallPayload) => Promise<boolean>;
   onInstallTheme: (theme: ThemeProduct) => Promise<unknown> | void;
+  /** Tells the shell whether the Theme Studio is open (it keeps its own title). */
+  onStudioOpenChange?: (open: boolean) => void;
   /** Opens Settings at its Screensaver group, where the switch is. */
   onOpenScreensaverSettings?: () => void;
   /** The app runs on Windows, where "Mac App" reads "app". */
   windowsHost?: boolean;
 };
+
+// One rule for the page's notices: a notice waits while any other dialog is
+// open in the document. Not counted: this page's own notices, and the busy
+// announcement, which already waits for every other dialog (so the two never
+// wait on each other and loop).
+const OPEN_DIALOGS = '[role="dialog"], [role="alertdialog"]';
+
+function otherDialogOpen(): boolean {
+  if (typeof document === "undefined") return false;
+  return Array.from(document.querySelectorAll(OPEN_DIALOGS)).some(
+    (dialog) => !dialog.matches('[data-notice-kind="system-busy"], [data-notice-kind="theme-library"]'),
+  );
+}
+
+/** Whether another dialog is open right now, kept current while mounted. */
+function useOtherDialogOpen(): boolean {
+  const [open, setOpen] = useState(otherDialogOpen);
+  useLayoutEffect(() => {
+    const check = () => setOpen(otherDialogOpen());
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+  return open;
+}
+
+/** A page notice: identified in the DOM without mount-count bookkeeping. */
+function PageNotice(props: ComponentProps<typeof SetupDialog>) {
+  return <SetupDialog {...props} noticeKind="theme-library" />;
+}
 
 export function ThemeLibraryScreen({
   themes,
@@ -225,6 +252,7 @@ export function ThemeLibraryScreen({
   onInstallCustomTheme,
   onSelectTheme,
   onInstallTheme,
+  onStudioOpenChange,
   onOpenScreensaverSettings,
   windowsHost = false,
 }: ThemeLibraryScreenProps) {
@@ -268,13 +296,24 @@ export function ThemeLibraryScreen({
   const [replacingRecovery, setReplacingRecovery] = useState<(() => void) | null>(null);
   const [editingTheme, setEditingTheme] =
     useState<ThemeStudioEditorTheme | null>(null);
+  // Reset to "library" when this screen goes away (the shell then shows the
+  // page title again).
+  useEffect(() => {
+    onStudioOpenChange?.(editingTheme !== null);
+    return () => onStudioOpenChange?.(false);
+  }, [editingTheme, onStudioOpenChange]);
   const [libraryError, setLibraryError] = useState("");
   const [storageWarning, setStorageWarning] = useState("");
+  // The storage notice is shown until its OK or X; the storage itself stays
+  // locked, so the notice is kept here only as "closed for this message".
+  const [closedStorageWarning, setClosedStorageWarning] = useState("");
+  // The install-failure dialog of a row is a page dialog too; its row reports it.
   const [storageLocked, setStorageLocked] = useState(false);
   const [deleteTheme, setDeleteTheme] = useState<UserThemeRecord | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const deleteReturnFocusRef = useRef<HTMLElement | null>(null);
-  const libraryHeadingRef = useRef<HTMLHeadingElement>(null);
+  // Focus goes here after a delete; the page has no heading of its own.
+  const createButtonRef = useRef<HTMLButtonElement>(null);
   const [loadingEditorRow, setLoadingEditorRow] = useState("");
   // Counts what was opened in the editor, to tell a theme that arrives late.
   const editorOpensRef = useRef(0);
@@ -283,6 +322,11 @@ export function ThemeLibraryScreen({
   const [previewTheme, setPreviewTheme] = useState<ThemeLibraryItem | null>(null);
   const recoveryMatchesUsage =
     (recovery ? themeDocumentUsage(recovery.document) : "live") === usage;
+  // A page notice waits while another dialog of this page is open.
+  // Page notices wait for any other open dialog (one generic rule, see
+  // useOtherDialogOpen) and never show together: an error wins over the
+  // storage notice.
+  const otherDialogOpen = useOtherDialogOpen();
   const libraryThemes: ThemeLibraryItem[] = [
     ...userThemes
       .filter((custom) => themeDocumentUsage(custom.document) === usage)
@@ -559,18 +603,27 @@ export function ThemeLibraryScreen({
     if (!deleteTheme) {
       return false;
     }
-    try {
-      persistUserThemes(userThemes.filter((theme) => theme.id !== deleteTheme.id));
-      setDeleteTheme(null);
-      setDeleteError("");
-      window.setTimeout(() => libraryHeadingRef.current?.focus(), 0);
-      return true;
-    } catch (error) {
+    // The delete dialog reports its own failure. It does not go through
+    // persistUserThemes, which would publish a page-level error and could
+    // clear or duplicate one that belongs to another action.
+    if (storageLocked) {
       setDeleteError(
-        error instanceof Error ? error.message : say("Theme could not be deleted."),
+        storageWarning || say("Browser storage must be repaired before saving themes."),
       );
       return false;
     }
+    const result = writeUserThemes(
+      userThemes.filter((theme) => theme.id !== deleteTheme.id),
+    );
+    if (!result.ok) {
+      setDeleteError(result.error.message);
+      return false;
+    }
+    setUserThemes(result.value.themes);
+    setDeleteTheme(null);
+    setDeleteError("");
+    window.setTimeout(() => createButtonRef.current?.focus(), 0);
+    return true;
   }
 
   function requestDeleteTheme(theme: UserThemeRecord) {
@@ -653,33 +706,20 @@ export function ThemeLibraryScreen({
   return (
     <div
       className={cn(
-        "mx-auto w-full max-w-[1180px]",
+        // flow-root keeps the negative margin of the Create row inside, so the
+        // page does not cover the sidebar toggle in the title row.
+        "mx-auto flow-root w-full max-w-[1180px]",
       )}
     >
-      <section
-        className={cn(
-          "grid gap-5 py-5",
-          "sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center",
-        )}
-      >
-        <div>
-          <h2
-            className={cn(
-              "text-3xl font-black leading-tight text-[#1B1B1B] outline-none",
-              "truncate",
-            )}
-            ref={libraryHeadingRef}
-            tabIndex={-1}
-          >
-            {screensavers ? "Screensavers" : "Themes"}
-          </h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {screensavers
-              ? "Choose what appears when VibeTV enters standby after being idle."
-              : "Customize how your live usage screen looks while VibeTV is active."}
-          </p>
-        </div>
-        <Button onClick={() => openInEditor(openBlankTheme)} type="button">
+      {/* The page title (Themes / Screensavers) is the shell's header; the
+          button sits in that row, at its right end, as in the calm picture. */}
+      <section className="pointer-events-none -mt-10 flex h-10 items-center justify-end">
+        <Button
+          className="pointer-events-auto"
+          onClick={() => openInEditor(openBlankTheme)}
+          ref={createButtonRef}
+          type="button"
+        >
           <Plus data-icon="inline-start" aria-hidden />
           <span>{screensavers ? "Create screensaver" : "Create theme"}</span>
         </Button>
@@ -689,36 +729,23 @@ export function ThemeLibraryScreen({
           turned on; management (create, edit, preview) stays available. Its
           switch is in Settings only (issue #643). */}
       {screensavers && standby && !standby.enabled ? (
-        <p className="mb-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-lg bg-muted px-4 py-3 text-sm">
-          <span>Screensaver is off.</span>
+        <p className="mb-5 text-[13px] text-muted-foreground">
+          Screensaver is off. Turn it on in{" "}
           <a
-            className="font-medium text-foreground underline underline-offset-4 hover:text-[var(--vibetv-support)] dark:hover:text-[#A9C76A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            className="text-foreground underline underline-offset-4 hover:text-[var(--vibetv-support)] dark:hover:text-[#A9C76A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             href="#settings-screensaver"
             onClick={(event) => {
               event.preventDefault();
               onOpenScreensaverSettings?.();
             }}
           >
-            Turn on in Settings
+            Settings
           </a>
+          .
         </p>
       ) : null}
 
       <section className="py-8">
-        {storageWarning ? (
-          <Alert className="mb-5">
-            <Lock aria-hidden />
-            <AlertTitle>{say("Theme storage needs attention")}</AlertTitle>
-            <AlertDescription>{storageWarning}</AlertDescription>
-          </Alert>
-        ) : null}
-        {libraryError ? (
-          <Alert className="mb-5" variant="destructive">
-            <Lock aria-hidden />
-            <AlertTitle>{say("Theme action failed")}</AlertTitle>
-            <AlertDescription>{libraryError}</AlertDescription>
-          </Alert>
-        ) : null}
         {recovery && recoveryMatchesUsage ? (
           <RecoveryCard
             // The theme that takes the draft's place is on its way.
@@ -744,7 +771,7 @@ export function ThemeLibraryScreen({
               />
             ) : null}
 
-            <ItemGroup>
+            <ItemGroup className="grid grid-cols-1 gap-x-6 gap-y-7 sm:grid-cols-2 lg:grid-cols-3">
               {libraryThemes.map((theme) => (
                 <ThemeListItem
                   busyAction={busyAction}
@@ -785,20 +812,56 @@ export function ThemeLibraryScreen({
         <Dialog open onOpenChange={(open) => !open && setPreviewTheme(null)}>
           <DialogContent
             aria-describedby="theme-library-example-data"
-            className="max-h-[calc(100dvh-2rem)] max-w-[640px] overflow-y-auto sm:max-w-[640px]"
+            className="max-h-[calc(100dvh-2rem)] overflow-y-auto"
           >
             <DialogHeader>
-              <DialogTitle className="truncate text-2xl font-black">{previewTheme.title}</DialogTitle>
+              <DialogTitle className="truncate">{previewTheme.title}</DialogTitle>
             </DialogHeader>
             <p
-              className="-mt-2 text-sm text-muted-foreground"
+              className="-mt-3 text-[13px] text-muted-foreground"
               id="theme-library-example-data"
             >
               Example data · This is a catalog preview, not live VibeTV data.
             </p>
             <ThemePreview large theme={previewTheme} />
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button>Close</Button>
+              </DialogClose>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
+      ) : null}
+      {/* Errors are overlays over the page. OK or the X clears the error; an
+          error that arrives while another dialog is open waits for it. */}
+      {libraryError && !otherDialogOpen ? (
+        <PageNotice
+          description={libraryError}
+          onOpenChange={(open) => {
+            if (!open) setLibraryError("");
+          }}
+          open
+          primaryAction={{ label: "OK", onSelect: () => setLibraryError("") }}
+          title={say("Theme action failed")}
+        />
+      ) : null}
+      {/* The storage notice shows after the error is closed, never with it. */}
+      {storageWarning &&
+      storageWarning !== closedStorageWarning &&
+      !libraryError &&
+      !otherDialogOpen ? (
+        <PageNotice
+          description={storageWarning}
+          onOpenChange={(open) => {
+            if (!open) setClosedStorageWarning(storageWarning);
+          }}
+          open
+          primaryAction={{
+            label: "OK",
+            onSelect: () => setClosedStorageWarning(storageWarning),
+          }}
+          title={say("Theme storage needs attention")}
+        />
       ) : null}
       {replacingRecovery && recovery ? (
         <ReplaceDraftDialog
@@ -860,10 +923,10 @@ function RecoveryCard({
   return (
     <div className="mb-6 grid gap-4 rounded-[var(--radius-card)] border border-border bg-card p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
       <div className="min-w-0">
-        <div className="text-base font-bold text-[#1B1B1B]">
+        <div className="text-[13px] font-semibold text-foreground">
           {title}
         </div>
-        <p className="mt-1 text-sm leading-6 text-[#444933]">
+        <p className="mt-1 text-[13px] leading-6 text-muted-foreground">
           {recovery.document.packName} was last changed {formatRecoveryTime(recovery.updatedAt)}.
         </p>
       </div>
@@ -893,7 +956,7 @@ function DeleteThemeDialog({
   const say = (text: string) => wordsForUsage(text, themeDocumentUsage(theme.document));
   return (
     <AlertDialog open onOpenChange={(open) => !open && onCancel()}>
-      <AlertDialogContent className="sm:max-w-[520px]">
+      <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {theme.document.packName}?</AlertDialogTitle>
           <AlertDialogDescription>
@@ -906,7 +969,7 @@ function DeleteThemeDialog({
           <Alert variant="destructive"><Lock /><AlertTitle>{say("Theme could not be deleted")}</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>
         ) : null}
         <AlertDialogFooter>
-          <AlertDialogCancel autoFocus onClick={onCancel}>
+          <AlertDialogCancel onClick={onCancel}>
             Cancel
           </AlertDialogCancel>
           <AlertDialogAction
@@ -915,7 +978,6 @@ function DeleteThemeDialog({
                 event.preventDefault();
               }
             }}
-            variant="destructive"
           >
             Delete local copy
           </AlertDialogAction>
@@ -936,19 +998,14 @@ function CatalogEmptyState({
   screensavers: boolean;
   storefrontConfigured: boolean;
 }) {
+  // A page state is text in the list area, not a framed card: frames are only
+  // around objects (calm rules 5 and 7).
   if (screensavers && !catalogIssue) {
     return (
-      <Empty className="border bg-card py-10">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <Monitor aria-hidden />
-          </EmptyMedia>
-          <EmptyTitle>No screensavers yet</EmptyTitle>
-          <EmptyDescription>
-            Create a screensaver to add it to this list.
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
+      <div className="py-10 text-center text-[13px] text-muted-foreground">
+        <p className="font-semibold text-foreground">No screensavers yet</p>
+        <p className="mt-1">Create a screensaver to add it to this list.</p>
+      </div>
     );
   }
 
@@ -959,21 +1016,16 @@ function CatalogEmptyState({
       : "Themes are not available from this page right now. Try again later.";
 
   return (
-    <Empty className="border bg-card py-10">
-      <EmptyHeader>
-        <EmptyMedia variant="icon">
-          <Lock aria-hidden />
-        </EmptyMedia>
-        <EmptyTitle>Themes unavailable</EmptyTitle>
-        <EmptyDescription>{detail}</EmptyDescription>
-      </EmptyHeader>
-      <EmptyContent>
-        <Button onClick={() => window.location.reload()} type="button">
-          <RefreshCw data-icon="inline-start" aria-hidden />
-          Reload catalog
-        </Button>
-      </EmptyContent>
-    </Empty>
+    <div className="grid justify-items-center gap-4 py-10 text-center text-[13px] text-muted-foreground">
+      <div>
+        <p className="font-semibold text-foreground">Themes unavailable</p>
+        <p className="mt-1">{detail}</p>
+      </div>
+      <Button onClick={() => window.location.reload()} type="button">
+        <RefreshCw data-icon="inline-start" aria-hidden />
+        Reload catalog
+      </Button>
+    </div>
   );
 }
 
@@ -989,12 +1041,12 @@ function MissingRequestedThemeNotice({
   return (
     <div className="mb-6 flex gap-3 rounded-[var(--radius-card)] border border-border bg-card p-4 text-sm text-muted-foreground">
       <Library
-        className="mt-0.5 shrink-0 text-[#5E7200]"
+        className="mt-0.5 shrink-0 text-muted-foreground"
         size={18}
         aria-hidden
       />
       <div className="min-w-0">
-        <div className="font-semibold text-[#1B1B1B]">
+        <div className="font-semibold text-foreground">
           Theme is not available
         </div>
         <div className="mt-1 break-words">
@@ -1149,14 +1201,28 @@ function ThemeListItem({
         )
       : `${updateAvailable ? "Update" : "Install"} ${item.title}`;
   const loadingEdit = loadingEditorRow === rowKey(item);
+  const installLabel = labelForInstallButton({
+    actionInFlight,
+    blockedLabel: blocker ? blockedLabel : "",
+    installInFlight: installInFlight || preparingInstall,
+    // The row's notice says "Installed" from here on; the button says
+    // the same while the app still reads VibeTV's settings (#579).
+    installFinished:
+      visibleInstallStatus && installStatus?.phase === "complete" && !preparingInstall,
+    installed,
+    selected: item.themeId === selectedThemeId,
+    disabled,
+    updateAvailable,
+  });
 
   return (
     <Item
+      className="gap-2.5 rounded-[var(--radius-card)] p-2.5"
       id={item.kind === "published" ? catalogThemeRowId(item.themeId) : undefined}
       role="listitem"
       variant={item.themeId === displayThemeId ? "muted" : "outline"}
     >
-      <ItemMedia className="w-28 sm:w-36">
+      <ItemMedia className="basis-full w-full">
         <Button
           aria-label={`Preview ${item.title}`}
           className="h-auto w-full justify-start p-0"
@@ -1167,8 +1233,8 @@ function ThemeListItem({
           <ThemePreview onPack={setPublishedPack} theme={item} />
         </Button>
       </ItemMedia>
-      <ItemContent className="min-w-[180px]">
-        <ItemTitle className="text-lg font-bold">{item.title}</ItemTitle>
+      <ItemContent className="basis-full gap-0.5 px-0.5">
+        <ItemTitle className="text-[13px] font-semibold">{item.title}</ItemTitle>
         {isCustom ? (
           <Badge variant="secondary">Custom</Badge>
         ) : null}
@@ -1178,54 +1244,23 @@ function ThemeListItem({
           </ItemDescription>
         ) : null}
       </ItemContent>
-      <ItemActions
-        className={cn(
-          "basis-full grid w-full gap-2 sm:basis-auto sm:w-auto",
-          isCustom ? "sm:grid-cols-3" : "sm:grid-cols-2",
-        )}
-      >
+      <ItemActions className="basis-full justify-between gap-3 px-0.5">
+        <span className="flex items-center gap-3">
         <Button
+          className="h-7 px-0 font-normal"
           disabled={Boolean(loadingEditorRow)}
           onClick={() => void onEditTheme(item)}
           size="sm"
           type="button"
-          variant="outline"
+          variant="link"
         >
-          {loadingEdit ? (
-            <Spinner data-icon="inline-start" />
-          ) : (
-            <Edit3 data-icon="inline-start" aria-hidden />
-          )}
+          {loadingEdit ? <Spinner data-icon="inline-start" /> : null}
           <span>{loadingEdit ? "Opening" : "Edit"}</span>
-        </Button>
-        <Button
-          disabled={disabled}
-          onClick={() => {
-            if (!blocker) {
-              onInstallTheme(item);
-            }
-          }}
-          title={title}
-          type="button"
-          size="sm"
-        >
-          {labelForInstallButton({
-            actionInFlight,
-            blockedLabel: blocker ? blockedLabel : "",
-            installInFlight: installInFlight || preparingInstall,
-            // The row's notice says "Installed" from here on; the button says
-            // the same while the app still reads VibeTV's settings (#579).
-            installFinished:
-              visibleInstallStatus && installStatus?.phase === "complete" && !preparingInstall,
-            installed,
-            selected: item.themeId === selectedThemeId,
-            disabled,
-            updateAvailable,
-          })}
         </Button>
         {item.kind === "custom" ? (
           <Button
             aria-label={`Delete ${item.title}`}
+            className="h-7 px-0 font-normal"
             disabled={themeStorageLocked}
             onClick={() => onDeleteTheme(item.custom)}
             title={
@@ -1235,15 +1270,33 @@ function ThemeListItem({
             }
             type="button"
             size="sm"
-            variant="destructive"
+            variant="link"
           >
-            <Trash2 data-icon="inline-start" aria-hidden />
             <span>Delete</span>
           </Button>
         ) : null}
+        </span>
+        {/* Install is the primary (lime) action at the right edge. Once the
+            row has nothing to install, the same slot shows the status as text. */}
+        <Button
+          className={cn("h-7 px-3", disabled && "px-0 font-normal disabled:opacity-100 disabled:text-muted-foreground")}
+          disabled={disabled}
+          onClick={() => {
+            if (!blocker) {
+              onInstallTheme(item);
+            }
+          }}
+          title={title}
+          type="button"
+          size="sm"
+          variant={disabled ? "ghost" : "default"}
+        >
+          {installLabel === "Installed" ? <Check data-icon="inline-start" aria-hidden /> : null}
+          {installLabel}
+        </Button>
       </ItemActions>
       {visibleInstallStatus ? (
-        <ItemFooter className="block">
+        <ItemFooter className="basis-full block">
           <InlineInstallProgress
             canRetry={!disabled}
             // While Show screensaver is off VibeTV shows none, so "ready on
@@ -1820,7 +1873,7 @@ function ThemePreview({
       className={
         large
           ? "aspect-square w-full"
-          : "size-28 rounded-lg sm:size-36"
+          : "aspect-square w-full rounded-md"
       }
       onPack={onPack}
       // A Theme Studio theme has no published pack to load: its spec only

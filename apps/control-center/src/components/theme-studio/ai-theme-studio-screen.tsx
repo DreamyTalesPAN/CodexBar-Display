@@ -27,11 +27,13 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -168,6 +170,48 @@ const DRAWING_WORDS = (animated: boolean) => [
   "Cleaning the brushes…",
 ];
 const FITTING_WORDS = ["Adding clock and readings…", "Fitting it to your VibeTV…", "Polishing the details…", "Taking one last look…"];
+
+// The editor's own dropdown (7197 review point 5): no native system menu.
+// The "Reading to show" choices of a progress bar. An unbound bar has no
+// "Current reading" entry: Radix Select rejects an empty item value and the
+// details panel crashed on it.
+export function progressReadingOptions(
+  binding: string | undefined,
+): ReadonlyArray<readonly [string, string]> {
+  const known = ["usageSlot1Percent", "usageSlot2Percent", "session", "weekly"];
+  return [
+    ["usageSlot1Percent", "First usage window"],
+    ["usageSlot2Percent", "Second usage window"],
+    ["session", "Session usage"],
+    ["weekly", "Weekly usage"],
+    ...(binding && !known.includes(binding) ? [[binding, "Current reading"] as const] : []),
+  ];
+}
+
+function EditorSelect({
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  options: ReadonlyArray<readonly [string, string]>;
+  value: string;
+}) {
+  return (
+    <Select onValueChange={onChange} value={value}>
+      <SelectTrigger aria-label={label} className="w-full data-[size=default]:h-11">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map(([key, text]) => (
+          <SelectItem key={key} value={key}>{text}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 export function AIThemeStudioScreen({
   initialTheme, onBackToLibrary, onSaveToLibrary, onInstallTheme,
@@ -1283,22 +1327,24 @@ export function AIThemeStudioScreen({
                   {selected.length === 1 && primitive.type === "text" && readingKey(primitive) ? (
                     <label className="grid gap-2 text-sm">
                       Live information to show
-                      <select aria-label="Live information to show" className="h-11 w-full rounded-md border bg-background px-3" value={readingKey(primitive)}
-                        onChange={(event) => mutate((d) => { const p = d.spec.primitives[index]; setReading(p, event.target.value); p.width = Math.min(DISPLAY_SIZE - p.x, textPrimitiveNaturalWidth(p)); })}>
-                        {!LIVE_READINGS.some(([key]) => key === readingKey(primitive)) ? <option value={readingKey(primitive)}>Current reading</option> : null}
-                        {LIVE_READINGS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-                      </select>
+                      <EditorSelect
+                        label="Live information to show"
+                        onChange={(value) => mutate((d) => { const p = d.spec.primitives[index]; setReading(p, value); p.width = Math.min(DISPLAY_SIZE - p.x, textPrimitiveNaturalWidth(p)); })}
+                        options={[
+                          ...(!LIVE_READINGS.some(([key]) => key === readingKey(primitive)) ? [[readingKey(primitive), "Current reading"] as const] : []),
+                          ...LIVE_READINGS.map(([key, label]) => [key, label] as const),
+                        ]}
+                        value={readingKey(primitive)}
+                      />
                     </label>
                   ) : null}
                   {selected.length === 1 && resetWindow ? (
                     <label className="grid gap-2 text-sm">
                       Reset for
-                      <select
-                        aria-label="Reset for"
-                        className="h-11 w-full rounded-md border bg-background px-3"
-                        value={resetWindow}
-                        onChange={(e) => {
-                          const slot = e.target.value === "2" ? 2 : 1;
+                      <EditorSelect
+                        label="Reset for"
+                        onChange={(value) => {
+                          const slot = value === "2" ? 2 : 1;
                           mutate((d) => {
                             const p = d.spec.primitives[index];
                             p.slot = slot;
@@ -1311,10 +1357,9 @@ export function AIThemeStudioScreen({
                               );
                           });
                         }}
-                      >
-                        <option value="1">First usage window</option>
-                        <option value="2">Second usage window</option>
-                      </select>
+                        options={[["1", "First usage window"], ["2", "Second usage window"]]}
+                        value={String(resetWindow)}
+                      />
                     </label>
                   ) : null}
                   {selected.length === 1 && primitive.type === "text" ? (
@@ -1337,40 +1382,20 @@ export function AIThemeStudioScreen({
                   {selected.length === 1 && primitive.type === "progress" ? (
                     <label className="grid gap-2 text-sm">
                       Reading to show
-                      <select
-                        aria-label="Reading to show"
-                        className="h-11 rounded-md border bg-background px-3"
-                        value={primitive.binding || "usageSlot1Percent"}
-                        onChange={(e) => mutate((d) => {
+                      <EditorSelect
+                        label="Reading to show"
+                        onChange={(value) => mutate((d) => {
                           const p = d.spec.primitives[index];
-                          p.binding = e.target.value;
+                          p.binding = value;
                           delete p.slot;
                           delete p.providerSlot;
                           delete p.usageIndex;
                           if (p.binding === "session" || p.binding === "usageSlot1Percent") p.slot = 1;
                           if (p.binding === "weekly" || p.binding === "usageSlot2Percent") p.slot = 2;
                         })}
-                      >
-                        <option value="usageSlot1Percent">
-                          First usage window
-                        </option>
-                        <option value="usageSlot2Percent">
-                          Second usage window
-                        </option>
-                        <option value="session">Session usage</option>
-                        <option value="weekly">Weekly usage</option>
-                        {!["usageSlot1Percent", "usageSlot2Percent", "session", "weekly"].includes(
-                          primitive.binding || "",
-                        ) ? (
-                          <option value={primitive.binding}>
-                            {primitive.binding === "session"
-                              ? "Session usage"
-                              : primitive.binding === "weekly"
-                                ? "Weekly usage"
-                                : "Current reading"}
-                          </option>
-                        ) : null}
-                      </select>
+                        options={progressReadingOptions(primitive.binding)}
+                        value={primitive.binding || "usageSlot1Percent"}
+                      />
                     </label>
                   ) : null}
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1526,7 +1551,7 @@ export function AIThemeStudioScreen({
               </label>
               <div className="flex items-center gap-3">
               <div
-                className="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-input bg-card focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40"
+                className="relative min-w-0 flex-1 overflow-hidden rounded-xl border border-input bg-card focus-within:border-ring focus-within:ring-2 focus-within:ring-ring"
                 onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
                 onDrop={(event) => { event.preventDefault(); void attachImages(event.dataTransfer.files); }}
               >
@@ -1680,7 +1705,7 @@ export function AIThemeStudioScreen({
         }}
       >
         <DialogContent
-          className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md"
+          className="max-h-[calc(100dvh-2rem)] overflow-y-auto"
           onEscapeKeyDown={(event) => {
             if (connecting) event.preventDefault();
           }}
@@ -1796,6 +1821,13 @@ export function AIThemeStudioScreen({
               )}
             </div>
           ) : null}
+          {connecting ? null : (
+            <DialogFooter>
+              <Button onClick={closePanel} variant="ghost">
+                {panel === "setup" ? "Not now" : "Close"}
+              </Button>
+            </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
       <input
@@ -1843,17 +1875,14 @@ export function AIThemeStudioScreen({
               continue.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3">
+          <DialogFooter>
             <Button
-              variant="outline"
-              className="h-12 w-full"
+              variant="ghost"
               onClick={() => { setPending(undefined); setLeaving(false); }}
             >
               Keep editing
             </Button>
             <Button
-              variant="destructive"
-              className="h-12 w-full"
               onClick={() => {
                 // Discarding is final: the draft must not be offered again later.
                 clearThemeStudioRecovery();
@@ -1864,7 +1893,7 @@ export function AIThemeStudioScreen({
             >
               Discard and continue
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
