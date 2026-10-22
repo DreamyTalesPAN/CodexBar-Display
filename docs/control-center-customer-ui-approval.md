@@ -20216,3 +20216,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: previews carry the real provider name from the companion frame, never a placeholder.
 - Scope: live-vibetv-preview.tsx (sample frame has no label, previews read the live frame from one context fed in control-center-app.tsx), the preview aria label, and tests. Test build only, not a pull request.
 - What's new: none — preview label only
+## 2026-10-22 — 7208: Setup asks for the theme before the display mode, provider picks at the setup width
+
+- User approval: pending — Setup shows "Choose your theme" before "Display mode", so the display cards draw the chosen theme; "Show this provider" and the Two at once pickers use the 460 px width of the other setup elements instead of the full width
+- Approved customer-visible result: the display mode cards show the chosen theme with the Companion's frames, and the provider pickers line up with the other setup elements.
+- Scope: setup-step.ts (step order), setup-wizard.tsx, setup-display-mode-screen.tsx and their tests. Test build only, not a pull request.
+- What's new: none — setup order and layout only

@@ -179,6 +179,19 @@ describe("SetupDisplayModeScreen", () => {
     expect(manual).toContain("Codex");
   });
 
+  it("keeps the provider picks at the width of the other setup elements", () => {
+    const fixed = render({ mode: "fixed" });
+    expect(fixed).toMatch(/class="[^"]*max-w-\[460px\][^"]*"[^>]*><p[^>]*>Show this provider/);
+
+    const pair = render({
+      mode: "pair",
+      onSelectPair: vi.fn(),
+      pairProviders: [codex, cursor],
+      pairProviderIds: ["codex", "cursor"],
+    });
+    expect(pair).toMatch(/class="[^"]*max-w-\[460px\][^"]*"[^>]*><div class="flex flex-col gap-3"/);
+  });
+
   it("lists only the providers it was given", () => {
     const html = render({ mode: "fixed", providers: [codex] });
 

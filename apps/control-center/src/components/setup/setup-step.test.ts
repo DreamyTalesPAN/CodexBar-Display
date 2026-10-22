@@ -3,6 +3,7 @@ import {
   deriveSetupStep,
   previousSetupStep,
   resolveSetupStep,
+  SETUP_STEPS,
   setupDeviceIsUsable,
   setupDisplayIsConfigured,
   setupDisplaySelectionSupported,
@@ -110,14 +111,20 @@ describe("deriveSetupStep", () => {
     ).toBe("theme");
   });
 
-  it("asks for a display mode before a theme", () => {
+  it("asks for a theme before a display mode, which draws it", () => {
     expect(
       deriveSetupStep({
         ...done,
         displayConfigured: false,
         themeSetupRequired: true,
       }),
+    ).toBe("theme");
+    expect(
+      deriveSetupStep({ ...done, displayConfigured: false }),
     ).toBe("display");
+    expect(SETUP_STEPS.indexOf("theme")).toBeLessThan(
+      SETUP_STEPS.indexOf("display"),
+    );
   });
 
   it("waits for the live preview once nothing is left to ask for", () => {
@@ -154,8 +161,8 @@ describe("previousSetupStep", () => {
   });
 
   it("walks back through the choices that can be revisited", () => {
-    expect(previousSetupStep("theme")).toBe("display");
-    expect(previousSetupStep("display")).toBe("providers");
+    expect(previousSetupStep("display")).toBe("theme");
+    expect(previousSetupStep("theme")).toBe("providers");
     expect(previousSetupStep("providers")).toBe("device");
   });
 
@@ -166,6 +173,10 @@ describe("previousSetupStep", () => {
 
 describe("resolveSetupStep", () => {
   it("honours a step the customer went back to", () => {
+    expect(resolveSetupStep("display", "theme")).toBe("theme");
+  });
+
+  it("lets the display step be asked for again before the theme", () => {
     expect(resolveSetupStep("theme", "display")).toBe("display");
   });
 

@@ -2,8 +2,8 @@ export const SETUP_STEPS = [
   "welcome",
   "device",
   "providers",
-  "display",
   "theme",
+  "display",
   "live",
 ] as const;
 
@@ -139,11 +139,11 @@ export function deriveSetupStep(input: SetupStepInput): SetupStep {
   if (input.providerSelectionRequired) {
     return "providers";
   }
-  if (input.displaySelectionSupported && !input.displayConfigured) {
-    return "display";
-  }
   if (input.themeSetupRequired) {
     return "theme";
+  }
+  if (input.displaySelectionSupported && !input.displayConfigured) {
+    return "display";
   }
   return "live";
 }
@@ -159,16 +159,22 @@ export function previousSetupStep(step: SetupStep): SetupStep | null {
   switch (step) {
     case "providers":
       return "device";
-    case "display":
-      return "providers";
     case "theme":
-      return "display";
+      return "providers";
+    case "display":
+      return "theme";
     default:
       return null;
   }
 }
 
-/** A step the customer went back to is only honoured while it is still behind. */
+/**
+ * A step the customer went back to is only honoured while it is still behind.
+ *
+ * The display step needs nothing the theme step produces, so it can also be
+ * asked for ahead of a theme that is still to come: a second provider switched
+ * on after the display choice was skipped.
+ */
 export function resolveSetupStep(
   derived: SetupStep,
   wentBackTo: SetupStep | null,
@@ -176,7 +182,8 @@ export function resolveSetupStep(
   if (!wentBackTo) {
     return derived;
   }
-  return SETUP_STEPS.indexOf(wentBackTo) < SETUP_STEPS.indexOf(derived)
+  return SETUP_STEPS.indexOf(wentBackTo) < SETUP_STEPS.indexOf(derived) ||
+    (wentBackTo === "display" && derived === "theme")
     ? wentBackTo
     : derived;
 }

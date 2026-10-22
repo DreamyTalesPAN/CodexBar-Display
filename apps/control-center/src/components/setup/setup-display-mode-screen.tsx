@@ -411,7 +411,7 @@ export function DisplayModeChoice({
       </div>
 
       {mode === "pair" && offersPair && onSelectPair ? (
-        <div className={cn("grid w-full grid-cols-2 gap-4 text-left", SETUP_REVEAL)}>
+        <div className={cn("mx-auto grid w-full max-w-[460px] grid-cols-2 gap-4 text-left", SETUP_REVEAL)}>
           {(["Provider 1", "Provider 2"] as const).map((name, position) => {
             const providerId = pairProviderIds[position];
             const windows = usage?.providers.find(
@@ -455,7 +455,7 @@ export function DisplayModeChoice({
       ) : null}
 
       {mode === "fixed" ? (
-        <div className={cn("flex w-full flex-col gap-2 text-left", SETUP_REVEAL)}>
+        <div className={cn("mx-auto flex w-full max-w-[460px] flex-col gap-2 text-left", SETUP_REVEAL)}>
           <p className={cn("font-semibold", calm ? "text-[13px]" : "text-sm")}>
             Show this provider
           </p>
