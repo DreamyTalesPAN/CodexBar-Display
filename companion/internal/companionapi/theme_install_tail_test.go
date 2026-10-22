@@ -3,6 +3,7 @@ package companionapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -199,5 +200,45 @@ func TestSecondThemeInstallStopsWaitingAfterLimit(t *testing.T) {
 	}
 	if calls := tail.installCalls.Load(); calls != 1 {
 		t.Fatalf("refused second install reached VibeTV: calls=%d", calls)
+	}
+}
+
+// Issue #939: the setup log already says the theme is installed, so a stream
+// refresh that fails afterwards must not add a "failed" line after it. Support
+// still sees the failure in the timeline.
+func TestStreamRefreshFailureAfterInstalledStaysOutOfSetupLog(t *testing.T) {
+	tail := newThemeInstallTailServer(t, true)
+	tail.server.refreshStream = func(context.Context, string) error {
+		tail.streamStarted <- struct{}{}
+		<-tail.release
+		return errors.New("stream refresh failed")
+	}
+	jobID := tail.start(t, "clippy")
+	tail.waitForStream(t)
+	tail.waitForPhase(t, jobID, "complete")
+	tail.finishFirstRefresh()
+
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if last, ok := tail.server.Timeline().Latest("theme_install"); ok && last.State == "failed" {
+			if last.Reason != "display_stream_refresh_failed" {
+				t.Fatalf("timeline keeps the wrong reason: %+v", last)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the failed stream refresh is missing from the support timeline")
+		}
+	}
+	var statuses []string
+	for _, event := range tail.server.setupEvents.snapshot(tail.server.currentTime()).Events {
+		if event.Stage == "theme_install" {
+			statuses = append(statuses, event.Status)
+		}
+	}
+	if got := strings.Join(statuses, ","); got != "started,succeeded" {
+		t.Fatalf("setup log theme_install = %s, want started,succeeded", got)
+	}
+	if job, _ := tail.server.themeInstallJobSnapshot(jobID); job.Phase != "complete" || job.Error != nil {
+		t.Fatalf("stream refresh failure changed the finished job: %+v", job)
 	}
 }
