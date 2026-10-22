@@ -132,14 +132,13 @@ it("keeps the card's inner space at the template's 8 px: 1 px border plus 7 px p
   expect(card.classList).not.toContain("p-2");
 });
 
-// 7197 review, point 8: cards 200 px wide, 32 px apart, three in a row at most, as a group in the middle.
-it("lays the cards out as 200 px columns with 32 px gaps, centred and not stretched", () => {
+// 7197 review, point 8: cards 200 px wide, 32 px apart, as many in a row as fit, as a group in the middle.
+it("lays the cards out as 200 px columns with 32 px gaps, centred", () => {
   render(<Page />);
   const group = screen.getAllByRole("listitem")[0].parentElement!;
   expect(group.style.gridTemplateColumns).toBe("repeat(auto-fill, 200px)");
   expect(group.classList).toContain("gap-8!");
   expect(group.classList).toContain("justify-center");
-  expect(group.classList).toContain("max-w-[664px]");
 });
 
 // 7197 review, point 8: the type sits under the name, not beside it.

@@ -20283,3 +20283,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the Active marker sits in the card's title row next to the theme name instead of on the preview picture, so it no longer covers the preview's title; Installed stays on the picture.
 - Scope: theme-library-screen.tsx (Active pill moved from the picture into the title row, one shared pill element) and its test in theme-library-screen.appearance.test.tsx.
 - What's new: none — bug fix only
+
+## 2026-10-22 — #7209: Theme grid uses the full width
+
+- User approval: pending — the theme cards in Appearance and in the setup theme step fill the window width: as many 200 px cards per row as fit, instead of three at most
+- Approved customer-visible result: cards stay 200 px wide with 32 px gaps and unchanged fonts; the group is centred and shows as many cards per row as fit beside the sidebar (more cards per row on wide windows, same cards on narrow ones).
+- Scope: THEME_GRID_CLASS in apps/control-center/src/lib/theme-grid.ts (the 664 px width cap is gone), used by the Appearance tab and the setup theme step, with their tests.
+- What's new: none — layout only

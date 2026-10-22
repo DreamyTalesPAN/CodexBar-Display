@@ -41,7 +41,7 @@ describe("SetupThemeScreen", () => {
     expect(html).toContain("aspect-square w-full rounded-[6px]");
   });
 
-  it("shows the themes in the Appearance grid: one card per theme, three across", () => {
+  it("shows the themes in the Appearance grid: one card per theme, as many across as fit", () => {
     const html = render();
 
     expect(html).toContain(THEME_GRID_CLASS);
