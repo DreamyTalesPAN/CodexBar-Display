@@ -77,7 +77,7 @@ export function SetupThemeScreen({
         aria-label="Themes"
         className={cn(
           THEME_GRID_CLASS,
-          "mt-6 max-h-[calc(100dvh-460px)] overflow-y-auto",
+          "mt-6 max-h-[calc(100dvh-460px)] overflow-y-auto pb-6 [mask-image:linear-gradient(to_bottom,black_calc(100%_-_24px),transparent)]",
         )}
         onKeyDown={moveAmongRadios}
         role="radiogroup"

@@ -259,8 +259,8 @@ describe("SetupWizard: Two at once sources", () => {
       displayProviderIds: ["codex", "claude"],
       displayProviders: [{ id: "codex", label: "Codex" }],
       automaticPreviews: [
-        { providerId: "codex", providerLabel: "Codex", resetLabel: null, windows: [{ label: "Session", percent: 37 }], pairFrames: { claude: { provider: "codex", label: "Codex", usageWindows: [{ id: "session", label: "Session", percent: 37 }] } } },
-        { providerId: "claude", providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: null }] },
+        { providerId: "codex", providerLabel: "Codex", resetLabel: null, windows: [{ label: "Session", percent: 37 }], frame: { provider: "codex", label: "Codex", usageWindows: [{ id: "session", label: "Session", percent: 37 }] }, pairFrames: { claude: { provider: "codex", label: "Codex", usageWindows: [{ id: "session", label: "Session", percent: 37 }] } } },
+        { providerId: "claude", providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: null }], frame: { provider: "claude", error: "no_providers" } },
       ],
     });
     render(<SetupWizard {...props} />);
@@ -294,6 +294,7 @@ describe("SetupWizard: Two at once sources", () => {
       displayMode: "pair",
       displayProviderIds: ["codex", "claude"],
       displayProviders: [{ id: "codex", label: "Codex" }, { id: "claude", label: "Claude" }],
+      automaticPreviews: [answeredCodex, { ...answeredCodex, providerLabel: "Claude", frame: { provider: "claude", error: "no_providers" } }],
     });
     render(<SetupWizard {...props} />);
 
@@ -2747,8 +2748,8 @@ it.each(["pair", "automatic", "fixed"] as const)("chooses a reported pair limit,
     // The Companion's frame for the pair with the draft limit, which the app
     // asks for with the draft (onPreviewHiddenWindows).
     automaticPreviews: [
-      { providerId: "codex", providerLabel: "Codex", resetLabel: null, windows: [], pairFrames: { claude: { provider: "codex+claude", usageWindows: [{ id: "codex:weekly", label: "Codex Weekly", percent: 20 }, { id: "claude:weekly", label: "Claude Weekly", percent: 40 }] } } },
-      { providerId: "claude", providerLabel: "Claude", resetLabel: null, windows: [] },
+      { providerId: "codex", providerLabel: "Codex", resetLabel: null, windows: [], frame: { provider: "codex", error: "no_providers" }, pairFrames: { claude: { provider: "codex+claude", usageWindows: [{ id: "codex:weekly", label: "Codex Weekly", percent: 20 }, { id: "claude:weekly", label: "Claude Weekly", percent: 40 }] } } },
+      { providerId: "claude", providerLabel: "Claude", resetLabel: null, windows: [], frame: { provider: "claude", error: "no_providers" } },
     ],
     onPreviewHiddenWindows: vi.fn(),
     usage: { providers: [

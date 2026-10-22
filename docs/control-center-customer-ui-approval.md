@@ -20234,3 +20234,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the theme step of setup shows the same square theme pictures and names as the Appearance tab, with Continue visible without scrolling at 1280×800.
 - Scope: setup-theme-screen.tsx and its tests, the shared grid constants in lib/theme-grid.ts (also used by theme-library-screen.tsx, no visible change there). Test build 7208 only, not a pull request.
 - What's new: none — layout change only, no new text
+
+## 2026-10-22 — build12: setup theme grid fades at its bottom like the provider list
+
+- User approval: pending — Setup's "Choose your theme" grid fades out at its bottom edge, the same fade the provider list has
+- Approved customer-visible result: both scrolling lists in setup (providers, themes) look alike at their bottom edge.
+- Scope: setup-theme-screen.tsx; test expectations in setup-wizard.test.tsx and control-center-app.display-preferences.test.tsx follow the approved step order and skeleton gate. Test build 9999.0.7208 only, not a pull request.
+- What's new: none — layout change only, no new text

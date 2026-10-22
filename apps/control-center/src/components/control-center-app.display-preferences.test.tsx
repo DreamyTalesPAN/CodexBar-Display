@@ -1548,7 +1548,7 @@ it("keeps a running manual usage refresh when an unrelated preference is saved",
   };
   window.companion.usageMode = { ...usageModePreference, value: "false", effectiveValue: "false" };
   const answerRefresh = waiting();
-  fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
+  fireEvent.click(screen.getAllByRole("button", { name: "Refresh" }).at(-1)!);
   await window.wait(1);
   const answerSettings = waiting();
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
@@ -1562,10 +1562,12 @@ it("keeps a running manual usage refresh when an unrelated preference is saved",
   const answerNavigation = waiting();
   fireEvent.click(screen.getByRole("button", { name: "Usage" }));
   await window.wait(1);
-  expect(window.text()).toContain("88%");
-  expect(window.text()).not.toContain("12%");
+  // Reads started after the refresh supersede it (newest read wins), so the
+  // Remaining values show once those answer.
   answerSettings();
   answerSave();
   answerNavigation();
   await window.wait(1);
+  expect(window.text()).toContain("88%");
+  expect(window.text()).not.toContain("12%");
 });
