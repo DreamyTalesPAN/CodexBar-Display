@@ -9457,3 +9457,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Preserve main's shell and Support layout with the PR's diagnostics counter and repair.
 - Scope: main merge conflict resolution and this approval record.
 - What's new: none — integration only
+
+## 2026-10-22 — #803: repair eligibility approval remains pending after main merge
+
+- User approval: pending — explicit approval is still required for limiting diagnostic Fix to engine_error and engine_incompatible, keeping existing help text.
+- Approved customer-visible result: pending — config_error and other failures without an available repair show no Fix link; the incompatible-engine block keeps its single Repair control.
+- Scope: append-only reminder for apps/control-center/src/components/diagnostics-panel.tsx and apps/control-center/src/components/diagnostics-panel.test.tsx; no product changes and no approval granted by the main merge.
+- What's new: none — approval status reminder only
