@@ -9715,3 +9715,16 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: A label and Select choose the footer reset, defaulting to Session reset; a missing, hidden or unavailable chosen reset retains the existing first-displayed-reset behavior. Older firmware disables the row and says Update needed / Update VibeTV to use this.
 - Scope: Companion preference and capability-gated frame, firmware selection and matching Appearance preview; no reset values are invented.
 - What's new: none — preference prepared for review in a stacked draft.
+
+## 2026-10-22 — #864: Settings Pace and Two at once say Update needed on older VibeTV firmware
+
+- User approval: pending — Pace and Two at once are disabled and say "Update needed. Update VibeTV to use this." when a ready VibeTV lacks the firmware feature
+- Approved customer-visible result: on VibeTV firmware without usage-pace-v1 the Pace switch shows off and is disabled; without usage-windows-v1 or room for two windows the Two at once card is disabled. Both show "Update needed. Update VibeTV to use this." instead of their usual line. Offline or unknown devices and capable firmware are unchanged.
+- Scope: Settings Pace and Display mode Two at once (settings-screen.tsx, settings-pace.tsx tests, deviceLacks in control-center-types.ts, DisplayModeChoice pairNote prop). The setup wizard is unchanged. Pull request branch #864 only, not merged, not released.
+- What's new: none — a notice that these settings need a VibeTV update; nothing new to use
+
+## 2026-10-22 — Reset footer: Integrate #864 firmware gating
+- User approval: no visible change – UI approval not needed (merge the existing Pace and Two at once firmware gating into the footer stack)
+- Approved customer-visible result: Retain the existing #864 Update needed behavior and the footer selection.
+- Scope: Merge current #864 settings, tests, helper and both approval histories.
+- What's new: none — integration only.
