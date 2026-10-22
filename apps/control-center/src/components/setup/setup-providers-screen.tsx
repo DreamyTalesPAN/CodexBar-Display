@@ -120,14 +120,15 @@ export function setupProviderOffersSignIn(
 /**
  * The prerequisite notice for a signed-out provider the app cannot sign in
  * itself: CodexBar reads its usage from the provider's own app, so that app
- * has to be installed and running.
+ * has to be installed and running. Not for "setup_required" (#860): an
+ * API-key provider has no app to install, only a key to finish.
  */
 function setupProviderNeedsOwnApp(
   provider: Pick<ProviderItem, "health" | "providerId">,
 ): boolean {
   const state = providerRowHealthState(provider.health);
   return (
-    (state === "auth_required" || state === "setup_required") &&
+    state === "auth_required" &&
     !SIGN_IN_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase())
   );
 }
@@ -156,9 +157,15 @@ export function setupProviderDialogSentence(
     if (GITHUB_SIGN_IN_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase())) {
       return "GitHub Copilot needs a GitHub sign-in that VibeTV can't start yet.";
     }
-    return setupProviderNeedsOwnApp(provider)
-      ? `VibeTV can't read ${label} until the ${label} app is installed and running.`
-      : `Sign in to ${label} so VibeTV can read its usage.`;
+    if (setupProviderNeedsOwnApp(provider)) {
+      return `VibeTV can't read ${label} until the ${label} app is installed and running.`;
+    }
+    // #860: "setup_required" without a sign-in the app can start (API key
+    // missing) gets the generic setup line, never the app install.
+    if (state === "setup_required" && !SIGN_IN_PROVIDER_IDS.includes(provider.providerId.trim().toLowerCase())) {
+      return "Finish setup for this provider.";
+    }
+    return `Sign in to ${label} so VibeTV can read its usage.`;
   }
   if (variant === "browser_sign_in") {
     return `Sign in to ${label} in your browser, then close the browser.`;
