@@ -9600,6 +9600,34 @@ issue scope, or release permission never implies UI permission.
 - Scope: apps/control-center/src/components/control-center-app.tsx, resetSetup no longer clears supportReport. Pull request branch #782 only, not merged, not released.
 - What's new: none — reverts the clearing, no customer-visible change of its own
 
+## 2026-10-22 — #902: axe checks for the setup firmware, recovery and provider dialogs
+
+- User approval: no visible change – UI approval not needed (#902 adds accessibility tests for the setup firmware, recovery and provider dialogs; no component change)
+- Approved customer-visible result: the dialogs look and behave exactly as before.
+- Scope: `setup-dialogs.axe.test.tsx` only. Pull request #902 only, not merged, not released.
+- What's new: none — test-only accessibility baseline
+
+## 2026-10-22 — #902: real-browser colour-contrast check for the setup firmware and recovery dialogs
+
+- User approval: no visible change – UI approval not needed (test only: the customer-flow script runs axe color-contrast on the firmware and recovery dialogs; no component change)
+- Approved customer-visible result: the dialogs look and behave exactly as before.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` only. Pull request #902 only, not merged, not released.
+- What's new: none — test-only accessibility check
+
+## 2026-10-22 — #902: approval marker after merging main at d2f3fade
+
+- User approval: no visible change – UI approval not needed (merge of main (d2f3fade) into #902; the own entries of #902 keep their approvals)
+- Approved customer-visible result: #902 as in its own entries plus the entries merged with d2f3fade; nothing else changes.
+- Scope: the merge of d2f3fade and this approval record. Pull request branch #902 only, not merged, not released.
+- What's new: none — merge of d2f3fade, no customer-visible change of its own
+
+## 2026-10-22 — #902: colour-contrast check measures the wrapped dialog title and fails when axe cannot decide
+
+- User approval: no visible change – UI approval not needed (test only: the real-browser contrast check hides the frozen screen behind the opaque dialog so axe measures the title, and counts "incomplete" results as failures)
+- Approved customer-visible result: the dialogs look and behave exactly as before.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` only (`assertDialogContrast`). Pull request #902 only, not merged, not released.
+- What's new: none — test-only accessibility check
+
 ## 2026-10-20 — #778: an invalid field with keyboard focus shows the full ink focus ring
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" (to the picture ui/817-invalid-focus/rot-close.png, question "Passt das so?"; the final #817 look is the red focus ring on every invalid field) — entry: #778: an invalid field with keyboard focus shows the full ink focus ring — before → after: a focused invalid field showed the red, reduced invalid ring → the full ink focus ring on a focused invalid field (light and dark), the red border stays and the red ring stays when the field is not focused. Nothing else changes.
