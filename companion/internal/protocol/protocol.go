@@ -438,17 +438,24 @@ func usageWindowsWithoutPace(windows []UsageWindow) []UsageWindow {
 	return out
 }
 
-// MarshalJSON preserves an explicitly empty pair label on the wire, in saved
-// frames and in the preview API. Single-provider frames keep omitting it.
-func (f Frame) MarshalJSON() ([]byte, error) {
-	type plainFrame Frame
+type plainFrame Frame
+
+// wire keeps an explicitly empty pair label on the wire. Single-provider frames
+// keep omitting it. plainFrame has no MarshalJSON, so encoding it does not
+// recurse and encodes the frame once.
+func (f Frame) wire() any {
 	if f.Label == "" && strings.Contains(f.Provider, "+") {
-		return json.Marshal(struct {
+		return struct {
 			plainFrame
 			Label string `json:"label"`
-		}{plainFrame: plainFrame(f), Label: ""})
+		}{plainFrame(f), ""}
 	}
-	return json.Marshal(plainFrame(f))
+	return plainFrame(f)
+}
+
+// MarshalJSON covers frames nested in saved frames and the preview API.
+func (f Frame) MarshalJSON() ([]byte, error) {
+	return json.Marshal(f.wire())
 }
 
 func (f Frame) MarshalLine() ([]byte, error) {
@@ -458,7 +465,7 @@ func (f Frame) MarshalLine() ([]byte, error) {
 // MarshalNormalizedLine serializes a frame that has already been normalized.
 // It is for callers that need the normalized frame as well as its wire form.
 func (f Frame) MarshalNormalizedLine() ([]byte, error) {
-	b, err := json.Marshal(f)
+	b, err := json.Marshal(f.wire())
 	if err != nil {
 		return nil, err
 	}
