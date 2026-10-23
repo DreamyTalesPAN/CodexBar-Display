@@ -219,7 +219,7 @@ export function VibeTV3DPreview({
 
     // Like the design: 2.5 s after the last touch the device sways once, a full
     // cycle, and then stands still. A drag starts the count again.
-    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     let frameRequest: number | null = null;
     let swayTimer = 0;
     let hiddenAt = document.hidden ? performance.now() : null;
@@ -230,6 +230,7 @@ export function VibeTV3DPreview({
       const now = performance.now();
       const elapsed = Math.min(now - previousAt, 100);
       previousAt = now;
+      const still = reducedMotion.matches;
       const swayAt = now - touchedAt - SWAY_DELAY_MS;
       const swaying = !still && !dragging && swayAt > 0 && swayAt < SWAY_CYCLE_MS;
       const before = modelPivot.rotation.y;
@@ -272,6 +273,17 @@ export function VibeTV3DPreview({
       wake();
     };
     invalidateRef.current = invalidate;
+
+    const motionChanged = () => {
+      window.clearTimeout(swayTimer);
+      if (reducedMotion.matches) {
+        // Stop immediately instead of animating the return to the rest angle.
+        modelPivot.rotation.y = 0;
+        screenPivot.rotation.y = 0;
+      }
+      invalidate();
+    };
+    reducedMotion.addEventListener("change", motionChanged);
 
     const visibilityChanged = () => {
       const now = performance.now();
@@ -354,6 +366,7 @@ export function VibeTV3DPreview({
       invalidateRef.current = null;
       if (frameRequest !== null) cancelAnimationFrame(frameRequest);
       window.clearTimeout(swayTimer);
+      reducedMotion.removeEventListener("change", motionChanged);
       document.removeEventListener("visibilitychange", visibilityChanged);
       observer.disconnect();
       controls.dispose();

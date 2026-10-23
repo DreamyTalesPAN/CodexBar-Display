@@ -107,6 +107,13 @@ const requestFrame = vi.fn((callback: FrameRequestCallback) =>
   window.setTimeout(() => callback(performance.now()), 16),
 );
 
+let motionQuery: EventTarget & { matches: boolean };
+
+function setReducedMotion(matches: boolean) {
+  motionQuery.matches = matches;
+  act(() => motionQuery.dispatchEvent(new Event("change")));
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   state.rendererFails = false;
@@ -126,7 +133,8 @@ beforeEach(() => {
     observe() {}
     disconnect() {}
   });
-  vi.stubGlobal("matchMedia", () => ({ matches: false }));
+  motionQuery = Object.assign(new EventTarget(), { matches: false });
+  vi.stubGlobal("matchMedia", () => motionQuery);
 });
 afterEach(() => {
   cleanup();
@@ -249,13 +257,57 @@ describe("3D VibeTV sway", () => {
   });
 
   it("stays still with reduced motion and cancels its work on unmount", () => {
-    vi.stubGlobal("matchMedia", () => ({ matches: true }));
+    motionQuery.matches = true;
     const view = mountPreview();
     runFrames(60_000);
     expect(state.angles.every((angle) => angle === 0)).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
     act(() => state.resize());
     view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each([1_000, 6_000])("stops automatic motion when Reduce motion changes after %i ms", (elapsed) => {
+    mountPreview();
+    runFrames(elapsed);
+    setReducedMotion(true);
+    runFrames(16);
+    const angles = state.angles.length;
+    runFrames(60_000);
+    expect(state.angles).toHaveLength(angles);
+    expect(state.angles.at(-1)).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("applies a motion change while hidden before rendering again", () => {
+    mountPreview();
+    runFrames(6_000);
+    setHidden(true);
+    setReducedMotion(true);
+    expect(vi.getTimerCount()).toBe(0);
+    setHidden(false);
+    runFrames(16);
+    expect(state.angles.at(-1)).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("allows the next drag to restart a sway after Reduce motion is switched off", () => {
+    motionQuery.matches = true;
+    mountPreview();
+    runFrames(60_000);
+    setReducedMotion(false);
+    act(() => { state.listeners.start(); state.listeners.end(); });
+    runFrames(60_000);
+    expect(Math.max(...state.angles)).toBeGreaterThan(0.1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("removes the motion listener on unmount", () => {
+    const remove = vi.spyOn(motionQuery, "removeEventListener");
+    const view = mountPreview();
+    view.unmount();
+    expect(remove).toHaveBeenCalledWith("change", expect.any(Function));
+    setReducedMotion(true);
     expect(vi.getTimerCount()).toBe(0);
   });
 });
