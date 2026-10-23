@@ -9844,3 +9844,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #873 as in its own entries plus the entries merged with d2f3fade; nothing else changes.
 - Scope: the merge of d2f3fade and this approval record. Pull request branch #873 only, not merged, not released.
 - What's new: none — merge of d2f3fade, no customer-visible change of its own
+
+## 2026-10-23 — Support uses the available content width
+
+- User approval: approved by Paul, 2026-10-23 11:42 (relayed by O7); remove only `max-w-[760px]` from `apps/control-center/src/components/logs-screen.tsx`, with no text changes.
+- Approved customer-visible result: Support report, Diagnostics and Recent activity use the available width inside the existing page padding instead of stopping at 760 px.
+- Scope: one class removed from the Support container and this approval record; own branch from fresh main, no changes to #803.
+- What's new: none — layout width fix, nothing new to use.
