@@ -440,18 +440,25 @@ func TestProviderReadinessClassifiesRateLimitAsWaitAndRetry(t *testing.T) {
 	}
 }
 
-// CodexBar 0.63.0's own sentences on the Mac for the providers whose sign-in
-// the row can start. The health scan and the exact check must agree, or the
-// row only offers the button after the customer pressed "Check again".
+// CodexBar 0.63.0's and 0.75.0's own sentences on the Mac for the providers
+// whose sign-in the row can start. The health scan and the exact check must
+// agree, or the row only offers the button after the customer pressed "Check
+// again".
 func TestMacProviderSentencesOfferTheRowSignIn(t *testing.T) {
 	for detail, want := range map[string]struct {
 		readiness string
 		health    ProviderHealthState
 	}{
-		"Sign in to claude.ai (or refresh Claude cookies) to load usage data.":                                                                                        {ProviderAuthRequired, ProviderHealthAuthRequired},
-		"No Cursor session found. Please log in to cursor.com in Safari, Chrome, Edge, Brave, Arc, or Firefox.":                                                       {ProviderAuthRequired, ProviderHealthAuthRequired},
-		"No Cursor session found. If you use Safari, grant CodexBar Full Disk Access in System Settings > Privacy & Security. Please log in to cursor.com in Chrome.": {ProviderAuthRequired, ProviderHealthAuthRequired},
-		"Antigravity language server not detected. Launch Antigravity and retry.":                                                                                     {ProviderNotConfigured, ProviderHealthSetupRequired},
+		"Sign in to claude.ai (or refresh Claude cookies) to load usage data.":                                                                                                                  {ProviderAuthRequired, ProviderHealthAuthRequired},
+		"No Cursor session found. Please log in to cursor.com in Safari, Chrome, Edge, Brave, Arc, or Firefox.":                                                                                 {ProviderAuthRequired, ProviderHealthAuthRequired},
+		"No Cursor session found. If you use Safari, grant CodexBar Full Disk Access in System Settings > Privacy & Security. Please log in to cursor.com in Chrome.":                           {ProviderAuthRequired, ProviderHealthAuthRequired},
+		"Antigravity language server not detected. Launch Antigravity and retry.":                                                                                                               {ProviderNotConfigured, ProviderHealthSetupRequired},
+		"Kilo CLI session not found at /Users/redacted/.local/share/kilo/auth.json. Run `kilo auth login` to create ~/.local/share/kilo/auth.json.":                                             {ProviderAuthRequired, ProviderHealthAuthRequired},
+		"Kiro usage requires the Kiro CLI. Install it from https://kiro.dev/docs/cli/ and run 'kiro-cli login' first.":                                                                          {ProviderAuthRequired, ProviderHealthAuthRequired},
+		"No available fetch strategy for vertexai.":                                                                                                                                             {ProviderNotConfigured, ProviderHealthSetupRequired},
+		"No Augment session found. Please log in to app.augmentcode.com in Safari, Chrome, Microsoft Edge, Brave, Arc, or Firefox.":                                                             {ProviderAuthRequired, ProviderHealthAuthRequired},
+		"Windsurf database not found at /Users/redacted/Library/Application Support/Windsurf/User/globalStorage/state.vscdb. Ensure Windsurf is installed and has been launched at least once.": {ProviderNotConfigured, ProviderHealthSetupRequired},
+		"No available fetch strategy for grok.": {ProviderNotConfigured, ProviderHealthSetupRequired},
 	} {
 		if got := classifyProviderError(detail); got != want.readiness {
 			t.Fatalf("%q: exact check %s, want %s", detail, got, want.readiness)

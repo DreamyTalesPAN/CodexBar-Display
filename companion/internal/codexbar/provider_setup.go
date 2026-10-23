@@ -896,7 +896,10 @@ func classifyProviderError(detail string) string {
 	// "cli not found": Win-CodexBar's "Provider not installed: kiro-cli not
 	// found" and "gcloud CLI not found". The program is missing, which the
 	// row's download page fixes; the health scan already reads it so.
-	case strings.Contains(lower, "no available fetch strategy"), strings.Contains(lower, "no providers"), strings.Contains(lower, "not detected"), strings.Contains(lower, "cli not found"):
+	// "database not found": "Windsurf database not found ... Ensure Windsurf
+	// is installed and has been launched at least once." Opening the app
+	// creates it.
+	case strings.Contains(lower, "no available fetch strategy"), strings.Contains(lower, "no providers"), strings.Contains(lower, "not detected"), strings.Contains(lower, "cli not found"), strings.Contains(lower, "database not found"):
 		return ProviderNotConfigured
 	default:
 		return ProviderEngineError
