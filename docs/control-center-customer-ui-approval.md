@@ -9462,7 +9462,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-21 — #782: Paul's approval of build 7200 recorded
 
-- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #782 approval record for build 7200; the #782 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 stay pending.
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #782 approval record for build 7200; the #782 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 keep their own approval line.
 - Approved customer-visible result: #782 as described in its entries above, as seen in build 7200.
 - Scope: #782 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #782 approval record only
@@ -9599,3 +9599,220 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: after "Run setup again" the Support report card keeps Copy / Download for the report made before the reset, as before the Support report change of this pull request.
 - Scope: apps/control-center/src/components/control-center-app.tsx, resetSetup no longer clears supportReport. Pull request branch #782 only, not merged, not released.
 - What's new: none — reverts the clearing, no customer-visible change of its own
+
+## 2026-10-22 — #902: axe checks for the setup firmware, recovery and provider dialogs
+
+- User approval: no visible change – UI approval not needed (#902 adds accessibility tests for the setup firmware, recovery and provider dialogs; no component change)
+- Approved customer-visible result: the dialogs look and behave exactly as before.
+- Scope: `setup-dialogs.axe.test.tsx` only. Pull request #902 only, not merged, not released.
+- What's new: none — test-only accessibility baseline
+
+## 2026-10-22 — #902: real-browser colour-contrast check for the setup firmware and recovery dialogs
+
+- User approval: no visible change – UI approval not needed (test only: the customer-flow script runs axe color-contrast on the firmware and recovery dialogs; no component change)
+- Approved customer-visible result: the dialogs look and behave exactly as before.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` only. Pull request #902 only, not merged, not released.
+- What's new: none — test-only accessibility check
+
+## 2026-10-22 — #902: approval marker after merging main at d2f3fade
+
+- User approval: no visible change – UI approval not needed (merge of main (d2f3fade) into #902; the own entries of #902 keep their approvals)
+- Approved customer-visible result: #902 as in its own entries plus the entries merged with d2f3fade; nothing else changes.
+- Scope: the merge of d2f3fade and this approval record. Pull request branch #902 only, not merged, not released.
+- What's new: none — merge of d2f3fade, no customer-visible change of its own
+
+## 2026-10-22 — #902: colour-contrast check measures the wrapped dialog title and fails when axe cannot decide
+
+- User approval: no visible change – UI approval not needed (test only: the real-browser contrast check hides the frozen screen behind the opaque dialog so axe measures the title, and counts "incomplete" results as failures)
+- Approved customer-visible result: the dialogs look and behave exactly as before.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` only (`assertDialogContrast`). Pull request #902 only, not merged, not released.
+- What's new: none — test-only accessibility check
+
+## 2026-10-20 — #778: an invalid field with keyboard focus shows the full ink focus ring
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" (to the picture ui/817-invalid-focus/rot-close.png, question "Passt das so?"; the final #817 look is the red focus ring on every invalid field) — entry: #778: an invalid field with keyboard focus shows the full ink focus ring — before → after: a focused invalid field showed the red, reduced invalid ring → the full ink focus ring on a focused invalid field (light and dark), the red border stays and the red ring stays when the field is not focused. Nothing else changes.
+- Approved customer-visible result: Replaced by Paul's correction below (red focus ring on every invalid field); this entry's ink ring is not shipped.
+- Scope: `apps/control-center/src/components/ui/input-group.tsx`, its new test `apps/control-center/src/components/ui/input-group.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no new content
+
+## 2026-10-20 — #817: red focus ring on invalid fields (Paul's correction of #817)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" (to the picture ui/817-invalid-focus/rot-close.png, question "Passt das so?"; the final #817 look is the red focus ring on every invalid field) — entry: #817: red focus ring on invalid fields (Paul's correction of #817)
+- Approved customer-visible result: #817 invalid fields (input, textarea, select, checkbox, input group) keep the red border and show the full-strength red focus ring under keyboard focus; unfocused invalid fields look as before.
+- Scope: #817 changes `components/ui/input.tsx`, `textarea.tsx`, `select.tsx`, `checkbox.tsx`, `input-group.tsx`, their tests, `docs/control-center-ui-principles.md` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #817 focus ring colour on invalid fields, no new content
+
+## 2026-10-20 — #817 waits for Paul's look at the red focus ring
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" (to the picture ui/817-invalid-focus/rot-close.png, question "Passt das so?"; the final #817 look is the red focus ring on every invalid field) — entry: #817 waits for Paul's look at the red focus ring
+- Approved customer-visible result: #817 as in its entries above (red focus ring under keyboard focus, red border kept, one style for every field); this entry adds nothing visible.
+- Scope: this approval record for #817 only. Pull request branch only, not merged, not released.
+- What's new: none — #817 pending marker, no new content
+
+## 2026-10-20 — #817 checked checkbox keeps its red border under keyboard focus (Codex review)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" (to the picture ui/817-invalid-focus/rot-close.png, question "Passt das so?"; the final #817 look is the red focus ring on every invalid field) — entry: #817 checked checkbox keeps its red border under keyboard focus (Codex review)
+- Approved customer-visible result: #817 a checked, invalid checkbox under keyboard focus shows the red border with the red ring, like every other invalid field.
+- Scope: #817 `apps/control-center/src/components/ui/checkbox.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #817 checkbox border fix, no new content
+
+## 2026-10-20 — #817: Paul's approval recorded (the red focus ring on every invalid field (ui/817-invalid-focus/rot-close.png))
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 09:05: "ja" — #817 approval record for the red focus ring on every invalid field (ui/817-invalid-focus/rot-close.png); the #817 entries above now carry this approval, merge markers are marked as no visible change.
+- Approved customer-visible result: #817 as described in its entries above; nothing else changes.
+- Scope: #817 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #817 approval record only
+
+## 2026-10-20 — #817: result lines of approved entries cleaned up
+
+- User approval: no visible change – UI approval not needed (#817: result lines of approved entries cleaned up: record cleanup, wording only: entries that already carry Paul's approval no longer open their result line with an old status word)
+- Approved customer-visible result: #817 unchanged; only the wording of the approval record.
+- Scope: #817 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #817 record cleanup
+
+## 2026-10-20 — #817: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#817 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #817 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #817 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #817 approval record only
+
+## 2026-10-21 — #817: redundant checkbox focus variant removed
+
+- User approval: no visible change – UI approval not needed (#817 Codex cleanup: redundant checkbox focus variant removed; the existing invalid rule already renders the red border)
+- Approved customer-visible result: an invalid checked checkbox keeps its red border as before; no new text, no layout change.
+- Scope: the checkbox class list and the invalid focus ring test file. Pull request branch #817 only.
+- What's new: none — the removed variant was redundant with aria-invalid:aria-checked:border-destructive
+
+## 2026-10-22 — #817: approval marker after merging main after #784
+
+- User approval: no visible change – UI approval not needed (merge of main after #784; the code is in main, only tests remain)
+- Approved customer-visible result: as in the #817 entries above (the red focus ring on invalid fields, Paul's yes of 2026-10-20 09:05); nothing visible changes in this merge.
+- Scope: the merge of origin/main and this approval record. Pull request branch #817 only, not merged, not released.
+- What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-22 — #817: approval marker after merging main at d2f3fade
+
+- User approval: no visible change – UI approval not needed (merge of main (d2f3fade) into #817; the own entries of #817 keep their approvals)
+- Approved customer-visible result: as in the #817 entries above (the red focus ring on invalid fields, Paul's yes of 2026-10-20 09:05); nothing visible changes in this merge.
+- Scope: the merge of d2f3fade and this approval record. Pull request branch #817 only, not merged, not released.
+- What's new: none — merge of d2f3fade, no customer-visible change of its own
+
+## 2026-10-22 — #782: approval log wording of the build 7200 record
+
+- User approval: no visible change – UI approval not needed (wording only: the #782 build 7200 record now says "keep their own approval line" instead of the old phrase, same meaning; the app is not touched)
+- Approved customer-visible result: nothing changes; the customer sees exactly what the earlier entries describe.
+- Scope: docs/control-center-customer-ui-approval.md only, the wording of the #782 build 7200 record. Pull request branch #782 only, not merged, not released.
+- What's new: none — approval log wording only
+
+## 2026-10-22 — #915: saved WiFi recovery test waits for the firmware dialog
+
+- User approval: no visible change – UI approval not needed (test-only fix for flaky test #915)
+- Approved customer-visible result: None. The setup wizard is unchanged; only its unit test now waits for the firmware dialog before clicking "Use WiFi instead".
+- Scope: apps/control-center/src/components/setup/setup-wizard.test.tsx, test "rescans and reconnects the same device after reusing its saved network" only. Pull request branch only, not merged, not released.
+- What's new: none — test only, no customer-visible change
+
+## 2026-10-22 — Usage: Refresh asks for a new reading right away (#918)
+
+- User approval: pending — Marcus' finding from the #782 click test (22.10.2026, build 1321): Refresh stayed on "Refreshing" for about 40 s; his click test of this pull request is still open.
+- Approved customer-visible result: No new wording or control. A click on Refresh on Usage starts CodexBar's usage service fresh, so "Refreshing" lasts about as long as one reading instead of up to about a minute. It still ends only with values collected after the click. A second click while "Refreshing" is shown keeps the first request and starts nothing new.
+- Scope: `requestUsageRefresh` in `companion/internal/companionapi/usage.go`, `TestUsageManualRefreshStartsAFreshUsageServiceOnce` in `server_test.go`, the Manual Refresh section of `docs/usage-polling-architecture.md`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — a faster Refresh needs no notice
+
+## 2026-10-22 — Usage: no second "Refreshing" line above the token total (#918)
+
+- User approval: pending — Marcus' finding from the #782 click test (22.10.2026, build 1321); his click test of this pull request is still open. This replaces the small spinner badge by the token total that Paul asked for on 2026-10-09.
+- Approved customer-visible result: While a manual refresh waits, only the Refresh button shows the spinner and "Refreshing". Above "Total tokens in the last 30 days" nothing appears, and the page does not move. "Still counting" stays as before.
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, its test, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — one duplicate status line less
+
+## 2026-10-22 — Usage: Refresh right away and no second "Refreshing" line, approved after the click test (#918)
+
+- User approval: Marcus, 22.10.2026, channel Abstimmungschat (question 131, answer "131 ok"), after his click test of e8f7d6b4 on the Mac. This approves both pending #918 entries above.
+- Approved customer-visible result: As in the two entries above. A click on Refresh on Usage starts CodexBar's usage service fresh, so "Refreshing" lasts about as long as one reading (about 10 s on the test Mac); the values stay visible and do not turn stale while the fresh service starts. While it waits, only the Refresh button shows the spinner and "Refreshing"; nothing appears above "Total tokens in the last 30 days" and the page does not move.
+- Scope: as above, plus `ReplaceStartedAt` in `companion/internal/codexbar/dashboard_serve.go` and `serveBeingReplaced` in `companion/internal/daemon/collector.go` with their tests, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — a faster Refresh and one status line less need no notice
+
+## 2026-10-22 — #921: approval marker after merging main at 75139f6c
+
+- User approval: no visible change – UI approval not needed (merge of main (75139f6c) into #921; the own #918 entries of #921 keep their approval from Marcus, question 131)
+- Approved customer-visible result: #921 as in its own entries plus the entries merged with 75139f6c; nothing else changes.
+- Scope: the merge of 75139f6c and this approval record. Pull request branch #921 only, not merged, not released.
+- What's new: none — merge of 75139f6c, no customer-visible change of its own
+
+## 2026-10-22 — #921: Paul approves dropping the "Refreshing" badge by the token total
+
+- User approval: approved by Paul in the communicator chat, 2026-10-22: "ja" (to whether it is ok that the small "Refreshing" badge by the token total, which he asked for on 2026-10-09, goes away and only the Refresh button shows "Refreshing"; pictures usage-2-refreshing.png and usage-1-idle.png of f3cb4803).
+- Approved customer-visible result: as in the #918 entries of #921 above; while a manual refresh waits, only the Refresh button shows the spinner and "Refreshing", nothing appears above "Total tokens in the last 30 days".
+- Scope: this approval record only. Pull request branch #921 only, not merged, not released.
+- What's new: none — approval record only
+
+## 2026-10-22 — #917: Run setup again during Create new keeps the existing Support report
+
+- User approval: no visible change – UI approval not needed (bug fix: Paul 2026-10-22 11:37 decided the old report stays after Run setup again; this applies it when Create new is still collecting)
+- Approved customer-visible result: when "Run setup again" completes while Create new is still collecting, the Support report card keeps Copy / Download for the earlier report, as after any other "Run setup again". A collection that fails still behaves as before.
+- Scope: apps/control-center/src/components/control-center-app.tsx, createSupportReport only replaces supportReport when the collection returns a report or an error; its test in control-center-app.support-report-card.test.tsx. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, no customer-visible change of its own
+
+## 2026-10-22 — #883: Windows one-time hint that VibeTV keeps running in the tray
+
+- User approval: approved by Paul: "ja passt"
+- Approved customer-visible result: Windows only. The first close of the Control Center window shows one native message box (information icon, OK button) titled "VibeTV Control Center" with the text "VibeTV keeps running in the tray, so your display stays up to date." followed by a blank line and "To open it again, click the VibeTV icon next to the clock. If you don't see it, click the ^ arrow first." It never shows again (marker tray-hint-shown.txt in the app's local data folder).
+- Scope: windows/src-tauri/src/main.rs, show_tray_hint_once called from hide_after_flush. Pull request #919 only, not merged, not released.
+- What's new: none — one-time hint in the Windows shell, not a Control Center notice
+
+## 2026-10-22 — #919: approval marker after merging main at d7250de6
+
+- User approval: no visible change – UI approval not needed (merge of main (d7250de6) into #919; the #883 entry above keeps Paul's approval)
+- Approved customer-visible result: #919 as in its #883 entry plus the entries merged with d7250de6; nothing else changes.
+- Scope: the merge of d7250de6 and this approval record. Pull request #919 only, not merged, not released.
+- What's new: none — merge of d7250de6, no customer-visible change of its own
+
+## 2026-10-22 — #919: approval marker after merging main at 8d956342
+
+- User approval: no visible change – UI approval not needed (merge of main (8d956342) into #919; the #883 entry keeps Paul's approval)
+- Approved customer-visible result: #919 as in its #883 entry plus the entries merged with 8d956342; nothing else changes.
+- Scope: the merge of 8d956342 and this approval record. Pull request #919 only, not merged, not released.
+- What's new: none — merge of 8d956342, no customer-visible change of its own
+
+## 2026-10-22 — #919: approval marker after merging main at 3babd786
+
+- User approval: no visible change – UI approval not needed (merge of main (3babd786) into #919; the #883 entry keeps Paul's approval)
+- Approved customer-visible result: #919 as in its #883 entry plus the entries merged with 3babd786; nothing else changes.
+- Scope: the merge of 3babd786 and this approval record. Pull request #919 only, not merged, not released.
+- What's new: none — merge of 3babd786, no customer-visible change of its own
+
+## 2026-10-22 — #946: approval marker after merging main at 2d42c92f
+
+- User approval: no visible change – UI approval not needed (merge of main (2d42c92f, which holds #919 squashed) into #946; the #883 entry keeps Paul's approval; #946's own change (#940, when the tray hint shows) keeps its text and look)
+- Approved customer-visible result: #946 (#940 fix on top of #919, as in the #883 entry) plus the entries merged with 2d42c92f; nothing else changes.
+- Scope: the merge of 2d42c92f and this approval record. Pull request #946 only, not merged, not released.
+- What's new: none — merge of 2d42c92f, no customer-visible change of its own
+
+## 2026-10-22 — #943: plain message when VibeTV does not answer a theme install (#927)
+
+- User approval: Marcus 2026-10-22 (154a) approved exactly this wording without a click test, as an exception, because the case can only be triggered over WiFi and both test VibeTVs run on Cable
+- Approved customer-visible result: when VibeTV does not answer the first check of a WiFi theme or screensaver install, the install dialog says "VibeTV didn't answer." with the next step "Check that VibeTV is on and near your WiFi, then try again." instead of the engine's raw error and the command-line `--target` hint.
+- Scope: `companion/internal/companionapi/theme_install.go` (`themeInstallErrorPayload`, check-device failure only) and its test. Pull request #943 only, not merged, not released.
+- What's new: none — error wording only, nothing a customer would look for
+
+## 2026-10-22 — #943: Paul approves the "VibeTV didn't answer." wording
+
+- User approval: approved by Paul in the communicator chat, 2026-10-22 ~16:40 (relayed by the communicator: Paul releases the #943 text "VibeTV didn't answer." / "Check that VibeTV is on and near your WiFi, then try again."); text-only check, no screenshot (WiFi-only case).
+- Approved customer-visible result: as in the #943 entry above.
+- Scope: this approval record only. Pull request #943 only, not merged, not released.
+- What's new: none — approval record only
+
+## 2026-10-22 — #943: approval marker after merging main at 2d42c92f
+
+- User approval: no visible change – UI approval not needed (merge of main (2d42c92f) into #943; the #943 entries above keep Marcus' (154a) and Paul's approval of the wording)
+- Approved customer-visible result: #943 as in its entries above plus the entries merged with 2d42c92f; nothing else changes.
+- Scope: the merge of 2d42c92f and this approval record. Pull request #943 only, not merged, not released.
+- What's new: none — merge of 2d42c92f, no customer-visible change of its own
+
+## 2026-10-23 — #943: approval marker after merging main at ce62db41
+
+- User approval: no visible change – UI approval not needed (merge of main (ce62db41) into #943; the #943 entries above keep Marcus' (154a) and Paul's approval of the wording)
+- Approved customer-visible result: #943 as in its entries above plus the entries merged with ce62db41; nothing else changes.
+- Scope: the merge of ce62db41 and this approval record. Pull request #943 only, not merged, not released.
+- What's new: none — merge of ce62db41, no customer-visible change of its own

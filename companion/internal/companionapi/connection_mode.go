@@ -454,33 +454,43 @@ func (s *Server) selectConnectionMode(w http.ResponseWriter, r *http.Request, mo
 		return
 	}
 
-	cfg, err = s.updateConfig(func(current *runtimeconfig.Config) {
+	cfg, err = s.saveCableSelection(hello, cableToken)
+	if err != nil {
+		writeInternalError(w, err)
+		return
+	}
+	device := s.cableDeviceInfo(r.Context(), cfg, hello)
+	device.Paired = !pairingRequired || cableToken != ""
+	return &device
+}
+
+// saveCableSelection commits a proven Cable connection without losing its
+// known WiFi address. Callers hold deviceMaintenanceMu.
+func (s *Server) saveCableSelection(hello protocol.DeviceHello, token string) (runtimeconfig.Config, error) {
+	cfg, err := s.updateConfig(func(current *runtimeconfig.Config) {
 		identityChanged := !strings.EqualFold(current.DeviceID, hello.DeviceID)
 		target := current.DeviceTarget
-		if known {
-			target = knownDevice.Target
+		if known, ok := current.KnownDevice(hello.DeviceID); ok {
+			target = known.Target
 		} else if identityChanged {
 			target = ""
 		}
 		current.SetActiveDevice(runtimeconfig.KnownDevice{
 			DeviceID:    hello.DeviceID,
 			Target:      target,
-			DeviceToken: cableToken,
+			DeviceToken: token,
 		})
 		current.ConnectionMode = "cable"
-		current.DeviceTransports = supportedTransports
+		current.DeviceTransports = append([]string(nil), hello.Capabilities.Transport.Supported...)
 	})
 	if err != nil {
-		writeInternalError(w, err)
-		return
+		return cfg, err
 	}
 	s.clearConfiguredDeviceState()
 	if s.wakeDisplayStream != nil {
 		s.wakeDisplayStream()
 	}
-	device := s.cableDeviceInfo(r.Context(), cfg, hello)
-	device.Paired = !pairingRequired || cableToken != ""
-	return &device
+	return cfg, nil
 }
 
 // waitForCableHello waits up to cableTransitionWait for the expected VibeTV to
@@ -717,10 +727,8 @@ func (s *Server) clearConfiguredDeviceState() {
 	s.connectionMu.Lock()
 	clear(s.connectionStates)
 	s.connectionMu.Unlock()
-	s.probeMu.Lock()
-	clear(s.helloProbeCache)
-	clear(s.healthProbeCache)
-	s.probeMu.Unlock()
+	s.helloProbes.clear()
+	s.healthProbes.clear()
 }
 
 func (s *Server) confirmPendingWiFiTransition(

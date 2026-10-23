@@ -353,16 +353,16 @@ func TestROMEraseSizeMatchesEsptool(t *testing.T) {
 	}
 }
 
-func TestFlashESP8266AppImageRejectsWhatIsNotAnAppImage(t *testing.T) {
+func TestFlashESP8266AppImageWithOptionsRejectsWhatIsNotAnAppImage(t *testing.T) {
 	for _, image := range [][]byte{nil, {0x1f, 0x8b, 0x08}, append([]byte{0xe9}, make([]byte, romMaxAppImageSize)...)} {
-		if err := FlashESP8266AppImage(context.Background(), "/dev/null-vibetv", image, nil); err == nil ||
+		if err := FlashESP8266AppImageWithOptions(context.Background(), "/dev/null-vibetv", image, ROMFlashOptions{}); err == nil ||
 			!strings.Contains(err.Error(), "not an ESP8266 app image") {
-			t.Fatalf("FlashESP8266AppImage(%d bytes) = %v", len(image), err)
+			t.Fatalf("FlashESP8266AppImageWithOptions(%d bytes) = %v", len(image), err)
 		}
 	}
 }
 
-func TestFlashESP8266AppImageOpensTheROMLoaderAtItsFasterBaudRate(t *testing.T) {
+func TestFlashESP8266AppImageWithOptionsOpensTheROMLoaderAtItsFasterBaudRate(t *testing.T) {
 	var opened *serial.Mode
 	restore := serialOpen
 	serialOpen = func(_ string, mode *serial.Mode) (serial.Port, error) {
@@ -371,7 +371,7 @@ func TestFlashESP8266AppImageOpensTheROMLoaderAtItsFasterBaudRate(t *testing.T) 
 	}
 	t.Cleanup(func() { serialOpen = restore })
 
-	if err := FlashESP8266AppImage(context.Background(), "/dev/null-vibetv", testAppImage(romFlashBlockSize), nil); err == nil {
+	if err := FlashESP8266AppImageWithOptions(context.Background(), "/dev/null-vibetv", testAppImage(romFlashBlockSize), ROMFlashOptions{}); err == nil {
 		t.Fatal("flash without a port succeeded")
 	}
 	if opened == nil || opened.BaudRate != romBaudRate {
