@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
   buildFrameData, decodeSprite, paceBinding, primitiveUsageSlotVisible, renderTextPrimitive,
-  themeProgressArc, themeTextFit,
+  themeKeptNameFooter, themeProgressArc, themeTextFit,
   type FrameData, type ThemePrimitive, type ThemeRenderPack,
 } from "@/components/live-vibetv-preview";
 import { cellHeight, textInk, type Rect } from "./text-ink";
@@ -47,9 +47,9 @@ function bakedDividers(pack: ThemeRenderPack): Rect[] {
 // The colour every pixel of the screen shows from the static sprites (CBI) of a theme, painted in spec order; a pixel no
 // sprite paints shows the spec background. A sprite row r covers the pixels floor(r*H/h) up to floor((r+1)*H/h), the way
 // the device scales a sprite.
-function staticArt(pack: ThemeRenderPack, drawn: (p: ThemePrimitive) => boolean = () => true): (x: number, y: number) => string {
+function staticArt(pack: ThemeRenderPack): (x: number, y: number) => string {
   const screen: string[] = new Array(240 * 240).fill(pack.spec?.bg ?? "#000000");
-  for (const p of (pack.spec?.p ?? []).filter(drawn)) {
+  for (const p of pack.spec?.p ?? []) {
     const asset = p.t === "sp" && p.a?.endsWith(".cbi") ? pack.assets?.[p.a] : undefined;
     const sprite = asset?.data.startsWith("CBI1") ? decodeSprite(asset.data) : null;
     if (!sprite) continue;
@@ -622,8 +622,9 @@ describe("no text ink comes within 3 px of a divider, frame line, bar or ring", 
 
 // Paul decision 23.10.2026 (question 6): "Pixel Battery: Name behalten, 'Session reset 55m' verkleinern (bewusste Ausnahme von
 // nie-verkleinern, Paul-Entscheidung; Text muss trotzdem 3 px Abstand halten)." The footer of Pixel Battery keeps the limit's name
-// and is drawn one size smaller exactly where its full-size sentence would come within 3 px of the frame line of the background.
-// Every other footer, and every other text, stays at its declared size (shrunkTexts).
+// and is drawn smaller (font 4 size 1, the largest font under font 2 size 2) exactly where its full-size sentence would come within
+// 3 px of the frame line of the background. A footnote-sized footer is not that decision: the smaller footer keeps at least 75 % of
+// the cap height of the normal one and its vertical centre. Every other footer, and every other text, stays at its declared size.
 describe("the Pixel Battery footer keeps 3 px from the frame line at every reset value and shrinks only where it has to", () => {
   const resets: Array<[string, number]> = [
     ...Array.from({ length: 59 }, (_, i): [string, number] => [`${i + 1}m`, (i + 1) * 60]),
@@ -633,18 +634,27 @@ describe("the Pixel Battery footer keeps 3 px from the frame line at every reset
   it.each([false, true])("Two at once: %s", (two) => {
     const pack = loadPack("pixel-battery"), prims = pack.spec?.p ?? [], artAt = staticArt(pack);
     const footer = prims.find((p) => p.t === "tx" && /^Resets? in /.test(p.v ?? ""))!;
-    const tooClose: string[] = [], shrunk: string[] = [], wouldBeTooClose: string[] = [];
+    const centre = (r: Rect) => r.y + r.h / 2;
+    const normal = textInk(footer, "Session reset 9m");
+    const tooClose: string[] = [], shrunk: string[] = [], wouldBeTooClose: string[] = [], footnote: string[] = [], offCentre: string[] = [];
     for (const [label, secs] of resets) {
       const frame = frameFor(two, "remaining", undefined, 0, undefined, 424000, SCENARIOS[0], secs);
       const text = renderTextPrimitive(footer, frame, prims);
       expect(text, label).toBe(`Session reset ${label}`);
-      if (artNearText(textInk(footer, text), artAt)) tooClose.push(label);
-      if (artNearText(textInk({ ...footer, ft: undefined }, text), artAt)) wouldBeTooClose.push(label);
-      if (themeTextFit(text, footer.f ?? 1, footer.s ?? 1, footer.w ?? 0, true, footer.h ?? 0).size < (footer.s ?? 1)) shrunk.push(label);
+      const ink = textInk(footer, text);
+      if (artNearText(ink, artAt)) tooClose.push(label);
+      if (themeKeptNameFooter(footer, text) !== footer) shrunk.push(label);
+      if (artNearText(textInk({ ...footer, kn: undefined, ft: undefined }, text), artAt)) {
+        wouldBeTooClose.push(label);
+        if (ink.h < 0.75 * normal.h) footnote.push(`${label} ${ink.h} of ${normal.h} px`);
+        if (centre(ink) !== centre(normal)) offCentre.push(`${label} ${centre(ink)} vs ${centre(normal)}`);
+      }
     }
     expect(tooClose).toEqual([]);
     expect(shrunk).toEqual(wouldBeTooClose);
     expect(wouldBeTooClose.length).toBeGreaterThan(0);
+    expect(footnote).toEqual([]);
+    expect(offCentre).toEqual([]);
   });
 });
 
@@ -671,37 +681,5 @@ describe("a row of captions reads as one typeset line", () => {
 describe("the controls on a painted bar keep one width and one margin", () => {
   it.each(catalogIds)("%s", (themeId) => {
     expect(barControlHits(loadPack(themeId))).toEqual([]);
-  });
-});
-
-// Codex as the only provider has one window, so one limit. What stands for a second limit that is not there is not drawn: Clippy's etched
-// divider, Gauge's footer divider and Pixel Battery's second battery belong to slot 2 (7215: a divider over an empty lower half, an empty battery
-// without a name).
-describe("one window draws nothing of a second limit", () => {
-  const one = frameFor(false, "remaining", undefined, undefined, undefined, 424000, SCENARIOS[2]);
-  const two = frameFor(false, "remaining", undefined, undefined, undefined, 424000, SCENARIOS[0]);
-
-  it.each([["clippy", 2], ["gauge", 1]])("%s's divider is drawn between two limits only", (themeId, dividers) => {
-    const prims = loadPack(themeId).spec?.p ?? [];
-    const rects = (frame: FrameData) => prims.filter((p) => p.t === "r" && primitiveUsageSlotVisible(p, frame));
-    expect(rects(one)).toEqual([]);
-    expect(rects(two)).toHaveLength(dividers);
-  });
-
-  it.each(catalogIds)("%s: no art around the second limit's bar", (themeId) => {
-    const pack = loadPack(themeId), prims = pack.spec?.p ?? [];
-    const artAt = staticArt(pack, (p) => primitiveUsageSlotVisible(p, one));
-    for (const bar of prims.filter((p) => p.t === "p" && slotOf(p) === 2)) {
-      const colours = new Set<string>();
-      for (let y = (bar.y ?? 0) - 4; y < (bar.y ?? 0) + (bar.h ?? 0) + 4; y++) for (let x = (bar.x ?? 0) - 4; x < (bar.x ?? 0) + (bar.w ?? 0) + 4; x++) colours.add(artAt(x, y));
-      expect([...colours]).toHaveLength(1);
-    }
-  });
-
-  it("Pixel Battery draws the second battery with two windows", () => {
-    const prims = loadPack("pixel-battery").spec?.p ?? [];
-    const second = (frame: FrameData) => prims.filter((p) => p.a === "/themes/u/pba-b2.cbi" && primitiveUsageSlotVisible(p, frame));
-    expect(second(one)).toEqual([]);
-    expect(second(two)).toHaveLength(1);
   });
 });

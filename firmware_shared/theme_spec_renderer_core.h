@@ -254,7 +254,7 @@ struct CompiledPrimitive {
   uint16_t deficitColor = 0xF800;  // pace bar: the hatch of a deficit
   bool hasBg = false;
   bool fitShrink = false;
-  int keepName = 0;  // reset footer: keep a limit name up to this many px wide and let fitShrink shrink the sentence
+  int keepName = 0;  // reset footer: keep a limit name up to this many px wide; the sentence is then drawn at font 4 size 1
   uint8_t colorStopCount = 0;
   CompiledColorStop colorStops[kMaxCompiledColorStops];
   const char* text = "";
@@ -2280,7 +2280,7 @@ inline bool RenderDisplayedResetFooter(const CompiledThemeSpec& scene,
       if (ResetFooterFits(sink, primitive, out)) return true;
     }
     // No name fits at the original font: the name goes, the font and the text stay whole. Pixel Battery
-    // (Paul 23.10.) keeps a name up to keepName px wide and lets the theme's shrink-fit make the sentence smaller.
+    // (Paul 23.10.) keeps a name up to keepName px wide; the sentence is then drawn at font 4 size 1 (DrawCompiledPrimitive).
     std::snprintf(out, outSize, "%s reset %s", limit, duration);
     if (primitive.keepName <= 0 || sink == nullptr || sink->MeasureText(out, primitive.font, primitive.size) > primitive.keepName) {
       std::snprintf(out, outSize, "Reset %s", duration);
@@ -2426,8 +2426,16 @@ inline bool DrawCompiledPrimitive(
       return false;
     }
     if (!missing && RenderCompiledText(scene, primitive, frame, text, sizeof(text), &sink) &&
-        IsResetCountdownText(text) && ResetFooterFits(&sink, primitive, text)) {
-      cmd.fitShrink = false;
+        IsResetCountdownText(text)) {
+      if (ResetFooterFits(&sink, primitive, text)) {
+        cmd.fitShrink = false;
+      } else if (primitive.keepName > 0) {
+        // A footer that kept its name past the declared font (Pixel Battery, Paul 23.10.) is drawn at font 4 size 1,
+        // the largest font under the declared one, on the bottom of the declared text's box.
+        cmd.font = 4;
+        cmd.size = 1;
+        cmd.valign = 2;
+      }
     }
     cmd.text = text;
     cmd.fg = primitive.colorStopCount > 0 ? ResolvePaceColor(primitive, frame) : primitive.color;

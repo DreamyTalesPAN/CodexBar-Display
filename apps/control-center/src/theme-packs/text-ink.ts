@@ -1,5 +1,5 @@
 import {
-  themeFirmwareTextMetrics, themeTextAlignedY, themeTextFit, themeTextValignBoxHeight,
+  themeFirmwareTextMetrics, themeKeptNameFooter, themeTextAlignedY, themeTextFit, themeTextValignBoxHeight,
   type ThemePrimitive,
 } from "@/components/live-vibetv-preview";
 
@@ -19,7 +19,8 @@ export const cellHeight = (font: number) => (font === 4 ? 26 : font === 2 ? 16 :
 
 // What the text of a primitive paints: the cell width of the fitted lines, less the empty column GLCD and Font16 keep at
 // the right of every cell and at the left of a "1", the rows that carry ink.
-export function textInk(p: ThemePrimitive, text: string): Rect {
+export function textInk(declared: ThemePrimitive, text: string): Rect {
+  const p = themeKeptNameFooter(declared, text);
   const maxSize = p.s ?? 1, lane = p.w ?? 0;
   const { font, size, lines } = themeTextFit(text, p.f ?? 1, maxSize, lane, p.ft === "shrink", p.h ?? 0);
   const cell = cellHeight(font) * size;

@@ -743,8 +743,8 @@ void testPairFooterNeverClips() {
   TEST_ASSERT_TRUE(sink.commands.back().fitShrink);
 }
 
-// Pixel Battery (Paul 23.10., question 6): a footer with "kn" keeps its limit name while the sentence is at most kn px wide and lets
-// the theme's shrink-fit make it smaller. A longer name, or a footer without "kn", drops the name and keeps the font (the tests above).
+// Pixel Battery (Paul 23.10., question 6): a footer with "kn" keeps its limit name while the sentence is at most kn px wide and draws
+// it at font 4 size 1 on the bottom of its box. A longer name, or a footer without "kn", drops the name and keeps the font (the tests above).
 void testFooterKeepsNameWhenAskedTo() {
   FrameData frame;
   frame.provider = "claude+codex";
@@ -762,13 +762,16 @@ void testFooterKeepsNameWhenAskedTo() {
   RecordingSink sink;
   TEST_ASSERT_TRUE(renderSpec(keep, frame, sink));
   TEST_ASSERT_EQUAL_STRING("Session reset 47m", sink.commands.back().text.c_str());
-  TEST_ASSERT_TRUE(sink.commands.back().fitShrink);
+  TEST_ASSERT_EQUAL(4, sink.commands.back().font);
+  TEST_ASSERT_EQUAL(1, sink.commands.back().size);
+  TEST_ASSERT_EQUAL(2, sink.commands.back().valign);
   // A name that fits at the declared font is drawn at that font, kn or not.
   frame.usageSlot1Label = "Claude Day";
   sink.commands.clear();
   TEST_ASSERT_TRUE(renderSpec(keep, frame, sink));
   TEST_ASSERT_EQUAL_STRING("Day reset 47m", sink.commands.back().text.c_str());
   TEST_ASSERT_FALSE(sink.commands.back().fitShrink);
+  TEST_ASSERT_EQUAL(2, sink.commands.back().font);
   frame.usageSlot1Label = "Claude Fable only";
   sink.commands.clear();
   TEST_ASSERT_TRUE(renderSpec(keep, frame, sink));

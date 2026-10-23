@@ -19,6 +19,7 @@ import {
   ThemeSpecPreview,
   themeFirmwareTextMetrics,
   themeGlyphPlacement,
+  themeKeptNameFooter,
   themeProgressArc,
   themeTextAlignedY,
   themeTextFittedSize,
@@ -1688,7 +1689,7 @@ it("names the limit and only the largest unit in the footer", () => {
  expect(renderTextPrimitive(footer,at(45*60,5*86400+3600,"secondary"),rows)).toBe("Weekly reset 5d");
 });
 
-it("keeps a limit name up to kn px wide in the footer and shrinks the sentence instead of dropping the name", () => {
+it("keeps a limit name up to kn px wide in the footer and draws the sentence at font 4 size 1 instead of dropping the name", () => {
  const now = new Date("2026-10-23T12:00:00Z");
  const rows = (extra: Partial<ThemePrimitive>): ThemePrimitive[] => [{t:"tx",y:20,sl:1},{t:"tx",y:50,sl:2},{t:"tx",x:11,y:198,w:218,f:2,s:2,ft:"shrink",v:"Reset in {usageSlot1Reset}",...extra}];
  const at = (secs: number) => buildFrameData(now.toISOString(), {provider:"claude",usageWindows:[{id:"primary",label:"Session",percent:20,resetSecs:secs},{id:"secondary",label:"Weekly",percent:30,resetSecs:5*86400}]},now);
@@ -1698,8 +1699,9 @@ it("keeps a limit name up to kn px wide in the footer and shrinks the sentence i
  const fable = buildFrameData(now.toISOString(), {provider:"claude",usageWindows:[{id:"primary",label:"Fable only",percent:20,resetSecs:47*60}]},now);
  expect(renderTextPrimitive(rows({kn:228})[2],fable,rows({kn:228}))).toBe("Reset 47m");
  const footer = rows({kn:228})[2];
- expect(themeTextFit("Session reset 47m", 2, 2, 218, true).size).toBe(1);
- expect(themeTextFit(renderTextPrimitive(footer,at(3*3600),rows({kn:228})), 2, 2, 218, true).size).toBe(2);
+ const drawn = (secs: number) => themeKeptNameFooter(footer, renderTextPrimitive(footer,at(secs),rows({kn:228})));
+ expect([drawn(47*60).f, drawn(47*60).s, drawn(47*60).va]).toEqual([4, 1, "bottom"]);
+ expect(drawn(3*3600)).toBe(footer);
 });
 
 it("prefers the selected footer window only when displayed with a reset", () => {

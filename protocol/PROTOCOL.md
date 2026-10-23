@@ -650,5 +650,6 @@ reset; otherwise it retains the first displayed limit with a reset. Explicit
 per-limit countdowns keep their own binding. The text binding `usageFooterReset` yields the same footer text wherever a theme places it, over the usage rows displayed by its own `usageSlot` rows; themes that use it require `reset-footer-v1`. No reset or usage window is invented.
 
 A footer that does not fit its width at the declared font loses the limit name ("Reset 3d") and keeps the font. The optional
-text field `keepName` / `kn` (px) keeps the name while the named sentence is at most that wide at the declared font and lets the
-theme's `ft: "shrink"` make the sentence smaller; firmware without it shows "Reset 3d". Pixel Battery uses it.
+text field `keepName` / `kn` (px) keeps the name while the named sentence is at most that wide at the declared font and draws a
+sentence that no longer fits its width at font 4 size 1, on the bottom of the text's box; firmware without it shows "Reset 3d".
+Pixel Battery uses it.

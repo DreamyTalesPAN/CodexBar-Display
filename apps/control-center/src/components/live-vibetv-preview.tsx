@@ -895,8 +895,9 @@ function ThemePrimitiveNode({
     const text = footer ?? renderTextPrimitive(primitive, frame);
     const maxWidth =
       primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
-    const originalFont = primitive.font || primitive.f || 1;
-    const maxSize = Math.max(1, primitive.fontSize || primitive.s || 1);
+    const style = themeKeptNameFooter(primitive, text);
+    const originalFont = style.font || style.f || 1;
+    const maxSize = Math.max(1, style.fontSize || style.s || 1);
     // Preserve the fixed countdown size chosen by the footer formatter, unless
     // the countdown fits no variant: that one still shrinks.
     const countdownFooter =
@@ -907,7 +908,7 @@ function ThemePrimitiveNode({
     const { font, size, lines } = themeTextFit(text, originalFont, maxSize, maxWidth,
       !countdownFooter && (primitive.fit || primitive.ft) === "shrink", height);
     const boxHeight = themeTextValignBoxHeight(height, originalFont, maxSize);
-    const top = themeTextAlignedY(y, boxHeight, themeFontSize(font, size) * lines.length, primitive.valign || primitive.va);
+    const top = themeTextAlignedY(y, boxHeight, themeFontSize(font, size) * lines.length, style.valign || style.va);
     const fontSize = themeFontSize(font, size);
     return (
       <g>{lines.map((line, index) => <ThemeTextPrimitive
@@ -1964,13 +1965,25 @@ function displayedResetFooter(
       const font = primitive.font || primitive.f || 1;
       const size = Math.max(1, primitive.fontSize || primitive.s || 1);
       const width = (text: string) => themeFirmwareTextMetrics(text, font, size)?.width ?? themeTextWidth(text, themeFontSize(font, size));
-      // Pixel Battery (Paul 23.10.): kn keeps a limit name up to kn px wide and lets the theme's shrink-fit make the sentence smaller.
+      // Pixel Battery (Paul 23.10.): kn keeps a limit name up to kn px wide; themeKeptNameFooter then draws the sentence smaller.
       const keepName = primitive.keepName ?? primitive.kn ?? 0;
       variants.push(keepName > 0 && width(variants[1]) <= keepName ? variants[1] : `Reset ${duration}`);
       return variants.find(text => maxWidth <= 0 || width(text) <= maxWidth) ?? variants.at(-1)!;
     }
   }
   return sawAvailable && allIdle ? RESET_IDLE : RESET_UNAVAILABLE;
+}
+
+// A footer that kept its limit name past the declared font (kn) is drawn at font 4 size 1, the largest font under the
+// declared one, on the bottom of the declared text's box, as the firmware does (DrawCompiledPrimitive).
+export function themeKeptNameFooter(primitive: ThemePrimitive, text: string): ThemePrimitive {
+  const font = primitive.font || primitive.f || 1;
+  const size = Math.max(1, primitive.fontSize || primitive.s || 1);
+  const maxWidth = primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
+  const width = themeFirmwareTextMetrics(text, font, size)?.width ?? themeTextWidth(text, themeFontSize(font, size));
+  return (primitive.keepName ?? primitive.kn ?? 0) > 0 && maxWidth > 0 && width > maxWidth
+    ? { ...primitive, font: 4, f: 4, fontSize: 1, s: 1, valign: "bottom", va: "bottom" }
+    : primitive;
 }
 
 export function renderTextPrimitive(
