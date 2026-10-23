@@ -78,14 +78,17 @@ export function PaceMarks({ pace, percent }: { pace: LanePace; percent: number }
 }
 
 // The one quiet line under the bar: CodexBar's gap in words, then its run-out
-// time when it gave one. A run-out time alone keeps today's red line.
-export function PaceLine({ pace, runsOut }: { pace: LanePace | null; runsOut: string | null }) {
+// time when it gave one. The run-out time goes with a deficit only: CodexBar
+// still projects one inside its "on track" band, but its verdict there is
+// "On pace", and so is the device's. A run-out time alone keeps today's red line.
+export function PaceLine({ pace, runsOut: projected }: { pace: LanePace | null; runsOut: string | null }) {
+  const runsOut = pace && pace.tone !== "deficit" ? null : projected;
   if (!pace && !runsOut) {
     return null;
   }
   const words = pace ? paceWords(pace) : null;
   const text = words && runsOut ? `${words} · ${runsOut.charAt(0).toLowerCase()}${runsOut.slice(1)}` : (words ?? runsOut);
-  const tone = runsOut ? "deficit" : (pace?.tone ?? "deficit");
+  const tone = pace?.tone ?? "deficit";
   return (
     <p
       className={cn(
