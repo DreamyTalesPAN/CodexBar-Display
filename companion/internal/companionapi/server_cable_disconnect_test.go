@@ -195,7 +195,7 @@ func TestStatusReportsUnpluggedCableWithoutWaitingOnTheSender(t *testing.T) {
 func TestStatusReportsUnpluggedCableDuringThemeInstall(t *testing.T) {
 	cfg := runtimeconfig.Config{ConnectionMode: "cable", DeviceID: "cable-a", DeviceToken: "pair-token"}
 	server := newTestServer(t, cfg)
-	server.themeInstallActive = true
+	server.themeInstallActive.Store(true)
 	server.cablePortVanished = func() error { return cableResolveTestError(errcode.TransportSerialPortNotFound) }
 	server.resolveCablePort = func(string, string) (string, error) {
 		t.Error("an unplugged port must not be probed")
@@ -361,7 +361,7 @@ func TestCableThemeInstallPreservesFreshConnectionDespiteStaleAbsence(t *testing
 	if !read().Connected {
 		t.Fatal("fresh hello must establish connection")
 	}
-	server.themeInstallActive = true
+	server.themeInstallActive.Store(true)
 	server.resolveCablePort = func(string, string) (string, error) { t.Fatal("theme install must suppress probes"); return "", nil }
 	if got := read(); !got.Connected || got.Ready {
 		t.Fatalf("suppressed probe cannot invalidate fresh connection or prove readiness: %+v", got)

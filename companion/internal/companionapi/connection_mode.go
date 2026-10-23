@@ -727,10 +727,8 @@ func (s *Server) clearConfiguredDeviceState() {
 	s.connectionMu.Lock()
 	clear(s.connectionStates)
 	s.connectionMu.Unlock()
-	s.probeMu.Lock()
-	clear(s.helloProbeCache)
-	clear(s.healthProbeCache)
-	s.probeMu.Unlock()
+	s.helloProbes.clear()
+	s.healthProbes.clear()
 }
 
 func (s *Server) confirmPendingWiFiTransition(
