@@ -9942,3 +9942,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: an installed legacy Mac App keeps its existing verified hosted DMG migration action. Installed non-legacy apps still use their runtime release result, so the initial firmware update remains available despite an unrelated hosted download failure; outside-installed and failed-runtime behavior remain unchanged.
 - Scope: exclude required legacy migration from the runtime-only condition in `control-center-app.tsx`, extend `control-center-app.mac-app-up-to-date.test.tsx` with the existing legacy download path, and this record. New-head CI, Codex and Mac/Windows cold/warm validation remain required; earlier hardware results remain historical.
 - What's new: none — preserves an existing migration action while retaining the firmware-check fix.
+
+## 2026-10-23 — #980: keyboard focus follows the queued dialog
+
+- User approval: pending Marcus's final review and click test. The autonomous night assignment and O18's GO for issue #980 authorize implementation, not personal UI acceptance.
+- Approved customer-visible result: when a page dialog closes and leaves focus on the document, an already open queued dialog receives that focus before the original page control. Escape can then dismiss the queued busy notice. A busy notice that appears on its own still leaves an existing input focused; copy, layout and dialog priority are unchanged.
+- Scope: the shared `apps/control-center/src/components/ui/dialog.tsx` close-focus handler and `apps/control-center/src/components/dialog-stack.test.tsx`; no setup-stack, firmware, provider or update behavior changes.
+- What's new: none — keyboard accessibility correction for existing dialogs.

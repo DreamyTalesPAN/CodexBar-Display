@@ -117,14 +117,19 @@ function DialogContent({
         }}
         onCloseAutoFocus={(event) => {
           onCloseAutoFocus?.(event)
+          // A queued announcement may deliberately skip autofocus. Hand it
+          // the vacated focus before returning to the page that opened us.
+          const target = document.querySelector<HTMLElement>(
+            '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]'
+          ) ?? opener.current
           if (
             !event.defaultPrevented &&
             document.activeElement === document.body &&
-            opener.current instanceof HTMLElement &&
-            opener.current.isConnected
+            target instanceof HTMLElement &&
+            target.isConnected
           ) {
             event.preventDefault()
-            opener.current.focus()
+            target.focus()
           }
         }}
         {...props}

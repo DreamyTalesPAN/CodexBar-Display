@@ -5,9 +5,9 @@
 // open and shows after it closes. It never takes the focus of a dialog that
 // opens with it. A page notice waits for the dialogs the customer asked for,
 // and goes before an announcement.
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Sparkles } from "lucide-react";
-import { createElement } from "react";
+import { createElement, useState } from "react";
 import { afterEach, expect, it } from "vitest";
 
 import { useWaitsForDialog } from "./dialog-stack";
@@ -19,6 +19,49 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "./ui/sheet";
 import { WhatsNewDialog } from "./whats-new-dialog";
 
 afterEach(cleanup);
+
+it("hands keyboard focus to the queued busy dialog after a page dialog closes", async () => {
+  function Updates() {
+    const [failed, setFailed] = useState(false);
+    const [busy, setBusy] = useState(false);
+    return (
+      <>
+        <button onClick={() => { setFailed(true); setBusy(true); }}>Updates</button>
+        <SetupDialog
+          open={failed}
+          onOpenChange={setFailed}
+          title="Update failed"
+          description="The update could not finish."
+        />
+        {busy && <SystemBusyDialog onClose={() => setBusy(false)} />}
+      </>
+    );
+  }
+
+  render(<Updates />);
+  const opener = screen.getByRole("button", { name: "Updates" });
+  opener.focus();
+  fireEvent.click(opener);
+  const failure = screen.getByRole("dialog", { name: "Update failed" });
+  expect(failure.contains(document.activeElement)).toBe(true);
+  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+  // Radix restores focus on a deferred unmount callback. Check after it,
+  // rather than accepting focus that the closing dialog can still take back.
+  await act(async () => new Promise((done) => setTimeout(done, 0)));
+  const busy = screen.getByRole("dialog", { name: systemBusyCopy.title });
+  expect(busy.contains(document.activeElement)).toBe(true);
+  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+  await act(async () => new Promise((done) => setTimeout(done, 0)));
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("a busy announcement on its own leaves the customer's field focused", () => {
+  const { rerender } = render(<input aria-label="Theme name" />);
+  const field = screen.getByRole("textbox");
+  field.focus();
+  rerender(<><input aria-label="Theme name" /><SystemBusyDialog onClose={() => {}} /></>);
+  expect(document.activeElement).toBe(field);
+});
 
 const usageTitle = setupUsageCauseCopy.unknown.title;
 const usageDialog = () => screen.queryByRole("dialog", { name: usageTitle });
