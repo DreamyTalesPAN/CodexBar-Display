@@ -814,6 +814,20 @@ if not (
         "native app must stop at the install dialog before starting Sparkle, and check for its own update before the runtime or WebView"
     )
 
+# A late launch result must not manufacture a window-requested probe (#885).
+# The page already owns the offer through companionInfo.update.updateAvailable.
+finish_start = source.index("private func finishLaunchUpdateCheck(timedOut:")
+finish_end = source.index("\n#endif", finish_start)
+finish_method = source[finish_start:finish_end]
+if "backgroundUpdateCheckPending = true" in finish_method:
+    raise SystemExit("a late launch result must not queue a visible update probe")
+proceed_start = source.index("shouldProceedWithUpdate item:")
+abandoned_start = source.index("case .abandoned:", proceed_start)
+abandoned_end = source.index("case .installing, .done:", abandoned_start)
+abandoned_case = source[abandoned_start:abandoned_end]
+if "throw CocoaError(.userCancelled)" not in abandoned_case:
+    raise SystemExit("an abandoned launch result must still cancel the silent install")
+
 postpone_start = source.find("shouldPostponeRelaunchForUpdate item:")
 postpone_hold = source.find("await runtimeShouldDeferRepairForUpdate()", postpone_start)
 postpone_stop = source.find("await unregisterBundledRuntimeService()", postpone_start)
