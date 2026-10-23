@@ -9900,3 +9900,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the real setup completion screen uses the existing Overview 3D VibeTV with its live screen; no old flat-picture flash while loading, and the existing flat preview returns when hardware WebGL 2 is unavailable or the renderer/model fails. The existing Support width fix remains unchanged.
 - Scope: only the live-screen portion and required shared failure/WebGL fixes from #780 head c77911298275b23e368f9501ca4d0f3796b2a31b, preserving #981 head 0f2523393d5aa3575137a1f6b74fe14fb5f6956c. Source approval blocks above are retained verbatim as provenance; their chooser scope is not integrated. The #780 calm title styling and other setup changes are not included. No merge, release, push or hardware approval is implied.
 - What's new: none — existing setup 3D fix integrated; Mac/Windows cold and warm rehearsal and independent real-screen review remain pending.
+
+## 2026-10-23 — #982: visible 3D preview owns setup handover
+
+- User approval: implementation authorized via communicator msg_97dc109a1662 and O10; final rendered acceptance remains pending. No new visual design is introduced.
+- Approved customer-visible result: the existing setup completion waits for the currently visible 3D theme revision before its normal handover; the flat fallback keeps its existing handover. A hidden duplicate preview can no longer finish setup early.
+- Scope: `setup/setup-live-screen.tsx`, `vibetv-3d-preview.tsx` and focused regression tests under `apps/control-center/src/components`; no new timer, cache, provider rule or Overview design. Earlier approval history retained unchanged.
+- What's new: none — correctness fix for the existing setup preview; corrected-head Mac/Windows acceptance remains pending.

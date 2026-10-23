@@ -8,7 +8,7 @@ import { SetupLiveScreen } from "./setup-live-screen";
 
 const support = vi.hoisted(() => ({ webgl: true }));
 const fake3D = vi.hoisted(() => ({
-  instances: [] as { device: unknown; onReady?: () => void; onFailed?: () => void }[],
+  instances: [] as { device: unknown; onReady?: () => void; onFailed?: () => void; onPreviewReady?: () => void }[],
 }));
 vi.mock("../vibetv-3d-support", () => ({
   hardwareWebGLAvailable: () => support.webgl,
@@ -16,7 +16,7 @@ vi.mock("../vibetv-3d-support", () => ({
 vi.mock("../vibetv-3d-preview", async () => {
   const { createElement } = await import("react");
   return {
-    VibeTV3DPreview: (props: { device: unknown; onReady?: () => void; onFailed?: () => void }) => {
+    VibeTV3DPreview: (props: { device: unknown; onReady?: () => void; onFailed?: () => void; onPreviewReady?: () => void }) => {
       fake3D.instances.push(props);
       return createElement("div", {
         "aria-label": "Interactive VibeTV preview. Drag to rotate.",
@@ -84,8 +84,8 @@ describe("3D VibeTV on Your VibeTV is live", () => {
 
     act(() => fake3D.instances.at(-1)?.onReady?.());
     expect(screen.getByRole("group").parentElement?.getAttribute("aria-hidden")).toBeNull();
-    // The flat screen stays mounted (it tells the wizard when to leave), hidden.
-    expect(container.querySelector(".hidden")).toBeTruthy();
+    // Only the visible 3D screen owns readiness; no hidden duplicate remains.
+    expect(container.querySelector(".hidden")).toBeNull();
     expect(container.querySelectorAll("img")).toHaveLength(0);
   });
 
@@ -104,9 +104,10 @@ describe("3D VibeTV on Your VibeTV is live", () => {
     const onReady = vi.fn();
     render(live(onReady));
     await settle();
-    expect(flatPreview.onPreviewReady).toBeUndefined();
+    expect(fake3D.instances.at(-1)?.onPreviewReady).toBeUndefined();
     act(() => fake3D.instances.at(-1)?.onReady?.());
-    expect(flatPreview.onPreviewReady).toBe(onReady);
+    expect(fake3D.instances.at(-1)?.onPreviewReady).toBe(onReady);
+    expect(flatPreview.onPreviewReady).toBeUndefined();
   });
 
   it("shows only the flat VibeTV without hardware WebGL", async () => {

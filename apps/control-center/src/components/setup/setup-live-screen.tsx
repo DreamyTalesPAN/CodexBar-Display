@@ -49,12 +49,8 @@ export function SetupLiveScreen({
       onPreviewReady?.();
     }
   }, [alreadySetUp, onPreviewReady]);
-  // The same 3D VibeTV as the Overview: it starts after the first paint, only
-  // on a hardware WebGL, and replaces the flat preview once its model is on
-  // screen. The flat preview stays mounted underneath: it is the one that tells
-  // the wizard VibeTV shows its theme, and it is all there is without WebGL.
-  // With WebGL it draws only the screen, never the flat picture, and the area
-  // stays empty until the model is on screen.
+  // The visible preview owns the handover. While 3D loads, reserve its space
+  // without mounting a second live screen with independent theme readiness.
   const hardware3D = useHardware3D();
   const [threeState, setThreeState] = useState<"loading" | "ready" | "failed">("loading");
   const onThreeReady = useCallback(() => setThreeState("ready"), []);
@@ -75,8 +71,8 @@ export function SetupLiveScreen({
       <div className="relative mt-8 flex w-full justify-center">
         {preview3D ? (
           <div
-            // Until the 3D is revealed it is only drawn in the background: the
-            // flat preview is the one screen readers get.
+            // Keep the loading model hidden from assistive technology
+            // until its visible screen is ready.
             aria-hidden={threeReady ? undefined : true}
             className={
               threeReady
@@ -89,29 +85,25 @@ export function SetupLiveScreen({
               className="-my-[22px] aspect-[640/411] w-[min(640px,calc(100vw-48px))] max-w-none shrink-0"
               device={device}
               displayFrame={displayFrame}
+              onPreviewReady={threeReady ? onPreviewReady : undefined}
               onReady={onThreeReady}
               onFailed={onThreeFailed}
               usage={usage}
             />
           </div>
         ) : null}
-        <div
-          className={
-            threeReady
-              ? "hidden"
-              : preview3D === false
-                ? "w-full"
-                : "invisible aspect-[640/411] w-[min(640px,calc(100vw-48px))]"
-          }
-        >
-          <LiveVibeTVPreview
-            device={device}
-            displayFrame={displayFrame}
-            onPreviewReady={threeReady || preview3D === false ? onPreviewReady : undefined}
-            screenOnly={preview3D !== false}
-            usage={usage}
-          />
-        </div>
+        {preview3D === false ? (
+          <div className="w-full">
+            <LiveVibeTVPreview
+              device={device}
+              displayFrame={displayFrame}
+              onPreviewReady={onPreviewReady}
+              usage={usage}
+            />
+          </div>
+        ) : !threeReady ? (
+          <div className="aspect-[640/411] w-[min(640px,calc(100vw-48px))]" />
+        ) : null}
       </div>
     </SetupWizardScreen>
   );
