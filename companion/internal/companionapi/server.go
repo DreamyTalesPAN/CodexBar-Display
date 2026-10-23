@@ -252,6 +252,8 @@ type Server struct {
 	installJobs            map[string]*themeInstallJob
 	themeInstallActive     bool
 	nextInstallJob         uint64
+	themeInstallTailMu     sync.Mutex
+	themeInstallTail       chan struct{} // open while an Installed job still refreshes the stream (#911)
 	updateJobsMu           sync.Mutex
 	updateJobs             map[string]*firmwareUpdateJob
 	nextUpdateJob          uint64

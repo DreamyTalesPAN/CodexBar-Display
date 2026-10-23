@@ -40,6 +40,44 @@ const upToDate: Omit<UpdatesScreenProps, "dialogs"> = {
 const variant = (element: HTMLElement) => element.getAttribute("data-variant");
 
 describe("calm Updates screen", () => {
+  it.each(["health", "stream", "stream_restart", "render"])("offers setup recovery for %s attention without claiming success", (cause) => {
+    const setup = vi.fn();
+    const report = vi.fn();
+    render(<UpdatesScreen {...upToDate} onStartSetup={setup} onCreateReport={report}
+      updateStatus={{ phase: "attention", outcome: `firmware_current_${cause}_attention`, startedAt: "2026-10-23T09:00:00Z", logs: [] }} />);
+    expect(screen.getByRole("heading", { name: "VibeTV needs attention" })).toBeTruthy();
+    expect(screen.queryByText("Everything is up to date")).toBeNull();
+    expect(screen.getByText("Run setup again to reconnect VibeTV and check its picture.")).toBeTruthy();
+    const action = screen.getByRole("button", { name: "Run setup again" });
+    expect(variant(action)).toBe("default");
+    fireEvent.click(action);
+    expect(setup).toHaveBeenCalledTimes(1);
+    expect(variant(screen.getByRole("button", { name: "Create report" }))).toBe("outline");
+  });
+
+  it.each(["firmware_current_theme_catalog_attention", "firmware_current_theme_support_attention", undefined])("gives a safe instruction for unresolved attention %s", (outcome) => {
+    render(<UpdatesScreen {...upToDate} onStartSetup={vi.fn()} onCreateReport={vi.fn()}
+      updateStatus={{ phase: "attention", outcome, startedAt: "2026-10-23T09:00:00Z", logs: [] }} />);
+    expect(screen.getByText("Keep VibeTV powered on and create a report for help with the connection or picture.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Run setup again" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Create report" })).toBeTruthy();
+  });
+
+  it("retries only the theme for a failed theme install", () => {
+    const retryTheme = vi.fn();
+    const setup = vi.fn();
+    render(<UpdatesScreen {...upToDate} onStartSetup={setup} onRetryThemeUpdate={retryTheme}
+      updateStatus={{ phase: "attention", outcome: "firmware_current_theme_attention", startedAt: "2026-10-23T09:00:00Z", logs: [] }} />);
+    expect(screen.getByText("Try again to finish updating your theme.")).toBeTruthy();
+    const action = screen.getByRole("button", { name: "Try again" });
+    expect(variant(action)).toBe("default");
+    fireEvent.click(action);
+    expect(retryTheme).toHaveBeenCalledTimes(1);
+    expect(setup).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Run setup again" })).toBeNull();
+  });
+
   it("up to date: one headline, two quiet rows with one version each, an outline check button", () => {
     render(<UpdatesScreen {...upToDate} />);
 
@@ -85,6 +123,16 @@ describe("calm Updates screen", () => {
     expect(screen.queryByRole("heading", { name: "Everything is up to date" })).toBeNull();
     expect(screen.getByRole("heading", { name: "No update available" })).toBeTruthy();
     expect(screen.getAllByText("Up to date")).toHaveLength(1);
+  });
+
+  it.each([
+    { name: "companion offline", companionStatus: "missing", device: upToDate.device },
+    { name: "device disconnected", companionStatus: "online", device: { ...upToDate.device!, connected: false } },
+    { name: "firmware metadata missing", companionStatus: "online", device: { connected: true } },
+  ] as const)("hides retained firmware success when $name", ({ companionStatus, device }) => {
+    render(<UpdatesScreen {...upToDate} companionStatus={companionStatus} device={device}
+      firmwareUpdate={{ ...upToDate.firmwareUpdate!, message: "Firmware is up to date." }} />);
+    expect(screen.queryByText("Firmware is up to date.")).toBeNull();
   });
 
   it("checks for updates from the header button", () => {
@@ -324,6 +372,23 @@ describe("calm Updates screen", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Try again" }));
     expect(check).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("a failed hosted DMG check fails the Mac App only where the DMG is the update path (#798)", () => {
+    // The runtime answered for the installed app, so its status is the answer.
+    const failedDmg = { ...upToDate.companionRelease!, dmgDownloadStatus: "check_failed" as const };
+    const view = render(<UpdatesScreen {...upToDate} companionRelease={failedDmg} />);
+    expect(screen.queryByRole("dialog", { name: "Could not check for updates" })).toBeNull();
+    view.unmount();
+
+    render(
+      <UpdatesScreen
+        {...upToDate}
+        companionInfo={{ app: { version: "1.0.64", installedInApplications: false } }}
+        companionRelease={failedDmg}
+      />,
+    );
+    expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
   });
 
   it("failed check: Close keeps the failure in the row and does not ask again", () => {

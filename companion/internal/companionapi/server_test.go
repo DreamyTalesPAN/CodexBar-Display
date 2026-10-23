@@ -3158,6 +3158,9 @@ func TestStatusSeparatesMacAppAndRuntimeVersions(t *testing.T) {
 }
 
 func TestStatusReportsMacAppUpdateCheckFailure(t *testing.T) {
+	original := providerCopyGOOS
+	t.Cleanup(func() { providerCopyGOOS = original })
+	providerCopyGOOS = "darwin"
 	server := newTestServer(t, runtimeconfig.Config{})
 	server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
 		return githubRelease{}, errors.New("release api unavailable")
@@ -3473,7 +3476,7 @@ func TestUsageManualRefreshReportsRefreshingForOldCollectorSnapshot(t *testing.T
 			Providers: []daemon.ProviderUsageSnapshot{{
 				Provider:    "codex",
 				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 36, UsageMode: "used"},
-				CollectedAt: now.Add(-time.Minute),
+				CollectedAt: now.Add(-2 * time.Minute),
 			}},
 		}, true
 	}
@@ -3500,7 +3503,7 @@ func TestUsageManualRefreshExpiresWithoutNewCollectorSnapshot(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	requestedAt := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
 	now := requestedAt
-	collectedAt := requestedAt.Add(-time.Minute)
+	collectedAt := requestedAt.Add(-2 * time.Minute)
 	server.now = func() time.Time { return now }
 	server.wakeDisplayStream = func() {}
 	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
@@ -3700,7 +3703,7 @@ func TestUsageManualRefreshSecondClickKeepsTheFirstRequest(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	firstClick := time.Date(2026, 10, 8, 14, 0, 0, 0, time.UTC)
 	now := firstClick
-	collectedAt := firstClick.Add(-time.Minute)
+	collectedAt := firstClick.Add(-2 * time.Minute)
 	server.now = func() time.Time { return now }
 	var wakeCount int
 	server.wakeDisplayStream = func() { wakeCount++ }
@@ -3753,12 +3756,72 @@ func TestUsageManualRefreshSecondClickKeepsTheFirstRequest(t *testing.T) {
 	}
 }
 
+// serve keeps each reading for its refresh interval, so a wake alone could
+// wait up to a minute for new values (#918). A click starts a fresh serve,
+// whose first read measures; a click while that refresh waits starts none.
+func TestUsageManualRefreshStartsAFreshUsageServiceOnce(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 10, 22, 14, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	fresh := make(chan struct{}, 4)
+	woke := make(chan struct{}, 4)
+	server.restartUsageService = func(context.Context) error { return nil }
+	server.freshUsageService = func(context.Context) error { fresh <- struct{}{}; return nil }
+	server.wakeDisplayStream = func() { woke <- struct{}{} }
+	server.loadUsage = func(time.Time) (daemon.PersistedUsage, bool) {
+		return daemon.PersistedUsage{
+			SavedAt: now.Add(-30 * time.Second),
+			Providers: []daemon.ProviderUsageSnapshot{{
+				Provider:    "codex",
+				Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Weekly: 24, UsageMode: "used"},
+				CollectedAt: now.Add(-30 * time.Second),
+			}},
+		}, true
+	}
+	get := func(path string) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status %d", path, rec.Code)
+		}
+	}
+	waitFor := func(ch chan struct{}, what string) {
+		t.Helper()
+		select {
+		case <-ch:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s did not happen", what)
+		}
+	}
+	nothingOn := func(ch chan struct{}, what string) {
+		t.Helper()
+		select {
+		case <-ch:
+			t.Fatalf("unexpected %s", what)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
+	get("/v1/usage")
+	nothingOn(fresh, "fresh usage service for a plain usage read")
+
+	get("/v1/usage?refresh=1")
+	waitFor(fresh, "fresh usage service after the click")
+	waitFor(woke, "collection after the fresh usage service")
+
+	now = now.Add(5 * time.Second)
+	get("/v1/usage?refresh=1")
+	waitFor(woke, "wake for the second click")
+	nothingOn(fresh, "second fresh usage service while the first refresh waits")
+}
+
 func TestUsageManualRefreshWaitsForEveryProvider(t *testing.T) {
 	server := newTestServer(t, runtimeconfig.Config{})
 	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
 	server.now = func() time.Time { return now }
 	server.wakeDisplayStream = func() {}
-	old := now.Add(-time.Minute)
+	old := now.Add(-2 * time.Minute)
 	usage := daemon.PersistedUsage{
 		SavedAt: now,
 		Providers: []daemon.ProviderUsageSnapshot{
@@ -14841,6 +14904,33 @@ func TestStatusKeepsExactFinalMacAppReleaseCurrent(t *testing.T) {
 	}
 	if got.Companion.Update.UpdateAvailable {
 		t.Fatalf("expected exact final release to stay current, got %+v", got.Companion.Update)
+	}
+}
+
+// Issue #558: the Windows app's update card and report said "Mac App".
+func TestMacAppReleaseMessageNamesTheWindowsApp(t *testing.T) {
+	original := providerCopyGOOS
+	t.Cleanup(func() { providerCopyGOOS = original })
+	t.Setenv(macAppVersionEnv, "1.0.44")
+	t.Setenv(macAppBuildEnv, "4400")
+
+	cases := []struct {
+		goos, latest, want string
+	}{
+		{"darwin", "v1.0.44", "Mac App is up to date."},
+		{"windows", "v1.0.44", "App is up to date."},
+		{"darwin", "v1.0.45", "Mac App update is available."},
+		{"windows", "v1.0.45", "App update is available."},
+	}
+	for _, tc := range cases {
+		providerCopyGOOS = tc.goos
+		server := newTestServer(t, runtimeconfig.Config{})
+		server.fetchMacAppRelease = func(context.Context) (githubRelease, error) {
+			return githubRelease{TagName: tc.latest}, nil
+		}
+		if got := server.macAppReleaseInfo(context.Background()).Message; got != tc.want {
+			t.Fatalf("%s with latest %s: message = %q, want %q", tc.goos, tc.latest, got, tc.want)
+		}
 	}
 }
 

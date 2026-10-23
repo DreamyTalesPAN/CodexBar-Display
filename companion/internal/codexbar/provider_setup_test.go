@@ -856,6 +856,9 @@ func TestProbeProviderSetupReportsEveryProviderSwitchedOff(t *testing.T) {
 		if provider.Enabled == nil || *provider.Enabled {
 			t.Fatalf("a switched-off provider must say so: %+v", provider)
 		}
+		if provider.Detail != "No usable AI provider is configured yet." {
+			t.Fatalf("a switched-off provider needs no sign-in, got %q: %+v", provider.Detail, provider)
+		}
 	}
 }
 
@@ -1158,5 +1161,47 @@ func TestMixedAggregateRowNamesTheProviderWithoutAddingRows(t *testing.T) {
 	if len(rows) != 2 || rows[0].Status != ProviderReady || rows[1].ID != "openai" || rows[1].Label != "OpenAI API" ||
 		rows[1].Detail != "VibeTV can't read OpenAI API until the OpenAI API app is installed and running." {
 		t.Fatalf("mixed aggregate rows = %+v", rows)
+	}
+}
+
+// A ready provider skips the inventory call. A not-ready row the inventory never
+// names, or an inventory read that keeps failing, must not bring the call back
+// on every check: it runs at most once per provider id in this runtime (#914).
+func TestMixedAggregateAsksTheInventoryOncePerUnnamedProvider(t *testing.T) {
+	forget := func() {
+		providerDisplayNamesMu.Lock()
+		defer providerDisplayNamesMu.Unlock()
+		delete(providerDisplayNames, "widgetx")
+		delete(providerDisplayNames, "gadgety")
+		delete(providerNamesAsked, "widgetx")
+		delete(providerNamesAsked, "gadgety")
+	}
+	forget()
+	t.Cleanup(forget)
+	original := runUsageCommandFn
+	t.Cleanup(func() { runUsageCommandFn = original })
+	for _, tc := range []struct {
+		id     string
+		answer []byte
+		err    error
+	}{
+		{id: "widgetx", answer: []byte(`[{"provider":"codex","displayName":"Codex","enabled":true}]`)},
+		{id: "gadgety", err: errors.New("signal: killed")},
+	} {
+		calls := 0
+		runUsageCommandFn = func(context.Context, time.Duration, string, ...string) ([]byte, error) {
+			calls++
+			return tc.answer, tc.err
+		}
+		for range 3 {
+			rows := providersWithSwitchState(context.Background(), "codexbar-bin",
+				[]ProviderReadiness{providerResult("codex", ProviderReady), providerResult(tc.id, ProviderAuthRequired)})
+			if len(rows) != 2 || rows[0].Status != ProviderReady || rows[1].ID != tc.id {
+				t.Fatalf("%s: mixed aggregate rows = %+v", tc.id, rows)
+			}
+		}
+		if calls != 1 {
+			t.Fatalf("%s: inventory read %d times over three checks, want once", tc.id, calls)
+		}
 	}
 }

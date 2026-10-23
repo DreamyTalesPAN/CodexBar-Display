@@ -3658,6 +3658,9 @@ func TestRunInstallUpdateWiFiTimeoutFailsWhenCableIsSilent(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "timed out waiting for firmware 1.0.1") {
 		t.Fatalf("expected the WiFi timeout to stay the reported failure, got %v", err)
 	}
+	if !strings.Contains(err.Error(), "no cable VibeTV") {
+		t.Fatalf("expected the cable reason next to the WiFi one, got %v", err)
+	}
 }
 
 func TestRunInstallUpdateWiFiTimeoutFailsWhenCableRunsOtherFirmware(t *testing.T) {

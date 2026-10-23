@@ -68,6 +68,7 @@ export type UpdatesScreenProps = {
   onCheckUpdates?: () => Promise<void> | void;
   onCreateReport?: () => void;
   onInstallUpdate?: () => Promise<boolean> | boolean | void;
+  onStartSetup?: () => void;
   onRetryThemeUpdate?: () => Promise<boolean> | boolean | void;
   /** Opens the "What's new" notice again. */
   onShowWhatsNew?: () => void;
@@ -141,6 +142,7 @@ export function UpdatesScreen({
   onCreateReport,
   onInstallUpdate,
   onRetryThemeUpdate,
+  onStartSetup,
   onShowWhatsNew,
   otherDialogOpen = false,
   requiresMacAppMigration = false,
@@ -194,19 +196,23 @@ export function UpdatesScreen({
       firmwareUpdate.status !== "check_failed" &&
       !updateAvailable,
   );
-  const firmwareCheckFailed = firmwareUpdate?.status === "check_failed";
   // A failed firmware check replaces a finished update's notice only when it
   // is newer than the completion, so "Update complete" never stays below a
-  // failure that came after the update. Both times are ISO instants.
+  // failure that came after the update. An older one is no failure here: the
+  // headline, the row and the dialog all read this one decision. Both times
+  // are ISO instants.
   const completedAt = Date.parse(updateStatus?.finishedAt ?? "");
   const checkedAt = Date.parse(firmwareUpdate?.checkedAt ?? "");
   const failedCheckReplacesCompletion = Boolean(
     firmwareUpdateCompleted &&
-      firmwareCheckFailed &&
+      firmwareUpdate?.status === "check_failed" &&
       Number.isFinite(completedAt) &&
       Number.isFinite(checkedAt) &&
       checkedAt > completedAt,
   );
+  const firmwareCheckFailed =
+    firmwareUpdate?.status === "check_failed" &&
+    (!firmwareUpdateCompleted || failedCheckReplacesCompletion);
   const visibleUpdateStatus =
     staleFirmwareFailure || failedCheckReplacesCompletion
       ? undefined
@@ -252,10 +258,12 @@ export function UpdatesScreen({
     : busyAction === "firmware-update";
   const installingAnyUpdate = installingUpdate;
   const creatingReport = supportReportBusy;
+  // An installed app's status is the runtime's answer, so a failed hosted DMG check does not fail it (#798).
   const macAppCheckFailed =
     macAppRunning &&
     (companionRelease?.status === "check_failed" ||
-      companionRelease?.dmgDownloadStatus === "check_failed");
+      (!companionInfo?.app?.installedInApplications &&
+        companionRelease?.dmgDownloadStatus === "check_failed"));
   // A newer failed check is a new failure and opens again; a check that
   // answered is not part of it.
   const macAppFailedKey = macAppCheckFailed ? companionRelease?.checkedAt ?? "" : null;
@@ -268,9 +276,11 @@ export function UpdatesScreen({
       ? "Not running"
       : companionInfo?.app?.version || companionVersion || "Unknown";
   // The answer was neither "current" nor an update nor a failure (no release
-  // for this board, not supported over this connection): never "up to date".
+  // for this board, not supported over this connection), or the finished
+  // update still needs attention: never "up to date".
   const firmwareNoAnswer = Boolean(
-    !macAppRunning ||
+    visibleUpdateStatus?.phase === "attention" ||
+      !macAppRunning ||
       !device?.connected ||
       !canCheckFirmware ||
       !firmwareUpdate ||
@@ -310,9 +320,11 @@ export function UpdatesScreen({
           ? "Update available"
           : checkingUpdates
             ? "Checking for updates"
-            : firmwareNoAnswer || macAppNoAnswer
-              ? "No update available"
-              : "Everything is up to date";
+            : visibleUpdateStatus?.phase === "attention"
+              ? "VibeTV needs attention"
+              : firmwareNoAnswer || macAppNoAnswer
+                ? "No update available"
+                : "Everything is up to date";
   const headingTone: Tone = installingUpdate
     ? "ink"
     : refreshing
@@ -488,7 +500,8 @@ export function UpdatesScreen({
                         : undefined
           }
           note={
-            firmwareNoAnswer && !installingUpdate && !vibetvUpdateAvailable
+            firmwareNoAnswer && macAppRunning && device?.connected && canCheckFirmware &&
+            !installingUpdate && !vibetvUpdateAvailable
               ? firmwareUpdate?.message
               : undefined
           }
@@ -524,6 +537,7 @@ export function UpdatesScreen({
               onDismissError={() => setDismissedUpdateError(visibleUpdateStatus.startedAt)}
               creatingReport={creatingReport}
               onCreateReport={onCreateReport}
+              onStartSetup={actionsLocked ? undefined : onStartSetup}
               onRetry={
                 firmwareUpdateBlocked
                   ? undefined
@@ -717,6 +731,7 @@ function InlineUpdateProgress({
   onDismissError,
   onCreateReport,
   onRetry,
+  onStartSetup,
   status,
 }: {
   creatingReport: boolean;
@@ -724,6 +739,7 @@ function InlineUpdateProgress({
   onDismissError: () => void;
   onCreateReport?: () => void;
   onRetry?: () => void;
+  onStartSetup?: () => void;
   status: FirmwareUpdateStatus;
 }) {
   if (status.phase === "error") {
@@ -751,6 +767,12 @@ function InlineUpdateProgress({
   }
   const complete = status.phase === "complete";
   const attention = status.phase === "attention";
+  const canReconnect = [
+    "firmware_current_health_attention",
+    "firmware_current_stream_attention",
+    "firmware_current_stream_restart_attention",
+    "firmware_current_render_attention",
+  ].includes(status.outcome ?? "");
   const restarting =
     status.phase === "installing" &&
     (status.stage === "rebooting" || status.stage === "rediscovering");
@@ -765,8 +787,11 @@ function InlineUpdateProgress({
         ? "VibeTV is restarting"
       : "Updating VibeTV";
   const detail = attention
-      ? status.message ||
-        "The firmware is current, but the connection or picture still needs repair."
+      ? status.outcome === "firmware_current_theme_attention"
+        ? "Try again to finish updating your theme."
+        : canReconnect
+          ? "Run setup again to reconnect VibeTV and check its picture."
+          : "Keep VibeTV powered on and create a report for help with the connection or picture."
     : complete
       ? status.result?.firmware
         ? `Firmware ${status.result.firmware} is installed.`
@@ -798,12 +823,16 @@ function InlineUpdateProgress({
               onClick={onRetry}
               size="sm"
               type="button"
-              variant="outline"
             >
               Try again
             </Button>
+          ) : canReconnect ? (
+            <Button disabled={!onStartSetup} onClick={onStartSetup} size="sm" type="button">
+              Run setup again
+            </Button>
           ) : null}
           <Button
+            variant="outline"
             disabled={!onCreateReport || creatingReport}
             onClick={onCreateReport}
             size="sm"

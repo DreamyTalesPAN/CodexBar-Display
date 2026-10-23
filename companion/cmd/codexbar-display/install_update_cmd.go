@@ -456,6 +456,8 @@ func runInstallUpdate(args []string) (retErr error) {
 			// the cable target tells the parent to verify over the cable too.
 			if cableHello, cableErr := waitForCableFirmwareVersion(ctx, targetVersion, deviceID, "", cableCheckAfterWiFiTimeout); cableErr == nil {
 				verifiedBase, verifiedHello, helloErr = "cable://vibetv", cableHello, nil
+			} else {
+				helloErr = fmt.Errorf("%w; cable check: %v", err, cableErr)
 			}
 		}
 	}

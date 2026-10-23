@@ -335,6 +335,11 @@ func runDaemonLoop(ctx context.Context, opts Options, deps runtimeDeps, runCycle
 			}
 		}
 		if waitingForWiFi || (opts.PauseDeviceWrites != nil && opts.PauseDeviceWrites()) {
+			// Issue #832: the pause must not keep the old worker's cable port
+			// open once the target has left Cable.
+			if deps.transportName == "usb" && connectionModeChanged(deps) {
+				return ErrConnectionModeChanged
+			}
 			if !deviceWritesPaused {
 				deps.logf("runtime event=device-writes-paused reason=device-maintenance\n")
 				deps.recordEvent(timeline.Event{Component: "stream", State: "paused", Reason: "device-maintenance"})

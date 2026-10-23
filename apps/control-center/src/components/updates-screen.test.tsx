@@ -223,6 +223,47 @@ describe("UpdatesScreen VibeTV update card", () => {
     expect(html).not.toContain("Update available");
   });
 
+  // An update that ends in the attention phase leaves the firmware current, but
+  // the connection or picture still needs repair: the row must not claim
+  // "Up to date" beside "Firmware current — attention needed", nor the headline
+  // "Everything is up to date" over it (Codex review on #798).
+  it("does not mark the firmware row or the headline up to date while the update needs attention", () => {
+    const html = renderMarkup(
+      <UpdatesScreen
+        companionRelease={{
+          checkedAt: "2026-10-22T10:06:00Z",
+          status: "available",
+          latestVersion: "1.0.52",
+          installedVersion: "1.0.52",
+          updateAvailable: false,
+          message: "Mac App is up to date.",
+        }}
+        companionStatus="online"
+        device={{ connected: true, board: "esp8266-smalltv-st7789", firmware: "1.0.40" }}
+        firmwareUpdate={{
+          checkedAt: "2026-10-22T10:06:00Z",
+          installedFirmware: "1.0.40",
+          latestFirmware: "1.0.40",
+          updateAvailable: false,
+          status: "current",
+        }}
+        updateStatus={{
+          phase: "attention",
+          outcome: "firmware_current_stream_attention",
+          startedAt: "2026-10-22T10:01:00Z",
+          finishedAt: "2026-10-22T10:05:00Z",
+          logs: [],
+        }}
+      />,
+    );
+
+    expect(html).toContain("Firmware current — attention needed");
+    expect(html).toContain("VibeTV needs attention");
+    expect(html).not.toContain("Everything is up to date");
+    // Only the Mac App row, whose check answered, says "Up to date".
+    expect(html.match(/Up to date/g)).toHaveLength(1);
+  });
+
   // A completed job must not gate future releases: status polling restores
   // the completed job indefinitely, so a later check that discovers a
   // DIFFERENT release has to surface it.
@@ -686,6 +727,14 @@ describe("UpdatesScreen finished update notice", () => {
     },
   };
 
+  // Without an answered Mac App check the page is still checking and shows no dialog.
+  const macAppCurrent = {
+    checkedAt: "2026-10-13T10:05:30Z",
+    status: "available" as const,
+    updateAvailable: false,
+    message: "Mac App is up to date.",
+  };
+
   it("shows Update complete without a progress bar", () => {
     render(<UpdatesScreen {...props} updateStatus={completedUpdate} />);
 
@@ -700,6 +749,7 @@ describe("UpdatesScreen finished update notice", () => {
     render(
       <UpdatesScreen
         {...props}
+        companionRelease={macAppCurrent}
         firmwareUpdate={{
           checkedAt: "2026-10-13T11:00:00Z",
           installedFirmware: "1.0.41",
@@ -712,6 +762,7 @@ describe("UpdatesScreen finished update notice", () => {
 
     expect(screen.getByText("Update check failed")).toBeTruthy();
     expect(screen.queryByText("Update complete")).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
   });
 
   // Issue #687: a failure recorded before the update finished must not hide
@@ -720,6 +771,7 @@ describe("UpdatesScreen finished update notice", () => {
     render(
       <UpdatesScreen
         {...props}
+        companionRelease={macAppCurrent}
         firmwareUpdate={{
           checkedAt: "2026-10-13T09:00:00Z",
           installedFirmware: "1.0.40",
@@ -731,6 +783,33 @@ describe("UpdatesScreen finished update notice", () => {
     );
 
     expect(screen.getByText("Update complete")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // The headline and the firmware row follow the same decision.
+    expect(screen.queryByText("Update check failed")).toBeNull();
+    expect(screen.queryByText("Check failed")).toBeNull();
+  });
+
+  it("still opens the dialog for a Mac App check failure beside an older firmware failure", () => {
+    render(
+      <UpdatesScreen
+        {...props}
+        companionRelease={{
+          checkedAt: "2026-10-13T11:00:00Z",
+          status: "check_failed",
+          updateAvailable: false,
+          message: "Mac App check failed.",
+        }}
+        firmwareUpdate={{
+          checkedAt: "2026-10-13T09:00:00Z",
+          installedFirmware: "1.0.40",
+          updateAvailable: false,
+          status: "check_failed",
+        }}
+        updateStatus={completedUpdate}
+      />,
+    );
+
+    expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
   });
 });
 

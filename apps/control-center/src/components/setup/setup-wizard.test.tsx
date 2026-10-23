@@ -1524,9 +1524,14 @@ describe("SetupWizard: saved WiFi recovery", () => {
       },
     });
     const { rerender } = render(<SetupWizard {...props} />);
-    await screen.findByRole("button", { name: "Use WiFi instead" });
+    // Issue #915: the WiFi button exists while the cable connection is still
+    // running, but stays disabled until the failed firmware check shows its
+    // dialog. Wait for that dialog instead of clicking a disabled button.
+    await screen.findByRole("dialog");
     fireEvent.keyDown(document, { key: "Escape" });
-    fireEvent.click(screen.getByRole("button", { name: "Use WiFi instead" }));
+    const useWiFi = screen.getByRole("button", { name: "Use WiFi instead" });
+    expect(useWiFi).toHaveProperty("disabled", false);
+    fireEvent.click(useWiFi);
     await waitFor(() => expect(props.onSelectConnectionMode).toHaveBeenCalledWith("wifi", cable.deviceId));
     await waitFor(() => expect(onSearchDevices).toHaveBeenCalledOnce(), { timeout: 2_500 });
     expect(props.onConfigureWiFi).not.toHaveBeenCalled();

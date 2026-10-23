@@ -1310,6 +1310,39 @@ async function startTestApp({
   return { app, appUrl };
 }
 
+// The axe unit checks switch color-contrast off (jsdom has no colours). Here
+// the real browser computes it for a rendered dialog (issue #214).
+const axeSource = await readFile(
+  join(root, "node_modules", "axe-core", "axe.min.js"),
+  "utf8",
+);
+async function assertDialogContrast(page, dialog) {
+  await page.addScriptTag({ content: axeSource });
+  const failures = await dialog.evaluate(async (node) => {
+    // The dialog is opaque, so only its own colours matter. With the frozen
+    // screen behind it, the lines of a wrapped title see different elements
+    // and axe reports the title "incomplete" instead of measuring it. Hidden,
+    // everything is measured, and anything axe still cannot decide fails.
+    const behind = [...document.body.children].filter((el) => !el.contains(node));
+    const shown = behind.map((el) => el.style.display);
+    for (const el of behind) el.style.display = "none";
+    try {
+      const results = await window.axe.run(node, {
+        runOnly: ["color-contrast"],
+        resultTypes: ["violations", "incomplete"],
+      });
+      return ["violations", "incomplete"].flatMap((type) =>
+        results[type].flatMap(({ id, nodes }) =>
+          nodes.map(({ html, failureSummary }) => `${type} ${id}: ${html} ${failureSummary}`),
+        ),
+      );
+    } finally {
+      behind.forEach((el, i) => (el.style.display = shown[i]));
+    }
+  });
+  assert(failures.length === 0, `dialog colour contrast:\n${failures.join("\n")}`);
+}
+
 async function newCustomerPage(browser, appUrl, options) {
   const page = await browser.newPage(options);
   await markWhatsNewRead(page);
@@ -1571,6 +1604,7 @@ async function testFirmwareOnboardingTerminalStates(browser, appUrl) {
       await dialog.waitFor({ timeout: 10_000 });
       assert(await dialog.getByRole("button", { name: "Create support report" }).isEnabled(), "Terminal attention must release busy state for support");
       assert((await dialog.getByRole("button", { name: /try.*again/i }).count()) === 0, "Verified firmware must not offer another flash");
+      await assertDialogContrast(page, dialog);
     }
     const terminalPolls = polls;
     await page.waitForTimeout(1600);
@@ -1729,6 +1763,7 @@ async function testConnectFirmwareUpdateFailureOffersRetry(browser, appUrl) {
     name: "Firmware update did not finish",
   });
   await failure.waitFor({ timeout: 20_000 });
+  await assertDialogContrast(page, failure);
   await failure
     .getByText("Unplug VibeTV from power, plug it back in, then try again.", {
       exact: true,
@@ -3420,6 +3455,7 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
     ].includes(recoveryTitle),
     `A background service outage must announce itself, got ${JSON.stringify(recoveryTitle)}`,
   );
+  await assertDialogContrast(page, recovery);
   // The announcement must not take the app it is reporting on: the tabs stay
   // reachable while the dialog is still standing.
   await clickNavigation(page, "Usage");
@@ -3913,9 +3949,9 @@ async function testEnteredControlCenterOpensPairingRecovery(browser, appUrl) {
   await clickNavigation(page, "Settings");
   const pairingError = page.getByRole("dialog");
   await pairingError.waitFor({ timeout: 10_000 });
-  await pairingError.getByRole("button", { name: "OK", exact: true }).click();
-  await pairingError.waitFor({ state: "detached", timeout: 5_000 });
-  await runSetupAgain(page);
+  await pairingError
+    .getByRole("button", { name: "Run setup again", exact: true })
+    .click();
   await waitForSetupDeviceStep(page, 20_000);
   await setupDeviceCards(page).first().waitFor({ timeout: 10_000 });
   await setupConnectButton(page).click();
@@ -9448,8 +9484,12 @@ async function testFirmwareAttentionDoesNotOfferSecondFlash(browser, appUrl) {
     .getByText("Firmware current — attention needed")
     .waitFor({ timeout: 10_000 });
   await page
-    .getByText("Firmware is current, but the picture could not be verified.")
+    .getByText("Run setup again to reconnect VibeTV and check its picture.")
     .waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Run setup again", exact: true }).click();
+  const setupAgain = page.getByRole("dialog", { name: "Run setup again?" });
+  await setupAgain.waitFor();
+  await setupAgain.getByRole("button", { name: "Cancel", exact: true }).click();
   assert(
     (await page.getByRole("button", { name: "Try again" }).count()) === 0,
     "Attention after a verified firmware install must not offer a second flash",

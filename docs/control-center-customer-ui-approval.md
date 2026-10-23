@@ -16541,7 +16541,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #780 as in its own entries plus the entries merged with f314106c; nothing else changes.
 - Scope: the merge of f314106c and this approval record. Pull request branch #780 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
-==
+=========
 
 ## 2026-10-21 — #856: approval marker after merging main at 61f79061
 
@@ -16622,7 +16622,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 as in its own entries plus the entries merged with 9702a6ef; nothing else changes.
 - Scope: the merge of 9702a6ef and this approval record. Pull request branch #821 only, not merged, not released.
 - What's new: none — merge of 9702a6ef, no customer-visible change of its own
-==
+=========
 
 ## 2026-10-21 — #780: approval marker after merging main at 467fd7fb
 
@@ -16710,7 +16710,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #816 as in its own entries plus the entries merged with ff601365; nothing else changes.
 - Scope: the merge of ff601365 and this approval record. Pull request branch #816 only, not merged, not released.
 - What's new: none — merge of ff601365, no customer-visible change of its own
-==
+=========
 
 ## 2026-10-21 — #784: approval marker after merging main at 467fd7fb
 
@@ -16768,7 +16768,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #817 as in its own entries plus the entries merged with ff601365; nothing else changes.
 - Scope: the merge of ff601365 and this approval record. Pull request branch #817 only, not merged, not released.
 - What's new: none — merge of ff601365, no customer-visible change of its own
-==
+=========
 
 ## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at ff601365
 
@@ -16804,7 +16804,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #822 as in its own entries plus the entries merged with ff601365; nothing else changes.
 - Scope: the merge of ff601365 and this approval record. Pull request branch #822 only, not merged, not released.
 - What's new: none — merge of ff601365, no customer-visible change of its own
-==
+=========
 
 ## 2026-10-21 — #822: approval marker after merging claude/group-calm-redesign at ff601365
 
@@ -16847,7 +16847,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #813 as in its own entries plus the entries merged with f314106c; nothing else changes.
 - Scope: the merge of f314106c and this approval record. Pull request branch #813 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
-==
+=========
 
 ## 2026-10-21 — #813: approval marker after merging main at f314106c
 
@@ -16883,7 +16883,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #782 as in its own entries plus the entries merged with f314106c; nothing else changes.
 - Scope: the merge of f314106c and this approval record. Pull request branch #782 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
-==
+=========
 
 ## 2026-10-21 — #782: Paul decisions on support diagnostics and manual refresh (Codex review)
 
@@ -16979,7 +16979,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #783 as in its own entries plus the entries merged with f314106c; nothing else changes.
 - Scope: the merge of f314106c and this approval record. Pull request branch #783 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
-==
+=========
 
 ## 2026-10-21 — #856: approval marker after merging main at 61f79061
 
@@ -17115,7 +17115,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #802 as in its own entries plus the entries merged with ff601365; nothing else changes.
 - Scope: the merge of ff601365 and this approval record. Pull request branch #802 only, not merged, not released.
 - What's new: none — merge of ff601365, no customer-visible change of its own
-==
+=========
 
 ## 2026-10-21 — #802: keyboard focus stays when an updated theme card leaves "Update available" (#857)
 
@@ -17165,7 +17165,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 as in its own entries plus the entries merged with f314106c; nothing else changes.
 - Scope: the merge of f314106c and this approval record. Pull request branch #781 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
-==
+=========
 
 ## 2026-10-21 — #781: Theme Studio header wraps below 960 px (Codex fix, P2)
 
@@ -17256,7 +17256,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #803 as in its own entries plus the entries merged with ff601365; nothing else changes.
 - Scope: the merge of ff601365 and this approval record. Pull request branch #803 only, not merged, not released.
 - What's new: none — merge of ff601365, no customer-visible change of its own
-==
+=========
 
 ## 2026-10-21 — #803: approval marker after merging claude/group-calm-redesign at ff601365
 
@@ -17389,7 +17389,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #798 as in its own entries plus the entries merged with ff601365; nothing else changes.
 - Scope: the merge of ff601365 and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of ff601365, no customer-visible change of its own
-==
+=========
 
 ## 2026-10-21 — #798: Updates title row stays below the page title until lg
 
@@ -17718,7 +17718,7 @@ issue scope, or release permission never implies UI permission.
 ## 2026-10-20 — #784: approval marker after merging main
 
 - User approval: no visible change – UI approval not needed (merge commit into #784; no visible change of its own; entry: #784: approval marker after merging main)
-==
+=========
 - User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
 - User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change))
 - User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
@@ -17745,7 +17745,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #784 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
 - Scope: the merge of 467fd7fb and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of 467fd7fb, no customer-visible change of its own
-==
+=========
 
 ## 2026-10-21 — #800: approval marker after merging claude/group-usage at f3cb1c10
 
@@ -20527,3 +20527,291 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: While Token Counter is active, Two at once is greyed out with a short explanation. A saved pair shows Provider 1 with its own token count; switching to a theme that supports two providers restores the pair without changing the saved preference.
 - Scope: ThemeSpec maxProviders capability, Token Counter pack, Settings display mode, and the shared Companion frame selection used by the device and previews.
 - What's new: none — part of the unreleased Paul test-line corrections.
+
+## 2026-10-21 — #782: Paul's approval of build 7200 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #782 approval record for build 7200; the #782 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 keep their own approval line.
+- Approved customer-visible result: #782 as described in its entries above, as seen in build 7200.
+- Scope: #782 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #782 approval record only
+
+## 2026-10-21 — #782: a closed connect error stays closed across status polls (Codex review)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-22 11:18: "Ja, Marcus' Test reicht" — Marcus' click test on ed9a92c0 (app 99.0.1321, Mac + VibeTV over the cable). [closed connect error]
+- Approved customer-visible result: #782 unchanged texts and layout; the connect dialog closed with OK stays closed while the error stays active.
+- Scope: #782 `apps/control-center/src/components/control-center-errors.ts` (sameActiveError), `apps/control-center/src/components/control-center-app.tsx` (two pairing-rejection call sites), `apps/control-center/src/components/control-center-app.lost-device.test.tsx` (test), and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #782 Codex fix not announced
+
+## 2026-10-21 — #782: connect dialog offers "Run setup again" (Paul)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-22 11:18: "Ja, Marcus' Test reicht" — Marcus' click test on ed9a92c0 (app 99.0.1321, Mac + VibeTV over the cable). [Run setup again]
+- Approved customer-visible result: the connect dialog ("VibeTV could not connect.") on Settings and Support/Logs shows "VibeTV no longer accepts this computer. Run setup again to connect it." with one button "Run setup again" that starts setup; no OK and no "Press Connect again" sentence. The setup wizard's own connect-step dialog is unchanged.
+- Scope: the running app's pairing-rejection dialog only (pairingRejectionForDevice, code pairing_rejected, and the Settings and Logs dialog buttons). Pull request branch #782 only, not merged, not released.
+- What's new: none — no notice entry until Paul approves the dialog above
+
+## 2026-10-21 — #782: connect dialog starts setup without a second question
+
+- User approval: approved by Paul in the communicator chat, 2026-10-22 11:18: "Ja, Marcus' Test reicht" — Marcus' click test on ed9a92c0 (app 99.0.1321, Mac + VibeTV over the cable). [setup without second question]
+- Approved customer-visible result: the pairing-rejection dialog on Settings and Support/Logs starts setup directly when "Run setup again" is clicked; the Settings action keeps its confirmation.
+- Scope: route the running app's connect-dialog button to the existing setup start handler and cover both dialog entry points and the Settings row with tests. Pull request branch #782 only, not merged, not released.
+- What's new: none — no notice entry until Paul approves the direct setup action above
+
+## 2026-10-22 — #782: customer-flow test follows the connect dialog
+
+- User approval: no visible change – UI approval not needed (test only: the pairing-recovery customer flow clicks the dialog's "Run setup again" instead of the removed "OK")
+- Approved customer-visible result: nothing changes in the app; the flow now matches the connect dialog of the two entries above.
+- Scope: apps/control-center/scripts/test-customer-flows.mjs, testEnteredControlCenterOpensPairingRecovery only. Pull request branch #782 only, not merged, not released.
+- What's new: none — test only, no customer-visible change
+
+## 2026-10-22 — #782: Run setup again also clears the Support report
+
+- User approval: no visible change – UI approval not needed (Paul 2026-10-22 11:37 decided the old report stays; the clearing was removed again)
+- Approved customer-visible result: after "Run setup again", the Support report card shows "Create report" again (the existing empty state), like the diagnostics result that the reset already cleared.
+- Scope: apps/control-center/src/components/control-center-app.tsx, resetSetup clears supportReport next to supportDiagnostics. Pull request branch #782 only, not merged, not released.
+- What's new: none — no notice entry until Paul approves
+
+## 2026-10-22 — #782: merge main after #784
+
+- User approval: no visible change – UI approval not needed (merge of main after #784 into #782)
+- Approved customer-visible result: Main's calm redesign with only #782's existing behaviour retained.
+- Scope: Conflict resolution on PR #782; no release or hardware changes.
+- What's new: none — merge of main, no new customer-visible behaviour
+
+## 2026-10-22 — #782: Paul's approval of the three dialog entries recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-22 11:18: "Ja, Marcus' Test reicht" — #782 approval record for the three dialog entries above (closed connect error, Run setup again, setup without second question); Marcus' click test on ed9a92c0 (app 99.0.1321, Mac + VibeTV over the cable).
+- Approved customer-visible result: #782 as described in those three entries, as seen in Marcus' click test on ed9a92c0; the Settings action keeps its confirmation.
+- Scope: #782 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #782 approval record only
+
+## 2026-10-22 — #782: Run setup again keeps the existing Support report (Paul)
+
+- User approval: no visible change – UI approval not needed (revert of the Support report clearing; Paul 2026-10-22 11:37 decided the old report stays)
+- Approved customer-visible result: after "Run setup again" the Support report card keeps Copy / Download for the report made before the reset, as before the Support report change of this pull request.
+- Scope: apps/control-center/src/components/control-center-app.tsx, resetSetup no longer clears supportReport. Pull request branch #782 only, not merged, not released.
+- What's new: none — reverts the clearing, no customer-visible change of its own
+
+## 2026-10-22 — #902: axe checks for the setup firmware, recovery and provider dialogs
+
+- User approval: no visible change – UI approval not needed (#902 adds accessibility tests for the setup firmware, recovery and provider dialogs; no component change)
+- Approved customer-visible result: the dialogs look and behave exactly as before.
+- Scope: `setup-dialogs.axe.test.tsx` only. Pull request #902 only, not merged, not released.
+- What's new: none — test-only accessibility baseline
+
+## 2026-10-22 — #902: real-browser colour-contrast check for the setup firmware and recovery dialogs
+
+- User approval: no visible change – UI approval not needed (test only: the customer-flow script runs axe color-contrast on the firmware and recovery dialogs; no component change)
+- Approved customer-visible result: the dialogs look and behave exactly as before.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` only. Pull request #902 only, not merged, not released.
+- What's new: none — test-only accessibility check
+
+## 2026-10-22 — #902: approval marker after merging main at d2f3fade
+
+- User approval: no visible change – UI approval not needed (merge of main (d2f3fade) into #902; the own entries of #902 keep their approvals)
+- Approved customer-visible result: #902 as in its own entries plus the entries merged with d2f3fade; nothing else changes.
+- Scope: the merge of d2f3fade and this approval record. Pull request branch #902 only, not merged, not released.
+- What's new: none — merge of d2f3fade, no customer-visible change of its own
+
+## 2026-10-22 — #902: colour-contrast check measures the wrapped dialog title and fails when axe cannot decide
+
+- User approval: no visible change – UI approval not needed (test only: the real-browser contrast check hides the frozen screen behind the opaque dialog so axe measures the title, and counts "incomplete" results as failures)
+- Approved customer-visible result: the dialogs look and behave exactly as before.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` only (`assertDialogContrast`). Pull request #902 only, not merged, not released.
+- What's new: none — test-only accessibility check
+
+## 2026-10-22 — #817: approval marker after merging main after #784
+
+- User approval: no visible change – UI approval not needed (merge of main after #784; the code is in main, only tests remain)
+- Approved customer-visible result: as in the #817 entries above (the red focus ring on invalid fields, Paul's yes of 2026-10-20 09:05); nothing visible changes in this merge.
+- Scope: the merge of origin/main and this approval record. Pull request branch #817 only, not merged, not released.
+- What's new: none — merge of main, no customer-visible change of its own
+
+## 2026-10-22 — #817: approval marker after merging main at d2f3fade
+
+- User approval: no visible change – UI approval not needed (merge of main (d2f3fade) into #817; the own entries of #817 keep their approvals)
+- Approved customer-visible result: as in the #817 entries above (the red focus ring on invalid fields, Paul's yes of 2026-10-20 09:05); nothing visible changes in this merge.
+- Scope: the merge of d2f3fade and this approval record. Pull request branch #817 only, not merged, not released.
+- What's new: none — merge of d2f3fade, no customer-visible change of its own
+
+## 2026-10-22 — #782: approval log wording of the build 7200 record
+
+- User approval: no visible change – UI approval not needed (wording only: the #782 build 7200 record now says "keep their own approval line" instead of the old phrase, same meaning; the app is not touched)
+- Approved customer-visible result: nothing changes; the customer sees exactly what the earlier entries describe.
+- Scope: docs/control-center-customer-ui-approval.md only, the wording of the #782 build 7200 record. Pull request branch #782 only, not merged, not released.
+- What's new: none — approval log wording only
+
+## 2026-10-22 — #915: saved WiFi recovery test waits for the firmware dialog
+
+- User approval: no visible change – UI approval not needed (test-only fix for flaky test #915)
+- Approved customer-visible result: None. The setup wizard is unchanged; only its unit test now waits for the firmware dialog before clicking "Use WiFi instead".
+- Scope: apps/control-center/src/components/setup/setup-wizard.test.tsx, test "rescans and reconnects the same device after reusing its saved network" only. Pull request branch only, not merged, not released.
+- What's new: none — test only, no customer-visible change
+
+## 2026-10-22 — Usage: Refresh asks for a new reading right away (#918)
+
+- User approval: pending — Marcus' finding from the #782 click test (22.10.2026, build 1321): Refresh stayed on "Refreshing" for about 40 s; his click test of this pull request is still open.
+- Approved customer-visible result: No new wording or control. A click on Refresh on Usage starts CodexBar's usage service fresh, so "Refreshing" lasts about as long as one reading instead of up to about a minute. It still ends only with values collected after the click. A second click while "Refreshing" is shown keeps the first request and starts nothing new.
+- Scope: `requestUsageRefresh` in `companion/internal/companionapi/usage.go`, `TestUsageManualRefreshStartsAFreshUsageServiceOnce` in `server_test.go`, the Manual Refresh section of `docs/usage-polling-architecture.md`, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — a faster Refresh needs no notice
+
+## 2026-10-22 — Usage: no second "Refreshing" line above the token total (#918)
+
+- User approval: pending — Marcus' finding from the #782 click test (22.10.2026, build 1321); his click test of this pull request is still open. This replaces the small spinner badge by the token total that Paul asked for on 2026-10-09.
+- Approved customer-visible result: While a manual refresh waits, only the Refresh button shows the spinner and "Refreshing". Above "Total tokens in the last 30 days" nothing appears, and the page does not move. "Still counting" stays as before.
+- Scope: `apps/control-center/src/components/usage-screen.tsx`, its test, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — one duplicate status line less
+
+## 2026-10-22 — Usage: Refresh right away and no second "Refreshing" line, approved after the click test (#918)
+
+- User approval: Marcus, 22.10.2026, channel Abstimmungschat (question 131, answer "131 ok"), after his click test of e8f7d6b4 on the Mac. This approves both pending #918 entries above.
+- Approved customer-visible result: As in the two entries above. A click on Refresh on Usage starts CodexBar's usage service fresh, so "Refreshing" lasts about as long as one reading (about 10 s on the test Mac); the values stay visible and do not turn stale while the fresh service starts. While it waits, only the Refresh button shows the spinner and "Refreshing"; nothing appears above "Total tokens in the last 30 days" and the page does not move.
+- Scope: as above, plus `ReplaceStartedAt` in `companion/internal/codexbar/dashboard_serve.go` and `serveBeingReplaced` in `companion/internal/daemon/collector.go` with their tests, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — a faster Refresh and one status line less need no notice
+
+## 2026-10-22 — #921: approval marker after merging main at 75139f6c
+
+- User approval: no visible change – UI approval not needed (merge of main (75139f6c) into #921; the own #918 entries of #921 keep their approval from Marcus, question 131)
+- Approved customer-visible result: #921 as in its own entries plus the entries merged with 75139f6c; nothing else changes.
+- Scope: the merge of 75139f6c and this approval record. Pull request branch #921 only, not merged, not released.
+- What's new: none — merge of 75139f6c, no customer-visible change of its own
+
+## 2026-10-22 — #921: Paul approves dropping the "Refreshing" badge by the token total
+
+- User approval: approved by Paul in the communicator chat, 2026-10-22: "ja" (to whether it is ok that the small "Refreshing" badge by the token total, which he asked for on 2026-10-09, goes away and only the Refresh button shows "Refreshing"; pictures usage-2-refreshing.png and usage-1-idle.png of f3cb4803).
+- Approved customer-visible result: as in the #918 entries of #921 above; while a manual refresh waits, only the Refresh button shows the spinner and "Refreshing", nothing appears above "Total tokens in the last 30 days".
+- Scope: this approval record only. Pull request branch #921 only, not merged, not released.
+- What's new: none — approval record only
+
+## 2026-10-22 — #917: Run setup again during Create new keeps the existing Support report
+
+- User approval: no visible change – UI approval not needed (bug fix: Paul 2026-10-22 11:37 decided the old report stays after Run setup again; this applies it when Create new is still collecting)
+- Approved customer-visible result: when "Run setup again" completes while Create new is still collecting, the Support report card keeps Copy / Download for the earlier report, as after any other "Run setup again". A collection that fails still behaves as before.
+- Scope: apps/control-center/src/components/control-center-app.tsx, createSupportReport only replaces supportReport when the collection returns a report or an error; its test in control-center-app.support-report-card.test.tsx. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, no customer-visible change of its own
+
+## 2026-10-22 — #883: Windows one-time hint that VibeTV keeps running in the tray
+
+- User approval: approved by Paul: "ja passt"
+- Approved customer-visible result: Windows only. The first close of the Control Center window shows one native message box (information icon, OK button) titled "VibeTV Control Center" with the text "VibeTV keeps running in the tray, so your display stays up to date." followed by a blank line and "To open it again, click the VibeTV icon next to the clock. If you don't see it, click the ^ arrow first." It never shows again (marker tray-hint-shown.txt in the app's local data folder).
+- Scope: windows/src-tauri/src/main.rs, show_tray_hint_once called from hide_after_flush. Pull request #919 only, not merged, not released.
+- What's new: none — one-time hint in the Windows shell, not a Control Center notice
+
+## 2026-10-22 — #919: approval marker after merging main at d7250de6
+
+- User approval: no visible change – UI approval not needed (merge of main (d7250de6) into #919; the #883 entry above keeps Paul's approval)
+- Approved customer-visible result: #919 as in its #883 entry plus the entries merged with d7250de6; nothing else changes.
+- Scope: the merge of d7250de6 and this approval record. Pull request #919 only, not merged, not released.
+- What's new: none — merge of d7250de6, no customer-visible change of its own
+
+## 2026-10-22 — #919: approval marker after merging main at 8d956342
+
+- User approval: no visible change – UI approval not needed (merge of main (8d956342) into #919; the #883 entry keeps Paul's approval)
+- Approved customer-visible result: #919 as in its #883 entry plus the entries merged with 8d956342; nothing else changes.
+- Scope: the merge of 8d956342 and this approval record. Pull request #919 only, not merged, not released.
+- What's new: none — merge of 8d956342, no customer-visible change of its own
+
+## 2026-10-22 — #919: approval marker after merging main at 3babd786
+
+- User approval: no visible change – UI approval not needed (merge of main (3babd786) into #919; the #883 entry keeps Paul's approval)
+- Approved customer-visible result: #919 as in its #883 entry plus the entries merged with 3babd786; nothing else changes.
+- Scope: the merge of 3babd786 and this approval record. Pull request #919 only, not merged, not released.
+- What's new: none — merge of 3babd786, no customer-visible change of its own
+
+## 2026-10-22 — #798: main merge after #784
+
+- User approval: no visible change – UI approval not needed (merge of main after #784 into #798)
+- Approved customer-visible result: Preserve main's calm shell and the PR's Updates behavior.
+- Scope: main merge conflict resolution and this approval record.
+- What's new: none — integration only
+
+## 2026-10-22 — #798: committed main-merge approval checkpoint
+
+- User approval: no visible change – UI approval not needed (standalone approval checkpoint for the merge of main after #784 into #798)
+- Approved customer-visible result: Preserve main's calm shell and the PR's existing Updates behavior; no additional change.
+- Scope: docs/control-center-customer-ui-approval.md only; make the merge checkpoint readable by the committed-diff UI gate.
+- What's new: none — documentation-only merge checkpoint
+
+## 2026-10-22 — #798: suppress stale firmware success while unavailable
+
+- User approval: no visible change – UI approval not needed (bug fix: removes a stale success sentence when status is unavailable)
+- Approved customer-visible result: Retained firmware success text is hidden when the Companion/device is disconnected or firmware metadata is missing; terminal no-answer explanations remain available.
+- Scope: updates-screen.tsx note visibility and red-first regression cases for all three unavailable states; coordinator explicitly authorized this narrow suppression.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-22 — #798: a failed hosted DMG check does not fail an installed Mac App
+
+- User approval: no visible change – UI approval not needed (bug fix: an installed Mac App whose runtime check answered no longer shows "Could not check for updates" because the separate hosted DMG check failed)
+- Approved customer-visible result: The failure dialog opens only when the Mac App check itself failed, or the app is outside /Applications and its DMG check failed.
+- Scope: updates-screen.tsx macAppCheckFailed condition and its red-first regression test in updates-screen.calm.test.tsx.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-22 — #798: merge of main after #782 and #902 into the calm Updates screen
+
+- User approval: no visible change – UI approval not needed (integration only: main's failed-check-replaces-"Update complete" rule, "Try again" wording and hidden progress bar once complete are carried over into the calm Updates layout)
+- Approved customer-visible result: The calm Updates screen shows what the earlier entries describe; a failed firmware check newer than a finished update replaces "Update complete", and the failed-check dialog keeps its "Try again" button.
+- Scope: merge conflict resolution in updates-screen.tsx, test-customer-flows.mjs and this approval record. Pull request #798 only, not merged, not released.
+- What's new: none — integration only
+
+## 2026-10-22 — #798: main's "Try again" regression test follows the calm failed-check dialog
+
+- User approval: no visible change – UI approval not needed (test-only: the #782 test for "Try again" after a failed Mac App check during migration now looks for the button in the failed-check dialog of the calm Updates screen)
+- Approved customer-visible result: nothing changes; the customer sees exactly what the earlier entries describe.
+- Scope: updates-screen.test.tsx only. Pull request #798 only, not merged, not released.
+- What's new: none — test-only
+
+## 2026-10-22 — #798: approval marker after merging main at 1e1244fe
+
+- User approval: no visible change – UI approval not needed (merge of main (1e1244fe) into #798; the own entries of #798 keep their approval)
+- Approved customer-visible result: #798 as in its own entries plus the entries merged with 1e1244fe; nothing else changes.
+- Scope: the merge of 1e1244fe and this approval record. Pull request #798 only, not merged, not released.
+- What's new: none — merge of 1e1244fe, no customer-visible change of its own
+
+## 2026-10-22 — #798: approval marker after merging main at 2d42c92f
+
+- User approval: no visible change – UI approval not needed (merge of main (2d42c92f) into #798; the own entries of #798 keep their approval)
+- Approved customer-visible result: #798 as in its own entries plus the entries merged with 2d42c92f; nothing else changes.
+- Scope: the merge of 2d42c92f and this approval record. Pull request #798 only, not merged, not released.
+- What's new: none — merge of 2d42c92f, no customer-visible change of its own
+
+## 2026-10-22 — #798: no failed-check dialog beside a finished update (Codex review)
+
+- User approval: no visible change – UI approval not needed (bug fix: a failed firmware check older than a finished update no longer opens the Could not check for updates dialog over "Update complete")
+- Approved customer-visible result: the Updates tab keeps "Update complete" without a retry dialog for a firmware check that failed before the update finished; a failed check newer than the update and a failed Mac App check open the dialog as before.
+- Scope: Updates tab only, the dialog gate in updates-screen.tsx and its tests. Pull request #798 only, not merged, not released.
+- What's new: none — removes a dialog that should not appear, no customer-visible addition
+
+## 2026-10-22 — #798: one failed-check decision for headline, row and dialog beside a finished update (Codex review)
+
+- User approval: no visible change – UI approval not needed (bug fix: a firmware check that failed before the update finished no longer shows "Update check failed" or the row's failed status beside "Update complete")
+- Approved customer-visible result: the Updates tab shows the completed state everywhere for a firmware check older than the finished update; a newer firmware failure and a Mac App failure show as failed as before.
+- Scope: Updates tab only, the failed-check decision in updates-screen.tsx and its test. Pull request #798 only, not merged, not released.
+- What's new: none — removes a stale failure display, no customer-visible addition
+
+## 2026-10-23 — #798: no "Up to date" on the firmware row while the update needs attention (Codex review)
+
+- User approval: no visible change – UI approval not needed (bug fix: the firmware row no longer shows the green "Up to date" beside "Firmware current — attention needed")
+- Approved customer-visible result: after an update that ends in attention the firmware row shows the version without an "Up to date" label, next to the attention notice; every other row state is unchanged.
+- Scope: Updates tab only, the firmware row status in updates-screen.tsx and its test. Pull request #798 only, not merged, not released.
+- What's new: none — removes a wrong label, no customer-visible addition
+
+## 2026-10-23 — #798: no "Everything is up to date" headline while the update needs attention (Codex review)
+
+- User approval: no visible change – UI approval not needed (bug fix: the Updates headline no longer shows the green "Everything is up to date" beside "Firmware current — attention needed"; it shows the existing muted "No update available")
+- Approved customer-visible result: after an update that ends in attention the headline and the firmware row follow one decision and show no "up to date" claim; every other state is unchanged.
+- Scope: Updates tab only, the firmware no-answer decision in updates-screen.tsx (the separate row rule is removed) and its test. Pull request #798 only, not merged, not released.
+- What's new: none — removes a wrong claim, no customer-visible addition
+
+
+## 2026-10-23 — Paul question 11: repair action on Updates (new draft)
+
+- User approval: approved by Paul, 2026-10-23 10:25
+- Approved customer-visible result: Draft for review: when current firmware still needs attention, Updates says “VibeTV needs attention” and offers “Run setup again” with “Run setup again to reconnect VibeTV and check its picture.” This opens the existing setup confirmation, preserving its explanation and Cancel action. A failed theme install instead keeps its existing “Try again” action with “Try again to finish updating your theme.” Unresolved catalog/support outcomes instruct the customer to keep VibeTV powered on and create a report, without offering a speculative repair. Create report is secondary.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, its focused tests and customer-flow assertion, and the existing setup-confirmation callback in `control-center-app.tsx`; no new repair, reset, device or provider implementation.
+- What's new: none — makes existing recovery actions clear after an update that needs attention.
+
+## 2026-10-23 — Paul question 11: browser regression for the pending draft
+
+- User approval: approved by Paul, 2026-10-23 10:25
+- Approved customer-visible result: The same pending recovery draft above; its browser regression now checks the setup instruction and existing confirmation instead of the superseded warning text.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs`; no further customer-visible change.
+- What's new: none — verification of the pending repair-action draft.
