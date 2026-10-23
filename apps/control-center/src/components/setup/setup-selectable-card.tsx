@@ -81,6 +81,18 @@ export function calmCardClass(selected: boolean): string {
 }
 
 /**
+ * The scroll box of a wizard list (themes, providers). A scroll box clips at
+ * its padding edge, and a card's ring is drawn outside the card: 1 px at rest,
+ * 3 px picked, 2 px with keyboard focus. A box with no padding cut the first
+ * row's top and, at a width the cards fill exactly, the sides (Paul, 23.10.).
+ * 4 px of padding on top and at both sides is the room; the negative side
+ * margin takes it back, so the cards stand where they stood. The caller takes
+ * the same 4 px off its top margin and adds them to its max height.
+ */
+export const RING_SCROLL_BOX_CLASS =
+  "-mx-1 overflow-y-auto px-1 pt-1 pb-6 [mask-image:linear-gradient(to_bottom,black_calc(100%_-_24px),transparent)]";
+
+/**
  * Round radio mark for the device, connection, display-mode and theme cards
  * (variant B): an empty ring when not picked, an ink disc with a check when
  * picked. Always rendered, so picking a card does not reflow it.

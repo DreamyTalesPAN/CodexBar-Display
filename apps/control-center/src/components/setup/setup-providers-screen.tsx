@@ -26,6 +26,7 @@ import {
   setupProviderRowVariant,
 } from "./setup-provider-row";
 import { SetupDialog } from "./setup-dialog";
+import { RING_SCROLL_BOX_CLASS } from "./setup-selectable-card";
 import {
   CALM_BUTTON_CLASS,
   CALM_SUBTITLE_CLASS,
@@ -429,12 +430,12 @@ export function ProviderList({
         />
       </div>
 
-      {/* Calm (the wizard) scrolls the rows inside the window's free height, so the step's Continue stays on screen. 370 px is the chrome above the list (218 px) and below it (the 44 px button, the 68 px page bottom) plus the 40 px of the next row left for the fade; the box is a whole number of 64 px rows plus those 40 px, so the resting view never ends on a sliver of a card. */}
+      {/* Calm (the wizard) scrolls the rows inside the window's free height, so the step's Continue stays on screen. 370 px is the chrome above the list (218 px) and below it (the 44 px button, the 68 px page bottom) plus the 40 px of the next row left for the fade; the box is a whole number of 64 px rows plus those 40 px, so the resting view never ends on a sliver of a card. The box starts 4 px higher and is 4 px taller for the rows' rings (8 px margin, 44 px). */}
       <div
         className={cn(
-          "mt-3",
-          calm &&
-            "max-h-[calc(round(down,100dvh_-_370px,64px)+40px)] overflow-y-auto pb-6 [mask-image:linear-gradient(to_bottom,black_calc(100%_-_24px),transparent)]",
+          calm ? "mt-2" : "mt-3",
+          calm && RING_SCROLL_BOX_CLASS,
+          calm && "max-h-[calc(round(down,100dvh_-_370px,64px)+44px)]",
         )}
       >
       <ItemGroup className="gap-2">
