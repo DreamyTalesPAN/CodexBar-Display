@@ -342,18 +342,19 @@ func usageHasFreshSnapshotAfter(usage daemon.PersistedUsage, requestedAt time.Ti
 	if requestedAt.IsZero() {
 		return usageHasFreshSnapshot(usage)
 	}
-	if len(usage.Providers) == 0 {
-		return false
-	}
+	hasFresh := false
 	for _, provider := range usage.Providers {
-		if provider.Stale || provider.CollectedAt.IsZero() {
+		// The collector already marks failed providers stale. They stay
+		// unavailable, but cannot keep the working providers refreshing (#936).
+		if provider.Stale {
+			continue
+		}
+		if provider.CollectedAt.IsZero() || provider.CollectedAt.Before(requestedAt) {
 			return false
 		}
-		if provider.CollectedAt.Before(requestedAt) {
-			return false
-		}
+		hasFresh = true
 	}
-	return true
+	return hasFresh
 }
 
 func usageHasFreshSnapshot(usage daemon.PersistedUsage) bool {
