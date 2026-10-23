@@ -603,6 +603,14 @@ fn window_geometry(
     let minimized = window.is_minimized().ok()?;
     let position = window.outer_position().ok()?;
     let size = window.outer_size().ok()?;
+    // Tao updates its cached maximized flag in WM_SIZE, after emitting Moved
+    // from WM_WINDOWPOSCHANGED. Read Windows directly so that first maximize
+    // event cannot overwrite the normal rectangle with the maximized bounds.
+    #[cfg(windows)]
+    let maximized = unsafe {
+        windows_sys::Win32::UI::WindowsAndMessaging::IsZoomed(window.hwnd().ok()?.0) != 0
+    };
+    #[cfg(not(windows))]
     let maximized = window.is_maximized().ok()?;
     let current = WindowRect {
         x: position.x,
