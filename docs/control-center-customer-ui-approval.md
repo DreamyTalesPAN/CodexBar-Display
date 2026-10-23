@@ -10120,3 +10120,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #803 as in its own entries plus the entries merged with 2d42c92f; nothing else changes.
 - Scope: the merge of 2d42c92f and this approval record. Pull request #803 only, not merged, not released.
 - What's new: none — merge of 2d42c92f, no customer-visible change of its own
+
+## 2026-10-23 — #803: standalone record after merging main at 81dfc95b
+
+- User approval: pending — the existing diagnostic repair eligibility change still requires Paul's approval; this documentation-only merge record grants no approval and preserves every earlier entry unchanged.
+- Approved customer-visible result: no additional product change from merging main; the existing Support passed count and Fix behavior keep their recorded approval status, including the pending repair eligibility change.
+- Scope: docs/control-center-customer-ui-approval.md only, documenting merge 6dcb7a90 of main 81dfc95b into PR #803; no product, device, merge-to-main, or release action.
+- What's new: none — documentation-only marker for the main merge; no new customer-visible behavior.
