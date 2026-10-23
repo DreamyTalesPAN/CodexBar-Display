@@ -403,7 +403,7 @@ describe("SettingsScreen standby controls", () => {
   it("leaves the display mode radios usable when no write is in flight", () => {
     const html = render(standbyDevice);
     const cards =
-      html.match(/<button aria-label="(?:Automatic|Manual)" aria-pressed="(?:true|false)"[^>]*>/g) || [];
+      html.match(/<button aria-label="(?:Automatic|One provider)" aria-pressed="(?:true|false)"[^>]*>/g) || [];
 
     expect(cards.length).toBeGreaterThanOrEqual(2);
     expect(cards.some((card) => card.includes('disabled=""'))).toBe(false);
@@ -633,8 +633,8 @@ describe("SettingsScreen standby controls", () => {
   });
 
   // Calm master: Display mode is a plain radio list. Only the chosen radio is
-  // pressed; "Show this provider" is a select that belongs to Manual only.
-  it("shows Display mode as a radio list with the provider select under Manual", () => {
+  // pressed; "Show this provider" is a select that belongs to One provider only.
+  it("shows Display mode as a radio list with the provider select under One provider", () => {
     const section = (mode: "automatic" | "fixed") => {
       const html = render(standbyDevice, savedStandby, {
         ...providerPicker,
@@ -653,7 +653,7 @@ describe("SettingsScreen standby controls", () => {
       );
 
     const manual = section("fixed");
-    expect(pressed(manual)).toEqual(["Manual"]);
+    expect(pressed(manual)).toEqual(["One provider"]);
     expect(manual).toContain("Show this provider");
     // No preview cards in Settings any more.
     expect(manual).not.toContain('data-slot="display-mode-preview"');
@@ -690,7 +690,7 @@ describe("SettingsScreen standby controls", () => {
     };
 
     expect(displayMode("available")).toContain(
-      "Press ⌃⌥⌘P in any app to show the next provider. This switches to Manual.",
+      "Press ⌃⌥⌘P in any app to show the next provider. This switches to One provider.",
     );
     expect(displayMode("unavailable")).toContain(
       "The shortcut ⌃⌥⌘P for the next provider is not available: another app may already be using these keys.",
@@ -699,25 +699,25 @@ describe("SettingsScreen standby controls", () => {
 
     const windows = displayMode("available", true);
     expect(windows).toContain(
-      "Press Ctrl+Alt+Shift+P in any app to show the next provider. This switches to Manual.",
+      "Press Ctrl+Alt+Shift+P in any app to show the next provider. This switches to One provider.",
     );
     expect(windows).not.toContain("⌘");
     expect(displayMode("unavailable", true)).toContain(
       "The shortcut Ctrl+Alt+Shift+P for the next provider is not available: another app may already be using these keys.",
     );
 
-    // Issue #558: the line follows what a press would do. With Manual chosen
-    // nothing switches to Manual, and with one provider that has usage a
+    // Issue #558: the line follows what a press would do. With One provider chosen
+    // nothing switches to One provider, and with one provider that has usage a
     // press changes nothing, also when a second one is on without usage.
     const manual = displayMode("available", false, "fixed");
     expect(manual).toContain("Press ⌃⌥⌘P in any app to show the next provider.");
-    expect(manual).not.toContain("This switches to Manual.");
+    expect(manual).not.toContain("This switches to One provider.");
     for (const mode of ["automatic", "fixed"] as const) {
       const one = displayMode("available", true, mode, [provider("claude", "Claude", true), signedOut]);
       expect(one).toContain(
         "Press Ctrl+Alt+Shift+P in any app to show the next provider. This needs two providers with usage.",
       );
-      expect(one).not.toContain("This switches to Manual.");
+      expect(one).not.toContain("This switches to One provider.");
     }
 
     // Until usage has been read, nobody knows how many providers have usage,
@@ -733,7 +733,7 @@ describe("SettingsScreen standby controls", () => {
 
     // Calm rule: the shortcut line is 13 px like the other small text.
     expect(displayMode("available")).toMatch(
-      /<p class="[^"]*text-\[13px\][^"]*">Press ⌃⌥⌘P in any app to show the next provider\. This switches to Manual\.<\/p>/,
+      /<p class="[^"]*text-\[13px\][^"]*">Press ⌃⌥⌘P in any app to show the next provider\. This switches to One provider\.<\/p>/,
     );
 
     // A browser has no global shortcut, so Settings names none.
@@ -759,7 +759,7 @@ describe("SettingsScreen standby controls", () => {
         70, "cable", false, [], providerShortcut,
       );
 
-    // Automatic with two providers and usage wraps to two lines; Manual, an
+    // Automatic with two providers and usage wraps to two lines; One provider, an
     // unread usage and one provider with usage wrap to one, and a press that
     // is unavailable has its own sentence.
     expect(page("available")).toContain(reserved);

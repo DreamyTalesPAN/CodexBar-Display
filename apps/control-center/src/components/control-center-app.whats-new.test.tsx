@@ -438,7 +438,7 @@ it("waits while a newer app is on offer", async () => {
 });
 
 // Issue #584: "Show me in Settings" opened Settings at its top, with the
-// control the entry is about further down. The window here is on Manual, where
+// control the entry is about further down. The window here is on One provider, where
 // `Switch providers` is not on the page: the group with the two mode cards is
 // what the customer is shown.
 it.each([

@@ -192,7 +192,7 @@ export function SettingsScreen({
 
   // Every provider CodexBar reports is listed, on Windows as on the Mac.
   const providers = (providerPicker.items || []).filter(isProviderItem);
-  // Manual pins the device to exactly one provider, so it may only offer ones
+  // One provider pins the device to exactly one provider, so it may only offer ones
   // that can actually produce a reading. Offering every switched-on provider,
   // as the design board's wording does, lets a customer pin VibeTV to a
   // provider that shows nothing.
@@ -299,8 +299,8 @@ export function SettingsScreen({
             </div>
           ) : null}
           <RadioRow
-            description="VibeTV always shows the one provider you pick — nothing else."
-            label="Manual"
+            description="VibeTV always shows the one provider you pick."
+            label="One provider"
             onSelect={() => selectMode("fixed")}
             selected={displayMode === "fixed"}
           />
@@ -392,8 +392,8 @@ export function SettingsScreen({
           <p className="min-h-[2lh] -mt-1 text-[13px] text-muted-foreground">
             {providerShortcut === "available"
               ? // What a press does now (issue #558): it moves between the
-                // providers Manual offers, so one of them leaves nothing to
-                // show next, and Manual cannot be switched to twice. Until
+                // providers One provider offers, so one of them leaves nothing to
+                // show next, and One provider cannot be switched to twice. Until
                 // usage has been read, neither is known and neither is said.
                 `Press ${shortcutKeys} in any app to show the next provider.${
                   !providerPicker.usage
@@ -402,7 +402,7 @@ export function SettingsScreen({
                       ? " This needs two providers with usage."
                       : displayMode === "fixed"
                         ? ""
-                        : " This switches to Manual."
+                        : " This switches to One provider."
                 }`
               : `The shortcut ${shortcutKeys} for the next provider is not available: another app may already be using these keys.`}
           </p>

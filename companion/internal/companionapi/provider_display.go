@@ -410,7 +410,7 @@ func validateProviderDisplay(selection providerDisplaySelection, settings []code
 			return "provider_display_pair_invalid", "Two at once needs two different providers.", "Choose a first and a second provider."
 		}
 	default:
-		return "provider_display_mode_invalid", "This display mode is not available.", "Choose Automatic, Manual or Two at once."
+		return "provider_display_mode_invalid", "This display mode is not available.", "Choose Automatic, One provider or Two at once."
 	}
 	available := make(map[string]bool, len(settings))
 	for _, setting := range settings {

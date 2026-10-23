@@ -61,7 +61,7 @@ type SetupDisplayModeScreenProps = {
    * than borrowing another provider's numbers.
    */
   automaticPreviews?: SetupDisplayModePreview[];
-  /** Live usage of the provider Manual is pinned to right now. */
+  /** Live usage of the provider One provider is pinned to right now. */
   manualPreview: SetupDisplayModePreview | null;
   /** Live usage of the two providers Two at once shows together. */
   pairPreview?: SetupDisplayModePreview | null;
@@ -193,12 +193,12 @@ type DisplayModeChoiceProps = Pick<
 
 /**
  * The display-mode choice itself: cards showing what each mode would put on
- * the device, the provider Manual is pinned to, and the two providers
+ * the device, the provider One provider is pinned to, and the two providers
  * Two at once shows together.
  *
  * Lives outside the wizard screen because Settings offers the same choice. One
  * component rather than two keeps the two places from drifting, which is how
- * Settings ended up offering "Always show one" against the wizard's "Manual".
+ * Settings ended up offering "Always show one" against the wizard's "One provider".
  */
 export function DisplayModeChoice({
   automaticDescription = "VibeTV switches between your providers based on recent activity and usage.",
@@ -246,12 +246,12 @@ export function DisplayModeChoice({
           <PreviewTile frames={rotation} index={index} />
         </ModeCard>
         <ModeCard
-          description="VibeTV always shows the one provider you pick — nothing else."
+          description="VibeTV always shows the one provider you pick."
           disabled={saving}
           ink={ink}
           onSelect={() => onSelectMode("fixed")}
           selected={mode === "fixed"}
-          title="Manual"
+          title="One provider"
         >
           <PreviewTile frames={manualPreview ? [manualPreview] : []} index={0} />
         </ModeCard>

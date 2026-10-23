@@ -11190,3 +11190,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none new; Settings looks as in the entry above.
 - Scope: one line in settings-screen.tsx and this approval record. Pull request branch #864 only, not merged, not released.
 - What's new: none — formatting only
+
+## 2026-10-23 — #864: display mode "One provider" instead of "Manual"
+
+- User approval: approved by Paul in the communicator chat, 2026-10-23: "3: 'One provider' (statt Manual) in #864."
+- Approved customer-visible result: the display mode that was called "Manual" is called "One provider" in Settings (its radio row, the shortcut line "… This switches to One provider.") and in setup (its tile title). Its description becomes "VibeTV always shows the one provider you pick." in both places, as on the reference branch. The Companion's error for an unknown mode says "Choose Automatic, One provider or Two at once." Nothing else changes.
+- Scope: settings-screen.tsx, setup-display-mode-screen.tsx, provider-picker.tsx (comment), provider_display.go (error text), their tests, the mode name in test-customer-flows.mjs and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — the same mode under its new name, nothing new to use
