@@ -22,11 +22,7 @@ type runtimeState struct {
 	lastPersistedAt        time.Time
 	hasPersistedGood       bool
 	cliTheme               string
-	firmwareUpdate         protocol.UpdateState
-	hasFirmwareUpdate      bool
-	updateCheckedAt        time.Time
-	updateCheckedBoard     string
-	updateCheckedFirmware  string
+	firmwareUpdates        *FirmwareUpdateCache
 	lastActivityAt         time.Time
 	lastActivityObservedAt time.Time
 	lastIdleEvidenceAt     time.Time
@@ -193,14 +189,26 @@ func runCycleFromCollector(ctx context.Context, requestedPort string, state *run
 }
 
 func invalidateLastGoodDisabledByInventory(state *runtimeState, collector *providerCollector, deps runtimeDeps) {
-	if state == nil || !state.hasLastGood {
+	provider := discardLastGoodDisabledByInventory(state, collector.providerEnabledByInventory)
+	if provider == "" {
 		return
 	}
-	enabled, known := collector.providerEnabledByInventory(state.lastGood.Provider)
-	if !known || enabled {
+	if err := clearPersistedDisplayFrame(state); err != nil {
+		deps.logf("runtime event=last-good-clear-failed provider=%s err=%v\n", provider, err)
 		return
 	}
+	deps.logf("runtime event=last-good-cleared provider=%s reason=provider-disabled\n", provider)
+}
 
+// Shared with read-only previews: only the stream invalidates the persisted file.
+func discardLastGoodDisabledByInventory(state *runtimeState, providerEnabled func(string) (bool, bool)) string {
+	if state == nil || !state.hasLastGood {
+		return ""
+	}
+	enabled, known := providerEnabled(state.lastGood.Provider)
+	if !known || enabled {
+		return ""
+	}
 	provider := normalizeProviderKey(state.lastGood.Provider)
 	state.lastGood = protocol.Frame{}
 	state.lastGoodAt = time.Time{}
@@ -208,11 +216,7 @@ func invalidateLastGoodDisabledByInventory(state *runtimeState, collector *provi
 	if state.selector != nil {
 		state.selector.SetCurrentProvider("")
 	}
-	if err := clearPersistedDisplayFrame(state); err != nil {
-		deps.logf("runtime event=last-good-clear-failed provider=%s err=%v\n", provider, err)
-		return
-	}
-	deps.logf("runtime event=last-good-cleared provider=%s reason=provider-disabled\n", provider)
+	return provider
 }
 
 func invalidateLastGoodOutsideProviderDisplay(state *runtimeState, deps runtimeDeps) {
@@ -270,8 +274,21 @@ func clearPersistedDisplayFrame(state *runtimeState) error {
 // when CodexBar reported its provider as permanently unsupported; the bounded
 // retention exists for transient failures only.
 func invalidateLastGoodTerminal(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps) {
-	if state == nil || !state.hasLastGood {
+	provider := discardLastGoodTerminal(state, providers)
+	if provider == "" {
 		return
+	}
+	if err := clearPersistedDisplayFrame(state); err != nil {
+		deps.logf("runtime event=last-good-clear-failed provider=%s err=%v\n", provider, err)
+		return
+	}
+	deps.logf("runtime event=last-good-cleared provider=%s reason=provider-terminal\n", provider)
+}
+
+// Shared with read-only previews: only the stream invalidates the persisted file.
+func discardLastGoodTerminal(state *runtimeState, providers []codexbar.ParsedFrame) string {
+	if state == nil || !state.hasLastGood {
+		return ""
 	}
 	provider := normalizeProviderKey(state.lastGood.Provider)
 	for _, parsed := range providers {
@@ -284,13 +301,9 @@ func invalidateLastGoodTerminal(state *runtimeState, providers []codexbar.Parsed
 		if state.selector != nil {
 			state.selector.SetCurrentProvider("")
 		}
-		if err := clearPersistedDisplayFrame(state); err != nil {
-			deps.logf("runtime event=last-good-clear-failed provider=%s err=%v\n", provider, err)
-			return
-		}
-		deps.logf("runtime event=last-good-cleared provider=%s reason=provider-terminal\n", provider)
-		return
+		return provider
 	}
+	return ""
 }
 
 func updateLastGoodState(state *runtimeState, frame protocol.Frame, now time.Time, deps runtimeDeps) {

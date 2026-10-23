@@ -10377,6 +10377,118 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 01f8694d and this approval record. Pull request branch #821 only, not merged, not released.
 - What's new: none — merge of 01f8694d, no customer-visible change of its own
 
+## 2026-10-21 — #831: setup step 11 tiles show the frames the companion builds
+
+- User approval: no visible change – UI approval not needed (#831: setup step 11 tiles render the frames the companion builds instead of a TypeScript copy; same look as approved in 7200)
+- Approved customer-visible result: setup step 11 as in #821; the tiles draw the frames from GET /v1/display/preview-frames, and Automatic also rotates through an enabled provider without a reading, which shows as unavailable.
+- Scope: setup-display-previews.ts (frame synthesis removed), the tiles, control-center-app.tsx (reads the endpoint with the usage), the gallery fixtures and their tests; companion endpoint and daemon.PreviewFrames. Pull request branch only, not merged, not released.
+- What's new: none — same look, one source of truth for the frames
+
+## 2026-10-21 — #858: setup step 11 tiles follow the stream exactly (Codex fixes)
+
+- User approval: no visible change – UI approval not needed (#858 Codex fixes: setup step 11 tiles follow the stream exactly: available providers only, retained last-good values, cleared when usage is unavailable)
+- Approved customer-visible result: setup step 11 as in #831; Automatic rotates only over the providers the stream rotates to, a retained reading keeps its values, and the frames disappear with the usage they came from.
+- Scope: daemon.PreviewFrames and the preview-frames response, displayPreviewsFor/rotatingPreviews and their tests, the customer-flow mock route. Pull request branch only, not merged, not released.
+- What's new: none — the tiles show what the stream sends
+
+## 2026-10-21 — #858: setup preview shows the stream's last-good frame, usage and frames update together
+
+- User approval: no visible change – UI approval not needed (#858 Codex fixes: setup preview shows the stream's last-good frame and usage+frames update together)
+- Approved customer-visible result: setup step 11 as in #858; when no provider has a current reading Automatic shows the one last-good frame the stream restates, and usage and its frames are published as one snapshot.
+- Scope: daemon.PreviewFrames (last-good restate), the usage refresh in control-center-app.tsx, its test, the customer-flow preview-frames mock. Pull request branch only, not merged, not released.
+- What's new: none — the tiles show what the stream sends
+
+## 2026-10-21 — #858: usage and setup preview frames come from one snapshot
+
+- User approval: no visible change – UI approval not needed (#858 Codex fix: usage and setup preview frames come from one snapshot)
+- Approved customer-visible result: setup step 11 as in #858; the frames now arrive inside the /v1/usage response, so a collector cycle between two requests cannot make usage and frames disagree.
+- Scope: GET /v1/usage?previewFrames=1 replaces the separate /v1/display/preview-frames route; the usage refresh in control-center-app.tsx, its test, the customer-flow mock. Pull request branch only, not merged, not released.
+- What's new: none — the tiles show what the stream sends
+
+## 2026-10-21 — #858: fallback preview tile reads the companion frame
+
+- User approval: no visible change – UI approval not needed (the fallback preview tile shows the companion's frame values instead of its own calculation; same layout and texts)
+- Approved customer-visible result: the plain Automatic and Manual previews show the companion's reset seconds, bounded window labels and percentages; unavailable values stay unavailable.
+- Scope: setup-display-previews.ts, its callers and tests; remove usage-derived preview calculations and keep provider eligibility unchanged. Pull request branch only, not merged, not released.
+- What's new: none — the fallback tiles use the same companion frames as the theme tiles
+
+## 2026-10-21 — #858: error preview frame shows as unavailable
+
+- User approval: no visible change – UI approval not needed (bug fix: a setup preview tile shows unavailable instead of an empty theme when the companion sends an error frame)
+- Approved customer-visible result: a setup preview tile whose frame is an error frame shows its existing "no usage yet" state instead of the theme drawn from zeros; normal frames are unchanged.
+- Scope: setup-display-theme-tiles.tsx and its test; the error field added to the DisplayFrame type. Pull request branch only, not merged, not released.
+- What's new: none — the tile uses the state it already shows for a provider with no values
+
+## 2026-10-21 — #858: plain preview tile shows unavailable for an error frame
+
+- User approval: no visible change – UI approval not needed (bug fix: the plain setup preview tile shows its no-usage state instead of stale values when the companion sends an error frame, as the theme tile already does)
+- Approved customer-visible result: the plain setup preview tile whose frame is an error frame shows unavailable values; normal frames are unchanged.
+- Scope: setup-display-previews.ts (displayPreviewFor) and its test. Pull request branch only, not merged, not released.
+- What's new: none — the tile uses the unavailable state it already shows for stale or unread frames
+
+## 2026-10-21 — #858: merge #821 Continue gate with companion previews
+
+- User approval: no visible change – UI approval not needed (#858 merge of #821 at 21d8b3f9: preserve both test sets and wait for missing companion frames, while final error frames release Continue)
+- Approved customer-visible result: the existing Continue rule remains effective while preview tiles load; unavailable error frames do not block setup.
+- Scope: merge #821, setup display-mode gate and regression tests, theme tile state marker and test; all prior approval blocks retained.
+- What's new: none — existing loading and unavailable behavior remains consistent with companion frames
+
+## 2026-10-21 — #858: preserve unavailable usage in theme previews
+
+- User approval: no visible change – UI approval not needed (bug fix: #858 finding 3, honor the companion frame's global usage-unavailable flag)
+- Approved customer-visible result: retained unavailable usage stays unavailable, matching VibeTV; provider labels and unrelated data keep rendering.
+- Scope: shared preview frame renderer and regression tests for windows, legacy slots and root lanes.
+- What's new: none — correct existing unavailable rendering
+
+## 2026-10-21 — #858: preserve serialized zero usage in fallback tiles
+
+- User approval: no visible change – UI approval not needed (bug fix: #858 finding 4, decode omitted available root percentages as wire zero)
+- Approved customer-visible result: measured zero remains 0% in used and remaining mode; explicit unavailable flags still show missing usage.
+- Scope: setup fallback formatter and serialized-frame regression tests.
+- What's new: none — correct existing zero-value rendering
+
+## 2026-10-21 — #858: separate stale resets from usage availability
+
+- User approval: no visible change – UI approval not needed (bug fix: #858 finding 5, expired reset trust does not discard companion usage)
+- Approved customer-visible result: available percentages remain visible when their countdown is unavailable, including retained Busy readings.
+- Scope: setup fallback formatter and root/window regression tests.
+- What's new: none — correct existing usage and reset rendering
+
+## 2026-10-21 — #858: preserve the host label in fallback tiles
+
+- User approval: no visible change – UI approval not needed (bug fix: #858 finding 6, retain the companion's existing Busy label in plain previews)
+- Approved customer-visible result: Automatic and Manual show the frame's Busy label with its retained percentages; provider selection keeps its existing identity.
+- Scope: fallback tile label and rendered Automatic/Manual regression test.
+- What's new: none — correct existing companion label rendering
+
+## 2026-10-21 — #858: merge #821 loading and unavailable-state fixes
+
+- User approval: no visible change – UI approval not needed (#858 merge of #821 at 6e08b426: retain companion frames and release Continue after the usage response, preserving unknown token totals and bounded theme loading)
+- Approved customer-visible result: previews keep the companion's values, error and Busy states; only the initial usage read or theme-pack load holds Continue, and unavailable token totals stay --.
+- Scope: merge #821 into #858, resolve setup preview helpers and tests, preserve every approval block and the macOS-compatible render-pack timeout.
+- What's new: none — preserve existing preview behavior and the three #821 fixes together
+
+
+## 2026-10-21 — #858: merge native-size previews and device window cap from #821
+
+- User approval: pending — #858 integration of #821 at f066095a preserves its pending 240px setup preview layout and 180ms fade; the coordinator explicitly authorized this PR-branch merge and conflict resolution.
+- Approved customer-visible result: Automatic and Manual retain the larger theme preview and grey unavailable placeholder, while companion frames remain authoritative for values, errors, Busy state, wire limits and root countdowns; initial loading gates and bounded theme requests stay intact.
+- Scope: merge #821 into #858, keep the companion-frame helpers and all approval blocks, retain the setup grid and placeholder changes, and cover device window caps before root countdown projection in the Go preview tests; no hardware or running-app check.
+- What's new: none — combine the existing pending setup layout and preview parity fixes without another feature.
+
+## 2026-10-21 — #858: ignore superseded usage responses and failures
+
+- User approval: no visible change – UI approval not needed (#858 coordinator-authorized review fix for discussion_r4338741973: obsolete usage requests no longer overwrite newer values, status, errors or refresh state)
+- Approved customer-visible result: the newest usage request owns its values, preview frames, errors and status; late older successes or failures do not replace that result, and the newest settled poll can finish the usage spinner without clearing another action.
+- Scope: extend the existing refreshUsage generation guard in control-center-app.tsx; regressions in control-center-app.usage-refresh.test.tsx cover stale unavailable, read failure, unreachable and access-blocked replies, stale success after a newer failure, and spinner completion; no hardware or running-app change.
+- What's new: none — correct the existing usage refresh race without changing copy or layout.
+
+## 2026-10-21 — #858: approval marker after merging claude/setup11-live-theme-tiles at 50b61fab
+
+- User approval: no visible change – UI approval not needed (merge of claude/setup11-live-theme-tiles (50b61fab) into #858; the own entries of #858 keep their approvals)
+- Approved customer-visible result: #858 as in its own entries plus the entries merged with 50b61fab; nothing else changes.
+- Scope: the merge of 50b61fab and this approval record. Pull request branch #858 only, not merged, not released.
+- What's new: none — merge of 50b61fab, no customer-visible change of its own
 ## 2026-10-21 — #821: match capped preview fields to the host frame
 
 - User approval: no visible change – UI approval not needed (bug fix: #821 capped legacy lanes, fixed-provider reset rows and plain fallback readings now match the existing host send order; coordinator-authorized three-thread review follow-up)
@@ -10384,6 +10496,19 @@ issue scope, or release permission never implies UI permission.
 - Scope: setup-display-previews.ts, its regression tests and the SetupDisplayModePreview data type; red-first regression checks and scoped local validation only, with no hardware or installed-app changes.
 - What's new: none — correct preview parity with the existing device frame.
 
+## 2026-10-21 — #858: integrate #821 capability fixes with Companion-owned previews
+
+- User approval: no visible change – UI approval not needed (#858 merge of #821 at 9d808cd7: retain Companion frame construction and its device window cap instead of restoring deleted client synthesis)
+- Approved customer-visible result: preview values, pinned rows and window limits continue to follow the existing device send path; no copy or layout changes.
+- Scope: merge claude/setup11-live-theme-tiles, preserve the Companion-backed preview helpers and tests, retain all approval blocks; device cap and pinned selection remain owned by the Companion.
+- What's new: none — preserve the existing single frame construction path.
+
+## 2026-10-21 — #858: verify Companion error selection and capped frame rendering
+
+- User approval: no visible change – UI approval not needed (#858 review regressions: one Automatic stream error, sender-owned unknown capabilities and runtime theme, with Companion-capped fallback test coverage)
+- Approved customer-visible result: existing previews match the device frame for unavailable providers, unknown capabilities, runtime theme overrides and window limits; no new customer text or layout.
+- Scope: Companion preview selection, capability fallback and runtime theme plumbing with regression tests; setup-display-previews tests retain one error and already-capped frames from the Companion.
+- What's new: none — correct existing preview parity with the real send path.
 ## 2026-10-21 — #821: preserve the verified retained device frame
 
 - User approval: no visible change – UI approval not needed (bug fix: #821 after a transient collection failure the preview reuses the matching verified sent frame instead of hiding values still shown by VibeTV; coordinator confirmed follow-up at 16:54 UTC)
@@ -10391,11 +10516,32 @@ issue scope, or release permission never implies UI permission.
 - Scope: setup preview mapping and provider identity, reset-trust preservation, unit regressions and rendered theme-tile regression; no new text, controls, layout or hardware writes.
 - What's new: none — align the failure preview with the host's existing last-good send path.
 
+## 2026-10-21 — #858: integrate retained-frame base update from #821
+
+- User approval: no visible change – UI approval not needed (#858 merge of #821 at ae362921: keep the Companion-owned last-good retention and adapt the rendered regression to Companion frames)
+- Approved customer-visible result: retained offline usage stays visible in both setup tiles after collection fails, matching the device; no new copy or layout.
+- Scope: merge the base update, preserve all approval blocks and the Companion-backed helpers, adapt the retained-value theme-tile test; the existing Go last-good tests remain authoritative.
+- What's new: none — retain existing offline readings through the central frame path.
+
+## 2026-10-21 — #858: preserve legacy frame window labels in plain previews
+
+- User approval: no visible change – UI approval not needed (#858 review fix: render the actual Companion usageSlots labels and count when usageWindows is absent, matching the existing device frame and theme renderer)
+- Approved customer-visible result: the plain preview preserves the supplied window names, values and unavailable state; no new copy, controls or layout beyond matching the real device frame.
+- Scope: setup-display-previews.ts and red-first regression tests for named legacy windows, measured zero, unavailable values and v2 precedence; no hardware or installed-app changes.
+- What's new: none — correct existing preview parity with the device frame.
+
 ## 2026-10-21 — #821: append-only full-path scope record
 
 - User approval: no visible change – UI approval not needed (scope record: lists the full paths changed by #821)
 - Approved customer-visible result: none from this documentation correction. The entries “2026-10-21 — #821: Display mode Continue waits while a tile is a skeleton (Codex fix)” and “2026-10-21 — #821: enlarge setup display-mode previews” remain pending; this addendum does not approve their visible results.
 - Scope: docs/control-center-customer-ui-approval.md only; the existing #821 records cover `apps/control-center/src/app/globals.css`, `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/live-vibetv-preview.tsx`, `apps/control-center/src/components/setup/setup-display-mode-screen.test.tsx`, `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `apps/control-center/src/components/setup/setup-display-previews.test.ts`, `apps/control-center/src/components/setup/setup-display-previews.ts`, `apps/control-center/src/components/setup/setup-display-theme-carousel.test.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.test.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, `apps/control-center/src/components/setup/setup-preview-gallery.tsx`, `apps/control-center/src/components/setup/setup-wizard.test.tsx`, `apps/control-center/src/components/setup/setup-wizard.tsx` at 322be47abb49e0b409320e6fbd7086babc52164d. These full paths supplement the existing scope; all original entries are preserved.
+- What's new: none — documentation-only scope correction; no product change or announcement.
+
+## 2026-10-21 — #858: append-only full-path scope record
+
+- User approval: no visible change – UI approval not needed (scope record: lists the full paths changed by #858)
+- Approved customer-visible result: none from this documentation correction. The entry “2026-10-21 — #858: merge native-size previews and device window cap from #821” remains pending; this addendum does not approve its visible result.
+- Scope: docs/control-center-customer-ui-approval.md only; the existing #858 records cover `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/control-center-app.usage-refresh.test.tsx`, `apps/control-center/src/components/live-vibetv-preview.test.ts`, `apps/control-center/src/components/live-vibetv-preview.tsx`, `apps/control-center/src/components/reset-countdown.test.tsx`, `apps/control-center/src/components/setup/setup-display-mode-screen.test.tsx`, `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `apps/control-center/src/components/setup/setup-display-previews.test.ts`, `apps/control-center/src/components/setup/setup-display-previews.ts`, `apps/control-center/src/components/setup/setup-display-theme-carousel.test.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.test.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.tsx`, `apps/control-center/src/components/setup/setup-preview-gallery.tsx`, `apps/control-center/src/components/setup/setup-providers-screen.tsx` at adf37dfa78033eb1376d4313f430ad2f0a3da6f1. These full paths supplement the existing scope; all original entries are preserved.
 - What's new: none — documentation-only scope correction; no product change or announcement.
 
 ## 2026-10-21 — #821: fit display previews in one row above Continue
@@ -10411,3 +10557,24 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none beyond the entries above; nothing in this merge is shown to Paul as new.
 - Scope: the merge of claude/group-setup-b into #821 and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
+## 2026-10-22 — #858: Display mode skeleton until every preview has its companion frame, normal Continue button
+
+- User approval: pending — Paul asked on 2026-10-22 (his test of build 7206) that Display mode show all three preview cards as skeletons until each has its companion frame, and that Continue get the same button size and placement as the other setup steps
+- Approved customer-visible result: until every rotation preview has its companion frame, Automatic and Manual draw the same-size skeleton (no partial set, no "No usage yet" placeholder) and Continue stays disabled; once all are there, the real previews show and Continue opens. Continue is the 44px calm button in the 460px column, not full window width.
+- Scope: `apps/control-center/src/components/setup/setup-display-mode-screen.tsx`, `apps/control-center/src/components/setup/setup-display-mode-screen.test.tsx`, `apps/control-center/src/components/setup/setup-display-theme-carousel.test.tsx`, `apps/control-center/src/components/setup/setup-display-theme-tiles.test.tsx`, `apps/control-center/src/components/setup/setup-display-mode-rotation.test.tsx`, `apps/control-center/src/components/setup/setup-wizard.test.tsx`, `apps/control-center/src/components/settings-screen.test.tsx`; no new text, copy, controls or hardware writes.
+- What's new: none — skeleton shown until the companion has answered for every preview; Continue sized like the other calm steps.
+
+## 2026-10-22 — #858: one VibeTV in the chooser shows the 3D model
+
+- User approval: pending — Paul asked on 2026-10-22 09:30 that the chooser show the 3D VibeTV instead of the photo when one VibeTV is offered; result not yet seen by him
+- Approved customer-visible result: With one VibeTV offered, its chooser row shows the same 3D model as the other setup steps instead of the photo; the photo stays only where WebGL2 is unavailable. With several VibeTVs the 3D model sits on the connected row, or on the first row when none of the rows is the connected one (previously no row showed it in that case).
+- Scope: `apps/control-center/src/components/setup/setup-device-screen.tsx`, `apps/control-center/src/components/setup/setup-device-screen-3d.test.tsx`; no text changes, no hardware writes.
+- What's new: none — correct the requested chooser before customer approval.
+
+## 2026-10-22 — #858: customer-flow display step waits for the real zero
+
+- User approval: no visible change – UI approval not needed (test-only: customer-flow fixture and wait; no product code or copy)
+- Approved customer-visible result: none; the flow script waits for the real 0% and gives switched-on providers without usage a pinned preview, as the companion does.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs` only.
+- What's new: none — test-only change; no product change.

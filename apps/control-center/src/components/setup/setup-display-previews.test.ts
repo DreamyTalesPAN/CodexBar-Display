@@ -1,19 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
-import { boundValue, buildFrameData, renderTextPrimitive } from "../live-vibetv-preview";
+import { boundValue, buildFrameData, type DisplayFrame } from "../live-vibetv-preview";
 import {
   displayPreviewFor,
   displayPreviewsFor,
   pinnedPreview,
-  providerSlotsFor,
-  withResetTrust,
+  rotatingPreviews,
   withActivityExpiry,
   withSentActivity,
 } from "./setup-display-previews";
 
-// The readings below are stamped 2026-10-20T08:00Z; a frame older than the 5 h
-// trust horizon is stale, so the clock must stay near them or these tests fail
-// a few hours after they were written.
+// Keep elapsed countdowns deterministic for the stamped companion frames.
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-10-20T08:30:00Z"));
@@ -35,235 +32,80 @@ function provider(fields: Partial<UsageProviderInfo>): UsageProviderInfo {
 }
 
 describe("displayPreviewFor", () => {
-  it("carries the provider's own reading", () => {
-    expect(displayPreviewFor(provider({}))).toMatchObject({
+  it("formats the companion's legacy frame without deriving its reset from windows", () => {
+    expect(displayPreviewFor({ label: "Codex", session: 42, weekly: 26, resetSecs: 10800 })).toMatchObject({
       providerLabel: "Codex",
       resetLabel: "Reset in 3h 0m",
       windows: [{ label: "Session", percent: 42 }, { label: "Weekly", percent: 26 }],
     });
   });
 
-  it("leaves a window the collector could not read unavailable", () => {
+  it.each([42, 0])("preserves the companion's legacy named window at %s percent", (percent) => {
+    const frame: DisplayFrame = {
+      v: 1, session: percent, weeklyUnavailable: true,
+      usageWindows: [], usageSlots: [{ id: "monthly", label: "Monthly", percent }],
+    };
+    expect(displayPreviewFor(frame)?.windows).toEqual([{ label: "Monthly", percent }]);
+    expect(displayPreviewFor({ ...frame, usageUnavailable: true })?.windows)
+      .toEqual([{ label: "Monthly", percent: null }]);
+    expect(displayPreviewFor({ ...frame, error: "no usage yet" })?.windows)
+      .toEqual([{ label: "Monthly", percent: null }]);
+  });
+
+  it("prefers named v2 windows to legacy slots when both are present", () => {
+    expect(displayPreviewFor({
+      usageWindows: [{ id: "daily", label: "Daily", percent: 12 }],
+      usageSlots: [{ id: "monthly", label: "Monthly", percent: 42 }],
+    })?.windows).toEqual([{ label: "Daily", percent: 12 }]);
+  });
+
+  it("keeps unread legacy values unavailable, and a measured zero readable", () => {
     const preview = displayPreviewFor(
-      provider({ weeklyUnavailable: true }),
+      { session: 0, weekly: 26, weeklyUnavailable: true },
     );
 
-    expect(preview?.windows[0].percent).toBe(42);
+    expect(preview?.windows[0].percent).toBe(0);
     expect(preview?.windows[1].percent).toBeNull();
   });
 
-  it("shows nothing measured when the provider itself has no usage", () => {
-    const preview = displayPreviewFor(provider({ usageUnavailable: true }));
-
-    expect(preview?.windows[0].percent).toBeNull();
-    expect(preview?.windows[1].percent).toBeNull();
+  it.each([{ usageUnavailable: true }, { error: "no usage yet" }])("keeps an unavailable frame unavailable: %j", (flags) => {
+    const preview = displayPreviewFor({
+      ...flags, resetSecs: 10800,
+      usageWindows: [{ id: "weekly", label: "Weekly", percent: 42 }],
+    });
+    expect(preview?.windows).toEqual([{ label: "Weekly", percent: null }]);
     expect(preview?.resetLabel).toBeNull();
   });
 
-  it("never turns a missing reading into a zero", () => {
-    const preview = displayPreviewFor(
-      provider({ session: 0, sessionUnavailable: true }),
-    );
-
-    expect(preview?.windows[0].percent).not.toBe(0);
-    expect(preview?.windows[0].percent).toBeNull();
+  it.each(["used", "remaining"])("renders omitted wire roots as measured zero in %s mode", (usageMode) => {
+    // Go's omitempty removes a real zero from the API JSON.
+    const frame = JSON.parse('{"v":2,"provider":"codex","label":"Codex","weekly":26,"resetTrust":"live"}');
+    expect(displayPreviewFor({ ...frame, usageMode })?.windows).toEqual([
+      { label: "Session", percent: 0 }, { label: "Weekly", percent: 26 },
+    ]);
+    delete frame.weekly;
+    expect(displayPreviewFor({ ...frame, usageMode })?.windows.map((window) => window.percent)).toEqual([0, 0]);
+    expect(displayPreviewFor({ ...frame, sessionUnavailable: true, weeklyUnavailable: true })?.windows.map((window) => window.percent)).toEqual([null, null]);
   });
 
-  it("preserves the collector's window labels when the primary window is absent", () => {
-    expect(displayPreviewFor(provider({
-      session: 28,
-      weekly: 0,
-      windows: [{ id: "weekly", label: "Weekly", usedPercent: 28 }, { id: "codex-spark", label: "Codex Spark 5-hour", usedPercent: 0 }],
-    }))?.windows).toEqual([{ label: "Weekly", percent: 28 }, { label: "Codex Spark 5-hour", percent: 0 }]);
+  it("keeps malformed windows and explicitly unavailable roots unreadable", () => {
+    expect(displayPreviewFor({ usageWindows: [{ id: "weekly", label: "Weekly" }] })?.windows)
+      .toEqual([{ label: "Weekly", percent: null }]);
+    expect(displayPreviewFor({ usageUnavailable: true })?.windows.every((window) => window.percent === null)).toBe(true);
+  });
+
+  it.each([false, true])("keeps usage readable when only reset trust is stale (windows: %s)", (windows) => {
+    const preview = displayPreviewFor({
+      provider: "codex", label: "Busy", session: 42, weekly: 26,
+      resetTrust: "stale", resetSecs: 3600,
+      ...(windows ? { usageWindows: [{ id: "session", label: "Session", percent: 42 }, { id: "weekly", label: "Weekly", percent: 26 }] } : {}),
+    });
+    expect(preview?.windows.map((window) => window.percent)).toEqual([42, 26]);
+    expect(preview?.resetLabel).toBeNull();
   });
 
   it("has nothing to draw without a provider", () => {
     expect(displayPreviewFor(undefined)).toBeNull();
-  });
-});
-
-describe("displayPreviewFor: the frame the theme draws", () => {
-  const stamped = "2026-10-20T08:00:00Z";
-
-  it.each([1, 3])("caps device windows at %i before choosing the root countdown", (maxUsageWindows) => {
-    const reading = provider({
-      collectedAt: stamped,
-      windows: Array.from({ length: maxUsageWindows + 1 }, (_, index) => ({
-        id: `window-${index}`,
-        label: `Window ${index}`,
-        usedPercent: 20,
-        resetSecs: index === maxUsageWindows ? 7200 : 0,
-      })),
-    });
-    const usage = { providers: [reading] } as UsageSnapshot;
-    const [preview] = displayPreviewsFor(usage, [reading], maxUsageWindows);
-
-    expect(preview.frame?.usageWindows).toHaveLength(maxUsageWindows);
-    expect(preview.frame?.resetSecs).toBe(0);
-    // The cap belongs to the device frame, never to the collector's snapshot.
-    expect(reading.windows).toHaveLength(maxUsageWindows + 1);
-  });
-
-  it.each([
-    [["session", "weekly"], 20, 0, false, true],
-    [["weekly", "session"], 0, 20, true, false],
-    [["primary", "secondary"], 20, 0, false, true],
-    [["secondary", "primary"], 0, 20, true, false],
-    [["extra", "weekly"], 20, 0, false, true],
-  ] as const)("projects legacy fields from retained %j windows", (ids, session, weekly, sessionUnavailable, weeklyUnavailable) => {
-    const reading = provider({
-      collectedAt: stamped,
-      windows: ids.map((id, index) => ({ id, label: id, usedPercent: 20 + index * 10 })),
-    });
-    const frame = displayPreviewFor(reading, new Date(stamped), [reading], 1)!.frame!;
-    expect(frame).toMatchObject({ session, weekly, sessionUnavailable, weeklyUnavailable });
-    const data = buildFrameData(stamped, frame, new Date(stamped));
-    expect(boundValue("session", data)).toBe(sessionUnavailable ? "??" : String(session));
-    expect(boundValue("weekly", data)).toBe(weeklyUnavailable ? "??" : String(weekly));
-  });
-
-  it("caps plain fallback windows and excludes an overflow-only reset", () => {
-    const reading = provider({
-      collectedAt: stamped,
-      windows: [
-        { id: "session", label: "Session", usedPercent: 20 },
-        { id: "weekly", label: "Weekly", usedPercent: 90, resetSecs: 7200 },
-      ],
-    });
-    const preview = displayPreviewFor(reading, new Date(stamped), [reading], 1)!;
-    expect(preview.windows).toEqual([{ label: "Session", percent: 20 }]);
-    expect(preview.resetLabel).toBe("Reset unknown");
-    expect(displayPreviewFor({ ...reading, stale: true }, new Date(stamped), [reading], 1)?.windows)
-      .toEqual([{ label: "Session", percent: null }]);
-    expect(reading.windows).toHaveLength(2);
-  });
-
-  it("builds the pinned row before capping even outside Automatic's first two rows", () => {
-    const readings = ["a", "b", "c"].map((id) => provider({
-      id, label: id, collectedAt: stamped,
-      windows: [
-        { id: "session", label: "Session", usedPercent: 20 },
-        { id: "weekly", label: "Weekly", usedPercent: 90, resetSecs: 7200 },
-      ],
-    }));
-    const previews = displayPreviewsFor({ providers: readings } as UsageSnapshot, readings, 1);
-    expect(previews[2].frame?.providerSlots?.map((row) => row.id)).toEqual(["a", "b"]);
-    for (const [index, preview] of previews.entries()) {
-      const pinned = pinnedPreview(preview).frame!;
-      expect(pinned.usageWindows).toHaveLength(1);
-      expect(pinned.providerSlots).toEqual([
-        { id: readings[index].id, label: readings[index].label, percent: 90, resetSecs: 7200 },
-      ]);
-    }
-  });
-
-  it("keeps the first retained deadline and does not invent a cap when capabilities are unknown", () => {
-    const reading = provider({
-      collectedAt: stamped,
-      windows: [
-        { id: "session", label: "Session", usedPercent: 10, resetSecs: 3600 },
-        { id: "weekly", label: "Weekly", usedPercent: 20, resetSecs: 7200 },
-      ],
-    });
-    const usage = { providers: [reading] } as UsageSnapshot;
-    expect(displayPreviewsFor(usage, [reading], 1)[0].frame?.resetSecs).toBe(3600);
-    for (const limit of [undefined, 0]) {
-      expect(displayPreviewsFor(usage, [reading], limit)[0].frame?.usageWindows).toHaveLength(2);
-    }
-  });
-
-  it("passes the usage service's values through unchanged", () => {
-    const preview = displayPreviewFor(
-      provider({
-        collectedAt: stamped,
-        usageMode: "remaining",
-        windows: [
-          { id: "session", label: "Session", usedPercent: 64, resetSecs: 3600 },
-          { id: "weekly", label: "Weekly", usedPercent: 28, resetSecs: 7200 },
-        ],
-      }),
-    );
-
-    expect(preview?.frameAt).toBe(stamped);
-    expect(preview?.frame).toMatchObject({
-      provider: "codex",
-      label: "Codex",
-      usageMode: "remaining",
-      usageWindows: [
-        { id: "session", label: "Session", percent: 64, resetSecs: 3600 },
-        { id: "weekly", label: "Weekly", percent: 28, resetSecs: 7200 },
-      ],
-    });
-  });
-
-  it("keeps a legacy provider's root values but invents no window slots", () => {
-    // /v1/usage without windows: the host frame keeps only the root session and
-    // weekly, so slot-bound rows must stay unavailable here too (Codex on #821).
-    const frame = displayPreviewFor(provider({}))?.frame;
-
-    expect(frame).toMatchObject({ session: 42, weekly: 26 });
-    expect(frame?.usageWindows).toEqual([]);
-    expect(displayPreviewFor(provider({}), new Date(stamped), undefined, 1)?.frame)
-      .toMatchObject({ session: 42, weekly: 26, usageWindows: [] });
-  });
-
-  it("leaves a window the collector could not read out of the frame", () => {
-    const windows = displayPreviewFor(
-      provider({
-        windows: [
-          { id: "session", label: "Session", usedPercent: 42, resetSecs: 3600 },
-          { id: "weekly", label: "Weekly", usedPercent: Number.NaN, resetSecs: 7200 },
-        ],
-      }),
-    )?.frame?.usageWindows;
-
-    expect(windows).toHaveLength(1);
-    expect(windows?.[0].id).toBe("session");
-  });
-
-  it("keeps a legacy provider's root reset when only its session is unreadable", () => {
-    // No windows, session unreadable, weekly readable: the frame sent to VibeTV
-    // keeps the root countdown, so the tile must show it too (Codex on #821).
-    const now = new Date("2026-10-20T10:00:00Z");
-    const preview = displayPreviewFor(
-      provider({
-        sessionUnavailable: true,
-        weekly: 26,
-        resetSecs: 3 * 3600,
-        collectedAt: now.toISOString(),
-      }),
-      now,
-    );
-
-    expect(preview?.frame?.resetSecs).toBe(3 * 3600);
-    expect(preview?.frame?.resetTrust).toBe("live");
-    expect(preview?.resetLabel).toBe("Reset in 3h 0m");
-  });
-
-  it("has no frame for a provider without usage, so its tile stays a placeholder", () => {
-    expect(displayPreviewFor(provider({ usageUnavailable: true }))?.frame).toBeUndefined();
-    expect(displayPreviewFor(provider({ stale: true }))?.frame).toBeUndefined();
-    expect(
-      displayPreviewFor(provider({ sessionUnavailable: true, weeklyUnavailable: true }))
-        ?.frame,
-    ).toBeUndefined();
-  });
-});
-
-describe("displayPreviewsFor: token totals the usage service already read", () => {
-  it.each([false, true])("keeps omitted token totals unavailable when tokenUsageReady is %s", (tokenUsageReady) => {
-    // Completed Unavailable history has a timestamp, but no known token totals.
-    const usage = { tokenUsageReady, providers: [provider({})] } as UsageSnapshot;
-    const frame = displayPreviewsFor(usage, [{ id: "codex", label: "Codex" }])[0].frame!;
-
-    expect(frame.tokenTotalsKnown).toBe(false);
-    const data = buildFrameData(undefined, frame);
-    expect(["st", "wt", "tt"].map((key) => boundValue(key, data))).toEqual(["--", "--", "--"]);
-  });
-
-  it.each([0, 123])("preserves an explicitly reported token total of %s", (totalTokens) => {
-    const frame = displayPreviewFor(provider({ totalTokens }))!.frame!;
-    expect(boundValue("tt", buildFrameData(undefined, frame))).toBe(String(totalTokens));
   });
 });
 
@@ -309,7 +151,6 @@ describe("displayPreviewsFor", () => {
 
     expect(previews.map((p) => p.providerLabel)).toEqual(["Codex", "Gemini"]);
     expect(previews[1]).toEqual({
-      providerId: "gemini",
       providerLabel: "Gemini",
       resetLabel: null,
       windows: [],
@@ -320,7 +161,6 @@ describe("displayPreviewsFor", () => {
     expect(displayPreviewsFor(usage, [])).toEqual([]);
     expect(displayPreviewsFor(null, enabled("codex"))).toEqual([
       {
-        providerId: "codex",
         providerLabel: "Codex",
         resetLabel: null,
         windows: [],
@@ -328,331 +168,94 @@ describe("displayPreviewsFor", () => {
     ]);
   });
 });
-
-describe("provider slots in the synthesized frames", () => {
+describe("the frames come from the companion", () => {
   const stamped = "2026-10-20T08:00:00Z";
   const usage = {
     providers: [
-      provider({
-        id: "claude",
-        label: "Claude",
-        collectedAt: stamped,
-        windows: [
-          { id: "session", label: "Session", usedPercent: 30, resetSecs: 7200 },
-          { id: "weekly", label: "Weekly", usedPercent: 55, resetSecs: 3600 },
-        ],
-      }),
-      provider({
-        id: "codex",
-        label: "Codex",
-        collectedAt: stamped,
-        windows: [{ id: "weekly", label: "Weekly", usedPercent: 12, resetSecs: 10800 }],
-      }),
-      provider({ id: "cursor", label: "Cursor", collectedAt: stamped, resetSecs: 600 }),
+      provider({ id: "codex", label: "Codex", collectedAt: stamped }),
+      provider({ id: "claude", label: "Claude", collectedAt: stamped }),
     ],
   } as UsageSnapshot;
   const enabled = [
-    { id: "claude", label: "Claude" },
     { id: "codex", label: "Codex" },
-    { id: "cursor", label: "Cursor" },
+    { id: "claude", label: "Claude" },
   ];
+  const automatic: DisplayFrame = {
+    v: 2,
+    provider: "codex",
+    label: "Codex",
+    resetSecs: 3600,
+    resetTrust: "live",
+    providerSlots: [
+      { id: "codex", label: "Codex", percent: 42, resetSecs: 3600 },
+      { id: "claude", label: "Claude", percent: 7, resetSecs: 7200 },
+    ],
+  };
+  const pinned: DisplayFrame = { ...automatic, providerSlots: [automatic.providerSlots![0]] };
+  const frames = {
+    generatedAt: stamped,
+    providers: [{ id: "codex", automatic, pinned }, { id: "claude" }],
+  };
 
-  it("gives every tile the same two provider rows, so pv1*/pv2* themes draw their reset rows", () => {
-    const previews = displayPreviewsFor(usage, enabled);
+  it("hands each tile the frame the companion built, unchanged", () => {
+    const previews = displayPreviewsFor(usage, enabled, frames);
 
-    for (const preview of previews) {
-      expect(preview.frame?.providerSlots).toEqual([
-        { id: "claude", label: "Claude", percent: 55, resetSecs: 3600 },
-        { id: "codex", label: "Codex", percent: 12, resetSecs: 10800 },
-      ]);
+    expect(previews[0].frame).toBe(automatic);
+    expect(previews[0].frameAt).toBe(stamped);
+    expect(pinnedPreview(previews[0]).frame).toBe(pinned);
+  });
+
+  it.each([false, true])("keeps unknown companion token totals unavailable when tokenUsageReady is %s", (tokenUsageReady) => {
+    const previews = displayPreviewsFor({ ...usage, tokenUsageReady }, enabled, frames);
+    for (const preview of [previews[0], pinnedPreview(previews[0])]) {
+      const data = buildFrameData(stamped, preview.frame!);
+      expect(["st", "wt", "tt"].map((key) => boundValue(key, data))).toEqual(["--", "--", "--"]);
     }
-    const data = buildFrameData(stamped, previews[2].frame!, new Date("2026-10-20T08:00:00Z"));
-    expect(data.providerSlots).toMatchObject([
-      { label: "Claude", percent: 55, resetSecs: 3600, available: true },
-      { label: "Codex", percent: 12, resetSecs: 10800, available: true },
-    ]);
   });
 
-  it("leaves out a provider that is stale, unavailable or has no deadline", () => {
-    const rows = providerSlotsFor(
-      [
-        provider({ id: "a", label: "A", stale: true }),
-        provider({ id: "b", label: "B", usageUnavailable: true }),
-        provider({ id: "c", label: "C", resetSecs: undefined, session: 5 }),
-        provider({
-          id: "d",
-          label: "D",
-          windows: [{ id: "session", label: "Session", usedPercent: 5, resetSecs: 900 }],
-        }),
-      ],
-      undefined,
-    );
-
-    expect(rows.map((row) => row.id)).toEqual(["d"]);
-  });
-
-  it("gives the Manual tile only the pinned provider's row, as the fixed frame does", () => {
-    const previews = displayPreviewsFor(usage, enabled);
-    // The rotation frame carries both rows; the pinned frame only its own.
-    expect(previews[1].frame?.providerSlots).toHaveLength(2);
-    expect(pinnedPreview(previews[1]).frame?.providerSlots).toEqual([
-      { id: "codex", label: "Codex", percent: 12, resetSecs: 10800 },
-    ]);
-    expect(pinnedPreview(previews[0]).frame?.providerSlots).toEqual([
-      { id: "claude", label: "Claude", percent: 55, resetSecs: 3600 },
-    ]);
-  });
-
-  it("classifies pinned reset trust from its own rows and keeps the sent activity", () => {
-    const [preview] = displayPreviewsFor({ providers: [
-      provider({ id: "a", label: "A", collectedAt: stamped, windows: [
-        { id: "session", label: "Session", usedPercent: 0, resetSecs: 30 },
-      ] }),
-      usage.providers[1],
-    ] } as UsageSnapshot, [{ id: "a", label: "A" }, enabled[1]], 1);
-    // Another provider's live row keeps Automatic live. Fixed mode cannot use
-    // that deadline to claim its expired reading is still trusted.
-    expect(preview.frame?.resetTrust).toBe("live");
-    const [active] = withSentActivity([preview], {
-      frame: { provider: "a", activity: "coding", activityTtlSecs: 90 }, savedAt: stamped,
+  it.each([0, 123])("preserves a known companion token total of %s", (totalTokens) => {
+    // A measured zero is omitted on the wire; the host's known flag preserves it.
+    const frame = { ...automatic, tokenTotalsKnown: true, ...(totalTokens ? { totalTokens } : {}) };
+    const previews = displayPreviewsFor(usage, enabled, {
+      ...frames,
+      providers: [{ id: "codex", automatic: frame, pinned: frame }],
     });
-    expect(pinnedPreview(active)).toMatchObject({
-      activityAt: stamped,
-      frame: { resetTrust: "stale", activity: "coding", activityTtlSecs: 90,
-        providerSlots: [{ id: "a", resetSecs: 0 }] },
+    for (const preview of [previews[0], pinnedPreview(previews[0])]) {
+      expect(boundValue("tt", buildFrameData(stamped, preview.frame!))).toBe(String(totalTokens));
+    }
+  });
+
+  it("keeps a provider the companion built no frame for a placeholder", () => {
+    const previews = displayPreviewsFor(usage, enabled, frames);
+
+    expect(previews[1].frame).toBeUndefined();
+    expect(pinnedPreview(previews[1]).frame).toBeUndefined();
+  });
+
+  it("draws no frame before the companion has answered", () => {
+    expect(displayPreviewsFor(usage, enabled)[0]).toEqual({
+      providerLabel: "Codex", resetLabel: null, windows: [],
     });
-  });
-
-  it("gives a legacy provider without windows no row, even with root resetSecs", () => {
-    // The host builds rows from Frame.UsageWindows only (providerResetSlots).
-    const legacy = provider({ id: "cursor", label: "Cursor", resetSecs: 900 });
-    expect(legacy.windows).toBeUndefined();
-    expect(providerSlotsFor([legacy], undefined)).toEqual([]);
-    expect(
-      displayPreviewFor(legacy, new Date(), [legacy])?.frame?.providerSlots,
-    ).toEqual([]);
-  });
-
-  it("states each reset as of the shown frame's reading time", () => {
-    const rows = providerSlotsFor(
-      [
-        provider({ id: "a", label: "A", collectedAt: "2026-10-20T08:00:00Z", windows: [{ id: "session", label: "Session", usedPercent: 10, resetSecs: 3600 }] }),
-        provider({ id: "b", label: "B", collectedAt: "2026-10-20T08:10:00Z", windows: [{ id: "session", label: "Session", usedPercent: 10, resetSecs: 3600 }] }),
-      ],
-      "2026-10-20T08:10:00Z",
-    );
-
-    expect(rows.map((row) => row.resetSecs)).toEqual([3000, 3600]);
-  });
-
-  it("takes the smallest remaining percentage in remaining mode, as the host does", () => {
-    const rows = providerSlotsFor(
-      [
-        provider({
-          usageMode: "remaining",
-          windows: [
-            { id: "session", label: "Session", usedPercent: 70, resetSecs: 100 },
-            { id: "weekly", label: "Weekly", usedPercent: 40, resetSecs: 200 },
-          ],
-        }),
-      ],
-      undefined,
-    );
-
-    expect(rows[0]).toMatchObject({ percent: 40, resetSecs: 100 });
-  });
-});
-
-describe("reset trust in the synthesized frames", () => {
-  const stamped = "2026-10-20T08:00:00Z";
-  const at = new Date(stamped);
-  const idleWindows = [
-    { id: "session", label: "Session", usedPercent: 0 },
-    { id: "weekly", label: "Weekly", usedPercent: 0 },
-  ];
-
-  it("reads a fresh window with nothing used and no deadline as idle, not unavailable", () => {
-    const frame = displayPreviewFor(
-      provider({ collectedAt: stamped, resetSecs: undefined, session: 0, weekly: 0, windows: idleWindows }),
-    )?.frame;
-
-    expect(frame).toMatchObject({
-      resetTrust: "live",
-      resetTrustSecs: 5 * 3600,
-      resetSource: "codex",
-    });
-    const data = buildFrameData(stamped, frame!, at);
-    expect(data.usageWindows.map((window) => window.idle)).toEqual([true, true]);
-    expect(
-      renderTextPrimitive({ type: "text", text: "{reset}" }, data),
-    ).toBe("No active session");
-  });
-
-  it("keeps a window that has a deadline live, counting down from the reading time", () => {
-    const frame = displayPreviewFor(
-      provider({
-        collectedAt: stamped,
-        windows: [{ id: "session", label: "Session", usedPercent: 10, resetSecs: 3600 }],
-      }),
-      at,
-    )?.frame;
-
-    expect(frame).toMatchObject({ resetTrust: "live", resetTrustSecs: 5 * 3600 });
-    expect(buildFrameData(stamped, frame!, at).usageWindows[0]).toMatchObject({
-      resetSecs: 3600,
-      idle: false,
-    });
-  });
-
-  it("marks the frame stale and clears countdowns without a reading time, as the host does", () => {
-    const frame = displayPreviewFor(
-      provider({
-        windows: [{ id: "session", label: "Session", usedPercent: 0, resetSecs: 3600 }],
-      }),
-    )?.frame;
-
-    expect(frame).toMatchObject({ resetTrust: "stale", resetTrustSecs: 0, resetSecs: 0 });
-    expect(frame?.usageWindows?.[0].resetSecs).toBe(0);
-  });
-
-  it("marks the frame stale once its only deadline has run out since the reading, as ApplyResetTrust does", () => {
-    const later = new Date("2026-10-20T08:01:00Z");
-    const preview = displayPreviewFor(
-      provider({
-        collectedAt: stamped,
-        windows: [{ id: "session", label: "Session", usedPercent: 0, resetSecs: 30 }],
-      }),
-      later,
-    );
-
-    expect(preview?.frame).toMatchObject({ resetTrust: "stale", resetTrustSecs: 0, resetSecs: 0 });
-    const data = buildFrameData(stamped, preview!.frame!, later);
-    expect(renderTextPrimitive({ type: "text", text: "{reset}" }, data)).toBe("Reset unavailable");
-  });
-
-  it("marks the frame stale once the reading is older than the 5 h trust horizon, even with a later deadline", () => {
-    const later = new Date(new Date(stamped).getTime() + (5 * 3600 + 60) * 1000);
-    const preview = displayPreviewFor(
-      provider({
-        collectedAt: stamped,
-        windows: [{ id: "weekly", label: "Weekly", usedPercent: 10, resetSecs: 3 * 24 * 3600 }],
-      }),
-      later,
-    );
-
-    expect(preview?.frame).toMatchObject({ resetTrust: "stale", resetTrustSecs: 0, resetSecs: 0 });
-    const data = buildFrameData(stamped, preview!.frame!, later);
-    expect(renderTextPrimitive({ type: "text", text: "{reset}" }, data)).toBe("Reset unavailable");
-  });
-
-  it("takes the root resetSecs from the first window that has a deadline, as Frame.Normalize does", () => {
-    const frame = displayPreviewFor(
-      provider({
-        collectedAt: stamped,
-        resetSecs: undefined,
-        windows: [
-          { id: "session", label: "Session", usedPercent: 10 },
-          { id: "weekly", label: "Weekly", usedPercent: 20, resetSecs: 7200 },
-        ],
-      }),
-    )?.frame;
-
-    expect(frame?.resetSecs).toBe(7200);
-    const data = buildFrameData(stamped, frame!, at);
-    expect(renderTextPrimitive({ type: "text", text: "{reset}" }, data)).not.toBe("Reset unavailable");
-  });
-});
-
-describe("the activity verdict", () => {
-  it("uses the matching sent retained frame when collection is stale", () => {
-    const readings = ["codex", "claude"].map((id) => provider({ id, label: id,
-      stale: true, usageUnavailable: true, collectedAt: "2026-10-20T08:00:00Z" }));
-    const previews = displayPreviewsFor({ providers: readings } as UsageSnapshot, readings, 1);
-    const sent = { ok: true, savedAt: "2026-10-20T08:29:00Z", frame: {
-      v: 2, provider: "codex", label: "Busy", session: 31, weekly: 0, weeklyUnavailable: true,
-      usageWindows: [{ id: "session", label: "Session", percent: 31, resetSecs: 600 }],
-      resetSecs: 600, resetTrust: "offline", resetTrustSecs: 120, resetSource: "codex:primary",
-      activity: "idle", tokenTotalsKnown: false,
-    } };
-    const shown = withSentActivity(previews, sent);
-    expect(shown[0].frame).toEqual(sent.frame);
-    expect(shown[0].frameAt).toBe(sent.savedAt);
-    expect(shown[0].windows).toEqual([{ label: "Session", percent: 31 }]);
-    expect(shown[0].resetLabel).toBe("Reset in 9m");
-    expect(pinnedPreview(shown[0]).frame).toEqual(sent.frame);
-    expect(shown[1].frame).toBeUndefined();
-    expect(previews[0].frame).toBeUndefined();
-    expect(withSentActivity(previews, { ...sent, frame: { ...sent.frame, usageUnavailable: true } })[0].frame)
-      .toBeUndefined();
-    expect(withSentActivity(previews, { ...sent, ok: false })[0].frame).toBeUndefined();
-  });
-
-  it("preserves the sent frame's offline trust budget and source on later draws", () => {
-    const sentAt = "2026-10-20T08:00:00Z";
-    const frame = { provider: "codex", resetSecs: 600, resetTrust: "offline",
-      resetTrustSecs: 120, resetSource: "codex:primary" };
-    expect(withResetTrust(frame, sentAt, new Date("2026-10-20T08:01:00Z")))
-      .toEqual(frame);
-    expect(withResetTrust(frame, sentAt, new Date("2026-10-20T08:02:00Z")))
-      .toMatchObject({ resetTrust: "stale", resetTrustSecs: 0, resetSecs: 0 });
-  });
-
-  it("does not take activity from the usage service, which lacks the daemon's verdict", () => {
-    const frame = displayPreviewFor(provider({ collectedAt: "2026-10-20T08:00:00Z", activity: "coding" }))?.frame;
-
-    expect(frame?.activity).toBeUndefined();
   });
 
   it("puts the activity of the frame last sent to VibeTV on that provider's preview only", () => {
-    const stamped = "2026-10-20T08:00:00Z";
-    const previews = displayPreviewsFor(
-      {
-        generatedAt: stamped,
-        providers: [
-          provider({ id: "codex", label: "Codex", collectedAt: stamped }),
-          provider({ id: "claude", label: "Claude", collectedAt: stamped }),
-        ],
-      } as UsageSnapshot,
-      [
-        { id: "codex", label: "Codex" },
-        { id: "claude", label: "Claude" },
+    const previews = displayPreviewsFor(usage, enabled, {
+      ...frames,
+      providers: [
+        { id: "codex", automatic, pinned },
+        { id: "claude", automatic: { ...automatic, provider: "claude" } },
       ],
-    );
+    });
 
     const shown = withSentActivity(previews, { frame: { provider: "codex", activity: "coding" } });
 
     expect(shown[0].frame?.activity).toBe("coding");
+    expect(pinnedPreview(shown[0]).frame?.activity).toBe("coding");
     expect(buildFrameData(stamped, shown[0].frame!, new Date(stamped)).activity).toBe("coding");
     expect(shown[1].frame?.activity).toBeUndefined();
     expect(buildFrameData(stamped, shown[1].frame!, new Date(stamped)).activity).toBe("idle");
     // Nothing sent yet: the previews are untouched.
     expect(withSentActivity(previews, null)).toBe(previews);
-  });
-});
-
-describe("withResetTrust on a later clock reading", () => {
-  const stamped = "2026-10-20T08:00:00Z";
-
-  it("turns a live frame stale once its deadline has run out", () => {
-    const frame = displayPreviewFor(
-      provider({ collectedAt: stamped, windows: [{ id: "session", label: "Session", usedPercent: 0, resetSecs: 30 }] }),
-      new Date(stamped),
-    )!.frame!;
-    expect(frame.resetTrust).toBe("live");
-
-    const later = withResetTrust(frame, stamped, new Date("2026-10-20T08:01:00Z"));
-
-    expect(later).toMatchObject({ resetTrust: "stale", resetSecs: 0 });
-    expect(later.usageWindows?.[0].resetSecs).toBe(0);
-  });
-
-  it("keeps a stale frame stale instead of reading it as an idle account", () => {
-    const stale = displayPreviewFor(
-      provider({ collectedAt: stamped, windows: [{ id: "session", label: "Session", usedPercent: 0, resetSecs: 30 }] }),
-      new Date("2026-10-20T08:01:00Z"),
-    )!.frame!;
-
-    expect(withResetTrust(stale, stamped, new Date("2026-10-20T08:02:00Z")).resetTrust).toBe("stale");
   });
 });
 
@@ -675,5 +278,66 @@ describe("withActivityExpiry", () => {
     expect(
       withActivityExpiry({ activity: "coding", activityTtlSecs: 90 }, undefined, at(9999)).activity,
     ).toBe("coding");
+  });
+});
+
+describe("preview frames follow the usage they were read with", () => {
+  const frames = {
+    generatedAt: "2026-10-20T08:00:00Z",
+    providers: [
+      { id: "codex", automatic: { provider: "codex" }, pinned: { provider: "codex" } },
+      { id: "gemini", pinned: { provider: "gemini", usageUnavailable: true } },
+    ],
+  };
+  const providers = [
+    { id: "codex", label: "Codex" },
+    { id: "gemini", label: "Gemini" },
+  ];
+
+  it("drops the frames once usage is gone", () => {
+    const previews = displayPreviewsFor(null, providers, frames);
+    expect(previews.every((preview) => !preview.frame && !preview.pinnedFrame)).toBe(true);
+  });
+
+  it("rotates only over providers the stream rotates to, and still pins the others", () => {
+    const previews = displayPreviewsFor({ providers: [] }, providers, frames);
+    expect(rotatingPreviews(previews).map((preview) => preview.providerLabel)).toEqual(["Codex"]);
+    expect(pinnedPreview(previews[1]).frame).toEqual(frames.providers[1].pinned);
+  });
+});
+
+describe("Companion selection and device limits", () => {
+  it("holds one Automatic error while keeping every Manual provider", () => {
+    const ids = ["codex", "claude", "gemini"];
+    const error = { v: 2, error: "no providers" };
+    const previews = displayPreviewsFor(
+      { providers: ids.map((id) => provider({ id })) } as UsageSnapshot,
+      ids.map((id) => ({ id, label: id })),
+      { providers: ids.map((id, index) => ({ id, pinned: error, ...(index === 0 ? { automatic: error } : {}) })) },
+    );
+    expect(rotatingPreviews(previews)).toHaveLength(1);
+    expect(previews.map((preview) => pinnedPreview(preview).frame)).toEqual([error, error, error]);
+    expect(rotatingPreviews(previews)[0].windows.every((window) => window.percent === null)).toBe(true);
+  });
+
+  it("keeps the Companion's capped windows and pre-cap pinned row in the plain fallback", () => {
+    const frame: DisplayFrame = {
+      provider: "gemini", session: 20, weeklyUnavailable: true,
+      usageWindows: [{ id: "session", label: "Session", percent: 20 }],
+      providerSlots: [{ id: "gemini", label: "Gemini", percent: 80, resetSecs: 600 }],
+    };
+    const previews = displayPreviewsFor(
+      { providers: [provider({ id: "gemini", windows: [
+        { id: "session", label: "Session", usedPercent: 20 },
+        { id: "weekly", label: "Weekly", usedPercent: 80, resetSecs: 600 },
+      ] })] } as UsageSnapshot,
+      [{ id: "gemini", label: "Gemini" }],
+      { providers: [{ id: "gemini", automatic: frame, pinned: frame }] },
+    );
+    for (const preview of [previews[0], pinnedPreview(previews[0])]) {
+      expect(preview.windows).toEqual([{ label: "Session", percent: 20 }]);
+      expect(preview.frame?.providerSlots).toEqual(frame.providerSlots);
+      expect(preview.frame?.weeklyUnavailable).toBe(true);
+    }
   });
 });

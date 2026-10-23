@@ -8,10 +8,12 @@ import {
   type SetupDisplayModePreview,
 } from "./setup-display-mode-screen";
 
+// A provider with its companion frame: the rotation only moves once all have one.
 const frame = (providerLabel: string, percent: number): SetupDisplayModePreview => ({
   providerLabel,
   resetLabel: null,
   windows: [{ label: "Session", percent }, { label: "Weekly", percent }],
+  frame: { provider: providerLabel.toLowerCase(), label: providerLabel, session: percent, weekly: percent },
 });
 
 function automaticTile(): string {

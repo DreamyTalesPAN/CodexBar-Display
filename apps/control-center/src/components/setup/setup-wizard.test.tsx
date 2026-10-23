@@ -20,6 +20,7 @@ import type { DeviceCandidate } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import { deriveSetupStep, setupDeviceIsUsable } from "./setup-step";
 import { SetupWizard, type SetupWizardProps } from "./setup-wizard";
+import type { SetupDisplayModePreview } from "./setup-display-mode-screen";
 
 afterEach(() => {
   cleanup();
@@ -48,6 +49,15 @@ function provider(id = "codex", label = "Codex"): ProviderItem {
     value: true,
   } as ProviderItem;
 }
+
+// The companion answered for Codex with an error frame: the display step does
+// not wait on it, and it has no value to show.
+const answeredCodex: SetupDisplayModePreview = {
+  providerLabel: "Codex",
+  resetLabel: null,
+  windows: [],
+  frame: { provider: "codex", error: "no_providers" },
+};
 
 function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
   return {
@@ -217,7 +227,12 @@ describe("SetupWizard: display step with a saved provider that shows nothing", (
   it("falls back to the first provider that can show usage", async () => {
     const props = baseProps({
       automaticPreviews: [
-        { providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: 37 }] },
+        {
+          providerLabel: "Claude",
+          resetLabel: null,
+          windows: [{ label: "Session", percent: 37 }],
+          frame: { provider: "claude", label: "Claude", session: 37 },
+        },
       ],
       displayMode: "fixed",
       displayProviderId: "codex",
@@ -1646,7 +1661,7 @@ describe("SetupWizard: going back", () => {
     const onDisplayContinue = vi.fn(async () => false);
     render(
       <SetupWizard
-        {...baseProps({ step: "theme", onDisplayContinue })}
+        {...baseProps({ step: "theme", onDisplayContinue, automaticPreviews: [answeredCodex] })}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
@@ -1664,7 +1679,7 @@ describe("SetupWizard: going back", () => {
     const onDisplayContinue = vi.fn(async () => true);
     render(
       <SetupWizard
-        {...baseProps({ step: "theme", onDisplayContinue })}
+        {...baseProps({ step: "theme", onDisplayContinue, automaticPreviews: [answeredCodex] })}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
@@ -1746,7 +1761,7 @@ describe("SetupWizard: going back", () => {
   });
 
   it("releases the theme step the same way", async () => {
-    render(<SetupWizard {...baseProps({ step: "theme" })} />);
+    render(<SetupWizard {...baseProps({ step: "theme", automaticPreviews: [answeredCodex] })} />);
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(shownStep()).toBe("Display mode");
 

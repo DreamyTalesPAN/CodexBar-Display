@@ -24,7 +24,7 @@ import {
 } from "./setup-display-theme-tiles";
 import { displayPreviewSize } from "./setup-display-size";
 import { SETUP_REVEAL } from "./setup-reveal";
-import { pinnedPreview } from "./setup-display-previews";
+import { pinnedPreview, rotatingPreviews } from "./setup-display-previews";
 import {
   SelectionCheck,
   SelectionDot,
@@ -55,15 +55,14 @@ export type SetupDisplayModeProvider = {
  * arrives as `null` and stays visibly unavailable instead of being invented.
  */
 export type SetupDisplayModePreview = {
-  providerId?: string;
   providerLabel: string;
   /**
    * The provider's readings in the shape the theme renderer draws, exactly as
-   * the usage service delivered them. Absent while it has none to give; the
+   * the companion built the frame for the stream. Absent while it has none to give; the
    * theme tile then shows a placeholder instead of numbers.
    */
   frame?: DisplayFrame;
-  /** The same frame builder with fixed provider selection before the window cap. */
+  /** The same provider's frame when Manual pins it: the host builds its rows from that provider alone. */
   pinnedFrame?: DisplayFrame;
   /** When those readings were taken, so reset countdowns keep counting down. */
   frameAt?: string;
@@ -130,7 +129,11 @@ export function SetupDisplayModeScreen({
   const themePack = useThemeRenderPack(theme);
   // Continue waits exactly while a card draws the skeleton, the same rule the
   // tiles use. Unavailable usage is not a skeleton, so it never holds Continue.
-  const awaitingUsage = tileIsSkeleton(themePack, usageLoading);
+  const awaitingUsage = tileIsSkeleton(
+    themePack,
+    usageLoading,
+    rotationFrames(automaticPreview, automaticPreviews, providers),
+  );
 
   return (
     <SetupWizardScreen
@@ -180,7 +183,9 @@ export function SetupDisplayModeScreen({
           (mode === "fixed" &&
             !providers.some((provider) => provider.id === selectedProviderId))
         }
-        className={cn(CALM_BUTTON_CLASS, mode === "fixed" ? "mt-6" : "mt-8")}
+        // The wide content column would stretch it across the whole window; the
+        // other steps' 460px column is the size every calm step ends in.
+        className={cn(CALM_BUTTON_CLASS, "max-w-[460px]", mode === "fixed" ? "mt-6" : "mt-8")}
         onClick={onContinue}
         type="button"
       >
@@ -285,7 +290,7 @@ export function DisplayModeChoice({
   const tiles = (frames: SetupDisplayModePreview[], at: number) => {
     // The theme's own picture whenever it can be had; the plain tile is what
     // stays if the theme could not be read, so the step never loses its preview.
-    if (tileIsSkeleton(themePack, usageLoading)) {
+    if (tileIsSkeleton(themePack, usageLoading, rotation)) {
       return <ThemeTileSkeleton count={frames.length} />;
     }
     if (themePack.pack && frames[at]) {
@@ -384,12 +389,22 @@ export function DisplayModeChoice({
 }
 
 /**
- * Whether a card draws the skeleton rather than readings: the theme pack is
- * still loading, or the usage snapshot has not been read yet. The
- * Continue gate and the tiles both ask this, so they cannot disagree.
+ * Whether the cards draw the skeleton rather than readings: the theme pack is
+ * still loading, the usage snapshot has not been read yet, or any provider in
+ * the rotation still lacks its companion frame. Until every preview has one,
+ * no card shows a partial set. The Continue gate and the tiles both ask this,
+ * so they cannot disagree.
  */
-function tileIsSkeleton(themePack: ThemePackLoad, usageLoading: boolean): boolean {
-  return themePack.status === "loading" || usageLoading;
+function tileIsSkeleton(
+  themePack: ThemePackLoad,
+  usageLoading: boolean,
+  rotation: SetupDisplayModePreview[],
+): boolean {
+  return (
+    themePack.status === "loading" ||
+    usageLoading ||
+    rotation.some((preview) => !preview.frame)
+  );
 }
 
 /**
@@ -402,7 +417,7 @@ function rotationFrames(
   automaticPreviews: SetupDisplayModePreview[] | undefined,
   providers: SetupDisplayModeProvider[],
 ): SetupDisplayModePreview[] {
-  if (automaticPreviews?.length) return automaticPreviews;
+  if (automaticPreviews?.length) return rotatingPreviews(automaticPreviews);
   if (!providers.length) return automaticPreview ? [automaticPreview] : [];
   return providers.map((provider) =>
     provider.label === automaticPreview?.providerLabel
@@ -575,7 +590,7 @@ function PreviewTile({
         className="truncate text-center text-[11px] font-bold tracking-[0.12em] uppercase"
         cycleKey={index}
       >
-        {frame.providerLabel}
+        {frame.frame?.label || frame.providerLabel}
       </CycledText>
 
       <span className="flex gap-3">

@@ -47,8 +47,10 @@ func configuredTheme(cliTheme string) string {
 	return runtimeconfig.NormalizeTheme(cfg.Theme)
 }
 
-func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
-	publicPort := publicDeviceTarget(port)
+// restateLastGoodWhenNotFresh is the stream's step between selection and the
+// device-specific fields: the authoritative frame, the frame with the usage
+// bars preference, and the result with its basis and source.
+func restateLastGoodWhenNotFresh(state *runtimeState, deps runtimeDeps, result cycleResult) (protocol.Frame, protocol.Frame, cycleResult) {
 	authoritativeFrame := result.frame
 	frame := applyUsageBarsPreference(authoritativeFrame.Normalize(), deps.usageBarsShowUsed())
 	if !result.usageFresh && result.failureErr == nil {
@@ -78,10 +80,15 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		}
 	}
 	if result.systemBusy {
-		// The values on screen are old because the computer is starved, and
-		// VibeTV says so where it names the provider (#606).
+		// The values are old because the computer is starved (#606).
 		frame.Label = SystemBusyLabel
 	}
+	return authoritativeFrame, frame, result
+}
+
+// prepareDeviceFrame is shared by previews and sending: all wire fields must
+// be present before enforcing the byte budget, or token visibility can differ.
+func prepareDeviceFrame(frame protocol.Frame, result cycleResult, caps protocol.DeviceCapabilities, now time.Time, theme string, ttl time.Duration) (protocol.Frame, bool) {
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 	frame = applyDeviceUsageWindowLimit(frame, caps)
 	if !caps.SupportsProviderSlotsV1 {
@@ -89,22 +96,30 @@ func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapab
 		// wire bytes against its frame budget.
 		frame.ProviderSlots = nil
 	}
-	now := deps.now()
 	frame = attachClockFields(frame, now)
 	frame = frame.ApplyResetTrust(result.resetBasisAt, now, result.usageFresh)
-
-	if selectedTheme := configuredTheme(state.cliTheme); selectedTheme != "" {
-		var applied bool
-		frame, applied = applyThemeToFrame(frame, selectedTheme, caps)
-		if !applied {
-			deps.logf("runtime event=theme-skipped port=%s board=%s requested=%s reason=unsupported\n", publicPort, caps.Board, selectedTheme)
-		}
+	applied := false
+	if theme != "" {
+		frame, applied = applyThemeToFrame(frame, theme, caps)
 	}
 	// ESP8266 firmware only reads these four update fields. Dropping release
 	// metadata before every send keeps the JSON document small enough for
 	// devices that have just left WiFi setup with a fragmented heap.
 	frame.Update = compactFrameUpdate(frame.Update)
-	frame.ActivityTTLSec = int64(activityTTL(deps.interval, deps.transportName) / time.Second)
+	frame.ActivityTTLSec = int64(ttl / time.Second)
+	return frame, applied
+}
+
+func sendCycleResult(ctx context.Context, port string, caps protocol.DeviceCapabilities, maxFrameBytes int, state *runtimeState, deps runtimeDeps, result cycleResult) error {
+	publicPort := publicDeviceTarget(port)
+	authoritativeFrame, frame, result := restateLastGoodWhenNotFresh(state, deps, result)
+
+	now := deps.now()
+	selectedTheme := configuredTheme(state.cliTheme)
+	frame, themeApplied := prepareDeviceFrame(frame, result, caps, now, selectedTheme, activityTTL(deps.interval, deps.transportName))
+	if selectedTheme != "" && !themeApplied {
+		deps.logf("runtime event=theme-skipped port=%s board=%s requested=%s reason=unsupported\n", publicPort, caps.Board, selectedTheme)
+	}
 
 	line, marshaledFrame, err := marshalFrameWithinLimit(frame, maxFrameBytes)
 	if err != nil {

@@ -37,9 +37,21 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it("ends the Refreshing mark within seconds of the new values", async () => {
-  // The Mac App: a manual refresh stays "refreshing" until the new snapshot.
-  const companion = { refreshing: false, providerReads: 0 };
+function usageBody(session: number, weekly: number, refresh = "fresh") {
+  return {
+    ok: true,
+    usageMode: "used",
+    tokenUsageReady: true,
+    currentProvider: "codex",
+    refresh: { state: refresh },
+    providers: [{ id: "codex", label: "Codex", session, weekly, usageMode: "used" }],
+  };
+}
+
+type UsageRoute = (url: string) => Response | Promise<Response>;
+
+// Mounts the app on a Mac App stub whose /v1/usage reads are answered by `usage`.
+function mountApp(usage: UsageRoute, onProviderRead = () => {}) {
   // A customer who has read "What's new"; it would lie over Overview.
   markWhatsNewSeen();
   vi.useFakeTimers();
@@ -90,7 +102,7 @@ it("ends the Refreshing mark within seconds of the new values", async () => {
       }
       if (url.includes("/v1/preferences")) {
         if (url.endsWith("section=providers")) {
-          companion.providerReads += 1;
+          onProviderRead();
         }
         return jsonResponse({ ok: true, items: [] });
       }
@@ -101,17 +113,7 @@ it("ends the Refreshing mark within seconds of the new values", async () => {
         });
       }
       if (url.includes("/v1/usage")) {
-        if (url.endsWith("?refresh=1")) {
-          companion.refreshing = true;
-        }
-        return jsonResponse({
-          ok: true,
-          usageMode: "used",
-          tokenUsageReady: true,
-          currentProvider: "codex",
-          refresh: { state: companion.refreshing ? "refreshing" : "fresh" },
-          providers: [{ id: "codex", label: "Codex", session: 12, weekly: 34, usageMode: "used" }],
-        });
+        return usage(url);
       }
       return jsonResponse({ ok: false, error: { code: "HTTP_404" } }, 404);
     }),
@@ -131,6 +133,24 @@ it("ends the Refreshing mark within seconds of the new values", async () => {
       });
     }
   };
+  return { text, wait };
+}
+
+
+it("ends the Refreshing mark within seconds of the new values", async () => {
+  // The Mac App: a manual refresh stays "refreshing" until the new snapshot.
+  const companion = { refreshing: false, providerReads: 0 };
+  const { wait } = mountApp(
+    (url) => {
+      if (url.includes("refresh=1")) {
+        companion.refreshing = true;
+      }
+      return jsonResponse(usageBody(12, 34, companion.refreshing ? "refreshing" : "fresh"));
+    },
+    () => {
+      companion.providerReads += 1;
+    },
+  );
 
   await wait(10);
   fireEvent.click(screen.getByRole("button", { name: "Usage" }));
@@ -153,4 +173,110 @@ it("ends the Refreshing mark within seconds of the new values", async () => {
   expect(
     screen.getByRole("button", { name: "Refresh token usage" }).getAttribute("aria-busy"),
   ).toBe("false");
+});
+
+it("reads the setup preview frames with the usage, not from a second request", async () => {
+  const frames = { generatedAt: "2026-08-13T12:00:00Z", providers: [{ id: "codex" }] };
+  const { wait } = mountApp((url) =>
+    jsonResponse(url.includes("previewFrames=1") ? { ...usageBody(12, 34), previewFrames: frames } : usageBody(12, 34)),
+  );
+  await wait(10);
+
+  const urls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
+  expect(urls.filter((url) => url.includes("/v1/usage")).every((url) => url.includes("previewFrames=1"))).toBe(true);
+  expect(urls.some((url) => url.includes("preview-frames"))).toBe(false);
+});
+
+it("keeps the newest usage when an older read resolves last", async () => {
+  let releaseOlder: (response: Response) => void = () => {};
+  const { text, wait } = mountApp((url) =>
+    url.includes("refresh=1")
+      ? new Promise<Response>((resolve) => {
+          releaseOlder = resolve;
+        })
+      : jsonResponse(usageBody(12, 77)),
+  );
+  await wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+  await wait(1);
+  // The customer's refresh starts first and answers last, after the poll read.
+  fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
+  await wait(35);
+  expect(text()).toContain("77%");
+  await act(async () => {
+    releaseOlder(jsonResponse(usageBody(12, 11)));
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  expect(text()).toContain("77%");
+  expect(text()).not.toContain("11%");
+});
+
+it.each([
+  "usage_unavailable",
+  "usage_read_failed",
+  "COMPANION_UNREACHABLE",
+  "LOCAL_NETWORK_ACCESS_REQUIRED",
+])("ignores a superseded usage failure (%s) after a newer successful poll", async (code) => {
+  let releaseOlder: (response: Response) => void = () => {};
+  const { text, wait } = mountApp((url) =>
+    url.includes("refresh=1")
+      ? new Promise<Response>((resolve) => { releaseOlder = resolve; })
+      : jsonResponse(usageBody(12, 77)),
+  );
+  await wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+  await wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
+  await wait(35);
+  expect(text()).toContain("77%");
+  await act(async () => {
+    releaseOlder(jsonResponse({ ok: false, error: { code, message: "Obsolete usage failure", nextAction: "Obsolete recovery" } }, 503));
+  });
+  expect(text()).toContain("77%");
+  expect(text()).not.toContain("Obsolete usage failure");
+  expect(screen.getByRole("button", { name: "Refresh token usage" }).getAttribute("aria-busy")).toBe("false");
+});
+
+it("keeps a newer usage error when a superseded refresh succeeds", async () => {
+  let releaseOlder: (response: Response) => void = () => {};
+  let pollFails = false;
+  const { text, wait } = mountApp((url) => {
+    if (url.includes("refresh=1")) {
+      return new Promise<Response>((resolve) => { releaseOlder = resolve; });
+    }
+    return pollFails
+      ? jsonResponse({ ok: false, error: { code: "usage_read_failed", message: "Current usage failure", nextAction: "Current recovery" } }, 503)
+      : jsonResponse(usageBody(12, 77));
+  });
+  await wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+  await wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
+  pollFails = true;
+  await wait(35);
+  expect(text()).toContain("Current usage failure");
+  await act(async () => { releaseOlder(jsonResponse(usageBody(12, 11))); });
+  expect(text()).toContain("Current usage failure");
+  expect(text()).not.toContain("11%");
+});
+
+it("lets only the newest usage request finish refreshing", async () => {
+  const manualReads: ((response: Response) => void)[] = [];
+  const { wait } = mountApp((url) =>
+    url.includes("refresh=1")
+      ? new Promise<Response>((resolve) => { manualReads.push(resolve); })
+      : jsonResponse(usageBody(12, 77)),
+  );
+  await wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+  await wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
+  await wait(35);
+  expect(screen.getByRole("button", { name: "Refresh token usage" }).getAttribute("aria-busy")).toBe("false");
+  fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
+  expect(manualReads).toHaveLength(2);
+  await act(async () => { manualReads[0](jsonResponse(usageBody(12, 11))); });
+  expect(screen.getByRole("button", { name: "Refresh token usage" }).getAttribute("aria-busy")).toBe("true");
+  await act(async () => { manualReads[1](jsonResponse(usageBody(12, 88))); });
+  expect(screen.getByRole("button", { name: "Refresh token usage" }).getAttribute("aria-busy")).toBe("false");
 });

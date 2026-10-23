@@ -7970,8 +7970,13 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
   await displayScreen.getByRole("button", { name: /Manual/ }).waitFor();
   assert(await displayScreen.getByText("Usage unavailable", { exact: true }).count() === 0,
     "the display preview must use the same available usage that admitted setup");
-  assert(await displayScreen.getByText("0%", { exact: true }).count() > 0,
-    "the real zero must be visible in the display preview");
+  // Cards draw the skeleton until every rotation preview has its frame, so the
+  // real zero can arrive after the Manual button.
+  await waitForCondition(
+    async () => (await displayScreen.getByText("0%", { exact: true }).count()) > 0,
+    "the real zero must be visible in the display preview",
+    15_000,
+  );
   // Picking a mode is a draft until Continue: choosing Manual and coming back
   // to Automatic must leave exactly one write, made from the live inventory.
   await displayScreen.getByRole("button", { name: /Manual/ }).click();
@@ -12110,10 +12115,7 @@ async function routeCompanionOnline(
         });
         return;
       }
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(
+      const body =
           usageResponse || {
             ok: true,
             generatedAt: "2026-06-29T10:47:46Z",
@@ -12130,8 +12132,14 @@ async function routeCompanionOnline(
                 usageMode: "used",
               },
             ],
-          },
-        ),
+          };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...body,
+          previewFrames: previewFramesFromUsageResponse(body, currentPreferences),
+        }),
       });
       return;
     }
@@ -12780,6 +12788,44 @@ async function fulfillRouteFromNext(route, targetUrl) {
     headers,
     body: Buffer.from(await response.arrayBuffer()),
   });
+}
+
+// The frames the companion builds for the stream, from the fixture usage: a
+// provider's windows keep their values, a real 0% stays 0. A provider switched
+// on without usage gets a pinned frame only, as the companion builds it.
+function previewFramesFromUsageResponse(usageResponse, preferences) {
+  const providers =
+    usageResponse && typeof usageResponse === "object" && Array.isArray(usageResponse.providers)
+      ? usageResponse.providers
+      : [];
+  const reported = new Set(providers.map((provider) => provider.id));
+  const unreported = (preferences?.items ?? [])
+    .filter((item) => item.value && item.providerId && !reported.has(item.providerId))
+    .map((item) => ({
+      id: item.providerId,
+      pinned: { v: 2, provider: item.providerId, label: item.label, usageUnavailable: true },
+    }));
+  return {
+    generatedAt: "2026-06-29T10:47:46Z",
+    providers: [...providers.map((provider) => {
+      const frame = {
+        v: 2,
+        provider: provider.id,
+        label: provider.label,
+        usageMode: provider.usageMode || "used",
+        usageWindows: (provider.windows ?? [
+          { id: "session", label: "Session", usedPercent: provider.session },
+          { id: "weekly", label: "Weekly", usedPercent: provider.weekly },
+        ]).map((window) => ({
+          id: window.id,
+          label: window.label,
+          percent: window.usedPercent,
+          resetSecs: window.resetSecs ?? 0,
+        })),
+      };
+      return { id: provider.id, automatic: frame, pinned: frame };
+    }), ...unreported],
+  };
 }
 
 function displayFrameFromUsageResponse(usageResponse) {

@@ -117,7 +117,10 @@ type Options struct {
 	Logf func(string, ...any)
 	// SystemBusy is the display worker's latest busy-computer verdict
 	// (#606). Nil outside the runtime.
-	SystemBusy func() *daemon.SystemBusy
+	SystemBusy      func() *daemon.SystemBusy
+	FirmwareUpdates *daemon.FirmwareUpdateCache
+	// RuntimeTheme is the daemon CLI override; empty uses the shared theme resolver.
+	RuntimeTheme string
 	// Where Theme Studio keeps the customer's verified OpenAI key across
 	// restarts. Nil (tests, tools) keeps it in memory only.
 	AIThemeSecrets SecretStore
@@ -186,6 +189,8 @@ type Server struct {
 	providerFollowupHeldHook func()
 	displayStreamRunning     func() bool
 	systemBusy               func() *daemon.SystemBusy
+	firmwareUpdates          *daemon.FirmwareUpdateCache
+	runtimeTheme             string
 	firmwareUpdateActive     atomic.Bool
 	firmwareUpdateStartMu    sync.Mutex
 	// One shortcut press at a time: each reads the provider on screen and
@@ -225,6 +230,7 @@ type Server struct {
 	pairRetryGap           time.Duration
 	installationMode       string
 	loadUsage              func(time.Time) (daemon.PersistedUsage, bool)
+	usageBarsShowUsed      func() bool
 	loadCollectorCycle     func() (daemon.CollectorCycle, bool)
 	probeProviderSetup     func(context.Context, string) codexbar.ProviderSetup
 	probeExactProvider     func(context.Context, string, string) codexbar.ProviderSetup
@@ -385,6 +391,8 @@ func New(opts Options) (*Server, error) {
 		usageServiceInfo:     opts.UsageServiceInfo,
 		displayStreamRunning: opts.DisplayStreamRunning,
 		systemBusy:           opts.SystemBusy,
+		firmwareUpdates:      opts.FirmwareUpdates,
+		runtimeTheme:         opts.RuntimeTheme,
 		pairAttempts:         defaultPairAttempts,
 		pairAttemptTimeout:   defaultPairAttemptTimeout,
 		pairRetryGap:         defaultPairRetryGap,
@@ -399,6 +407,7 @@ func New(opts Options) (*Server, error) {
 		displayVerifications: make(map[string]displayVerification),
 		installationMode:     macAppInstallationMode(),
 		loadUsage:            daemon.LoadPersistedUsage,
+		usageBarsShowUsed:    codexbar.UsageBarsShowUsed,
 		loadCollectorCycle:   daemon.LoadCollectorCycle,
 		logf:                 opts.Logf,
 		probeProviderSetup:   codexbar.ProbeProviderSetup,

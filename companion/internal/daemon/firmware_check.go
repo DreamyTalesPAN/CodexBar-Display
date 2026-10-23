@@ -8,10 +8,36 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/versioning"
 )
+
+// FirmwareUpdateCache is the stream's update envelope. Previews only read it;
+// fetching and freshness stay owned by attachFirmwareUpdateState.
+type FirmwareUpdateCache struct {
+	current atomic.Pointer[firmwareUpdateSnapshot]
+}
+
+type firmwareUpdateSnapshot struct {
+	update    protocol.UpdateState
+	checkedAt time.Time
+	board     string
+	firmware  string
+}
+
+func (c *FirmwareUpdateCache) snapshot(caps protocol.DeviceCapabilities) *firmwareUpdateSnapshot {
+	if c == nil {
+		return nil
+	}
+	cached := c.current.Load()
+	if cached == nil || cached.board != strings.ToLower(strings.TrimSpace(caps.Board)) || cached.firmware != strings.TrimSpace(caps.Firmware) {
+		return nil
+	}
+	return cached
+}
 
 func attachFirmwareUpdateState(ctx context.Context, state *runtimeState, deps runtimeDeps, caps protocol.DeviceCapabilities, result *cycleResult) {
 	if result == nil || strings.TrimSpace(caps.Board) == "" || strings.TrimSpace(caps.Firmware) == "" {
@@ -19,14 +45,11 @@ func attachFirmwareUpdateState(ctx context.Context, state *runtimeState, deps ru
 	}
 
 	now := deps.now()
-	board := strings.TrimSpace(strings.ToLower(caps.Board))
-	firmware := strings.TrimSpace(caps.Firmware)
-	if state.hasFirmwareUpdate &&
-		state.updateCheckedBoard == board &&
-		state.updateCheckedFirmware == firmware &&
-		now.Sub(state.updateCheckedAt) >= 0 &&
-		now.Sub(state.updateCheckedAt) < firmwareUpdateCheckGap {
-		update := state.firmwareUpdate
+	if state.firmwareUpdates == nil {
+		state.firmwareUpdates = &FirmwareUpdateCache{}
+	}
+	if cached := state.firmwareUpdates.snapshot(caps); cached != nil && now.Sub(cached.checkedAt) >= 0 && now.Sub(cached.checkedAt) < firmwareUpdateCheckGap {
+		update := cached.update
 		result.frame.Update = &update
 		return
 	}
@@ -39,11 +62,11 @@ func attachFirmwareUpdateState(ctx context.Context, state *runtimeState, deps ru
 			LastError: truncateUpdateError(err.Error()),
 		}
 	}
-	state.firmwareUpdate = update
-	state.hasFirmwareUpdate = true
-	state.updateCheckedAt = now
-	state.updateCheckedBoard = board
-	state.updateCheckedFirmware = firmware
+
+	state.firmwareUpdates.current.Store(&firmwareUpdateSnapshot{
+		update: update, checkedAt: now,
+		board: strings.ToLower(strings.TrimSpace(caps.Board)), firmware: strings.TrimSpace(caps.Firmware),
+	})
 	result.frame.Update = &update
 }
 

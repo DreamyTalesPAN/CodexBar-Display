@@ -26,7 +26,6 @@ import {
   setupProviderRowVariant,
 } from "./setup-provider-row";
 import { SetupDialog } from "./setup-dialog";
-import { displayPreviewFor } from "./setup-display-previews";
 import {
   CALM_BUTTON_CLASS,
   CALM_SUBTITLE_CLASS,
@@ -689,7 +688,7 @@ function setupProvidersInOrder(providers: ProviderItem[]): ProviderItem[] {
   ];
 }
 
-/** Use the preview's actual values, not health alone, to admit a provider. */
+/** Use actual usage values, not health alone, to admit a provider. */
 export function setupProviderCanDisplay(
   provider: ProviderItem,
   usage: UsageSnapshot | null,
@@ -698,12 +697,15 @@ export function setupProviderCanDisplay(
       (provider.health.state !== "healthy" && provider.health.state !== "stale")) {
     return false;
   }
-  const preview = displayPreviewFor(
-    usage?.providers.find((reading) => reading.id === provider.providerId),
-  );
-  return preview?.windows.some((window) =>
-    typeof window.percent === "number" && Number.isFinite(window.percent),
-  ) ?? false;
+  const reading = usage?.providers.find((item) => item.id === provider.providerId);
+  if (!reading || reading.stale || reading.usageUnavailable) return false;
+  const values = reading.windows?.length
+    ? reading.windows.map((window) => window.usedPercent)
+    : [
+        reading.sessionUnavailable ? null : reading.session,
+        reading.weeklyUnavailable ? null : reading.weekly,
+      ];
+  return values.some((value) => typeof value === "number" && Number.isFinite(value));
 }
 
 export function setupProviderMatchesQuery(

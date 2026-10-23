@@ -13,7 +13,7 @@ import {
   type ThemeRenderPack,
 } from "../live-vibetv-preview";
 import type { SetupDisplayModePreview } from "./setup-display-mode-screen";
-import { withActivityExpiry, withResetTrust } from "./setup-display-previews";
+import { withActivityExpiry } from "./setup-display-previews";
 
 /** The theme VibeTV is showing, which the tiles draw. */
 export type SetupDisplayModeTheme = {
@@ -220,17 +220,12 @@ function ThemeTile({
 }) {
   const data = useMemo(
     () =>
-      frame.frame
+      // An error frame has no theme data: the tile shows its no-usage state.
+      frame.frame && !frame.frame.error
         ? buildFrameData(
             frame.frameAt,
-            // As the device does on every draw: an expired deadline or trust
-            // horizon turns the frame stale and clears its countdowns.
-            // ... and a coding verdict past its TTL shows idle (#369).
-            withActivityExpiry(
-              withResetTrust(frame.frame, frame.frameAt, now),
-              frame.activityAt,
-              now,
-            ),
+            // A coding verdict past its TTL shows idle (#369).
+            withActivityExpiry(frame.frame, frame.activityAt, now),
             now,
           )
         : null,

@@ -26,6 +26,9 @@ type usageResponse struct {
 	TokenUsageUpdating bool                `json:"tokenUsageUpdating"`
 	CurrentProvider    string              `json:"currentProvider,omitempty"`
 	Providers          []usageProviderInfo `json:"providers"`
+	// PreviewFrames is set only for ?previewFrames=1: the stream's frames from
+	// the same snapshot as Providers.
+	PreviewFrames *previewFramesResponse `json:"previewFrames,omitempty"`
 }
 
 type usageRefreshTracker struct {
@@ -168,7 +171,7 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := s.currentTime()
-	showUsed := codexbar.UsageBarsShowUsed()
+	showUsed := s.usageBarsShowUsed()
 	manualRefresh := usageRefreshRequested(r)
 	if manualRefresh {
 		s.requestUsageRefresh(now)
@@ -194,10 +197,13 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 	if s.loadUsage != nil {
 		if usage, ok := s.loadUsage(now); ok && len(usage.Providers) > 0 {
 			loadInventory()
-			usage = usageForEnabledProviders(usage, inventory)
-			resp := usageResponseFromPersisted(now, usage)
+			enabledUsage := usageForEnabledProviders(usage, inventory)
+			resp := usageResponseFromPersisted(now, enabledUsage)
 			if len(resp.Providers) > 0 {
-				writeUsage(resp, usage)
+				if usagePreviewFramesRequested(r) {
+					resp.PreviewFrames = previewFramesFor(usage, inventory, showUsed, s.currentSystemBusy() != nil, s.previewDeviceCapabilities(), now, s.firmwareUpdates, s.runtimeTheme)
+				}
+				writeUsage(resp, enabledUsage)
 				return
 			}
 		}
@@ -248,6 +254,10 @@ func usageForEnabledProviders(usage daemon.PersistedUsage, settings []codexbar.P
 	}
 	usage.Providers = providers
 	return usage
+}
+
+func usagePreviewFramesRequested(r *http.Request) bool {
+	return r != nil && r.URL.Query().Get("previewFrames") == "1"
 }
 
 func usageRefreshRequested(r *http.Request) bool {

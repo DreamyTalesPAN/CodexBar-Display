@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
 
+import type { UsageSnapshot } from "../control-center-types";
+
 import { act, cleanup, render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { displayPreviewsFor, pinnedPreview, type PreviewFrames } from "./setup-display-previews";
 import {
   DisplayModeChoice,
   SetupDisplayModeScreen,
   type SetupDisplayModePreview,
 } from "./setup-display-mode-screen";
 import { useThemeRenderPack } from "./setup-display-theme-tiles";
-import { displayPreviewFor, withSentActivity } from "./setup-display-previews";
 
 /** The step loads the theme pack and hands it to the choice, as the wizard does. */
 function Choice(
@@ -32,25 +34,30 @@ const PACK = {
 };
 
 function live(label: string, percent: number): SetupDisplayModePreview {
+  const frame = {
+    v: 1,
+    provider: label.toLowerCase(),
+    label,
+    usageMode: "used",
+    usageWindows: [{ id: "session", label: "Session", percent, resetSecs: 3600 }],
+  };
   return {
     providerLabel: label,
     resetLabel: null,
     windows: [{ label: "Session", percent }],
-    frame: {
-      v: 1,
-      provider: label.toLowerCase(),
-      label,
-      usageMode: "used",
-      usageWindows: [{ id: "session", label: "Session", percent, resetSecs: 3600 }],
-    },
+    frame,
+    pinnedFrame: frame,
     frameAt: new Date().toISOString(),
   };
 }
 
+// The companion answered with no values for this provider: an error frame, so
+// the card does not wait on it.
 const noValues = (label: string): SetupDisplayModePreview => ({
   providerLabel: label,
   resetLabel: null,
   windows: [],
+  frame: { v: 1, error: "no usage yet" },
 });
 
 function show(
@@ -105,17 +112,15 @@ afterEach(() => {
 });
 
 describe("Display mode tiles with the active theme", () => {
-  it("renders the retained sent values instead of a grey tile after collection fails", async () => {
+  it("renders Companion-retained values after collection fails", async () => {
     const sent = live("Codex", 31);
-    const stale = displayPreviewFor({
-      id: "codex", label: "Codex", session: 31, weekly: 0,
-      stale: true, usageUnavailable: true, usageMode: "used",
-    })!;
-    show(withSentActivity([stale], { ok: true, savedAt: sent.frameAt,
-      frame: { ...sent.frame, resetTrust: "offline", resetTrustSecs: 600, resetSource: "codex:primary" },
-    }));
+    const retained = { ...sent.frame!, resetTrust: "offline", resetTrustSecs: 600, resetSource: "codex:primary" };
+    show(displayPreviewsFor(
+      { providers: [{ id: "codex", label: "Codex", session: 0, weekly: 0, stale: true, usageUnavailable: true }] } as UsageSnapshot,
+      [{ id: "codex", label: "Codex" }],
+      { generatedAt: sent.frameAt, providers: [{ id: "codex", automatic: retained, pinned: retained }] },
+    ));
     await settle();
-
     for (const card of [0, 1]) {
       expect(tiles(card)[0].getAttribute("data-state")).toBe("live");
       expect(tiles(card)[0].textContent).toContain("31");
@@ -154,6 +159,39 @@ describe("Display mode tiles with the active theme", () => {
     ).not.toHaveLength(0);
   });
 
+  it("draws the frames the companion returned, also for an enabled provider without a reading", async () => {
+    const payload: PreviewFrames = {
+      generatedAt: new Date().toISOString(),
+      providers: [
+        {
+          id: "codex",
+          automatic: { v: 2, provider: "codex", label: "Codex", usageWindows: [{ id: "session", label: "Session", percent: 28, resetSecs: 3600 }] },
+          pinned: { v: 2, provider: "codex", label: "Codex", usageWindows: [{ id: "session", label: "Session", percent: 31, resetSecs: 3600 }] },
+        },
+        {
+          id: "gemini",
+          automatic: { v: 2, provider: "gemini", label: "Gemini", usageUnavailable: true, resetTrust: "stale" },
+          pinned: { v: 2, provider: "gemini", label: "Gemini", usageUnavailable: true, resetTrust: "stale" },
+        },
+      ],
+    };
+    const fetchFrames = vi.fn(async () => ({ ok: true, status: 200, json: async () => payload }) as Response);
+    const previews = displayPreviewsFor(
+      { providers: [] },
+      [{ id: "codex", label: "Codex" }, { id: "gemini", label: "Gemini" }],
+      await (await fetchFrames()).json(),
+    );
+    show(previews, pinnedPreview(previews[0]));
+    await settle();
+
+    expect(tiles(0)).toHaveLength(2);
+    expect(tiles(0).map((tile) => tile.getAttribute("data-state"))).toEqual(["live", "live"]);
+    expect(tiles(0)[0].textContent).toContain("28");
+    expect(tiles(0)[1].textContent).toContain("Gemini");
+    // Manual draws the frame the host builds with the provider pinned.
+    expect(tiles(1)[0].textContent).toContain("31");
+  });
+
   it("shows the active theme's pack for the revision the device reports", async () => {
     show([live("Claude", 64)]);
     await settle();
@@ -182,6 +220,18 @@ describe("Display mode tiles with the active theme", () => {
 
     expect(tiles(1)).toHaveLength(0);
     expect(document.querySelectorAll('[data-slot="display-mode-preview"]')[1].textContent).toContain("No usage yet");
+  });
+
+  it("shows final unavailable state, not a loading skeleton, for an error frame", async () => {
+    // The companion sends an error frame when every provider is unavailable
+    // and no last-good frame exists (#858).
+    show([{ ...noValues("Claude"), frame: { v: 1, error: "no usage yet" } }]);
+    await settle();
+
+    const [claude] = tiles(0);
+    expect(claude.getAttribute("data-state")).toBe("unavailable");
+    expect(claude.textContent).not.toMatch(/\d/);
+    expect(screen.getAllByRole("img", { name: "Claude: no usage yet", hidden: true })).not.toHaveLength(0);
   });
 
   it("keeps a skeleton tile while the theme is still loading", () => {
@@ -418,7 +468,7 @@ describe("Display mode tiles retry a theme pack that is not ready yet", () => {
   });
 });
 
-describe("Display mode tiles re-classify reset trust on every clock tick", () => {
+describe("Display mode tiles run out their countdown on every clock tick", () => {
   const RESET_PACK = {
     ...PACK,
     spec: {
@@ -467,17 +517,5 @@ describe("Display mode tiles re-classify reset trust on every clock tick", () =>
 
     expect(tiles(0)[0].textContent).toContain("Reset unavailable");
     expect(tiles(0)[0].textContent).not.toContain("No active session");
-  });
-
-  it("says Reset unavailable once the 5 h trust horizon passes, whatever deadline is left", async () => {
-    // Read 4 h 59 m 30 s ago, with a deadline days away.
-    await open(withDeadline("2026-10-20T03:00:30Z", 3 * 24 * 3600));
-    expect(tiles(0)[0].textContent).not.toContain("Reset unavailable");
-
-    await act(async () => {
-      vi.advanceTimersByTime(31_000);
-    });
-
-    expect(tiles(0)[0].textContent).toContain("Reset unavailable");
   });
 });
