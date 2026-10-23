@@ -32,6 +32,12 @@ export type WhatsNewEntry = {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    id: "screensaver-orbit-pebbles",
+    icon: PanelsTopLeft,
+    title: "New screensaver: Orbit Pebbles",
+    body: "Three glossy pebbles orbit on a dark background. Choose it in Appearance → Screensavers.",
+  },
+  {
     id: "theme-gauge",
     icon: PanelsTopLeft,
     title: "New theme: Gauge",

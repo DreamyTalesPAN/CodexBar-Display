@@ -141,6 +141,22 @@
       ]
     },
     {
+      "id": "orbit-pebbles",
+      "title": "Orbit Pebbles",
+      "usage": "screensaver",
+      "version": "0.1.0",
+      "themeRev": 2,
+      "themeSpecPath": "/themes/s/op-2-271cbc08.json",
+      "requiresFirmware": "1.0.40",
+      "requiredCapabilities": [
+        "usage-slots-v1"
+      ],
+      "downloadAsset": "vibetv-theme-orbit-pebbles-v0.1.0.zip",
+      "sha256": "8e560aff43ac996d0bcedf477ba419af8630ee34f7e59dd8f3e8b8e793a0829a",
+      "bytes": 4452,
+      "earlierThemeSpecPaths": []
+    },
+    {
       "id": "pixel-battery",
       "title": "Pixel Battery",
       "usage": "live",

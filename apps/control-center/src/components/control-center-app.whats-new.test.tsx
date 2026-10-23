@@ -282,6 +282,7 @@ it("tells a set-up customer what is new once, on Overview, until they close it",
   ).toEqual([
     "New theme: Gauge",
     "New theme: Token Counter",
+    "New screensaver: Orbit Pebbles",
     "Switch providers with a shortcut",
     "Choose how often VibeTV switches",
   ]);
