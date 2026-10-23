@@ -8,14 +8,15 @@ import type { DeviceInfo } from "../control-center-types";
 import type { DisplayFrameSnapshot } from "../live-vibetv-preview";
 
 const state = vi.hoisted(() => ({
-  rendererFails: false, modelFails: false, angles: [] as number[],
+  hardware: true, rendererFails: false, modelFails: false, angles: [] as number[],
   listeners: {} as Record<string, () => void>, scene: null as Scene | null,
   renders: 0, cssRenders: 0, portal: null as HTMLElement | null,
 }));
-vi.mock("./setup-3d-preview", async () => ({
-  SetupVibeTV3DPreview: (await import("../vibetv-3d-preview")).VibeTV3DPreview,
-  useHardware3D: () => true,
-}));
+vi.mock("next/dynamic", async () => {
+  const { VibeTV3DPreview } = await import("../vibetv-3d-preview");
+  return { default: () => VibeTV3DPreview };
+});
+vi.mock("../vibetv-3d-support", () => ({ hardwareWebGLAvailable: () => state.hardware }));
 vi.mock("three", async (importOriginal) => {
   const three = await importOriginal<typeof import("three")>();
   class FakeRenderer {
@@ -90,6 +91,9 @@ vi.mock("three/addons/renderers/CSS3DRenderer.js", async () => {
 });
 
 beforeEach(() => {
+  state.hardware = true;
+  state.modelFails = false;
+  state.rendererFails = false;
   vi.useFakeTimers();
   vi.spyOn(document, "hidden", "get").mockReturnValue(false);
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) =>
@@ -127,6 +131,7 @@ it("hands over only after the visible 3D screen loads the current revision", asy
   const view = (revision: string) => <SetupLiveScreen device={device(revision)}
     displayFrame={frame} usage={null} onPreviewReady={finished} />;
   const { rerender, container } = render(view("rev-a"));
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
   await act(async () => {
     for (const request of pending.filter((p) => p.revision === "rev-a")) request.resolve(response("rev-a"));
   });
@@ -153,4 +158,39 @@ it("hands over only after the visible 3D screen loads the current revision", asy
   expect(finished).not.toHaveBeenCalled();
   await act(async () => { await vi.advanceTimersByTimeAsync(1); });
   expect(finished).toHaveBeenCalledTimes(1);
+});
+
+
+it.each(["unsupported", "model failure"])("finishes real device setup without a photo after %s", async (failure) => {
+  state.hardware = failure !== "unsupported";
+  state.modelFails = failure === "model failure";
+  const finished = vi.fn();
+  let resolvePack: (response: Response) => void = () => {};
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { resolvePack = resolve; })));
+  const device = {
+    active: true, connected: true, ready: true, paired: true, activeTheme: "codex",
+    display: { themeSpec: { active: true, renderOk: true, path: "/themes/codex/rev-a.json", hash: "rev-a" } },
+  } as DeviceInfo;
+  const frame = { ok: true, frame: { v: 2, provider: "codex", label: "Codex",
+    usageSlots: [{ id: "weekly", label: "Weekly", percent: 29 }] } } as DisplayFrameSnapshot;
+  const view = (renderOk: boolean) => <SetupLiveScreen device={{ ...device,
+    display: { themeSpec: { ...device.display!.themeSpec!, renderOk } } }}
+    displayFrame={frame} usage={null} onPreviewReady={finished} />;
+  const { container, rerender } = render(view(false));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(container.textContent).toContain("3D preview is unavailable.");
+  expect(container.querySelector("img, [data-testid=vibetv-case]")).toBeNull();
+  await act(async () => { await vi.advanceTimersByTimeAsync(3001); });
+  expect(finished).not.toHaveBeenCalled();
+  await act(async () => { resolvePack({ ok: true, status: 200, json: async () => ({
+    themeId: "codex", spec: { p: [] }, assets: {}, specPath: "/themes/codex/rev-a.json", specHash: "rev-a",
+  }) } as Response); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(3001); });
+  expect(finished).not.toHaveBeenCalled();
+  rerender(view(true));
+  await act(async () => { await vi.advanceTimersByTimeAsync(2999); });
+  expect(finished).not.toHaveBeenCalled();
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(finished).toHaveBeenCalledTimes(1);
+  expect(container.querySelector("img, [data-testid=vibetv-case]")).toBeNull();
 });

@@ -38,7 +38,7 @@ describe("SetupLiveScreen", () => {
 
   it("renders no flat VibeTV picture while the 3D model is not ready", () => {
     // Hardware WebGL is only known after the first paint; until then and
-    // while the 3D model loads, the area stays empty instead of flashing the photo.
+    // while the 3D model loads, the area shows a neutral loading message instead of flashing the photo.
     expect(render()).not.toContain("<img");
     expect(render()).not.toContain('data-testid="vibetv-case"');
   });

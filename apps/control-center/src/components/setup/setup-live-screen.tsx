@@ -1,16 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect } from "react";
 import type {
   DeviceInfo,
   SupportDiagnostics,
   UsageSnapshot,
 } from "../control-center-types";
-import {
-  LiveVibeTVPreview,
-  type DisplayFrameSnapshot,
-} from "../live-vibetv-preview";
-import { SetupVibeTV3DPreview, useHardware3D } from "./setup-3d-preview";
+import type { DisplayFrameSnapshot } from "../live-vibetv-preview";
+import { LiveVibeTV3DPreview } from "../live-vibetv-3d-preview";
 import {
   SetupWizardScreen,
   SetupWizardTitle,
@@ -49,14 +46,6 @@ export function SetupLiveScreen({
       onPreviewReady?.();
     }
   }, [alreadySetUp, onPreviewReady]);
-  // The visible preview owns the handover. While 3D loads, reserve its space
-  // without mounting a second live screen with independent theme readiness.
-  const hardware3D = useHardware3D();
-  const [threeState, setThreeState] = useState<"loading" | "ready" | "failed">("loading");
-  const onThreeReady = useCallback(() => setThreeState("ready"), []);
-  const onThreeFailed = useCallback(() => setThreeState("failed"), []);
-  const threeReady = threeState === "ready";
-  const preview3D = threeState === "failed" ? false : hardware3D;
   if (alreadySetUp) {
     return null;
   }
@@ -68,42 +57,14 @@ export function SetupLiveScreen({
       windowsHost={windowsHost}
     >
       <SetupWizardTitle>Your VibeTV is live</SetupWizardTitle>
-      <div className="relative mt-8 flex w-full justify-center">
-        {preview3D ? (
-          <div
-            // Keep the loading model hidden from assistive technology
-            // until its visible screen is ready.
-            aria-hidden={threeReady ? undefined : true}
-            className={
-              threeReady
-                ? "flex w-full justify-center"
-                : "absolute inset-0 flex justify-center opacity-0"
-            }
-            inert={threeReady ? undefined : true}
-          >
-            <SetupVibeTV3DPreview
-              className="-my-[22px] aspect-[640/411] w-[min(640px,calc(100vw-48px))] max-w-none shrink-0"
-              device={device}
-              displayFrame={displayFrame}
-              onPreviewReady={threeReady ? onPreviewReady : undefined}
-              onReady={onThreeReady}
-              onFailed={onThreeFailed}
-              usage={usage}
-            />
-          </div>
-        ) : null}
-        {preview3D === false ? (
-          <div className="w-full">
-            <LiveVibeTVPreview
-              device={device}
-              displayFrame={displayFrame}
-              onPreviewReady={onPreviewReady}
-              usage={usage}
-            />
-          </div>
-        ) : !threeReady ? (
-          <div className="aspect-[640/411] w-[min(640px,calc(100vw-48px))]" />
-        ) : null}
+      <div className="mt-8 w-full">
+        <LiveVibeTV3DPreview
+          className="-my-[22px] aspect-[640/411] w-[min(640px,calc(100vw-48px))] max-w-none shrink-0"
+          device={device}
+          displayFrame={displayFrame}
+          onPreviewReady={onPreviewReady}
+          usage={usage}
+        />
       </div>
     </SetupWizardScreen>
   );
