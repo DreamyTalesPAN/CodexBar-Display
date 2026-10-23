@@ -199,11 +199,6 @@ function rowGaps(items: Array<Rect & { name: string }>) {
   return rows.slice(1).map((row, i) => ({ gap: row.top - rows[i].bottom, above: rows[i].names.join(" + "), below: row.names.join(" + ") }));
 }
 
-// Open with Paul: Pixel Battery names the limit in its footer at every minute count (pace-themes.test.ts), and "Session reset 47m" then fills
-// the 224 px between the frame lines of its background to the pixel (7 px to 230 px). Staying 3 px clear means "Reset 47m" in that last
-// hour or a new background; the test below fails the day the state is clear, so this entry cannot outlive the decision.
-const LAYOUT_PENDING = [{ theme: "pixel-battery", detail: /^text "Session reset \d+m" .* background art/ }];
-
 function layoutViolations(pack: ThemeRenderPack): string[] {
   const prims = pack.spec?.p ?? [];
   const animations = animationBoxes(pack);
@@ -358,7 +353,7 @@ function edgeHits(pack: ThemeRenderPack): string[] {
 // bar or a ring (the pace tick is left out, it reaches 3 px beyond a bar at one column only). The descender of "On pace" 2 px above a
 // divider, "Weekly reset" on a frame line, "Fable only reset 4d" 2 px beside the ends of Gauge's ring and the "%" of Gauge's "100%" on
 // its ring were all seen on a device. Every reachable state counts: the long strings, every number, One and Two.
-function inkHits(pack: ThemeRenderPack, themeId: string, pending = false): string[] {
+function inkHits(pack: ThemeRenderPack): string[] {
   const prims = pack.spec?.p ?? [];
   const artAt = staticArt(pack);
   const dividers = [
@@ -388,7 +383,7 @@ function inkHits(pack: ThemeRenderPack, themeId: string, pending = false): strin
       }
     }
   }
-  return [...found.values()].filter((detail) => LAYOUT_PENDING.some((entry) => entry.theme === themeId && entry.detail.test(detail)) === pending);
+  return [...found.values()];
 }
 
 describe("no text is drawn smaller than its theme declares", () => {
@@ -411,8 +406,21 @@ describe("animations, dividers, bars and text of every catalog theme stay apart 
     expect(layoutViolations(loadPack(themeId))).toEqual([]);
   });
 
-  it.each(LAYOUT_PENDING)("$theme still has a footer on its frame line (decision pending): drop the entry from LAYOUT_PENDING once fixed", (entry) => {
-    expect(inkHits(loadPack(entry.theme), entry.theme, true)).not.toEqual([]);
+
+  // Pixel Battery's footer is the one text that spans the width between the frame lines of its background: "Session reset 47m" filled the 224 px
+  // between them to the pixel. The box is 222 px wide, centred, so from 10 minutes on the firmware's own fallback leaves the limit name out
+  // ("Reset 47m"); every minute count of both limits, in One provider and in Two at once, keeps 3 px to the frame lines.
+  it("Pixel Battery's footer keeps 3 px from the frame lines at every minute count", () => {
+    const pack = loadPack("pixel-battery"), prims = pack.spec?.p ?? [], artAt = staticArt(pack);
+    const footer = prims.find((p) => p.v?.startsWith("Reset in "))!;
+    const found: string[] = [];
+    for (const two of [false, true]) for (const window of [0, 1]) for (let minutes = 1; minutes < 60; minutes++) {
+      const frame = frameFor(two, "remaining", undefined, window, undefined, window === 1 ? minutes * 60 : 424000, SCENARIOS[0], window === 0 ? minutes * 60 : 9100);
+      const text = renderTextPrimitive(footer, frame, prims);
+      const art = artNearText(textInk(footer, text), artAt);
+      if (art) found.push(`"${text}" is under ${CLEAR} px from background art ${art}`);
+    }
+    expect(found).toEqual([]);
   });
 });
 
@@ -424,6 +432,6 @@ describe("no text ink comes within 3 px of the screen edge", () => {
 
 describe("no text ink comes within 3 px of a divider, frame line, bar or ring", () => {
   it.each(catalogIds)("%s", (themeId) => {
-    expect(inkHits(loadPack(themeId), themeId)).toEqual([]);
+    expect(inkHits(loadPack(themeId))).toEqual([]);
   });
 });

@@ -20416,3 +20416,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: On "Choose your theme", from the finished install until setup moves on to "Display mode", the button keeps its installing look (spinner, "Installing", not clickable) next to the line "Theme is active on VibeTV."; when VibeTV does not confirm the theme, the button returns to "Install" as soon as the app has asked once, so the customer can try again. No text changes.
 - Scope: SetupWizard (new confirmingTheme prop, set while the app's install action runs) and its test.
 - What's new: none — setup button state only
+
+## 2026-10-23 — #7217: Pixel Battery's footer in the last session hour reads "Reset 55m" without the limit name and keeps 3 px from the frame lines: Pixel Battery 1.17.8
+
+- User approval: pending — Paul question 6 (variant 1): from 10 minutes on, "Session reset 47m" filled the whole width between the two frame lines of Pixel Battery's background to the pixel (the "S" on the left line, the "m" 1 px from the right line)
+- Approved customer-visible result: While the session reset is under one hour from 10 minutes on ("10m" to "59m"), Pixel Battery's footer reads "Reset 55m" without the limit name, centred, 49 px clear of both frame lines; from one hour on it reads as before ("Session reset 2h", "Weekly reset 6d"), and so do "Session reset 1m" to "Session reset 9m" and every weekly footer ("Weekly reset 47m"). In Two at once the same ("Reset 55m"). Every other state of every theme looks the same. No text gets smaller.
+- Scope: the theme pack Pixel Battery 1.17.8 (spec rev 25, the footer box 222 px wide and centred, x 6 to 9 and w 228 to 222, so the firmware's and the app preview's own fallback leaves the limit name out when "Session reset 10m" does not fit) and the layout guard test animation-layout.test.ts (the pending entry for the footer is removed; every minute count of both limits, in One provider and Two at once, keeps 3 px from the frame lines) and pace-themes.test.ts (the footer reads "Reset 10m" to "Reset 59m" and "Session reset 1m" to "Session reset 9m").
+- What's new: none — theme layout only
