@@ -20815,3 +20815,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The same pending recovery draft above; its browser regression now checks the setup instruction and existing confirmation instead of the superseded warning text.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs`; no further customer-visible change.
 - What's new: none — verification of the pending repair-action draft.
+
+## 2026-10-23 — Paul 7219: integrate Q13, Q15 and approved Q11
+
+- User approval: approved by Paul, 2026-10-23 09:09 for Q13 and Q15; 2026-10-23 10:25 for Q11, as recorded in their original blocks and relayed by the coordinator for this integration.
+- Approved customer-visible result: The approved centred single-limit themes, Token Counter single-provider behavior, and Updates recovery action coexist on the Paul line. Existing Paul layouts remain; the inherited manual-refresh correction uses the existing icon button and its pending spinner, with the accessible name Refreshing, without a second pending badge.
+- Scope: Merge Q13 and Q15 onto 1205d46b, then Q11 with its main/calm-updates ancestry; preserve every source approval block, the latest Paul layouts and the incoming runtime fixes. No additional UI design.
+- What's new: none — integration of the unreleased approved Paul test-line corrections.
