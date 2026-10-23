@@ -11029,3 +11029,171 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none new; Pace stays directly under Display mode, before Brightness.
 - Scope: one prop in settings-pace.test.tsx and this approval record. Pull request branch #800 only, not merged, not released.
 - What's new: none — test only
+
+## 2026-10-21 — #592 on #800: Two at once, Limits on VibeTV
+
+- User approval: pending — #592 two providers at once (Two at once mode, Limits on VibeTV, Two Limits theme); visible parts go to a Claude Design round before Paul sees them
+- Approved customer-visible result: nothing is approved yet. Display mode gains "Two at once" (with a First and Second provider choice) in setup and Settings, and Settings gains "Limits on VibeTV"; these screens are the carried #592 versions and are redesigned in a Claude Design round first.
+- Scope: Control Center only: display mode panel, provider pair choice, Limits on VibeTV section, the pair preview and the "One provider" name of the former Manual mode. Pace is not part of this entry; it comes from #800 unchanged.
+- What's new: none — the visible parts go to a Claude Design round first
+
+## 2026-10-21 — #592 on #800: Two Limits theme
+
+- User approval: pending — #592 two providers at once (Two Limits theme with the #800 pace bar and sentences); visible parts go to a Claude Design round before Paul sees them
+- Approved customer-visible result: nothing is approved yet. The theme "Two Limits" shows two limits (or two providers at once) with the pace bar, the reserve or deficit piece and the sentences of the #800 Pace themes; layout and colours are open for the Claude Design round.
+- Scope: theme pack two-limits (theme, manifest, render pack, catalog entry), its documentation and its test. Its preview image in docs/assets still shows the #592 look.
+- What's new: none — the visible parts go to a Claude Design round first
+
+## 2026-10-21 — #864: What's new entry for the Two Limits theme
+
+- User approval: pending — #864 What's new entry for the Two Limits theme (draft text, Paul sees it with the Two-at-once design round)
+- Approved customer-visible result: nothing is approved yet. A customer who updates is told once, with the other new themes, "New theme: Two Limits" and the draft sentence "New: Two Limits shows two sources at once on your VibeTV – two providers or two accounts."; the entry links to the theme in Themes.
+- Scope: one What's-new entry (`theme-two-limits`) in apps/control-center/src/lib/whats-new.ts, its test fixture and expectations in control-center-app.whats-new.test.tsx (the notice now shows the newest three themes, Gauge is no longer among them), and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: `theme-two-limits`
+
+## 2026-10-21 — #864: approval marker after merging claude/usage-pace at 8d16d879
+
+- User approval: no visible change – UI approval not needed (merge of claude/usage-pace (8d16d879) into #864; the own entries of #864 keep their approvals)
+- Approved customer-visible result: #864 as in its own entries plus the entries merged with 8d16d879; nothing else changes.
+- Scope: the merge of 8d16d879 and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge of 8d16d879, no customer-visible change of its own
+
+## 2026-10-21 — #864: Two Limits theme as Variante B (reduced)
+
+- User approval: pending — theme Two Limits on VibeTV as Paul's pick "Two Limits · Variante B – reduziert: nur Balken, Sätze klein" (Claude Design page "Usage-Skeleton und Two Limits - Runde 21.10"): name + window kind, big percent, thin pace bar, small pace sentence, no reset line; Paul sees it on the device in the next build
+- Approved customer-visible result: the reduced Two Limits layout uses a dark background, large percentages without a mode suffix, thin pace bars and small state-coloured pace sentences. The existing combined provider/window label and mode sit on the left; a small grey provider/system-notice line remains at the bottom. Missing slots stay hidden because the existing theme format has no unavailable-dash binding; the second panel starts below the divider to avoid an overlap. Device review remains pending.
+- Scope: theme-packs/two-limits/theme.json and manifest.json, regenerated dist/theme-packs outputs, apps/control-center/src/theme-packs/two-limits-theme.test.ts and this approval record. No firmware, Companion or app UI change.
+- What's new: none — layout refinement of the existing Two Limits theme; its existing announcement remains unchanged.
+
+## 2026-10-21 — #864: Recent activity names both sources in Two at once
+
+- User approval: pending — Recent activity says "Show <Top> and <Bottom> at once" when the Two at once sources change (wording decided by the coordinator 21.10.); Paul sees it in the next build
+- Approved customer-visible result: nothing is approved yet. Under Recent activity, a change of only the Bottom source of Two at once is recorded with the draft sentence "Show <Top> and <Bottom> at once" (source labels as the picker shows them) instead of nothing, and switching from a fixed or Automatic display to Two at once is recorded the same way. Other entries keep their wording ("Always show <provider>." and "Automatic: VibeTV switches between your providers.").
+- Scope: displayModeChange in apps/control-center/src/components/control-center-app.tsx (the caller now takes its sentence from it) and its tests in control-center-app.test.ts, plus this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — no announcement; the Recent activity sentence is the only change
+
+## 2026-10-21 — #864: theme Two Limits removed (Paul 7202)
+
+- User approval: pending — Paul (21.10.): "das theme two limits ist zu nah dran an pace meter … lass uns das theme two limits erstmal rausnehmen": the theme Two Limits and its What's new entry are gone; Two at once uses Pace Meter and the other themes; Paul sees it in build 7203
+- Approved customer-visible result: nothing is approved yet. The theme Two Limits is no longer in the catalog, in Themes or in What's new. What's new announces Gauge, Token Counter and Pace Meter; Two at once uses Pace Meter and the other themes.
+- Scope: theme-packs/two-limits and its outputs in dist/theme-packs (render packs, ZIPs, catalog entry), the What's new entry theme-two-limits and its test expectations, the display-limits-settings test fixture, docs/themes.md, docs/assets/README.md and its preview image, and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — the Two Limits entry is removed; no new announcement
+
+## 2026-10-21 — #864: Two at once pickers "Provider 1"/"Provider 2", picking the same source swaps (Paul 7202)
+
+- User approval: pending — Paul's 7202 feedback on #864: pickers are called "Provider 1" and "Provider 2"; choosing the other picker's source swaps the two instead of showing "Two at once needs two different providers"; Paul sees the integration in build 7203
+- Approved customer-visible result: nothing is approved yet. Settings and setup name the Two at once pickers "Provider 1" and "Provider 2"; choosing the other picker's source swaps both and saves the distinct pair without the duplicate-provider error. Recent activity keeps "Show <Provider 1> and <Provider 2> at once" with the chosen source names.
+- Scope: setup-display-mode-screen.tsx and Settings/setup interaction tests. Both screens already share the setup swap helper on this branch; keep it and verify saving in both directions. Companion validation and generic error handling stay in place; no dedicated app-side duplicate-provider dialog exists to remove.
+- What's new: none — picker labels and swap regression coverage, no new announcement
+
+## 2026-10-21 — #864: no "A + B" top line in Two at once (Paul 7202)
+
+- User approval: pending — Paul (21.10.): no "A + B" top line in Two at once on the VibeTV and in its preview; Paul sees it in build 7203
+- Approved customer-visible result: Two at once leaves the shared provider line blank because each usage slot already names its provider. Device notices still appear on that line; the app's own provider names and Showing now text stay unchanged. Paul's review on build 7203 remains pending.
+- Scope: pair-frame label construction and serialization, firmware preservation of explicitly empty labels, live VibeTV preview label preservation, focused tests and protocol documentation. No theme layout changes.
+- What's new: none — removal of the redundant pair header, no separate announcement.
+
+## 2026-10-21 — #864: approval marker after the Two Limits removal merge
+
+- User approval: no visible change – UI approval not needed (merge of the remote #864 branch with the Two Limits removal; the remote's own change is Go-only: the Two at once shortcut in the Companion API)
+- Approved customer-visible result: #864 as in its own entries; the Two Limits theme stays removed, nothing else changes.
+- Scope: the merge commits and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge marker, no customer-visible change of its own
+
+## 2026-10-21 — #864: queued display changes build on the latest selection
+
+- User approval: no visible change – UI approval not needed (bug fix: quick successive limit toggles are all saved)
+- Approved customer-visible result: Ticking or unticking several limits in quick succession keeps every change; each save starts from the selection the earlier save left behind. Pair order changes are logged under Recent activity like any other pair change.
+- Scope: the limits callback hands its change to the display write queue as a function of the selection there, the picker type accepts that form, and the Companion logs a pair's member or order change as a display mode change. Tests for the queue, the limits change, and the logged pair order.
+- What's new: none — bug fix, no separate announcement.
+
+## 2026-10-21 — #864: approval marker after merging claude/usage-pace at 5f6798fd
+
+- User approval: no visible change – UI approval not needed (merge of claude/usage-pace (5f6798fd) into #864; the own entries of #864 keep their approvals)
+- Approved customer-visible result: #864 as in its own entries plus the entries merged with 5f6798fd; nothing else changes.
+- Scope: the merge of 5f6798fd and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge of 5f6798fd, no customer-visible change of its own
+
+## 2026-10-21 — #864: preserve the saved pair during a temporary missing reading
+
+- User approval: no visible change – UI approval not needed (bug fix: keep the saved Two at once card and both provider pickers visible while a member awaits fresh usage)
+- Approved customer-visible result: Setup and Settings keep the saved pair selected when either enabled member has stale, unavailable, or missing usage; its preview stays unavailable and the saved provider order stays intact. One provider keeps its existing reading requirement.
+- Scope: shared pair picker inputs, setup and Settings pair choices and previews, regression tests, and the theme guide correction for the deliberately empty pair frame label.
+- What's new: none — restore the existing saved choice, no separate announcement.
+
+## 2026-10-21 — #864: apply queued pair picker changes to the latest selection
+
+- User approval: no visible change – UI approval not needed (bug fix: preserve both rapid pair picker edits and their swap rule while a display PATCH is pending)
+- Approved customer-visible result: Each pair picker changes only its own slot against the selection left by the preceding save, so both rapid edits remain saved, including a swap.
+- Scope: pair picker callback passes position and provider, Settings derives the pair in the existing display write queue, setup applies the shared swap helper to its current draft, and regression tests hold a display PATCH while both pickers change.
+- What's new: none — correct existing pair saves, no separate announcement.
+
+## 2026-10-21 — #864: F1 keep the last visible limit inside queued edits
+
+- User approval: no visible change – UI approval not needed (bug fix: queued unticks cannot hide the last visible limit)
+- Approved customer-visible result: Rapid unticks keep the first choice and leave the final visible limit selected, even while an earlier display save is pending.
+- Scope: display-limits-settings updater and its queued two-untick regression.
+- What's new: none — restore the existing last-visible-limit editing rule.
+
+## 2026-10-21 — #864: F2 keep hidden limits hidden after source loss
+
+- User approval: pending — when the chosen limit disappears, One provider shows unavailable instead of resurrecting a hidden limit; Two at once shows the other readable member alone
+- Approved customer-visible result: Hidden limits stay unticked and can be selected explicitly again. A reading with no chosen limit left stays unavailable in the single-provider preview and on VibeTV; a readable pair member keeps its own reading and countdown.
+- Scope: daemon visible-window filtering and pair selection, shared display previews, and regression tests for source loss and checkbox editing.
+- What's new: none — correct hidden-limit behavior, pending review of the changed unavailable state.
+
+## 2026-10-21 — #864: approval marker after merging claude/usage-pace at 585afefc
+
+- User approval: no visible change – UI approval not needed (merge of claude/usage-pace (585afefc) into #864; the own entries of #864 keep their approvals)
+- Approved customer-visible result: #864 as in its own entries plus the entries merged with 585afefc; nothing else changes.
+- Scope: the merge of 585afefc and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge of 585afefc, no customer-visible change of its own
+
+## 2026-10-21 — #864: approval marker after merging claude/usage-pace at 8d0fe117
+
+- User approval: no visible change – UI approval not needed (merge of claude/usage-pace (8d0fe117) into #864; the own entries of #864 keep their approvals)
+- Approved customer-visible result: #864 as in its own entries plus the entries merged with 8d0fe117; nothing else changes.
+- Scope: the merge of 8d0fe117 and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge of 8d0fe117, no customer-visible change of its own
+
+## 2026-10-22 — #864: Theme Library shows the token-history hint also in Two at once
+
+- User approval: pending — Theme Library shows the existing token-history hint also in Two at once
+- Approved customer-visible result: in Two at once, a theme that draws token numbers gets the same "Shows -- while token history is unavailable. See Usage." line that one-provider mode already shows, because Two at once frames carry no token totals; nothing else changes.
+- Scope: Theme Library hint for Two at once (usage-screen.tsx helper, control-center-app.tsx call site, tests). Pull request branch #864 only, not merged, not released.
+- What's new: none — the hint text already exists; only the case in which it shows is extended to Two at once
+
+## 2026-10-22 — #864: Settings Pace and Two at once say Update needed on older VibeTV firmware
+
+- User approval: pending — Pace and Two at once are disabled and say "Update needed. Update VibeTV to use this." when a ready VibeTV lacks the firmware feature
+- Approved customer-visible result: on VibeTV firmware without usage-pace-v1 the Pace switch shows off and is disabled; without usage-windows-v1 or room for two windows the Two at once card is disabled. Both show "Update needed. Update VibeTV to use this." instead of their usual line. Offline or unknown devices and capable firmware are unchanged.
+- Scope: Settings Pace and Display mode Two at once (settings-screen.tsx, settings-pace.tsx tests, deviceLacks in control-center-types.ts, DisplayModeChoice pairNote prop). The setup wizard is unchanged. Pull request branch #864 only, not merged, not released.
+- What's new: none — a notice that these settings need a VibeTV update; nothing new to use
+
+## 2026-10-22 — #864: approval marker after merging claude/usage-pace at dd826fe5
+
+- User approval: no visible change – UI approval not needed (merge of claude/usage-pace (dd826fe5) into #864; the own entries of #864 keep their approvals)
+- Approved customer-visible result: #864 as in its own entries plus the entries merged with dd826fe5; nothing else changes.
+- Scope: the merge of dd826fe5 and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — merge of dd826fe5, no customer-visible change of its own
+
+## 2026-10-22 — #864: approval marker after merging claude/usage-pace at 94b4c6c2
+
+- User approval: pending — #864's Settings rebuilt on the calm Settings of its base (#800 with main): Two at once is a third radio row under Automatic and Manual with the pickers "Provider 1" and "Provider 2", and "Limits on VibeTV" stands after Display mode and Pace, before Brightness; the base's wording wins over #864's own: the mode is called "Manual" (not "One provider") with the description "VibeTV always shows the one provider you pick — nothing else." in Settings and in setup, and the shortcut line says "This switches to Manual."; Settings shows no previews on its cards; none of this is seen by Paul
+- Approved customer-visible result: nothing is approved yet. Two at once, its two pickers, the line "Update needed. Update VibeTV to use this." and Limits on VibeTV keep the wording of the entries above; only their place in the calm Settings changed.
+- Scope: the merge of 94b4c6c2, `settings-screen.tsx` and its tests, `setup-display-mode-screen.tsx` (its unused `pairNote` goes), the mode name in tests and `test-customer-flows.mjs`, the Companion's message `Choose Automatic, Manual or Two at once.` and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — the visible parts still wait for the Claude Design round
+
+## 2026-10-22 — #864: Limits on VibeTV closing tag indented
+
+- User approval: no visible change – UI approval not needed (formatting only: the closing tag of the limits list in Settings is indented like its neighbours)
+- Approved customer-visible result: none new; Settings looks as in the entry above.
+- Scope: one line in settings-screen.tsx and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — formatting only
+
+## 2026-10-23 — #864: display mode "One provider" instead of "Manual"
+
+- User approval: approved by Paul, 2026-10-23 08:43
+- Approved customer-visible result: the display mode that was called "Manual" is called "One provider" in Settings (its radio row, the shortcut line "… This switches to One provider.") and in setup (its tile title). Its description becomes "VibeTV always shows the one provider you pick." in both places, as on the reference branch. The Companion's error for an unknown mode says "Choose Automatic, One provider or Two at once." Nothing else changes.
+- Scope: settings-screen.tsx, setup-display-mode-screen.tsx, provider-picker.tsx (comment), provider_display.go (error text), their tests, the mode name in test-customer-flows.mjs and this approval record. Pull request branch #864 only, not merged, not released.
+- What's new: none — the same mode under its new name, nothing new to use

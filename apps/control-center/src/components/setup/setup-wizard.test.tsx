@@ -132,6 +132,67 @@ describe("SetupWizard: display step with a saved provider that shows nothing", (
   });
 });
 
+describe("SetupWizard: Two at once sources", () => {
+  it("keeps the saved pair and its unavailable member when only one reading is fresh", async () => {
+    const props = baseProps({
+      displayMode: "pair",
+      displayProviderIds: ["codex", "claude"],
+      displayProviders: [{ id: "codex", label: "Codex" }],
+      automaticPreviews: [
+        { providerLabel: "Codex", resetLabel: null, windows: [{ label: "Session", percent: 37 }] },
+        { providerLabel: "Claude", resetLabel: null, windows: [{ label: "Session", percent: null }] },
+      ],
+    });
+    render(<SetupWizard {...props} />);
+
+    const pair = screen.getByRole("button", { name: /Two at once/ });
+    expect(pair.getAttribute("aria-pressed")).toBe("true");
+    expect(pair.textContent).toContain("Claude Session--");
+    expect(screen.getByRole("combobox", { name: "Provider 1" }).textContent).toBe("Codex");
+    expect(screen.getByRole("combobox", { name: "Provider 2" }).textContent).toBe("Claude");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    });
+    expect(props.onDisplayContinue).toHaveBeenCalledExactlyOnceWith({
+      mode: "pair", providerIds: ["codex", "claude"],
+    });
+  });
+
+  it.each([
+    ["Provider 1", "Claude"],
+    ["Provider 2", "Codex"],
+  ])("swaps both pickers and saves the full pair from %s", async (picker, source) => {
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
+    Element.prototype.hasPointerCapture = () => false;
+    Element.prototype.scrollIntoView = () => {};
+    const props = baseProps({
+      displayMode: "pair",
+      displayProviderIds: ["codex", "claude"],
+      displayProviders: [{ id: "codex", label: "Codex" }, { id: "claude", label: "Claude" }],
+    });
+    render(<SetupWizard {...props} />);
+
+    expect(screen.queryAllByRole("combobox", { name: /^(Top|Bottom|First provider|Second provider)$/ })).toHaveLength(0);
+    fireEvent.keyDown(screen.getByRole("combobox", { name: picker }), { key: "Enter" });
+    fireEvent.keyDown(screen.getByRole("option", { name: source }), { key: "Enter" });
+
+    expect(screen.getByRole("combobox", { name: "Provider 1" }).textContent).toBe("Claude");
+    expect(screen.getByRole("combobox", { name: "Provider 2" }).textContent).toBe("Codex");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    });
+    expect(props.onDisplayContinue).toHaveBeenCalledExactlyOnceWith({
+      mode: "pair",
+      providerIds: ["claude", "codex"],
+    });
+  });
+});
+
 describe("SetupWizard: live step (issue #611)", () => {
   it("offers no Back and does not finish before the preview is ready", () => {
     const props = baseProps({ step: "live" });

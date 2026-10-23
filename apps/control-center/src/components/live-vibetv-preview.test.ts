@@ -56,6 +56,11 @@ describe("latest display frame response", () => {
 });
 
 describe("dynamic usage slot preview", () => {
+  it("preserves an explicit empty label while retaining the missing-label fallback", () => {
+    expect(buildFrameData("2026-10-21T12:00:00Z", { provider: "codex+claude", label: "" }).label).toBe("");
+    expect(buildFrameData("2026-10-21T12:00:00Z", { provider: "codex" }).label).toBe("codex");
+  });
+
   it("uses consistent example values for legacy and generic usage readings", () => {
     expect(THEME_CATALOG_PREVIEW_FRAME.session).toBe(
       THEME_CATALOG_PREVIEW_FRAME.usageSlot1Percent,

@@ -100,6 +100,8 @@ function startWindow(themes: unknown[] = []) {
     },
     selection: { mode: "automatic", providerIds: [] as string[], configured: true, valid: true },
     providers: [] as (typeof claude)[],
+    // The limits CodexBar reports for each provider; empty until a test sets them.
+    usageWindows: [] as { id: string; label: string; usedPercent: number }[],
     refuseWrites: false as boolean | "once",
     refuseDisplayWrites: false,
     requests: [] as string[],
@@ -249,6 +251,7 @@ function startWindow(themes: unknown[] = []) {
           usageMode: "used",
           providers: companion.providers.map(({ providerId, label }) => ({
             id: providerId, label, session: 12, weekly: 34, resetSecs: 0, usageMode: "used",
+            windows: companion.usageWindows,
           })),
         });
       }
@@ -1028,7 +1031,7 @@ it("keeps the display mode cards focused while the mode is saved", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   await window.wait(1);
 
-  for (const [name, mode] of [[/Manual/, "fixed"], [/Automatic/, "automatic"]] as const) {
+  for (const [name, mode] of [[/One provider/, "fixed"], [/Automatic/, "automatic"]] as const) {
     const card = screen.getByRole("button", { name });
     card.focus();
 
@@ -1164,7 +1167,7 @@ it("enters a changed display mode, provider switching and provider under Recent 
 
   // Switch providers is offered under Automatic only.
   await window.choose("Every 30 seconds");
-  fireEvent.click(screen.getByRole("button", { name: /Manual/ }));
+  fireEvent.click(screen.getByRole("button", { name: /One provider/ }));
   await window.wait(1);
   fireEvent.click(screen.getByRole("switch", { name: "Claude" }));
   await window.wait(2);
@@ -1338,4 +1341,74 @@ it("does not send a queued Brightness change to another VibeTV", async () => {
   store();
   await window.wait(10);
   expect(window.settingsWrites()).toEqual([{ brightnessPercent: 21 }]);
+});
+
+// Two limits unticked one after the other while the first save is still on its
+// way: the second save must keep the first, not write the limits as they were
+// drawn before the first click.
+it("keeps the first of two quick limit changes in the second save", async () => {
+  const window = startWindow();
+  window.companion.providers = [claude];
+  window.companion.usageWindows = [
+    { id: "session", label: "Session", usedPercent: 12 },
+    { id: "weekly", label: "Weekly", usedPercent: 34 },
+    { id: "fable", label: "Fable only", usedPercent: 0 },
+  ];
+  window.companion.selection = {
+    mode: "fixed",
+    providerIds: ["claude"],
+    configured: true,
+    valid: true,
+  } as never;
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  const answerFirst = window.holdNextWrite();
+  fireEvent.click(document.getElementById("vibetv-limit-claude-session") as HTMLElement);
+  fireEvent.click(document.getElementById("vibetv-limit-claude-weekly") as HTMLElement);
+  answerFirst();
+  await window.wait(1);
+
+  expect((window.companion.selection as Record<string, unknown>).hiddenWindows).toEqual({ claude: ["session", "weekly"] });
+});
+
+// Pair edits wait behind another display PATCH. Each must apply only its own
+// slot change to the selection left by the preceding write, including swaps.
+it.each([
+  ["Cursor", "Gemini", ["cursor", "gemini"]],
+  ["Codex", "Cursor", ["codex", "cursor"]],
+])("keeps both queued pair edits (%s then %s)", async (first, second, expected) => {
+  const window = startWindow();
+  window.companion.providers = ["Claude", "Codex", "Cursor", "Gemini"].map((label) => ({
+    ...claude, id: `codexbar.providers.${label.toLowerCase()}.enabled`,
+    providerId: label.toLowerCase(), label,
+  }));
+  window.companion.usageWindows = [
+    { id: "session", label: "Session", usedPercent: 12 },
+    { id: "weekly", label: "Weekly", usedPercent: 34 },
+  ];
+  window.companion.selection = {
+    mode: "pair", providerIds: ["claude", "codex"], configured: true, valid: true,
+  };
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  const answerFirst = window.holdNextWrite();
+  await window.step(() => fireEvent.click(document.getElementById("vibetv-limit-claude-session") as HTMLElement));
+  for (const [picker, choice] of [["Provider 1", first], ["Provider 2", second]]) {
+    await window.step(() => {
+      fireEvent.keyDown(screen.getByRole("combobox", { name: picker }), { key: "Enter" });
+      fireEvent.keyDown(screen.getByRole("option", { name: choice }), { key: "Enter" });
+    });
+  }
+  answerFirst();
+  await window.wait(1);
+
+  const patches = window.companion.requests
+    .filter((request) => request.startsWith("PATCH /api/local-companion/v1/provider-display "))
+    .map((request) => JSON.parse(request.slice(request.indexOf("{"))));
+  expect(patches.at(-1)).toMatchObject({ mode: "pair", providerIds: expected });
+  expect(window.companion.selection.providerIds).toEqual(expected);
 });

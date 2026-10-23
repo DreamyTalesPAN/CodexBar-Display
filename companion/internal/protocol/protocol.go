@@ -436,6 +436,26 @@ func usageWindowsWithoutPace(windows []UsageWindow) []UsageWindow {
 	return out
 }
 
+// plainFrame marshals a Frame without Frame.MarshalJSON.
+type plainFrame Frame
+
+// emptyPairLabel reports a pair frame whose empty label must stay on the wire.
+func (f Frame) emptyPairLabel() bool {
+	return f.Label == "" && strings.Contains(f.Provider, "+")
+}
+
+// MarshalJSON preserves an explicitly empty pair label on the wire, in saved
+// frames and in the preview API. Single-provider frames keep omitting it.
+func (f Frame) MarshalJSON() ([]byte, error) {
+	if f.emptyPairLabel() {
+		return json.Marshal(struct {
+			plainFrame
+			Label string `json:"label"`
+		}{plainFrame: plainFrame(f), Label: ""})
+	}
+	return json.Marshal(plainFrame(f))
+}
+
 func (f Frame) MarshalLine() ([]byte, error) {
 	return f.Normalize().MarshalNormalizedLine()
 }
@@ -443,7 +463,15 @@ func (f Frame) MarshalLine() ([]byte, error) {
 // MarshalNormalizedLine serializes a frame that has already been normalized.
 // It is for callers that need the normalized frame as well as its wire form.
 func (f Frame) MarshalNormalizedLine() ([]byte, error) {
-	b, err := json.Marshal(f)
+	// Skips MarshalJSON for the common frame: the extra compact pass costs
+	// about 1 µs per frame.
+	var b []byte
+	var err error
+	if f.emptyPairLabel() {
+		b, err = json.Marshal(f)
+	} else {
+		b, err = json.Marshal(plainFrame(f))
+	}
 	if err != nil {
 		return nil, err
 	}

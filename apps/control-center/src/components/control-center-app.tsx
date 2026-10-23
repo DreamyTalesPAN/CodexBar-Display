@@ -80,6 +80,7 @@ import {
   type DeviceSearchState,
   type DeviceState,
   type ProviderSetupInfo,
+  type ProviderDisplayChange,
   type ProviderDisplaySelection,
   type ProviderSelectionSetup,
   type PreferenceDescriptor,
@@ -3890,10 +3891,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const updateProviderDisplay = useCallback(
     (
       next:
-        | Pick<ProviderDisplaySelection, "mode" | "providerIds">
+        | ProviderDisplayChange
         | ((
             current: ProviderDisplaySelection | null,
-          ) => Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null),
+          ) => ProviderDisplayChange | null),
       providerId: string,
       // Only a change the customer made by hand is entered under Recent
       // activity; the app's own write of the Automatic pool, and its retries
@@ -3919,7 +3920,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
         // the reason VibeTV switches automatically is still the same.
         const retiresNotice =
           selection.mode !== "automatic" || previous?.mode !== "automatic";
-        const optimistic = { ...selection, configured: true, valid: true };
+        // The limits ride along unchanged when only
+        // the mode is written, as the companion keeps them.
+        const optimistic = {
+          hiddenWindows: previous?.hiddenWindows,
+          ...selection,
+          configured: true,
+          valid: true,
+        };
         setPendingProviderDisplayId(providerId);
         providerDisplayRef.current = optimistic;
         setProviderDisplay(optimistic);
@@ -3938,18 +3946,16 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
           }
           // In the Setup log's sentences.
           const shown = byCustomer
-            ? displayModeChange(previous, selection)
+            ? displayModeChange(previous, selection, (id) =>
+                providerPreferencesRef.current?.find(
+                  (preference) => preference.providerId === id,
+                )?.label || "the chosen provider",
+              )
             : null;
           if (shown !== null) {
             addEvent({
               label: "Display mode saved",
-              detail: shown
-                ? `Always show ${
-                    providerPreferencesRef.current?.find(
-                      (preference) => preference.providerId === shown,
-                    )?.label || "the chosen provider"
-                  }.`
-                : "Automatic: VibeTV switches between your providers.",
+              detail: shown,
               tone: "ready",
             });
           }
@@ -4059,7 +4065,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               disabledProviderIds,
             );
             if (next && current?.mode !== "automatic") {
-              const pinnedId = current?.providerIds[0] ?? "";
+              // Two at once names the member that was switched off.
+              const pinnedId =
+                current?.providerIds.find((id) =>
+                  disabledProviderIds.includes(id),
+                ) ??
+                current?.providerIds[0] ??
+                "";
               switched.providerId = pinnedId;
               switched.label =
                 (providerPreferencesRef.current || []).find(
@@ -5537,10 +5549,14 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     .filter((id): id is string => Boolean(id));
   const setupPreviews = displayPreviewsFor(
     usage,
-    displayableProviders.map((item) => ({
+    (providerDisplay?.mode === "pair"
+      ? setupProviders.filter((item) => item.value)
+      : displayableProviders
+    ).map((item) => ({
       id: item.providerId,
       label: item.label,
     })),
+    providerDisplay?.hiddenWindows,
   );
   // Step 05 keeps offering every live theme: hiding one would make the
   // device's limitation invisible. The Install is gated by the same rules the
@@ -5790,6 +5806,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               displayFrame={displayFrame}
               displayMode={providerDisplay?.mode ?? "automatic"}
               displayProviderId={providerDisplay?.providerIds?.[0] ?? null}
+              displayProviderIds={providerDisplay?.providerIds ?? []}
               firmwareProgress={firmwareUpdateStatus?.progress}
               firmwareWrittenPercent={
                 firmwareUpdateInProgress
@@ -6058,7 +6075,10 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             storefrontConfigured={catalog.storefrontConfigured}
             themeInstallEnabled={themeInstallEnabled}
             themes={catalog.themes}
-            tokenHistoryUnavailable={usageTokenHistoryUnavailableOnVibeTV(usage)}
+            tokenHistoryUnavailable={usageTokenHistoryUnavailableOnVibeTV(
+              usage,
+              providerDisplay?.mode === "pair",
+            )}
             usage={
               appearanceSection === "screensavers" ? "screensaver" : "live"
             }
@@ -6242,19 +6262,32 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 }
 
 /**
- * What a saved display selection changed, for Recent activity: the provider
- * VibeTV now always shows, "" for Automatic, or null when neither the mode nor
- * that provider changed. Nothing read yet counts as Automatic, the default, so
- * confirming the default is no change; another pool under Automatic is none
- * either.
+ * What a saved display selection changed, for Recent activity, in the Setup
+ * log's sentences; null when neither the mode nor the shown providers changed.
+ * Nothing read yet counts as Automatic, the default, so confirming the default
+ * is no change; another pool under Automatic is none either. Two at once names
+ * both sources, so a change to either one, or to their order, is recorded.
  */
 export function displayModeChange(
   previous: Pick<ProviderDisplaySelection, "mode" | "providerIds"> | null,
   selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
+  labelOf: (providerId: string) => string,
 ): string | null {
   const shown = (value: typeof previous) =>
-    !value || value.mode === "automatic" ? "" : value.providerIds[0] ?? "";
-  return shown(previous) === shown(selection) ? null : shown(selection);
+    !value || value.mode === "automatic"
+      ? ""
+      : value.providerIds.slice(0, value.mode === "pair" ? 2 : 1).join(",");
+  if (shown(previous) === shown(selection)) {
+    return null;
+  }
+  if (selection.mode === "pair") {
+    const [top, bottom] = selection.providerIds;
+    return `Show ${labelOf(top)} and ${labelOf(bottom)} at once`;
+  }
+  const only = selection.providerIds[0];
+  return selection.mode === "automatic" || !only
+    ? "Automatic: VibeTV switches between your providers."
+    : `Always show ${labelOf(only)}.`;
 }
 
 export function setupThemeCatalogError(

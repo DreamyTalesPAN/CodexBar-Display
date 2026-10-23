@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -832,6 +833,99 @@ func TestNextProviderShortcutPinsTheNextProviderAndWrapsAround(t *testing.T) {
 	}
 }
 
+// Codex review on #864: a press of the shortcut moves the pinned provider and
+// nothing else. The limits the customer hid stay as they were stored.
+func TestNextProviderShortcutKeepsTheHiddenLimits(t *testing.T) {
+	server, _ := nextProviderServer(t,
+		&runtimeconfig.ProviderDisplayConfig{
+			Mode:          providerDisplayModeAutomatic,
+			ProviderIDs:   []string{"codex", "claude"},
+			HiddenWindows: map[string][]string{"claude": {"session"}},
+		},
+		[]codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+		},
+		"codex", "codex", "claude")
+
+	_, stored := pressNextProvider(t, server)
+	if stored == nil || len(stored.ProviderIDs) != 1 || stored.ProviderIDs[0] != "claude" {
+		t.Fatalf("stored %+v, want Manual on claude", stored)
+	}
+	if len(stored.HiddenWindows["claude"]) != 1 || stored.HiddenWindows["claude"][0] != "session" {
+		t.Fatalf("press dropped the hidden limits: %+v", stored.HiddenWindows)
+	}
+}
+
+// Reading provider settings gives another request time to save its limits.
+// A mode-only write must preserve that newer choice, not its earlier snapshot.
+func TestProviderDisplayModeWritesKeepAnInterveningLimitSave(t *testing.T) {
+	latest := map[string][]string{"claude": {"weekly"}}
+	for _, test := range []struct {
+		name, method, path, body string
+		want                     map[string][]string
+	}{
+		{"shortcut", http.MethodPost, "/v1/provider-display/next", "", latest},
+		{"mode-only PATCH", http.MethodPatch, "/v1/provider-display", `{"mode":"fixed","providerIds":["claude"]}`, latest},
+		{"explicit clear", http.MethodPatch, "/v1/provider-display", `{"mode":"fixed","providerIds":["claude"],"hiddenWindows":{}}`, nil},
+		{"explicit replacement", http.MethodPatch, "/v1/provider-display", `{"mode":"fixed","providerIds":["claude"],"hiddenWindows":{" CLAUDE ":[" SESSION "]}}`, map[string][]string{"claude": {"session"}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			settings := []codexbar.ProviderSetting{
+				{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+				{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			}
+			server, _ := nextProviderServer(t, &runtimeconfig.ProviderDisplayConfig{
+				Mode: providerDisplayModeFixed, ProviderIDs: []string{"codex"},
+				HiddenWindows: map[string][]string{"claude": {"session"}},
+			}, settings, "codex", "codex", "claude")
+			interveningSave := func() {
+				if _, err := server.updateConfig(func(cfg *runtimeconfig.Config) {
+					cfg.ProviderDisplay = &runtimeconfig.ProviderDisplayConfig{
+						Mode: cfg.ProviderDisplay.Mode, ProviderIDs: cfg.ProviderDisplay.ProviderIDs, HiddenWindows: latest,
+					}
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if test.method == http.MethodPost {
+				loadUsage := server.loadUsage
+				server.loadUsage = func(now time.Time) (daemon.PersistedUsage, bool) {
+					interveningSave()
+					return loadUsage(now)
+				}
+			} else {
+				server.providerPreferences.load = func(context.Context) ([]codexbar.ProviderSetting, error) {
+					interveningSave()
+					return settings, nil
+				}
+			}
+			recorder := httptest.NewRecorder()
+			server.Handler().ServeHTTP(recorder, httptest.NewRequest(test.method, test.path, bytes.NewBufferString(test.body)))
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("mode write: status=%d body=%s", recorder.Code, recorder.Body.String())
+			}
+			stored, err := server.config()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(stored.ProviderDisplay.HiddenWindows, test.want) {
+				t.Fatalf("stored hidden limits=%v want %v", stored.ProviderDisplay.HiddenWindows, test.want)
+			}
+			var response providerDisplayResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(runtimeconfig.NormalizeHiddenWindows(response.Selection.HiddenWindows), test.want) {
+				t.Fatalf("response hidden limits=%v want %v", response.Selection.HiddenWindows, test.want)
+			}
+			if response.Selection.Mode != providerDisplayModeFixed || len(response.Selection.ProviderIDs) != 1 || response.Selection.ProviderIDs[0] != "claude" {
+				t.Fatalf("mode change lost: %+v", response.Selection)
+			}
+		})
+	}
+}
+
 // Codex review on #600: two quick presses of the shortcut arrive at the same
 // time. Each has to move one provider on, so nine presses at once show every
 // one of the three providers three times and none is lost.
@@ -911,6 +1005,37 @@ func TestNextProviderShortcutPassesOverAReadingVibeTVWouldNotBeSent(t *testing.T
 	}
 }
 
+// Codex review on #864: a provider whose only reported window the customer hid
+// has nothing to show, so the shortcut passes over it as it does an unavailable one.
+func TestNextProviderShortcutPassesOverAProviderWhoseWindowsAreAllHidden(t *testing.T) {
+	server, _ := nextProviderServer(t,
+		&runtimeconfig.ProviderDisplayConfig{
+			Mode:          providerDisplayModeFixed,
+			ProviderIDs:   []string{"codex"},
+			HiddenWindows: map[string][]string{"claude": {"session"}},
+		},
+		[]codexbar.ProviderSetting{
+			{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+			{ID: "gemini", Label: "Gemini", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+		},
+		"codex", "codex", "gemini")
+	current := server.loadUsage
+	server.loadUsage = func(now time.Time) (daemon.PersistedUsage, bool) {
+		usage, ok := current(now)
+		usage.Providers = append(usage.Providers, daemon.ProviderUsageSnapshot{
+			Provider: "claude", CollectedAt: now.Add(-time.Minute),
+			Frame: protocol.Frame{Provider: "claude", Session: 40, UsageWindows: []protocol.UsageWindow{{ID: "session"}}},
+		})
+		return usage, ok
+	}
+
+	selection, _ := pressNextProvider(t, server)
+	if len(selection.ProviderIDs) != 1 || selection.ProviderIDs[0] != "gemini" {
+		t.Fatalf("answered %+v, want Claude passed over for Gemini", selection)
+	}
+}
+
 // With one provider to show there is nothing to switch to, and with none there
 // is nothing to show: the choice stays exactly as it was, Automatic included.
 func TestNextProviderShortcutChangesNothingBelowTwoShowableProviders(t *testing.T) {
@@ -969,5 +1094,29 @@ func TestNextProviderShortcutSkipsProvidersManualWouldNotOffer(t *testing.T) {
 		if selection, _ := pressNextProvider(t, server); len(selection.ProviderIDs) != 1 || selection.ProviderIDs[0] != want {
 			t.Fatalf("press %d: answered %+v, want %s", press+1, selection, want)
 		}
+	}
+}
+
+// Two at once: the persisted usage names the frame on screen as its joined ids
+// ("claude+codex"). The shortcut walks on from the pair's top provider, so the
+// press after the pair shows the provider after claude, not the first one again.
+func TestNextProviderShortcutStepsOnFromTheTopOfAShownPair(t *testing.T) {
+	settings := []codexbar.ProviderSetting{
+		{ID: "claude", Label: "Claude", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+		{ID: "codex", Label: "Codex", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+		{ID: "cursor", Label: "Cursor", Enabled: true, Health: codexbar.ProviderHealthHealthy},
+	}
+	server, _ := nextProviderServer(t,
+		&runtimeconfig.ProviderDisplayConfig{Mode: providerDisplayModeAutomatic, ProviderIDs: []string{"claude", "codex", "cursor"}},
+		settings, "claude+codex", "claude", "codex", "cursor")
+	if selection, _ := pressNextProvider(t, server); len(selection.ProviderIDs) != 1 || selection.ProviderIDs[0] != "codex" {
+		t.Fatalf("pair claude+codex: answered %+v, want codex", selection)
+	}
+
+	server, _ = nextProviderServer(t,
+		&runtimeconfig.ProviderDisplayConfig{Mode: providerDisplayModeAutomatic, ProviderIDs: []string{"claude", "codex", "cursor"}},
+		settings, "codex", "claude", "codex", "cursor")
+	if selection, _ := pressNextProvider(t, server); len(selection.ProviderIDs) != 1 || selection.ProviderIDs[0] != "cursor" {
+		t.Fatalf("single codex: answered %+v, want cursor", selection)
 	}
 }

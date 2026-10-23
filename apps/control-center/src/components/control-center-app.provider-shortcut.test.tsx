@@ -11,7 +11,7 @@ import { markWhatsNewSeen } from "@/lib/whats-new";
 import { ControlCenterApp } from "./control-center-app";
 
 const press =
-  "Press ⌃⌥⌘P in any app to show the next provider. This switches to Manual.";
+  "Press ⌃⌥⌘P in any app to show the next provider. This switches to One provider.";
 const refused =
   "The shortcut ⌃⌥⌘P for the next provider is not available: another app may already be using these keys.";
 
@@ -173,7 +173,7 @@ it("names the shortcut in Settings and shows what a press chose", async () => {
   expect(settings.text()).toContain(press);
   expect(settings.text()).not.toContain("Show this provider");
 
-  // The customer presses the shortcut: the Mac App stores Manual on Claude
+  // The customer presses the shortcut: the Mac App stores One provider on Claude
   // and tells the page that the display choice changed.
   settings.companion.selection = {
     mode: "fixed",
@@ -185,14 +185,14 @@ it("names the shortcut in Settings and shows what a press chose", async () => {
   await settings.wait(1);
 
   expect(
-    screen.getByRole("button", { name: "Manual" }).getAttribute("aria-pressed"),
+    screen.getByRole("button", { name: "One provider" }).getAttribute("aria-pressed"),
   ).toBe("true");
   expect(
     screen.getByRole("combobox", { name: "Show this provider" }).textContent,
   ).toContain("Claude");
-  // Manual is chosen now, so the line no longer says a press switches to it.
+  // One provider is chosen now, so the line no longer says a press switches to it.
   expect(settings.text()).toContain("Press ⌃⌥⌘P in any app to show the next provider.");
-  expect(settings.text()).not.toContain("This switches to Manual.");
+  expect(settings.text()).not.toContain("This switches to One provider.");
 });
 
 it("says in Settings when the system refused the shortcut's keys", async () => {

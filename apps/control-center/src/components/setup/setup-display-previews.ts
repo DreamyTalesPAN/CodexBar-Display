@@ -13,24 +13,29 @@ import type { SetupDisplayModePreview } from "./setup-display-mode-screen";
 export function displayPreviewFor(
   provider: UsageProviderInfo | undefined,
   now = new Date(),
+  hiddenWindowIds?: string[],
 ): SetupDisplayModePreview | null {
   if (!provider) {
     return null;
   }
   const unavailable = provider.stale === true || provider.usageUnavailable === true;
+  const windows = visibleUsageWindows(provider.windows ?? [], hiddenWindowIds);
+  if (provider.windows?.length && windows.length === 0) {
+    return { providerLabel: provider.label, resetLabel: null, windows: [] };
+  }
   return {
     providerLabel: provider.label,
     resetLabel: unavailable
       ? null
       : formatReset(
           remainingResetSecs(
-            provider.windows?.[0]?.resetSecs ?? provider.resetSecs,
+            windows[0]?.resetSecs ?? provider.resetSecs,
             provider.collectedAt,
             now,
           ),
         ),
-    windows: provider.windows?.length
-      ? provider.windows.map((window) => ({
+    windows: windows.length
+      ? windows.map((window) => ({
           label: window.label,
           percent: unavailable ? null : window.usedPercent,
         }))
@@ -53,16 +58,65 @@ export function displayPreviewFor(
 export function displayPreviewsFor(
   usage: UsageSnapshot | null,
   providers: { id: string; label: string }[],
+  hiddenWindows?: Record<string, string[]>,
 ): SetupDisplayModePreview[] {
   const reported = new Map(
     (usage?.providers || []).map((provider) => [provider.id, provider]),
   );
   return providers.map(
     (provider) =>
-      displayPreviewFor(reported.get(provider.id)) ?? {
+      displayPreviewFor(
+        reported.get(provider.id),
+        undefined,
+        hiddenWindows?.[provider.id],
+      ) ?? {
         providerLabel: provider.label,
         resetLabel: null,
         windows: [],
       },
   );
+}
+
+/**
+ * The usage windows VibeTV shows for a provider: the ones the customer did not
+ * hide. Source loss must not bring a hidden window back.
+ */
+export function visibleUsageWindows<T extends { id: string }>(
+  windows: T[],
+  hiddenWindowIds: string[] | undefined,
+): T[] {
+  return windows.filter(
+    (window) => !hiddenWindowIds?.includes(window.id),
+  );
+}
+
+/**
+ * Two at once on the panel: each provider's first shown limit, named after its
+ * provider, the way the companion sends the pair to VibeTV. Like the
+ * companion it counts down with the first of the two that has a reset time.
+ */
+export function pairDisplayPreview(
+  first: SetupDisplayModePreview | undefined,
+  second: SetupDisplayModePreview | undefined,
+): SetupDisplayModePreview | null {
+  if (!first || !second) {
+    return null;
+  }
+  if (!first.windows.length || !second.windows.length) {
+    return first.windows.length ? first : second;
+  }
+  const unknownReset = formatReset(0);
+  const counting = [first, second].find(
+    (preview) => preview.resetLabel && preview.resetLabel !== unknownReset,
+  );
+  return {
+    providerLabel: `${first.providerLabel} + ${second.providerLabel}`,
+    resetLabel: (counting ?? first).resetLabel,
+    windows: [first, second].map((preview) => ({
+      label: preview.windows[0]
+        ? `${preview.providerLabel} ${preview.windows[0].label}`
+        : preview.providerLabel,
+      percent: preview.windows[0]?.percent ?? null,
+    })),
+  };
 }

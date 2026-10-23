@@ -67,12 +67,16 @@ describe("the Settings section Pace", () => {
     expect(note(true, undefined)).toBeNull();
   });
 
-  const render = (displayPreferences: PreferenceDescriptor[], snapshot: UsageSnapshot, active: string, standby?: DeviceInfo["standby"]) => {
+  // A ready device with the pace flag unless the test says otherwise.
+  const capable: Partial<DeviceInfo> = {
+    capabilities: { theme: { supportsUsagePaceV1: true, supportsUsageWindowsV1: true, maxUsageWindows: 2 } },
+  };
+  const render = (displayPreferences: PreferenceDescriptor[], snapshot: UsageSnapshot, active: string, extra: Partial<DeviceInfo> = capable) => {
     const picker: ProviderPickerProps = {
       usage: snapshot, display: null, items: [], pendingCheckIds: new Set(),
       pendingPreferenceIds: new Set(), onDisplayChange: vi.fn(), onPreferenceChange: vi.fn(),
     };
-    const device: DeviceInfo = { active: true, connected: true, paired: true, ready: true, activeTheme: active, ...(standby ? { standby } : {}) };
+    const device: DeviceInfo = { active: true, connected: true, paired: true, ready: true, activeTheme: active, ...extra };
     return renderToStaticMarkup(
       <SettingsScreen
         brightness={70} busyAction={null} connectionMode="cable"
@@ -138,6 +142,32 @@ describe("the Settings section Pace", () => {
     expect(html).toContain(">Pace<");
     expect(html).toContain(">Show reserve or deficit</label>");
     expect(html).toContain("Token Counter has no place for it. Pace Meter shows it.");
+  });
+
+  // Issue #864 review: a device without the pace flag cannot show pace.
+  const updateNeeded = "Update needed. Update VibeTV to use this.";
+  const paceSwitch = (html: string) => html.match(/<button[^>]*role="switch"[^>]*>|<button[^>]*aria-checked[^>]*>/)?.[0] ?? "";
+
+  it("disables the switch and says Update needed on firmware without pace", () => {
+    const old = { capabilities: { theme: { supportsUsagePaceV1: false } } };
+    const html = render([showPace(true)], usage("farAhead"), "token-counter", old);
+    expect(html).toContain(updateNeeded);
+    expect(html).not.toContain("has no place for it");
+    expect(paceSwitch(html)).toContain('disabled=""');
+    // The device does not draw pace, so the switch does not claim it is on.
+    expect(html).toMatch(/aria-checked="false"/);
+  });
+
+  it("keeps the normal pace line on capable firmware and while the device is unknown", () => {
+    const capableHtml = render([showPace(true)], usage("farAhead"), "token-counter");
+    expect(capableHtml).not.toContain(updateNeeded);
+    expect(capableHtml).toContain("Token Counter has no place for it. Pace Meter shows it.");
+    expect(paceSwitch(capableHtml)).not.toContain('disabled=""');
+
+    // Offline: no claim about the firmware.
+    const offline = render([showPace(true)], usage("farAhead"), "token-counter", { ready: false, connected: false, capabilities: undefined });
+    expect(offline).not.toContain(updateNeeded);
+    expect(offline).toMatch(/aria-checked="true"/);
   });
 
   it("has no accessibility violations", async () => {

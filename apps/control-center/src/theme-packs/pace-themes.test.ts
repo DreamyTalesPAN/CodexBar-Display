@@ -107,6 +107,27 @@ describe("the Pace themes", () => {
     expect(renderPack("pace-meter", null).text).toBe("Claude91%Session leftresets 3h 34m87%Weekly leftresets 5d 14h");
   });
 
+  it("Pace Meter keeps the pair header empty and still shows device notices", () => {
+    const pack = JSON.parse(readFileSync(path.join(root, "dist/theme-packs/render/pace-meter.json"), "utf8")) as ThemeRenderPack;
+    const frame = buildFrameData(clock.toISOString(), {
+      provider: "codex+claude", label: "", usageMode: "remaining",
+      usageWindows: [
+        { id: "codex:weekly", label: "Codex Weekly", percent: 91, resetSecs: 12840 },
+        { id: "claude:session", label: "Claude Session", percent: 87, resetSecs: 484800 },
+      ],
+    }, clock);
+    const render = (updateNotice?: string) => renderToStaticMarkup(createElement(ThemeSpecPreview, {
+      pack, themeId: "pace-meter", status: "ready", animate: false, frame: { ...frame, updateNotice },
+    })).replace(/<[^>]*>/g, "");
+    expect(frame.label).toBe("");
+    expect(frame.usageSlot1Label).toBe("Codex Weekly");
+    expect(frame.usageSlot2Label).toBe("Claude Session");
+    expect(render()).toBe("91%Codex Weekly leftresets 3h 34m87%Claude Session leftresets 5d 14h");
+    expect(render()).not.toContain("Codex + Claude");
+    expect(render("Update available")).toBe(`Update available${render()}`);
+    expect(render("Open VibeTV Mac App")).toBe(`Open VibeTV Mac App${render()}`);
+  });
+
   it("Pixel Battery keeps the traffic-light colours of what is left under the piece", () => {
     const { svg } = renderPack("pixel-battery", deficit, [38, 61]);
     expect(svg).toContain('fill="#F97316"'); // 38 % left

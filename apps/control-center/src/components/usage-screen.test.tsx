@@ -105,6 +105,10 @@ describe("UsageScreen", () => {
       usageTokenHistoryUnavailableOnVibeTV({ ...usage, currentProvider: undefined, providers: [cursor] }),
     ).toBe(true);
     expect(usageTokenHistoryUnavailableOnVibeTV(null)).toBe(false);
+    // Two at once: every pair frame clears the token totals, whatever the history.
+    expect(usageTokenHistoryUnavailableOnVibeTV(mixed, true)).toBe(true);
+    expect(usageTokenHistoryUnavailableOnVibeTV({ ...usage, providers: [cursor] }, true)).toBe(true);
+    expect(usageTokenHistoryUnavailableOnVibeTV(null, true)).toBe(false);
     // Token history not read yet: no claim.
     expect(
       usageTokenHistoryUnavailableOnVibeTV({ ...usage, tokenUsageReady: false, providers: [cursor] }),

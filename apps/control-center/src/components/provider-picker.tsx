@@ -2,6 +2,7 @@ import type {
   ApiError,
   UsageSnapshot,
   PreferenceDescriptor,
+  ProviderDisplayChange,
   ProviderDisplaySelection,
 } from "./control-center-types";
 
@@ -11,7 +12,7 @@ import type {
  * The picker that used to live here is gone: Settings now renders the same
  * `DisplayModeChoice` and `ProviderList` the setup wizard does. Two parallel
  * implementations of one choice is what let Settings drift into offering
- * "Always show one" against the wizard's "Manual", a per-provider inclusion
+ * "Always show one" against the wizard's "One provider", a per-provider inclusion
  * checkbox the wizard never had, and a repair effect that existed only to
  * finish what that checkbox left half-done.
  */
@@ -29,8 +30,11 @@ export type ProviderPickerProps = {
   onOpenSignIn?: (item: PreferenceDescriptor) => void | Promise<void>;
   /** Opens the customer setup guide in the default browser. */
   onOpenSetupGuide?: () => void | Promise<void>;
+  /** A function is applied to the selection as it is when the write runs. */
   onDisplayChange: (
-    selection: Pick<ProviderDisplaySelection, "mode" | "providerIds">,
+    selection:
+      | ProviderDisplayChange
+      | ((current: ProviderDisplaySelection | null) => ProviderDisplayChange | null),
     providerId: string,
   ) => void | Promise<boolean | void>;
   onPreferenceChange: (

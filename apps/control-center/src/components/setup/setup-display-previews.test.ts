@@ -3,6 +3,7 @@ import type { UsageProviderInfo, UsageSnapshot } from "../control-center-types";
 import {
   displayPreviewFor,
   displayPreviewsFor,
+  pairDisplayPreview,
 } from "./setup-display-previews";
 
 function provider(fields: Partial<UsageProviderInfo>): UsageProviderInfo {
@@ -58,6 +59,23 @@ describe("displayPreviewFor", () => {
       weekly: 0,
       windows: [{ id: "weekly", label: "Weekly", usedPercent: 28 }, { id: "codex-spark", label: "Codex Spark 5-hour", usedPercent: 0 }],
     }))?.windows).toEqual([{ label: "Weekly", percent: 28 }, { label: "Codex Spark 5-hour", percent: 0 }]);
+  });
+
+  it("does not resurrect hidden windows or legacy percentages after source loss", () => {
+    const reading = provider({ windows: [
+      { id: "session", label: "Session", usedPercent: 42 },
+      { id: "weekly", label: "Weekly", usedPercent: 26 },
+    ] });
+    expect(displayPreviewFor(reading, undefined, ["weekly"])?.windows).toEqual([
+      { label: "Session", percent: 42 },
+    ]);
+    reading.windows = reading.windows?.slice(1);
+    const unavailable = displayPreviewFor(reading, undefined, ["weekly"]);
+    expect(unavailable).toEqual({ providerLabel: "Codex", resetLabel: null, windows: [] });
+    const other = displayPreviewFor(provider({ id: "claude", label: "Claude" }));
+    expect(pairDisplayPreview(unavailable!, other!)).toEqual(other);
+    expect(pairDisplayPreview(other!, unavailable!)).toEqual(other);
+    expect(pairDisplayPreview(unavailable!, unavailable!)?.windows).toEqual([]);
   });
 
   it("has nothing to draw without a provider", () => {
@@ -122,5 +140,24 @@ describe("displayPreviewsFor", () => {
         windows: [],
       },
     ]);
+  });
+});
+describe("pairDisplayPreview", () => {
+  const preview = (providerLabel: string, resetLabel: string | null) => ({
+    providerLabel,
+    resetLabel,
+    windows: [{ label: "Weekly", percent: 40 }],
+  });
+
+  it("counts down with the first of the two that has a reset time", () => {
+    expect(
+      pairDisplayPreview(preview("Claude", "Reset unknown"), preview("Codex", "Reset in 2h 0m"))?.resetLabel,
+    ).toBe("Reset in 2h 0m");
+    expect(
+      pairDisplayPreview(preview("Claude", "Reset in 4d 4h"), preview("Codex", "Reset in 2h 0m"))?.resetLabel,
+    ).toBe("Reset in 4d 4h");
+    expect(
+      pairDisplayPreview(preview("Claude", "Reset unknown"), preview("Codex", null))?.resetLabel,
+    ).toBe("Reset unknown");
   });
 });

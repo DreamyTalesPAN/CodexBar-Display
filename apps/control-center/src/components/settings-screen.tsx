@@ -32,6 +32,9 @@ import { PreferenceControl } from "./preference-control";
 import { paceSetting, PaceSetting } from "./settings-pace";
 import { ThemeStudioKeyRow } from "./theme-studio/openai-key-form";
 import { isProviderItem, type ProviderPickerProps } from "./provider-picker";
+import { defaultPairIds, withPairProvider } from "./setup/setup-display-mode-screen";
+import { DisplayLimitsSettings } from "./display-limits-settings";
+import { useActiveThemeLimits } from "./live-vibetv-preview";
 import {
   ProviderList,
   setupProviderCanDisplay,
@@ -40,6 +43,7 @@ import {
   deviceCanSwitchToCable,
   deviceIsCustomerConnected,
   deviceIsReady,
+  deviceLacks,
   deviceOffersCable,
   type ApiError,
   type DeviceInfo,
@@ -49,6 +53,9 @@ import {
 } from "./control-center-types";
 
 const standbyTimeoutOptions = [1, 5, 10, 15, 30, 60];
+
+// Shown on a Pace or Two at once option that this VibeTV firmware cannot draw.
+const UPDATE_NEEDED_NOTE = "Update needed. Update VibeTV to use this.";
 
 export function standbyTimeoutLabel(minutes: number): string {
   return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
@@ -185,7 +192,7 @@ export function SettingsScreen({
 
   // Every provider CodexBar reports is listed, on Windows as on the Mac.
   const providers = (providerPicker.items || []).filter(isProviderItem);
-  // Manual pins the device to exactly one provider, so it may only offer ones
+  // One provider pins the device to exactly one provider, so it may only offer ones
   // that can actually produce a reading. Offering every switched-on provider,
   // as the design board's wording does, lets a customer pin VibeTV to a
   // provider that shows nothing.
@@ -202,6 +209,23 @@ export function SettingsScreen({
     ? currentProviderId
     : displayable[0]?.providerId;
   const displayMode = providerPicker.display?.mode ?? "automatic";
+  const displayChoices = displayable.map((item) => ({
+    id: item.providerId,
+    label: item.label,
+  }));
+  const pairChoices = displayMode === "pair"
+    ? providers
+        .filter((item) => item.value)
+        .map((item) => ({ id: item.providerId, label: item.label }))
+    : displayChoices;
+  const pairIds = defaultPairIds(
+    providerPicker.display?.mode === "pair"
+      ? providerPicker.display.providerIds
+      : [],
+    manualProviderId,
+    pairChoices,
+  );
+  const activeTheme = useActiveThemeLimits(device);
   const providerError =
     providerPicker.preferencesError || providerPicker.displayError;
   const dialogError = actionError ?? errorForHost(providerError, windowsHost);
@@ -214,18 +238,26 @@ export function SettingsScreen({
     activeLiveThemeId(themes, device),
     themes,
   );
-  const selectMode = (mode: "automatic" | "fixed") =>
+  // The firmware cannot draw pace or two providers at once; say so instead of
+  // offering a switch or radio that does nothing on this VibeTV.
+  const paceLacks = deviceLacks(device, "pace");
+  const pairLacks = deviceLacks(device, "pair");
+  const selectMode = (mode: "automatic" | "fixed" | "pair") =>
     void providerPicker.onDisplayChange(
       {
         mode,
         providerIds:
           mode === "automatic"
             ? enabledProviderIds
-            : manualProviderId
-              ? [manualProviderId]
-              : [],
+            : mode === "pair"
+              ? pairIds
+              : manualProviderId
+                ? [manualProviderId]
+                : [],
       },
-      manualProviderId ?? enabledProviderIds[0] ?? "",
+      (mode === "pair" ? pairIds[0] : manualProviderId) ??
+        enabledProviderIds[0] ??
+        "",
     );
 
   return (
@@ -267,8 +299,8 @@ export function SettingsScreen({
             </div>
           ) : null}
           <RadioRow
-            description="VibeTV always shows the one provider you pick — nothing else."
-            label="Manual"
+            description="VibeTV always shows the one provider you pick."
+            label="One provider"
             onSelect={() => selectMode("fixed")}
             selected={displayMode === "fixed"}
           />
@@ -302,13 +334,66 @@ export function SettingsScreen({
             </SettingRow>
             </div>
           ) : null}
+          {pairChoices.length >= 2 ? (
+            <>
+              <RadioRow
+                description={
+                  pairLacks
+                    ? UPDATE_NEEDED_NOTE
+                    : "VibeTV shows two providers together, one limit each."
+                }
+                disabled={pairLacks}
+                label="Two at once"
+                onSelect={() => selectMode("pair")}
+                selected={displayMode === "pair"}
+              />
+              {displayMode === "pair" ? (
+                <div className="mt-2 flex flex-col gap-2">
+                  {(["Provider 1", "Provider 2"] as const).map((name, position) => (
+                    <SettingRow htmlFor={`vibetv-pair-${position}`} key={name} label={name}>
+                      <Select
+                        onValueChange={(providerId) =>
+                          void providerPicker.onDisplayChange((current) => {
+                            const providerIds = withPairProvider(
+                              current?.mode === "pair" ? current.providerIds : pairIds,
+                              position,
+                              providerId,
+                            );
+                            return providerIds[0] && providerIds[1]
+                              ? { mode: "pair", providerIds }
+                              : null;
+                          }, providerId)
+                        }
+                        value={pairIds[position] ?? ""}
+                      >
+                        <SelectTrigger
+                          aria-label={name}
+                          className="w-full data-[size=default]:h-9"
+                          id={`vibetv-pair-${position}`}
+                        >
+                          <SelectValue placeholder="Choose a provider" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {pairChoices.map((item) => (
+                            <SelectItem key={item.id} value={item.id}>
+                              {item.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </SettingRow>
+                  ))}
+                </div>
+              ) : null}
+            </>
+          ) : null}
         </div>
         {providerShortcut ? (
           <p className="min-h-[2lh] -mt-1 text-[13px] text-muted-foreground">
             {providerShortcut === "available"
               ? // What a press does now (issue #558): it moves between the
-                // providers Manual offers, so one of them leaves nothing to
-                // show next, and Manual cannot be switched to twice. Until
+                // providers One provider offers, so one of them leaves nothing to
+                // show next, and One provider cannot be switched to twice. Until
                 // usage has been read, neither is known and neither is said.
                 `Press ${shortcutKeys} in any app to show the next provider.${
                   !providerPicker.usage
@@ -317,7 +402,7 @@ export function SettingsScreen({
                       ? " This needs two providers with usage."
                       : displayMode === "fixed"
                         ? ""
-                        : " This switches to Manual."
+                        : " This switches to One provider."
                 }`
               : `The shortcut ${shortcutKeys} for the next provider is not available: another app may already be using these keys.`}
           </p>
@@ -329,14 +414,45 @@ export function SettingsScreen({
           <ItemSeparator className="my-0" />
           <SettingsSection id="settings-pace" title="Pace">
             <PaceSetting
-              descriptor={pace.descriptor}
-              disabled={localActionBusy}
-              note={pace.note}
+              descriptor={paceLacks ? { ...pace.descriptor, value: false } : pace.descriptor}
+              disabled={localActionBusy || paceLacks}
+              note={paceLacks ? UPDATE_NEEDED_NOTE : pace.note}
               onChange={onDisplayPreferenceChange}
             />
           </SettingsSection>
         </>
       ) : null}
+
+      <ItemSeparator className="my-0" />
+
+      <SettingsSection title="Limits on VibeTV" topAligned>
+        <p className="text-[13px] text-muted-foreground">
+          VibeTV shows the ticked limits from the top, as many as your theme has
+          room for. Two at once shows the first ticked limit of each provider.
+        </p>
+        <DisplayLimitsSettings
+          display={providerPicker.display}
+          onChange={(change) =>
+            void providerPicker.onDisplayChange((current) => {
+              // Applied to the selection as the write finds it, so a second
+              // toggle keeps the first one while its save is still pending.
+              if (!current) {
+                return null;
+              }
+              const providerIds =
+                current.mode === "automatic" ? enabledProviderIds : current.providerIds;
+              return {
+                mode: current.mode,
+                providerIds,
+                hiddenWindows: change(current.hiddenWindows ?? {}),
+              };
+            }, providerPicker.display?.providerIds[0] ?? "")
+          }
+          providers={displayChoices}
+          theme={activeTheme}
+          usage={providerPicker.usage}
+        />
+      </SettingsSection>
 
       <ItemSeparator className="my-0" />
 

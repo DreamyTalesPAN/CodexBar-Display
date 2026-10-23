@@ -34,7 +34,7 @@ function render(
   );
 }
 
-/** The two device panels, in render order: Automatic's, then Manual's. */
+/** The two device panels, in render order: Automatic's, then One provider's. */
 // Split on the slot rather than on a style value: the panel has been
 // restyled once already, and a test that reads colours breaks every time.
 function panels(html: string): { automatic: string; manual: string } {
@@ -57,9 +57,9 @@ describe("SetupDisplayModeScreen", () => {
     expect(html).toContain(
       "VibeTV switches between your providers based on recent activity and usage.",
     );
-    expect(html).toContain("Manual");
+    expect(html).toContain("One provider");
     expect(html).toContain(
-      "VibeTV always shows the one provider you pick — nothing else.",
+      "VibeTV always shows the one provider you pick.",
     );
   });
 
@@ -75,7 +75,7 @@ describe("SetupDisplayModeScreen", () => {
     }
   });
 
-  it("offers the provider list only in Manual", () => {
+  it("offers the provider list only in One provider", () => {
     const automatic = render();
     expect(automatic).not.toContain("Show this provider");
 
@@ -141,7 +141,7 @@ describe("SetupDisplayModeScreen", () => {
     // Codex's session was read; its week was not.
     expect(automatic).toContain("64");
     expect(automatic).toContain("--");
-    // Manual's provider has no reset reading at all.
+    // The provider it is pinned to has no reset reading at all.
     expect(manual).toContain("Reset unavailable");
   });
 
@@ -155,7 +155,7 @@ describe("SetupDisplayModeScreen", () => {
     expect(automatic).not.toContain("64");
   });
 
-  it("holds Manual on the one provider it was pinned to", () => {
+  it("holds One provider on the provider it was pinned to", () => {
     const { manual } = panels(render());
 
     expect(manual).toContain("Claude");
@@ -198,6 +198,26 @@ describe("SetupDisplayModeScreen", () => {
     });
 
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
+  });
+
+  // Most customers use one provider; a pair is only a choice with two.
+  it("offers Two at once only when there are two providers to pair", () => {
+    expect(render({ onSelectPair: vi.fn() })).toContain("Two at once");
+    expect(
+      render({ onSelectPair: vi.fn(), providers: [codex] }),
+    ).not.toContain("Two at once");
+  });
+
+  it("holds Continue until the pair names two different providers", () => {
+    const pair = (pairProviderIds: string[]) =>
+      render({ mode: "pair", onSelectPair: vi.fn(), pairProviderIds });
+
+    expect(pair(["codex", "codex"])).toMatch(
+      /<button[^>]*disabled=""[^>]*>Continue<\/button>/,
+    );
+    expect(pair(["codex", "cursor"])).not.toMatch(
+      /<button[^>]*disabled=""[^>]*>Continue<\/button>/,
+    );
   });
 
 });

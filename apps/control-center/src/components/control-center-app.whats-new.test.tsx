@@ -30,18 +30,19 @@ const claude = {
   writable: true,
 };
 
-// The catalog theme the newest "New theme" entry announces.
-const gauge = {
-  id: "gauge",
-  themeId: "gauge",
-  title: "Gauge",
+// The catalog theme the second "Show me in Themes" link announces: the middle of
+// the newest three "New theme" entries (Gauge is the first).
+const tokenCounter = {
+  id: "token-counter",
+  themeId: "token-counter",
+  title: "Token Counter",
   isFree: true,
   priceLabel: "Free",
-  packUrl: "/theme-packs/gauge.zip",
+  packUrl: "/theme-packs/token-counter.zip",
   packSha256: "a".repeat(64),
   packSizeBytes: 100,
   source: "github-catalog",
-  themeSpecPath: "/themes/u/gauge.json",
+  themeSpecPath: "/themes/u/token-counter.json",
   usage: "live",
 };
 
@@ -216,7 +217,7 @@ function startWindow({
     createElement(
       TooltipProvider,
       null,
-      createElement(ControlCenterApp, { catalog: { themes: [gauge] } as never }),
+      createElement(ControlCenterApp, { catalog: { themes: [tokenCounter] } as never }),
     ),
   );
   return {
@@ -437,7 +438,7 @@ it("waits while a newer app is on offer", async () => {
 });
 
 // Issue #584: "Show me in Settings" opened Settings at its top, with the
-// control the entry is about further down. The window here is on Manual, where
+// control the entry is about further down. The window here is on One provider, where
 // `Switch providers` is not on the page: the group with the two mode cards is
 // what the customer is shown.
 it.each([
@@ -491,7 +492,7 @@ it("opens Themes from a new theme at that theme and counts the notice as read", 
   const window = startWindow();
   await window.wait(10);
   fireEvent.click(
-    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[1],
   );
   await window.wait(1);
 
@@ -501,7 +502,7 @@ it("opens Themes from a new theme at that theme and counts the notice as read", 
   // Issue #584: the list is longer than the window; the row of the theme the
   // entry announces is brought into view.
   expect(shown).toEqual([
-    screen.getByRole("button", { name: "Preview Gauge" }).closest("[role=listitem]"),
+    screen.getByRole("button", { name: "Preview Token Counter" }).closest("[role=listitem]"),
   ]);
 });
 
@@ -513,10 +514,10 @@ it("brings the new theme into view again when the list above it grows, until the
   const window = startWindow();
   await window.wait(10);
   fireEvent.click(
-    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[1],
   );
   await window.wait(1);
-  const row = screen.getByRole("button", { name: "Preview Gauge" }).closest("[role=listitem]");
+  const row = screen.getByRole("button", { name: "Preview Token Counter" }).closest("[role=listitem]");
   shown.length = 0;
 
   pageGrew();
@@ -536,7 +537,7 @@ it("stops bringing the new theme into view two seconds after the link was clicke
   const window = startWindow();
   await window.wait(10);
   fireEvent.click(
-    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[1],
   );
   await window.wait(1);
   pageGrew();
@@ -554,7 +555,7 @@ it("ends at the customer's input even when a control keeps the event to itself",
   const window = startWindow();
   await window.wait(10);
   fireEvent.click(
-    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[1],
   );
   await vi.advanceTimersByTimeAsync(0);
   shown.length = 0;
@@ -573,13 +574,13 @@ it("brings the place into view once in an app that cannot watch the page's heigh
   await window.wait(10);
   vi.stubGlobal("ResizeObserver", undefined);
   fireEvent.click(
-    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[1],
   );
   await window.wait(1);
 
   expect(screen.getByRole("heading", { level: 1, name: "Themes" })).toBeTruthy();
   expect(shown).toEqual([
-    screen.getByRole("button", { name: "Preview Gauge" }).closest("[role=listitem]"),
+    screen.getByRole("button", { name: "Preview Token Counter" }).closest("[role=listitem]"),
   ]);
 });
 
@@ -588,7 +589,7 @@ it("leaves a page alone that grows after the customer went on from Themes", asyn
   const window = startWindow();
   await window.wait(10);
   fireEvent.click(
-    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[0],
+    within(notice()!).getAllByRole("button", { name: "Show me in Themes" })[1],
   );
   await window.wait(1);
   shown.length = 0;

@@ -2,6 +2,14 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type {
   ProviderDisplaySelection,
@@ -53,8 +61,19 @@ type SetupDisplayModeScreenProps = {
    * than borrowing another provider's numbers.
    */
   automaticPreviews?: SetupDisplayModePreview[];
-  /** Live usage of the provider Manual is pinned to right now. */
+  /** Live usage of the provider One provider is pinned to right now. */
   manualPreview: SetupDisplayModePreview | null;
+  /** Live usage of the two providers Two at once shows together. */
+  pairPreview?: SetupDisplayModePreview | null;
+  /** Enabled providers for the pair, including those awaiting fresh usage. */
+  pairProviders?: SetupDisplayModeProvider[];
+  /** The first and the second provider of Two at once. */
+  pairProviderIds?: string[];
+  /**
+   * Changes one slot; the caller applies it to its latest pair when saving.
+   * Without it, or with fewer than two providers, the mode is not offered.
+   */
+  onSelectPair?: (position: number, providerId: string) => void;
   mode: ProviderDisplaySelection["mode"];
   aiFixPrompt?: () => string;
   onBack?: () => void;
@@ -81,8 +100,12 @@ export function SetupDisplayModeScreen({
   onCreateSupportReport,
   windowsHost,
   onSelectMode,
+  onSelectPair,
   onSelectProvider,
+  pairPreview,
+  pairProviderIds = [],
   providers,
+  pairProviders = providers,
   saving = false,
   selectedProviderId,
 }: SetupDisplayModeScreenProps) {
@@ -107,7 +130,11 @@ export function SetupDisplayModeScreen({
         manualPreview={manualPreview}
         mode={mode}
         onSelectMode={onSelectMode}
+        onSelectPair={onSelectPair}
         onSelectProvider={onSelectProvider}
+        pairPreview={pairPreview}
+        pairProviderIds={pairProviderIds}
+        pairProviders={pairProviders}
         providers={providers}
         saving={saving}
         selectedProviderId={selectedProviderId}
@@ -128,7 +155,8 @@ export function SetupDisplayModeScreen({
         disabled={
           saving ||
           (mode === "fixed" &&
-            !providers.some((provider) => provider.id === selectedProviderId))
+            !providers.some((provider) => provider.id === selectedProviderId)) ||
+          (mode === "pair" && !pairIsChosen(pairProviderIds, pairProviders))
         }
         className="mt-4 w-full"
         onClick={onContinue}
@@ -147,7 +175,11 @@ type DisplayModeChoiceProps = Pick<
   | "manualPreview"
   | "mode"
   | "onSelectMode"
+  | "onSelectPair"
   | "onSelectProvider"
+  | "pairPreview"
+  | "pairProviderIds"
+  | "pairProviders"
   | "providers"
   | "saving"
   | "selectedProviderId"
@@ -160,12 +192,13 @@ type DisplayModeChoiceProps = Pick<
 };
 
 /**
- * The display-mode choice itself: two cards showing what each mode would put
- * on the device, and — for Manual — the provider it would be pinned to.
+ * The display-mode choice itself: cards showing what each mode would put on
+ * the device, the provider One provider is pinned to, and the two providers
+ * Two at once shows together.
  *
  * Lives outside the wizard screen because Settings offers the same choice. One
  * component rather than two keeps the two places from drifting, which is how
- * Settings ended up offering "Always show one" against the wizard's "Manual".
+ * Settings ended up offering "Always show one" against the wizard's "One provider".
  */
 export function DisplayModeChoice({
   automaticDescription = "VibeTV switches between your providers based on recent activity and usage.",
@@ -176,8 +209,12 @@ export function DisplayModeChoice({
   manualPreview,
   mode,
   onSelectMode,
+  onSelectPair,
   onSelectProvider,
+  pairPreview = null,
+  pairProviderIds = [],
   providers,
+  pairProviders = providers,
   saving = false,
   selectedProviderId,
 }: DisplayModeChoiceProps) {
@@ -187,10 +224,17 @@ export function DisplayModeChoice({
     providers,
   );
   const { index } = useProviderRotation(rotation.length);
+  // Most customers use one provider; for them a pair is no choice at all.
+  const offersPair = Boolean(onSelectPair) && pairProviders.length >= 2;
 
   return (
     <div className={cn("flex w-full flex-col gap-4", className)}>
-      <div className="grid w-full grid-cols-2 items-stretch gap-4">
+      <div
+        className={cn(
+          "grid w-full items-stretch gap-4",
+          offersPair ? "grid-cols-3" : "grid-cols-2",
+        )}
+      >
         <ModeCard
           description={automaticDescription}
           disabled={saving}
@@ -202,16 +246,55 @@ export function DisplayModeChoice({
           <PreviewTile frames={rotation} index={index} />
         </ModeCard>
         <ModeCard
-          description="VibeTV always shows the one provider you pick — nothing else."
+          description="VibeTV always shows the one provider you pick."
           disabled={saving}
           ink={ink}
           onSelect={() => onSelectMode("fixed")}
           selected={mode === "fixed"}
-          title="Manual"
+          title="One provider"
         >
           <PreviewTile frames={manualPreview ? [manualPreview] : []} index={0} />
         </ModeCard>
+        {offersPair ? (
+          <ModeCard
+            description="VibeTV shows two providers together, one limit each."
+            disabled={saving}
+            onSelect={() => onSelectMode("pair")}
+            selected={mode === "pair"}
+            title="Two at once"
+          >
+            <PreviewTile frames={pairPreview ? [pairPreview] : []} index={0} />
+          </ModeCard>
+        ) : null}
       </div>
+
+      {mode === "pair" && offersPair && onSelectPair ? (
+        <div className={cn("grid w-full grid-cols-2 gap-4 text-left", SETUP_REVEAL)}>
+          {(["Provider 1", "Provider 2"] as const).map((name, position) => (
+            <Field key={name}>
+              <FieldLabel htmlFor={`vibetv-pair-${position}`}>{name}</FieldLabel>
+              <Select
+                disabled={saving}
+                onValueChange={(providerId) =>
+                  onSelectPair(position, providerId)
+                }
+                value={pairProviderIds[position] ?? ""}
+              >
+                <SelectTrigger aria-label={name} id={`vibetv-pair-${position}`}>
+                  <SelectValue placeholder="Choose a provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  {pairProviders.map((provider) => (
+                    <SelectItem key={provider.id} value={provider.id}>
+                      {provider.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          ))}
+        </div>
+      ) : null}
 
       {mode === "fixed" ? (
         <div className={cn("flex w-full flex-col gap-2 text-left", SETUP_REVEAL)}>
@@ -242,6 +325,55 @@ export function DisplayModeChoice({
       ) : null}
     </div>
   );
+}
+
+/** Two different providers, both still on offer. */
+export function pairIsChosen(
+  providerIds: string[],
+  providers: SetupDisplayModeProvider[],
+): boolean {
+  return (
+    providerIds.length === 2 &&
+    providerIds[0] !== providerIds[1] &&
+    providerIds.every((id) => providers.some((provider) => provider.id === id))
+  );
+}
+
+/**
+ * The pair with one position changed. Picking the provider the other position
+ * holds swaps the two, so the pair never names one provider twice.
+ */
+export function withPairProvider(
+  providerIds: string[],
+  position: number,
+  providerId: string,
+): string[] {
+  const next = [providerIds[0] ?? "", providerIds[1] ?? ""];
+  const other = position === 0 ? 1 : 0;
+  if (next[other] === providerId) {
+    next[other] = next[position];
+  }
+  next[position] = providerId;
+  return next;
+}
+
+/**
+ * The pair Two at once starts from: the stored one while it is still valid,
+ * otherwise the given provider first and the next one on offer second.
+ */
+export function defaultPairIds(
+  storedIds: string[],
+  firstId: string | null | undefined,
+  providers: SetupDisplayModeProvider[],
+): string[] {
+  if (pairIsChosen(storedIds, providers)) {
+    return storedIds;
+  }
+  const first =
+    providers.find((provider) => provider.id === firstId)?.id ??
+    providers[0]?.id;
+  const second = providers.find((provider) => provider.id !== first)?.id;
+  return first && second ? [first, second] : [];
 }
 
 /**
