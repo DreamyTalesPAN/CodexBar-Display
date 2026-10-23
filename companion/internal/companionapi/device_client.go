@@ -234,7 +234,7 @@ func (s *Server) getHealth(ctx context.Context, target, token string) (deviceHea
 	// Every reading over WiFi passes here, so each device answer counts once
 	// however many callers reuse it. The Cable reads health another way and
 	// never gets the flag.
-	health.WiFi.Weak = s.wifiSignalStaysWeak(target, health.WiFi.RSSI)
+	health.WiFi.Weak, health.WiFi.Recovered = s.wifiSignalState(target, health.WiFi.RSSI)
 	return health, nil
 }
 

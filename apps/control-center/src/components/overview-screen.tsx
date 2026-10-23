@@ -43,7 +43,9 @@ const NOTICE_COPY: Record<OverviewNotice, { description: string; title: string }
 function activeOverviewNotices(device: DeviceInfo | null): OverviewNotice[] {
   const notices: OverviewNotice[] = [];
   if (!deviceIsCustomerConnected(device)) return notices;
-  if (device?.health?.wifi?.weak === true) notices.push("weak-wifi");
+  if (device?.connectionState !== "reconnecting" && device?.health?.wifi?.weak === true) {
+    notices.push("weak-wifi");
+  }
   if (device?.connectionState === "display_render_failed") {
     notices.push("theme-not-shown");
   }
@@ -52,23 +54,42 @@ function activeOverviewNotices(device: DeviceInfo | null): OverviewNotice[] {
 
 /**
  * The one Overview notice to show now, or null; the weak WiFi notice comes
- * first. A notice the customer closed stays closed while it is there; once it
- * has gone away, its return opens again. It waits while `held` (the busy
- * notice is due): the two would otherwise each wait for the other. The state
+ * first. A closed WiFi notice stays closed for that device until confirmed
+ * recovery; a theme notice opens again after it went away. It waits while `held`
+ * (the busy notice is due): the two would otherwise each wait for the other. The state
  * lives in the app, not in the screen, because the Overview unmounts on other
  * tabs and a closed notice must stay closed there too.
  */
 export function useOverviewNotice(device: DeviceInfo | null, held: boolean) {
   const active = activeOverviewNotices(device);
   const [closed, setClosed] = useState<OverviewNotice[]>([]);
-  // A notice that went away is forgotten, so its return opens again.
+  const [wifiClosed, setWifiClosed] = useState<Set<string>>(() => new Set());
+  const deviceKey = device?.deviceId ?? device?.target ?? "";
+  const recovered =
+    deviceIsCustomerConnected(device) &&
+    device?.connectionState !== "reconnecting" &&
+    device?.health?.wifi?.recovered === true;
+  if (recovered && wifiClosed.has(deviceKey)) {
+    const next = new Set(wifiClosed);
+    next.delete(deviceKey);
+    setWifiClosed(next);
+  }
+  // Theme notices reset when gone; WiFi needs this device's confirmed recovery.
   const stillClosed = closed.filter((notice) => active.includes(notice));
   if (stillClosed.length !== closed.length) setClosed(stillClosed);
-  const notice =
-    active.find((candidate) => !stillClosed.includes(candidate)) ?? null;
+  const notice = active.find((candidate) =>
+    candidate === "weak-wifi"
+      ? !wifiClosed.has(deviceKey)
+      : !stillClosed.includes(candidate),
+  ) ?? null;
   return {
-    close: (closedNotice: OverviewNotice) =>
-      setClosed([...stillClosed, closedNotice]),
+    close: (closedNotice: OverviewNotice) => {
+      if (closedNotice === "weak-wifi") {
+        setWifiClosed((previous) => new Set(previous).add(deviceKey));
+      } else {
+        setClosed([...stillClosed, closedNotice]);
+      }
+    },
     notice: held ? null : notice,
   };
 }

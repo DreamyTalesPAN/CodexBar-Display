@@ -46,7 +46,7 @@ describe("useOverviewNotice", () => {
     act(() => result.current.close("weak-wifi"));
     expect(result.current.notice).toBeNull();
 
-    rerender({ device: connectedDevice });
+    rerender({ device: { ...connectedDevice, health: { wifi: { rssi: -55, recovered: true } } } });
     expect(result.current.notice).toBeNull();
 
     rerender({ device: weakWiFi });
@@ -133,4 +133,43 @@ describe("OverviewScreen notice dialog", () => {
     await act(async () => rerender(page(false)));
     expect(screen.getByRole("dialog", { name: "Weak WiFi signal" })).toBeTruthy();
   });
+});
+
+it("keeps weak WiFi dismissed through missing readings until affirmative recovery", () => {
+  const { result, rerender } = renderHook(
+    ({ device }) => useOverviewNotice(device, false),
+    { initialProps: { device: weakWiFi as DeviceInfo } },
+  );
+  act(() => result.current.close("weak-wifi"));
+  rerender({ device: connectedDevice });
+  rerender({ device: weakWiFi });
+  expect(result.current.notice).toBeNull();
+  rerender({ device: { ...connectedDevice, health: { wifi: { rssi: -55, recovered: true } } } });
+  rerender({ device: weakWiFi });
+  expect(result.current.notice).toBe("weak-wifi");
+});
+
+it("keeps weak WiFi dismissals per VibeTV and ignores another device's recovery", () => {
+  const { result, rerender } = renderHook(
+    ({ device }) => useOverviewNotice(device, false),
+    { initialProps: { device: weakWiFi as DeviceInfo } },
+  );
+  act(() => result.current.close("weak-wifi"));
+  rerender({ device: { ...weakWiFi, deviceId: "other" } });
+  expect(result.current.notice).toBe("weak-wifi");
+  rerender({ device: { ...connectedDevice, deviceId: "other", health: { wifi: { rssi: -55, recovered: true } } } });
+  rerender({ device: { ...weakWiFi, target: "http://new-address" } });
+  expect(result.current.notice).toBeNull();
+});
+
+
+it("does not reopen or clear a dismissed WiFi notice while reconnecting", () => {
+  const { result, rerender } = renderHook(
+    ({ device }) => useOverviewNotice(device, false),
+    { initialProps: { device: weakWiFi as DeviceInfo } },
+  );
+  act(() => result.current.close("weak-wifi"));
+  rerender({ device: { ...connectedDevice, connectionState: "reconnecting", health: { wifi: { rssi: -55, recovered: true } } } });
+  rerender({ device: weakWiFi });
+  expect(result.current.notice).toBeNull();
 });

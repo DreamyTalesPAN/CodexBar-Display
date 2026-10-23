@@ -9942,3 +9942,94 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: an installed legacy Mac App keeps its existing verified hosted DMG migration action. Installed non-legacy apps still use their runtime release result, so the initial firmware update remains available despite an unrelated hosted download failure; outside-installed and failed-runtime behavior remain unchanged.
 - Scope: exclude required legacy migration from the runtime-only condition in `control-center-app.tsx`, extend `control-center-app.mac-app-up-to-date.test.tsx` with the existing legacy download path, and this record. New-head CI, Codex and Mac/Windows cold/warm validation remain required; earlier hardware results remain historical.
 - What's new: none — preserves an existing migration action while retaining the firmware-check fix.
+
+## 2026-10-21 — #265: weak WiFi notice
+
+- User approval: pending — new overlay "VibeTV's Wi-Fi is weak" when the companion reports that a WiFi VibeTV stopped getting updates
+- Approved customer-visible result: when the Companion reports `wifi.weak` for a connected VibeTV on WiFi, a dialog "VibeTV's Wi-Fi is weak" with the text "VibeTV stopped getting updates. Move it closer to your router or check your Wi-Fi." and one "OK" button opens over the page. "OK" hides it until the signal is no longer weak. Cable VibeTVs and a signal that is not weak show nothing new.
+- Scope: `apps/control-center/src/components/weak-wifi-dialog.tsx`, its test, `control-center-app.tsx` (state, reset effect, render), and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the notice is a warning on the page, not an announcement
+
+## 2026-10-21 — #265: weak WiFi notice, Codex fixes
+
+- User approval: no visible change – UI approval not needed (#861 Codex fixes: the weak-WiFi notice stays dismissed through short disconnects and waits while another dialog is open)
+- Approved customer-visible result: the approved notice of the block above, unchanged; no new text or layout.
+- Scope: `weak-wifi-dialog.tsx` and its test (dismissal, other-dialog guard), `system-busy-dialog.tsx` (shared other-dialog helper), `control-center-app.tsx` (uses the dismissal hook). Pull request branch only, not merge or release.
+- What's new: none — bug fix, no new entry; the notice keeps its approved wording
+
+## 2026-10-21 — #265: weak WiFi notice, Codex fix for recovery without the weak flag
+
+- User approval: no visible change – UI approval not needed (#861 Codex fix: a WiFi reading without the weak flag counts as recovery)
+- Approved customer-visible result: the approved notice of the blocks above, unchanged; no new text or layout.
+- Scope: `weak-wifi-dialog.tsx` and its test (recovery from a reading without `weak`). Pull request branch only, not merge or release.
+- What's new: none — bug fix, no new entry; the notice keeps its approved wording
+
+## 2026-10-21 — #265: weak WiFi notice, Codex fix for dismissal per device
+
+- User approval: no visible change – UI approval not needed (#861 Codex fix: weak-WiFi dismissal follows the VibeTV, not its IP address)
+- Approved customer-visible result: the approved notice of the blocks above, unchanged; no new text or layout.
+- Scope: `weak-wifi-dialog.tsx` and its test (dismissal keyed to the device id, target as fallback). Pull request branch only, not merge or release.
+- What's new: none — bug fix, no new entry; the notice keeps its approved wording
+
+## 2026-10-21 — #861: approval marker after merging main at 467fd7fb
+
+- User approval: no visible change – UI approval not needed (merge of main (467fd7fb) into #861; the own entries of #861 keep their approvals)
+- Approved customer-visible result: #861 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
+- Scope: the merge of 467fd7fb and this approval record. Pull request branch #861 only, not merged, not released.
+- What's new: none — merge of 467fd7fb, no customer-visible change of its own
+
+## 2026-10-21 — #861: weak-WiFi dismissal recovers per VibeTV
+
+- User approval: no visible change – UI approval not needed (bug fix: a dismissed weak-Wi-Fi warning no longer reopens because another VibeTV recovered)
+- Approved customer-visible result: the approved notice of the blocks above, unchanged; no new text or layout.
+- Scope: `weak-wifi-dialog.tsx` and its test (a recovery clears the dismissal only for the same device key). Pull request branch only, not merge or release.
+- What's new: none — bug fix, no new entry; the notice keeps its approved wording
+
+## 2026-10-21 — #861: weak-Wi-Fi dismissals kept per VibeTV
+
+- User approval: no visible change – UI approval not needed (bug fix: each VibeTV keeps its own dismissal of the weak-Wi-Fi warning)
+- Approved customer-visible result: the approved notice of the blocks above, unchanged; no new text or layout.
+- Scope: `weak-wifi-dialog.tsx` and its test (dismissed VibeTVs kept in a set; a recovery clears only that VibeTV). Pull request branch only, not merge or release.
+- What's new: none — bug fix, no new entry; the notice keeps its approved wording
+
+## 2026-10-21 — #861: approval marker after merging main at 3dc0a15b
+
+- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #861; the own entries of #861 keep their approvals)
+- Approved customer-visible result: #861 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
+- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #861 only, not merged, not released.
+- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
+
+## 2026-10-21 — #861: require signal recovery and suppress stale Wi-Fi notices
+
+- User approval: no visible change – UI approval not needed (#861 review fixes: keep dismissal through unconfirmed low readings and suppress retained weak health while reconnecting)
+- Approved customer-visible result: the existing notice and wording stay unchanged; reconnecting and unconfirmed signal samples no longer reopen it incorrectly.
+- Scope: Companion Wi-Fi recovery classification, shared Control Center types, weak-Wi-Fi predicate and dismissal regression tests. Pull request branch only, not merge or release.
+- What's new: none — bug fixes to the existing notice, no new entry
+
+## 2026-10-21 — #861: weak WiFi notice says updates may be delayed
+
+- User approval: pending — second sentence changed after review: the Companion flags a weak signal from its strength alone, while VibeTV can still get updates, so the notice no longer claims they stopped; Paul sees it in test build 7204
+- Approved customer-visible result: the dialog "VibeTV's Wi-Fi is weak" reads "Updates may be delayed. Move VibeTV closer to your router or check your Wi-Fi." with one "OK" button, instead of "VibeTV stopped getting updates. Move it closer to your router or check your Wi-Fi."; when it opens and closes is unchanged.
+- Scope: the text in `apps/control-center/src/components/weak-wifi-dialog.tsx` and this approval record. Pull request branch only, not merge or release.
+- What's new: none — wording of the existing notice
+
+## 2026-10-22 — #861: integrate main's single WiFi notice after #784
+
+- User approval: pending — per-device dismissal persists until confirmed WiFi recovery; the PR's text change is dropped and main's wording/layout stays.
+- Approved customer-visible result: Only the existing Overview weak-WiFi notice is shown; its dismissal belongs to the VibeTV and survives missing readings until affirmative recovery. The duplicate dialog and its text are removed.
+- Scope: apps/control-center/src/components/overview-screen.tsx, overview-screen.notices.test.tsx, control-center-types.ts and Companion WiFi recovery fields; removes weak-wifi-dialog.tsx and its duplicate tests.
+- What's new: none — integration preserves the existing main dialog.
+
+## 2026-10-22 — #861: merge main after #784
+
+- User approval: no visible change – UI approval not needed (merge of main after #784 into #861)
+- Approved customer-visible result: Main wording and layout retained; the behavior approval remains pending in the entry above.
+- Scope: main merge and approval record only.
+- What's new: none — merge integration only.
+
+## 2026-10-23 — #861: clarify the remaining WiFi behavior approval
+
+- User approval: pending — the per-device dismissal behavior from the 2026-10-22 single-notice integration remains the only open UI approval for #861; this clarification grants no approval.
+- Approved customer-visible result: Main's #784 Overview wording, layout and dialog ownership remain unchanged. The earlier #265/#861 entries for the removed `weak-wifi-dialog.tsx`, including the 2026-10-21 overlay and "Updates may be delayed" wording proposals, are superseded by the 2026-10-22 single-notice integration; the existing entries are retained as history.
+- Scope: approval-record clarification only. The coordinator bench still owes the WiFi weak → dismiss → reconnect → confirmed recovery → weak sequence and Mac warm-start evidence; cable runs do not validate the WiFi feature.
+- What's new: none — documentation only, no product change.
