@@ -9928,3 +9928,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Main wording and layout retained; the behavior approval remains pending in the entry above.
 - Scope: main merge and approval record only.
 - What's new: none — merge integration only.
+
+## 2026-10-23 — #861: clarify the remaining WiFi behavior approval
+
+- User approval: pending — the per-device dismissal behavior from the 2026-10-22 single-notice integration remains the only open UI approval for #861; this clarification grants no approval.
+- Approved customer-visible result: Main's #784 Overview wording, layout and dialog ownership remain unchanged. The earlier #265/#861 entries for the removed `weak-wifi-dialog.tsx`, including the 2026-10-21 overlay and "Updates may be delayed" wording proposals, are superseded by the 2026-10-22 single-notice integration; the existing entries are retained as history.
+- Scope: approval-record clarification only. The coordinator bench still owes the WiFi weak → dismiss → reconnect → confirmed recovery → weak sequence and Mac warm-start evidence; cable runs do not validate the WiFi feature.
+- What's new: none — documentation only, no product change.
