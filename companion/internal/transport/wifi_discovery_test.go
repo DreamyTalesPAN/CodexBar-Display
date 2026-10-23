@@ -2,12 +2,100 @@ package transport
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestScanWiFiTargetsKeepsSuccessfulResult(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"kind":"hello","deviceId":"expected-device","board":"esp8266-smalltv-st7789","capabilities":{"transport":{"active":"wifi"}}}`)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	targets := make([]string, wifiDiscoveryWorkers)
+	for i := range targets {
+		targets[i] = "http://vibetv.test"
+	}
+	for attempt := 0; attempt < 1000; attempt++ {
+		result, err := scanWiFiTargets(context.Background(), client, targets, "expected-device")
+		if err != nil {
+			t.Fatalf("scan %d discarded a successful hello: %v", attempt, err)
+		}
+		if result.Hello.DeviceID != "expected-device" || result.Source != "network-scan" {
+			t.Fatalf("unexpected discovery result: %+v", result)
+		}
+	}
+}
+
+func TestScanWiFiTargetsCancelsRemainingProbesAfterSuccess(t *testing.T) {
+	slowStarted := make(chan struct{})
+	slowCanceled := make(chan struct{})
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Host == "slow.test" {
+			close(slowStarted)
+			<-req.Context().Done()
+			close(slowCanceled)
+			return nil, req.Context().Err()
+		}
+		select {
+		case <-slowStarted:
+		case <-req.Context().Done():
+			return nil, req.Context().Err()
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"kind":"hello","deviceId":"expected-device","board":"esp8266-smalltv-st7789","capabilities":{"transport":{"active":"wifi"}}}`)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	result, err := scanWiFiTargets(ctx, client, []string{"http://slow.test", "http://found.test"}, "expected-device")
+	if err != nil || result.Target != "http://found.test" {
+		t.Fatalf("successful probe: result=%+v err=%v", result, err)
+	}
+	select {
+	case <-slowCanceled:
+	case <-ctx.Done():
+		t.Fatal("successful scan did not cancel the remaining probe")
+	}
+}
+
+func TestScanWiFiTargetsNoMatch(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"kind":"hello","deviceId":"other-device","board":"esp8266-smalltv-st7789","capabilities":{"transport":{"active":"wifi"}}}`)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	_, err := scanWiFiTargets(context.Background(), client, []string{"http://vibetv.test"}, "expected-device")
+	if err == nil || !strings.Contains(err.Error(), "no VibeTV device found") {
+		t.Fatalf("expected no matching device, got %v", err)
+	}
+}
+
+func TestScanWiFiTargetsHonorsCallerCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		cancel()
+		<-req.Context().Done()
+		return nil, req.Context().Err()
+	})}
+	_, err := scanWiFiTargets(ctx, client, []string{"http://vibetv.test"}, "")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected caller cancellation, got %v", err)
+	}
+}
 
 func TestDiscoverWiFiDeviceTriesCandidates(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
