@@ -9844,3 +9844,52 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #873 as in its own entries plus the entries merged with d2f3fade; nothing else changes.
 - Scope: the merge of d2f3fade and this approval record. Pull request branch #873 only, not merged, not released.
 - What's new: none — merge of d2f3fade, no customer-visible change of its own
+
+## 2026-10-21 — #893: preserve theme links when setup is skipped
+
+- User approval: no visible change – UI approval not needed (bug fix: remembered setup preserves the requested theme destination)
+- Approved customer-visible result: completed setup returns to Overview; returning customers opening a theme install link still reach that theme.
+- Scope: `control-center-app.tsx` completion guard and theme-link regression test for Codex P1.
+- What's new: none — preserve the existing theme-link destination
+
+## 2026-10-22 — #893: a theme install still open at setup end keeps Appearance
+
+- User approval: no visible change – UI approval not needed (restores the behaviour before #893 for a theme install that is running or has failed when setup ends: it stays on Appearance, where its dialog is; firmware updates still end on Overview)
+- Approved customer-visible result: none beyond #893 itself; a failed theme install picked up during setup is shown in its dialog on Appearance, as before.
+- Scope: finishSetup in control-center-app.tsx and its tests; pull request branch #893 only.
+- What's new: none — no visible change beyond #893
+
+## 2026-10-22 — #893: a Settings connection change returns to Settings, not Overview
+
+- User approval: no visible change – UI approval not needed (fixes #893 itself: only the first entry into the Control Center ends setup on Overview; the Settings WiFi switch keeps returning to its Settings card as on the base branch)
+- Approved customer-visible result: none beyond #893 itself; confirming WiFi from Settings shows the selected WiFi card again.
+- Scope: finishSetup in control-center-app.tsx; pull request branch #893 only.
+- What's new: none — no visible change beyond #893
+
+## 2026-10-22 — #893: setup end only leaves Updates
+
+- User approval: no visible change – UI approval not needed (fixes #893 itself: setup ends on Overview only when a firmware update moved the app to Updates; a Settings connection change and a running theme install keep their screens as on the base branch)
+- Approved customer-visible result: none beyond #893 itself; confirming WiFi from Settings shows the selected WiFi card again, a reload during a theme install shows its dialog on Appearance.
+- Scope: finishSetup in control-center-app.tsx; pull request branch #893 only.
+- What's new: none — no visible change beyond #893
+
+## 2026-10-22 — #893: setup end tab tests
+
+- User approval: no visible change – UI approval not needed (test-only: pins which tab setup ends on for a firmware update, a theme install, a Settings WiFi switch, a theme reload and a remembered setup; no product change)
+- Approved customer-visible result: none; no screen changes.
+- Scope: control-center-app.setup-end-tab.test.tsx; pull request branch #893 only.
+- What's new: none — test only
+
+## 2026-10-22 — #893: merge main after #784
+
+- User approval: no visible change – UI approval not needed (merge of main after #784 into #893)
+- Approved customer-visible result: Main redesign with this PR's setup completion destination.
+- Scope: apps/control-center/src/components/control-center-app.tsx and setup completion tests; merge integration only.
+- What's new: none — merge integration only.
+
+## 2026-10-23 — #893: restore the setup completion record
+
+- User approval: no visible change – UI approval not needed (restores the bug-fix record from 5db2e49f, lost in merge 6f18aa04, with the current setup destination rule; documentation only)
+- Approved customer-visible result: finishing setup leaves Updates for Overview after a firmware update, or returns to Settings when a Settings connection change opened setup; Settings and Appearance otherwise stay where they are.
+- Scope: the existing `control-center-app.tsx` setup completion rule and its regression tests, documented here without changing product code; update navigation outside setup is unchanged.
+- What's new: none — restore the missing record of the intended setup destination
