@@ -178,9 +178,16 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	readings := make(map[string]json.RawMessage, len(snapshot.Providers))
 	for _, provider := range snapshot.Providers {
 		usage, usageOK := dashboardusage.UsageForProvider(usageProviders, provider.ID)
+		id := strings.ToLower(strings.TrimSpace(provider.ID))
+		normalized := dashboardusage.NormalizeProvider(provider, usage)
+		var pace []ProviderPace
+		if usageOK && !normalized.Unavailable {
+			pace = sameWindowPace(normalized.Windows, usageItems[id])
+		}
 		parsed := parsedFrameFromDashboardProvider(
 			provider,
-			dashboardusage.NormalizeProvider(provider, usage),
+			normalized,
+			pace,
 			now,
 			snapshotCollectedAt,
 			usage.Error,
@@ -195,12 +202,6 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 			parsed.Frame = parsed.Frame.Normalize()
 			parsed.Meta.Windows = nil
 			parsed.Stale = true
-		}
-		id := strings.ToLower(strings.TrimSpace(provider.ID))
-		// CodexBar's pace rides in the same usage item as the windows. Serve's
-		// answer is the only source on this path, so it is read here (#210, #412).
-		if !parsed.Frame.UsageUnavailable {
-			parsed.Meta.Pace = parseProviderPace(usageItems[id])
 		}
 		parsed.Meta.Plan = strings.TrimSpace(provider.Identity.Plan)
 		if spend, ok := parseProviderSpend(usageItems[id]); ok && usageOK {
@@ -225,6 +226,33 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	}
 	serveUsage.mu.Unlock()
 	return out, nil
+}
+
+// paceResetTolerance is CodexBar's own allowance for a window's reset to drift
+// between two reads (CostUsageTokenSnapshot.quotaWeekBoundaryTolerance, 0.75.0).
+// The recorded Claude resets differ by one second between the endpoints.
+const paceResetTolerance = 2 * time.Minute
+
+// sameWindowPace is the pace CodexBar's usage item states for the dashboard
+// windows. The snapshot carries no pace, and serve caches it apart from
+// /usage (#210, #412), so a window that rolled over in one answer and not in
+// the other would show the old pace beside the new percent. The window keeps
+// its pace only while both answers hold the same reset; otherwise it has none.
+func sameWindowPace(windows []dashboardusage.UsageWindow, usageItem map[string]any) []ProviderPace {
+	paces := parseProviderPace(usageItem)
+	var out []ProviderPace
+	for _, window := range windows {
+		pace, ok := PaceForWindow(paces, window.ID)
+		if !ok {
+			continue
+		}
+		path := "usage." + pace.Window + "."
+		reset := firstRFC3339AtPaths(usageItem, path+"resetsAt", path+"resetAt")
+		if window.ResetAt != nil && !reset.IsZero() && window.ResetAt.Sub(reset).Abs() <= paceResetTolerance {
+			out = append(out, pace)
+		}
+	}
+	return out
 }
 
 // dashboardRequestTimeout bounds the snapshot request to CodexBar's serve,
@@ -264,7 +292,7 @@ func fetchDashboardJSON(ctx context.Context, url string, token string) ([]byte, 
 	return raw, nil
 }
 
-func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider, normalized dashboardusage.ProviderWindows, now time.Time, collectedAt time.Time, usageError json.RawMessage) ParsedFrame {
+func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider, normalized dashboardusage.ProviderWindows, pace []ProviderPace, now time.Time, collectedAt time.Time, usageError json.RawMessage) ParsedFrame {
 	id := strings.TrimSpace(strings.ToLower(provider.ID))
 	label := strings.TrimSpace(provider.Name)
 	if label == "" {
@@ -275,7 +303,7 @@ func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider,
 		countdownAt = now
 	}
 	metaWindows := usageWindowsFromDashboardWindows(normalized.Windows, countdownAt)
-	windows := usageWindowsFromWindows(metaWindows)
+	windows := usageWindowsFromWindows(metaWindows, pace)
 	frame := protocol.Frame{
 		V:            protocol.ProtocolVersionV2,
 		Provider:     id,
@@ -305,7 +333,7 @@ func parsedFrameFromDashboardProvider(provider dashboardusage.DashboardProvider,
 		Frame:              frame.Normalize(),
 		Provider:           id,
 		Source:             "codexbar-dashboard",
-		Meta:               ProviderUsageMeta{Windows: metaWindows},
+		Meta:               ProviderUsageMeta{Windows: metaWindows, Pace: pace},
 		CollectedAt:        collectedAt.UTC(),
 		ActivityObservedAt: activityObservedAt,
 		Stale:              frame.UsageUnavailable,

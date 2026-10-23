@@ -39,6 +39,12 @@ struct ProgressCommand {
   uint16_t fillColor = 0xFFFF;
   uint16_t borderColor = 0x7BEF;
   uint16_t bgColor = 0x0000;
+  // The pace of a bar bound to usageSlotNPace, see themespec::ProgressCommand.
+  int pieceTo = 0;
+  int planAt = -1;
+  bool hatched = false;
+  uint16_t pieceColor = 0xFFFF;
+  uint16_t hatchGapColor = 0x0000;
 };
 
 class Sink {

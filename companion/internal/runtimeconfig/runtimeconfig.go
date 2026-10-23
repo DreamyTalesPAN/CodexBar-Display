@@ -61,6 +61,9 @@ type Config struct {
 	// DisplayRotateSeconds makes Automatic move to the next provider on a
 	// timer. Zero keeps the activity-based choice (issue #322).
 	DisplayRotateSeconds int `json:"displayRotateSeconds,omitempty"`
+	// HidePace keeps CodexBar's reserve or deficit off VibeTV (Settings,
+	// "Pace"). The default, false, shows it on themes that have a place for it.
+	HidePace bool `json:"hidePace,omitempty"`
 }
 
 type ProviderDisplayConfig struct {

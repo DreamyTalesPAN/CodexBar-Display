@@ -106,9 +106,14 @@ type ProviderPace struct {
 	Stage               string
 	DeltaPercent        int
 	ExpectedUsedPercent int
-	WillLastToReset     bool
-	ETASeconds          int64
-	Summary             string
+	// Whether CodexBar sent the two numbers above; a missing one is not a 0.
+	HasDeltaPercent        bool
+	HasExpectedUsedPercent bool
+	WillLastToReset        bool
+	ETASeconds             int64
+	// HasETA tells a zero ETA ("Runs out now") from none at all.
+	HasETA  bool
+	Summary string
 }
 
 type UsageOverTimePoint struct {
