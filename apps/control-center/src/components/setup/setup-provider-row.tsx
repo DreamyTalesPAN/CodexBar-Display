@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, RefreshCw, TriangleAlert } from "lucide-react";
+import { ArrowUpRight, ChevronRight, RefreshCw, TriangleAlert } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -77,6 +77,10 @@ export function setupProviderRowVariant(
   }
 }
 
+/** The calm provider card: 56px high, 10% ink ring, no border, 20px sides. */
+export const SETUP_PROVIDER_CARD_CLASS =
+  "min-h-14 rounded-[var(--radius-card)] border-0 bg-card px-5 py-0 text-[13px] shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_10%,transparent)]";
+
 type SetupProviderRowProps = {
   /**
    * This provider's exact check is queued or running. It replaces the check
@@ -85,6 +89,8 @@ type SetupProviderRowProps = {
    * while the rest are still on their way -- reopening Continue on a gate that
    * has not been satisfied, and repeating the sign-in work behind the check.
    */
+  /** The Setup Wizard's calm look (variant B); Settings keeps its own. */
+  calm?: boolean;
   checking?: boolean;
   enabled: boolean;
   health: PreferenceHealthState;
@@ -110,6 +116,7 @@ type SetupProviderRowProps = {
 };
 
 export function SetupProviderRow({
+  calm = false,
   checking = false,
   enabled,
   health,
@@ -135,15 +142,30 @@ export function SetupProviderRow({
 
   return (
     <Item
-      className="rounded-[var(--radius-card)] p-4"
+      className={
+        calm
+          ? SETUP_PROVIDER_CARD_CLASS
+          : "rounded-[var(--radius-card)] p-4"
+      }
       role="listitem"
-      variant="outline"
+      variant={calm ? "default" : "outline"}
     >
       <ItemContent>
         <ItemTitle className={cn("text-[13px] font-semibold", unusable && "opacity-50")}>{label}</ItemTitle>
       </ItemContent>
-      <ItemActions>
-        {signIn ? (
+      <ItemActions className={calm ? "gap-4" : undefined}>
+        {signIn && calm ? (
+          <Button
+            className="h-9 gap-1 p-0 text-[13px] font-semibold text-destructive hover:bg-transparent dark:hover:bg-transparent"
+            onClick={onOpenSignIn}
+            type="button"
+            variant="ghost"
+          >
+            <span aria-hidden>Sign in needed</span>
+            <span className="sr-only">{`Sign in needed for ${label}`}</span>
+            <ArrowUpRight aria-hidden className="size-3.5" />
+          </Button>
+        ) : signIn ? (
           <Button
             className="h-9 gap-3 p-0 font-normal text-muted-foreground hover:bg-transparent dark:hover:bg-transparent"
             onClick={onOpenSignIn}
@@ -180,6 +202,10 @@ export function SetupProviderRow({
             mistake must be switchable off without signing in first (#647). */}
         <Switch
           aria-label={label}
+          className={cn(
+            calm &&
+              "data-[size=default]:h-5! data-[size=default]:w-[34px]! data-checked:[&_[data-slot=switch-thumb]]:translate-x-[16px]!",
+          )}
           checked={enabled}
           disabled={saving}
           onCheckedChange={onToggle}

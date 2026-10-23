@@ -8,10 +8,11 @@ const lines: SetupLogLine[] = [
 ];
 
 describe("SetupLog", () => {
-  it("holds its space before the first line, so nothing moves later", () => {
+  it("is as tall as its lines and grows to five before it scrolls", () => {
     const empty = renderToStaticMarkup(<SetupLog lines={[]} />);
 
-    expect(empty).toContain("h-[118px]");
+    expect(empty).toContain("max-h-[120px]");
+    expect(empty).not.toContain("h-[118px]");
     expect(empty).not.toContain("&gt;");
   });
 
@@ -35,12 +36,18 @@ describe("SetupLog", () => {
     expect(html.match(/text-muted-foreground/g)).toHaveLength(2);
   });
 
-  it("hides the scrollbar but keeps an edge fade so more content still reads", () => {
+  it("hides the scrollbar and fades the top edge only once lines are out of view", () => {
     const html = renderToStaticMarkup(<SetupLog lines={lines} />);
 
     expect(html).toContain("[scrollbar-width:none]");
     expect(html).toContain("overflow-y-auto");
-    expect(html).toContain("mask-image");
+    expect(html).not.toContain("mask-image");
+
+    const long = Array.from({ length: 6 }, (_, index) => ({
+      id: String(index),
+      text: `line ${index}`,
+    }));
+    expect(renderToStaticMarkup(<SetupLog lines={long} />)).toContain("mask-image");
   });
 
   it("fades a new line in", () => {
@@ -49,16 +56,23 @@ describe("SetupLog", () => {
     );
   });
 
-  it("shows the caret only on the last line, and only while running", () => {
-    expect(renderToStaticMarkup(<SetupLog lines={lines} />)).not.toContain(
-      "vibetv-caret-blink",
+  it("dims every line above the newest, and never the error", () => {
+    const html = renderToStaticMarkup(
+      <SetupLog
+        lines={[...lines, { id: "c", text: "error: update did not finish", tone: "error" }]}
+      />,
     );
 
-    const running = renderToStaticMarkup(<SetupLog lines={lines} running />);
+    expect(html.match(/opacity-55/g)).toHaveLength(2);
+    expect(html).not.toContain("vibetv-caret-blink");
+  });
 
-    expect(running.match(/vibetv-caret-blink/g)).toHaveLength(1);
-    expect(running.indexOf("vibetv-caret-blink")).toBeGreaterThan(
-      running.indexOf("VibeTV 5804508"),
+  it("never holds back its announcements with aria-busy", () => {
+    expect(renderToStaticMarkup(<SetupLog lines={lines} />)).not.toContain(
+      "aria-busy",
+    );
+    expect(renderToStaticMarkup(<SetupLog lines={lines} running />)).not.toContain(
+      "aria-busy",
     );
   });
 });

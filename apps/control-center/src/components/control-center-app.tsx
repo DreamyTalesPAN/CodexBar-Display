@@ -5175,14 +5175,11 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   // back and forth while the customer watched, for no information they could
   // act on.
   const setupWelcomeLines = [
-    { id: "service", text: "starting background service" },
     {
-      id: "usage",
-      text: windowsHost
-        ? "reading provider usage on this computer"
-        : "reading provider usage on this Mac",
+      id: "service",
+      text: windowsHost ? "starting the app" : "starting the Mac App",
     },
-    { id: "wifi", text: "scanning your WiFi" },
+    { id: "usage", text: "reading your AI providers" },
     { id: "device", text: "looking for your VibeTV" },
   ].map((line, index, lines) => ({
     ...line,

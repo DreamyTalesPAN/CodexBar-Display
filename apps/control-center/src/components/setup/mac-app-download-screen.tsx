@@ -127,11 +127,11 @@ export function MacAppDownloadScreen({
       label="Download VibeTV Control Center"
       onCreateSupportReport={onCreateSupportReport}
     >
-      <p className="text-xs font-semibold tracking-[0.3em] text-muted-foreground uppercase">
+      <p className="text-[13px] text-muted-foreground">
         Welcome to
       </p>
       <ControlCenterBrand variant="hero" />
-      <SetupWizardSubtitle>
+      <SetupWizardSubtitle className="text-[13px]">
         {openThemeUrl
           ? "Open this theme in the Mac App."
           : "Get the Mac App, then it takes you through the rest."}
@@ -142,7 +142,6 @@ export function MacAppDownloadScreen({
         <Button
           asChild
           className="mt-4 w-full"
-          size="lg"
           variant={openThemeUrl ? "outline" : "default"}
         >
           <a href={downloadUrl}>
@@ -155,14 +154,13 @@ export function MacAppDownloadScreen({
           <Button
             className="mt-4 w-full"
             disabled
-            size="lg"
             type="button"
             variant={openThemeUrl ? "outline" : "default"}
           >
             <Download data-icon="inline-start" aria-hidden />
             <span>Download</span>
           </Button>
-          <SetupWizardSubtitle>
+          <SetupWizardSubtitle className="text-[13px]">
             The signed download is not ready yet. Please try again later.
           </SetupWizardSubtitle>
         </>
@@ -192,11 +190,11 @@ function DownloadScreenFrame({
       label="Download VibeTV Control Center"
       onCreateSupportReport={onCreateSupportReport}
     >
-      <p className="text-xs font-semibold tracking-[0.3em] text-muted-foreground uppercase">
+      <p className="text-[13px] text-muted-foreground">
         Welcome to
       </p>
       <ControlCenterBrand variant="hero" />
-      <SetupWizardSubtitle>{subtitle}</SetupWizardSubtitle>
+      <SetupWizardSubtitle className="text-[13px]">{subtitle}</SetupWizardSubtitle>
       {children}
     </SetupWizardScreen>
   );
@@ -216,7 +214,6 @@ function PrimaryDownload({
       <Button
         asChild
         className="mt-4 w-full"
-        size="lg"
         variant={secondary ? "outline" : "default"}
       >
         <a href={href}>
@@ -231,14 +228,13 @@ function PrimaryDownload({
       <Button
         className="mt-4 w-full"
         disabled
-        size="lg"
         type="button"
         variant={secondary ? "outline" : "default"}
       >
         <Download data-icon="inline-start" aria-hidden />
         <span>{label}</span>
       </Button>
-      <SetupWizardSubtitle>
+      <SetupWizardSubtitle className="text-[13px]">
         The signed download is not ready yet. Please try again later.
       </SetupWizardSubtitle>
     </>
@@ -250,7 +246,7 @@ function OpenControlCenter({ href }: { href: string | undefined }) {
     return null;
   }
   return (
-    <Button asChild className="mt-4 w-full" size="lg">
+    <Button asChild className="mt-4 w-full">
       <a href={href}>
         <ExternalLink data-icon="inline-start" aria-hidden />
         <span>Open Control Center</span>

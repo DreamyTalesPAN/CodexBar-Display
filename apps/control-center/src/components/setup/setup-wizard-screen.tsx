@@ -4,6 +4,7 @@ import type { SupportDiagnostics } from "../control-center-types";
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { SetupHelpMenu } from "./setup-help-menu";
 
@@ -14,6 +15,8 @@ type SetupWizardScreenProps = {
   label: string;
   aiFixPrompt?: () => string;
   onBack?: () => void;
+  /** Back was pressed and the running step is still finishing. */
+  stopping?: boolean;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   /** The app runs on Windows, where "Mac App" reads "app". */
   windowsHost?: boolean;
@@ -30,13 +33,14 @@ export function SetupWizardScreen({
   label,
   aiFixPrompt,
   onBack,
+  stopping = false,
   onCreateSupportReport,
   windowsHost,
 }: SetupWizardScreenProps) {
   return (
     <main
       aria-label={label}
-      className="relative flex min-h-svh w-full flex-col items-center bg-background px-6 py-10 sm:px-14 sm:py-14"
+      className="relative flex min-h-svh w-full flex-col items-center bg-background px-6 py-10 text-[13px] sm:px-14 sm:pt-14 sm:pb-[68px]"
     >
       {/*
         my-auto rather than justify-center: a centred flex child whose content
@@ -46,24 +50,29 @@ export function SetupWizardScreen({
       */}
       <div
         className={cn(
-          "my-auto flex w-full flex-col items-center gap-2 text-center",
-          contentWidth === "wide" ? "max-w-[464px]" : "max-w-[460px]",
+          "my-auto flex w-full flex-col items-center text-center",
+          contentWidth === "wide" ? "max-w-[640px]" : "max-w-[460px]",
         )}
       >
         {children}
       </div>
 
       {onBack ? (
-        <div className="fixed top-5 left-5 z-60">
+        <div className="fixed top-5 left-[22px] z-60">
           <Button
-            className="text-muted-foreground"
+            className="h-9 gap-1.5 pr-2.5 pl-1.5 text-[13px] text-muted-foreground has-data-[icon=inline-start]:pl-1.5"
+            disabled={stopping}
             onClick={onBack}
             size="sm"
             type="button"
             variant="ghost"
           >
-            <ChevronLeft data-icon="inline-start" />
-            <span>Back</span>
+            {stopping ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <ChevronLeft className="size-4" data-icon="inline-start" />
+            )}
+            <span>{stopping ? "Stopping…" : "Back"}</span>
           </Button>
         </div>
       ) : null}
@@ -76,6 +85,16 @@ export function SetupWizardScreen({
     </main>
   );
 }
+
+/** Calm title and subtitle for the steps that picked variant B; the shared title stays as it is. */
+export const CALM_TITLE_CLASS =
+  "mt-0 text-[28px] leading-[1.15] font-semibold tracking-[-0.01em]";
+export const CALM_SUBTITLE_CLASS = "mt-2.5 text-[13px] empty:hidden";
+/** Plain underlined text link (the master's links: 13px, regular weight). */
+export const CALM_LINK_CLASS =
+  "h-auto rounded-none p-0 text-[13px] font-normal text-foreground underline underline-offset-4";
+/** The 44px full-width button every calm step ends in. */
+export const CALM_BUTTON_CLASS = "h-11 w-full text-[13px]";
 
 export function SetupWizardTitle({
   children,

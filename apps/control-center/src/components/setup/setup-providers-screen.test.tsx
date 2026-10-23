@@ -131,13 +131,13 @@ describe("SetupProvidersScreen", () => {
     expect(screen.queryByRole("button", { name: "Check Claude again" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Show provider message for Claude" })).toBeNull();
     rerender(<SetupProvidersScreen {...props} pendingCheckIds={new Set(["claude"])} />);
-    expect(screen.getByRole("button", { name: "Sign in to Claude" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Sign in needed for Claude" })).toBeTruthy();
     rerender(<SetupProvidersScreen {...props} providers={[{ ...signedOut }]} />);
     expect(screen.queryByRole("dialog")).toBeNull();
     const changed = { ...signedOut, health: { ...signedOut.health, reported: "A new sign-in failure." } };
     rerender(<SetupProvidersScreen {...props} providers={[changed]} />);
     expect(screen.queryByRole("dialog")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Sign in to Claude" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sign in needed for Claude" }));
     expect(onOpenSignIn).toHaveBeenCalledWith(changed);
     expect(screen.queryByRole("dialog")).toBeNull();
     // 3. While the sign-in recovers, the row passes through "stale" as the
@@ -160,7 +160,7 @@ describe("SetupProvidersScreen", () => {
     )).toBeTruthy();
     rerender(<SetupProvidersScreen {...props} providers={[{ ...claude, label: "Claude" }]} />);
     expect(screen.getByRole("switch", { name: "Claude" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Sign in to Claude" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Sign in needed for Claude" })).toBeNull();
   });
 
   it("shows one provider popup, keeps dismissal across polls, and reopens after retry", () => {
@@ -311,7 +311,7 @@ describe("SetupProvidersScreen", () => {
     rerender(<SetupProvidersScreen {...props} providers={[codex, { ...signIn,
       health: { ...signIn.health, signInUrl: "https://claude.ai/login", reported: summary } }]} />);
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByRole("button", { name: /Sign in to Claude Code/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Sign in needed for Claude Code/ })).toBeTruthy();
     expect(document.body.innerHTML).not.toMatch(engineText);
   });
 
@@ -386,12 +386,12 @@ describe("SetupProvidersScreen", () => {
       pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
     const { rerender } = renderDom(<SetupProvidersScreen {...props} providers={[signedOut]} />);
     expect(screen.queryByRole("dialog")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Sign in to Claude" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sign in needed for Claude" }));
     expect(onOpenSignIn).toHaveBeenCalledWith(signedOut);
     expect(screen.queryByRole("button", { name: "Check Claude again" })).toBeNull();
     // A stale row with no sign-in behind it recovers by itself.
     rerender(<SetupProvidersScreen {...props} providers={[stale]} />);
-    expect(screen.queryByRole("button", { name: "Sign in to Claude" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Sign in needed for Claude" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Check Claude again" })).toBeNull();
   });
 

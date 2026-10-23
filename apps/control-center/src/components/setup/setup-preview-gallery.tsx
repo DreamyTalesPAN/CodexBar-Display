@@ -9,8 +9,10 @@ import {
 } from "react";
 import type {
   DeviceCandidate,
+  DeviceInfo,
   PreferenceHealthState,
 } from "../control-center-types";
+import type { DisplayFrameSnapshot } from "../live-vibetv-preview";
 import type { SupportDiagnostics } from "../control-center-types";
 import type { ProviderItem } from "../provider-picker";
 import { connectLogLines, type ConnectPhase } from "./setup-connect-log";
@@ -31,14 +33,15 @@ import type { SetupLogLine } from "./setup-log";
 import { SetupProvidersScreen } from "./setup-providers-screen";
 import { SetupThemeScreen } from "./setup-theme-screen";
 import { SetupUsageDialog } from "./setup-usage-dialog";
+import { SetupEventsContext } from "../setup-event-log";
+import type { SetupLog as SetupEventsLog } from "../control-center-types";
 import { buildAiFixPrompt } from "./setup-ai-prompt";
 import type { SetupStep } from "./setup-step";
 import { SetupWelcomeScreen } from "./setup-welcome-screen";
 
 const WELCOME_LINES: SetupLogLine[] = [
-  { id: "service", text: "starting background service", tone: "done" },
-  { id: "usage", text: "reading provider usage on this Mac", tone: "done" },
-  { id: "wifi", text: "scanning your WiFi", tone: "done" },
+  { id: "service", text: "starting the Mac App", tone: "done" },
+  { id: "usage", text: "reading your AI providers", tone: "done" },
   { id: "device", text: "looking for your VibeTV" },
 ];
 
@@ -57,6 +60,46 @@ const CANDIDATES: DeviceCandidate[] = [
     firmware: "1.0.55",
   },
 ];
+
+/**
+ * The VibeTV the preview pretends to be connected to: the first one of the
+ * list, showing the Claude creature theme. Its screen is drawn from the theme
+ * pack the Mac App serves, so without one the screen says "Loading preview".
+ */
+const PREVIEW_DEVICE = {
+  deviceId: "5804508",
+  target: "http://192.168.178.153",
+  active: true,
+  connected: true,
+  paired: true,
+  ready: true,
+  board: "esp8266_smalltv_st7789",
+  firmware: "1.0.55",
+  activeTheme: "claude-creature",
+  display: {
+    themeSpec: {
+      active: true,
+      path: "/themes/u/claude--9-5c74ca.json",
+      renderOk: true,
+    },
+  },
+} as DeviceInfo;
+
+const PREVIEW_FRAME: DisplayFrameSnapshot = {
+  ok: true,
+  savedAt: "2026-10-20T10:00:00Z",
+  frame: {
+    v: 2,
+    provider: "claude",
+    label: "Claude",
+    usageMode: "remaining",
+    resetSecs: 1380,
+    usageSlots: [
+      { id: "session", label: "Session", percent: 92, resetSecs: 1380 },
+      { id: "weekly", label: "Weekly", percent: 90 },
+    ],
+  },
+};
 
 const CABLE_CANDIDATES: DeviceCandidate[] = CANDIDATES.map(
   (candidate, index) => ({
@@ -105,38 +148,57 @@ function provider(fields: {
 
 const PROVIDERS: ProviderItem[] = [
   provider({ health: "healthy", label: "Codex", providerId: "codex" }),
-  provider({ health: "checking", label: "Cursor", providerId: "cursor" }),
-  provider({ health: "auth_required", label: "Claude", providerId: "claude" }),
-  provider({
-    health: "permission_required",
-    label: "Gemini",
-    providerId: "gemini",
-  }),
-  provider({ health: "timeout", label: "Copilot", providerId: "copilot" }),
+  provider({ health: "auth_required", label: "Cursor", providerId: "cursor" }),
+  provider({ health: "healthy", label: "Claude", providerId: "claude" }),
   provider({
     health: "healthy",
-    label: "Mistral",
-    providerId: "mistral",
+    label: "Copilot",
+    providerId: "copilot",
     value: false,
   }),
   provider({
-    health: "no_usage_available",
-    label: "OpenCode",
-    providerId: "opencode",
-  }),
-  provider({
-    health: "service_outage",
-    label: "DeepSeek",
-    providerId: "deepseek",
+    health: "healthy",
+    label: "Gemini",
+    providerId: "gemini",
+    value: false,
   }),
 ];
 
 const THEMES = [
-  { id: "claude-creature", name: "Claude Creature" },
+  { id: "claude-creature", name: "Claude" },
+  { id: "synthwave", name: "Synthwave" },
   { id: "clippy", name: "Clippy" },
   { id: "mini-classic", name: "Mini Classic" },
-  { id: "synthwave", name: "Synthwave" },
 ];
+
+/** A made-up setup log, so the Help menu's "Show setup log" has something to show. */
+const EVENT_ROWS: [string, string, string, string][] = [
+  ["14:02:11", "service_restart", "started", "Mac App started"],
+  ["14:02:13", "device_search", "started", "Searching on WiFi"],
+  ["14:02:19", "device_search", "succeeded", "2 found"],
+  ["14:02:24", "device_select", "succeeded", "VibeTV 4F2A chosen"],
+  ["14:02:31", "wifi_setup", "succeeded", "WiFi details sent"],
+  ["14:02:58", "firmware_update", "started", "1.3.9 to 1.4.2"],
+  ["14:03:40", "firmware_update", "succeeded", "Updated"],
+  ["14:03:52", "wifi_setup", "started", "Waiting for VibeTV"],
+];
+const SAMPLE_EVENTS: SetupEventsLog = {
+  sessionId: "preview",
+  startedAt: new Date(2026, 9, 19, 14, 2, 11).toISOString(),
+  truncated: false,
+  dropped: 0,
+  events: EVENT_ROWS.map(([clock, stage, status, message], index) => {
+    const [h, m, sec] = clock.split(":").map(Number);
+    return {
+      seq: index + 1,
+      at: new Date(2026, 9, 19, h, m, sec).toISOString(),
+      stage,
+      status,
+      message,
+    };
+  }),
+};
+const loadSampleEvents = async () => SAMPLE_EVENTS;
 
 const AUTOMATIC_PREVIEWS = [
   {
@@ -190,10 +252,13 @@ const ENTRIES: Entry[] = [
   { id: "02", label: "02 Connection" },
   { id: "02-cable", label: "· Cable devices" },
   { id: "02-cable-connecting", label: "· Cable connecting" },
+  { id: "02-checking", label: "· Checking firmware" },
+  { id: "02-firmware", label: "· Updating firmware" },
   { id: "02-wifi", label: "· WiFi devices" },
   { id: "02-wifi-setup", label: "· WiFi over cable" },
   { id: "02-phone", label: "· Cable help" },
   { id: "03", label: "03 Providers" },
+  { id: "03-loading", label: "· Providers loading" },
   { id: "04", label: "04 Display" },
   { id: "05", label: "05 Theme" },
   { id: "06", label: "06 Live" },
@@ -290,7 +355,13 @@ export function SetupPreviewGallery() {
     firmwareFrom: "1.0.55",
     firmwareTo: "1.0.61",
     phase:
-      active === "02-cable-connecting" ? ("connecting" as const) : connectPhase,
+      active === "02-cable-connecting"
+        ? ("connecting" as const)
+        : active === "02-checking"
+          ? ("checking-firmware" as const)
+          : active === "02-firmware"
+            ? ("updating-firmware" as const)
+            : connectPhase,
   };
   const connecting =
     connectState.phase !== "idle" &&
@@ -300,6 +371,10 @@ export function SetupPreviewGallery() {
   function deviceScreen(lines?: SetupLogLine[]) {
     return (
       <SetupDeviceScreen
+        previewDevice={PREVIEW_DEVICE}
+        previewFrame={PREVIEW_FRAME}
+        connectPhase={connectState.phase}
+        firmwarePercent={active === "02-firmware" ? 42 : undefined}
         onWiFiError={() => {}}
         aiFixPrompt={aiFixPrompt}
         onCreateSupportReport={createSupportReport}
@@ -315,9 +390,14 @@ export function SetupPreviewGallery() {
         transport={active.startsWith("02-cable") ? "cable" : "wifi"}
         showModeChoice={active === "02"}
         showCandidates={
-          !["02", "02-phone", "02-wifi-setup", "02-cable-connecting"].includes(
-            active,
-          )
+          ![
+            "02",
+            "02-phone",
+            "02-wifi-setup",
+            "02-cable-connecting",
+            "02-checking",
+            "02-firmware",
+          ].includes(active)
         }
         wifiSetupPhase={
           active === "02-phone"
@@ -334,9 +414,16 @@ export function SetupPreviewGallery() {
           { ssid: "Home WiFi", rssi: -48, encrypted: true },
           { ssid: "Guest", rssi: -70, encrypted: false },
         ]}
-        onBack={active === "02" ? undefined : () => goTo("02")}
+        onBack={() => goTo("02")}
+        onEditWiFi={() => setWiFiWaiting(false)}
         connecting={connecting}
-        logLines={lines ?? connectLogLines(connectState)}
+        logLines={
+          lines ??
+          connectLogLines(
+            connectState,
+            active === "02-firmware" ? 42 : undefined,
+          )
+        }
         onConnect={runConnect}
         onChooseTransport={(transport) =>
           goTo(transport === "cable" ? "02-cable" : "02-wifi-setup")
@@ -403,12 +490,15 @@ export function SetupPreviewGallery() {
           <SetupWelcomeScreen
             aiFixPrompt={aiFixPrompt}
             lines={WELCOME_LINES}
+            onEnterAddressManually={() => setActive("02b")}
             onCreateSupportReport={createSupportReport}
           />
         );
       case "02":
       case "02-cable":
       case "02-cable-connecting":
+      case "02-checking":
+      case "02-firmware":
       case "02-wifi":
       case "02-wifi-setup":
       case "02-phone":
@@ -502,9 +592,12 @@ export function SetupPreviewGallery() {
           </>
         );
       case "03":
+      case "03-loading":
         return (
           <SetupProvidersScreen
             aiFixPrompt={aiFixPrompt}
+            loading={active === "03-loading"}
+            onOpenSignIn={noop}
             onCreateSupportReport={createSupportReport}
             onBack={() => goTo("02")}
             onCheckAgain={noop}
@@ -581,8 +674,8 @@ export function SetupPreviewGallery() {
           <SetupLiveScreen
             aiFixPrompt={aiFixPrompt}
             onCreateSupportReport={createSupportReport}
-            device={null}
-            displayFrame={null}
+            device={PREVIEW_DEVICE}
+            displayFrame={PREVIEW_FRAME}
             usage={null}
           />
         );
@@ -592,6 +685,7 @@ export function SetupPreviewGallery() {
   const stepIndex = STEP_ORDER.indexOf(active as Step);
 
   return (
+    <SetupEventsContext.Provider value={loadSampleEvents}>
     <div className="min-h-svh bg-muted">
       <div className="relative">{screen()}</div>
       <details
@@ -626,5 +720,6 @@ export function SetupPreviewGallery() {
         </nav>
       </details>
     </div>
+    </SetupEventsContext.Provider>
   );
 }

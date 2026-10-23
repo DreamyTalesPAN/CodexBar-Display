@@ -119,22 +119,34 @@ function windowHidden() {
 }
 
 export function SetupEventLog({
+  calm = false,
   className,
   windowsHost = false,
 }: {
+  /** The Setup Help menu's calm look: plain "> time stage · status" lines. */
+  calm?: boolean;
   className?: string;
   /** The app runs on Windows, where "Mac App" reads "App". */
   windowsHost?: boolean;
 }) {
   const log = useSetupEvents();
-  return <SetupEventList className={className} log={log} windowsHost={windowsHost} />;
+  return (
+    <SetupEventList
+      calm={calm}
+      className={className}
+      log={log}
+      windowsHost={windowsHost}
+    />
+  );
 }
 
 export function SetupEventList({
+  calm = false,
   className,
   log,
   windowsHost = false,
 }: {
+  calm?: boolean;
   className?: string;
   log: SetupLog | null;
   windowsHost?: boolean;
@@ -170,7 +182,9 @@ export function SetupEventList({
         aria-label="Setup log"
         aria-live="polite"
         className={cn(
-          "max-h-[280px] overflow-y-auto overscroll-contain rounded-lg border font-mono text-xs",
+          calm
+            ? "mx-1 mt-1.5 mb-1 max-h-[280px] overflow-y-auto overscroll-contain border-t px-1.5 pt-2.5 pb-1 font-mono text-[13px] leading-6 text-muted-foreground"
+            : "max-h-[280px] overflow-y-auto overscroll-contain rounded-lg border font-mono text-xs",
           !atStart && "[mask-image:linear-gradient(to_bottom,transparent,black_14px)]",
         )}
         onScroll={(event) => {
@@ -186,9 +200,18 @@ export function SetupEventList({
             Older entries were removed.
           </li>
         ) : null}
-        {events.map((event) => (
-          <SetupEventRow event={event} key={event.seq} windowsHost={windowsHost} />
-        ))}
+        {events.map((event, index) =>
+          calm ? (
+            <SetupEventCalmRow
+              event={event}
+              key={event.seq}
+              latest={index === events.length - 1}
+              windowsHost={windowsHost}
+            />
+          ) : (
+            <SetupEventRow event={event} key={event.seq} windowsHost={windowsHost} />
+          ),
+        )}
       </ol>
       {following ? null : (
         <Button
@@ -203,6 +226,48 @@ export function SetupEventList({
         </Button>
       )}
     </div>
+  );
+}
+
+/**
+ * One calm line, "> 14:02:11 Mac App · started", dimmed once a newer one
+ * follows. What the event said and what to do next stay under it, so nothing
+ * the plain list shows is lost.
+ */
+function SetupEventCalmRow({
+  event,
+  latest,
+  windowsHost,
+}: {
+  event: SetupEvent;
+  latest: boolean;
+  windowsHost: boolean;
+}) {
+  const status = STATUS[event.status] ?? STATUS.started;
+  return (
+    <li className={cn(!latest && "opacity-55")}>
+      <div className={cn(latest && "text-foreground")}>
+        &gt; <time dateTime={event.at}>{formatClock(event.at)}</time>{" "}
+        {copyForHost(STAGE_LABELS[event.stage] ?? humanize(event.stage), windowsHost)}
+        {" · "}
+        {status.text.toLowerCase()}
+        {event.count && event.count > 1 ? (
+          <>
+            {" · "}
+            <span className="sr-only">Repeated </span>
+            {event.count + " times"}
+          </>
+        ) : null}
+      </div>
+      <p className="pl-4 break-words">
+        {copyForHost(formatCustomerSupportText(event.message), windowsHost)}
+      </p>
+      {event.status === "failed" && event.nextAction ? (
+        <p className="pl-4 break-words">
+          {copyForHost(formatCustomerSupportText(event.nextAction), windowsHost)}
+        </p>
+      ) : null}
+    </li>
   );
 }
 

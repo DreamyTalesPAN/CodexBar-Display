@@ -62,9 +62,49 @@ export function selectedItemClass(selected: boolean, ink = false): string {
   );
 }
 
+// Written out in full: Tailwind only finds class names that appear whole.
+const CARD_RING =
+  "shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_10%,transparent)]";
+const CARD_RING_SELECTED =
+  "shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_10%,transparent),0_0_0_3px_color-mix(in_srgb,var(--vibetv-support)_25%,transparent)]";
+
 /**
- * Always rendered so picking a card cannot reflow the row it sits in; only its
- * opacity changes.
+ * The calm card of the Setup Wizard (variant B): a 12px card with a 10% ink
+ * ring, and a soft 3px ring in the brand colour when picked. The ring is a
+ * shadow, so picking a card never moves it.
+ */
+export function calmCardClass(selected: boolean): string {
+  return cn(
+    "block w-full cursor-pointer rounded-[var(--radius-card)] bg-card text-left text-[13px] outline-none transition-shadow duration-150 ease-out focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default",
+    selected ? CARD_RING_SELECTED : CARD_RING,
+  );
+}
+
+/**
+ * Round radio mark for the device, connection, display-mode and theme cards
+ * (variant B): an empty ring when not picked, an ink disc with a check when
+ * picked. Always rendered, so picking a card does not reflow it.
+ */
+export function SelectionDot({ selected }: { selected: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "grid size-5 shrink-0 place-items-center rounded-full transition-colors duration-150",
+        selected
+          ? "bg-foreground text-background"
+          : "shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_25%,transparent)]",
+      )}
+      data-selected={selected || undefined}
+    >
+      {selected ? <Check className="size-3" strokeWidth={3} /> : null}
+    </span>
+  );
+}
+
+/**
+ * Settings keeps the plain check; only the wizard uses the round mark above.
+ * Always rendered so picking a card cannot reflow the row it sits in.
  */
 export function SelectionCheck({ selected }: { selected: boolean }) {
   return (

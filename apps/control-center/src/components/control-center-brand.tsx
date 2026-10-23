@@ -26,7 +26,7 @@ export function ControlCenterBrand({
     return (
       <div
         className={cn(
-          "text-[clamp(3rem,7vw,5rem)] font-black uppercase leading-none tracking-normal",
+          "text-[56px] font-black uppercase leading-none tracking-normal",
           className,
         )}
       >

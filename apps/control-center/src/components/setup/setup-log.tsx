@@ -14,17 +14,20 @@ export type SetupLogLine = {
 type SetupLogProps = {
   className?: string;
   lines: SetupLogLine[];
-  /** Renders the blinking caret after the last line while work is in flight. */
+  /**
+   * Work is in flight. The log is not marked aria-busy: that would hold back
+   * its announcements, and a step that advances by unmounting would never be
+   * heard. It only keeps the log scrolled to its newest line.
+   */
   running?: boolean;
 };
 
 /**
  * Terminal-style progress log for the setup wizard.
  *
- * Its height is reserved whether or not it has anything to say, so a step that
- * starts logging cannot move the controls the customer is already looking at.
- * New lines append at the bottom for the same reason: the box is a fixed size
- * and only the log inside it scrolls.
+ * It is as tall as its lines (24px each), centred with the rest of the step,
+ * and grows to five lines; beyond that the log scrolls inside the box and the
+ * top edge fades.
  */
 export function SetupLog({ className, lines, running = false }: SetupLogProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -41,12 +44,13 @@ export function SetupLog({ className, lines, running = false }: SetupLogProps) {
       aria-live="polite"
       role="status"
       className={cn(
-        "h-[118px] w-full overflow-y-auto text-left font-mono text-[13px] leading-6",
+        "max-h-[120px] w-full overflow-y-auto text-left font-mono text-[13px] leading-6",
         // The scrollbar is noise next to terminal type. Hiding it costs the
         // only hint that there is more, so the top edge fades instead — the
         // log always sits at its bottom, so anything out of view is above.
         "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-        "[mask-image:linear-gradient(to_bottom,transparent,black_14px)]",
+        lines.length > 5 &&
+          "[mask-image:linear-gradient(to_bottom,transparent,black_14px)]",
         className,
       )}
       ref={scrollRef}
@@ -61,23 +65,16 @@ export function SetupLog({ className, lines, running = false }: SetupLogProps) {
             line.tone === "error"
               ? "text-destructive"
               : "text-muted-foreground",
-            line.tone === "done" && "opacity-55",
+            // Everything above the newest line reads as finished.
+            (line.tone === "done" ||
+              (line.tone !== "error" && index < lines.length - 1)) &&
+              "opacity-55",
           )}
           key={line.id}
         >
           <span>&gt; {line.text}</span>
-          {running && index === lines.length - 1 ? <SetupLogCaret /> : null}
         </div>
       ))}
     </div>
-  );
-}
-
-function SetupLogCaret() {
-  return (
-    <span
-      aria-hidden
-      className="inline-block h-[14px] w-[8px] shrink-0 bg-foreground [animation:vibetv-caret-blink_1.1s_step-end_infinite]"
-    />
   );
 }

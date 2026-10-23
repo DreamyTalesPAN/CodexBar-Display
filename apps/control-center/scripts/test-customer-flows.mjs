@@ -6295,7 +6295,7 @@ async function testWindowsAppDoesNotSpeakOfAMac(browser, appUrl) {
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   const welcome = setupScreen(page, SETUP_WELCOME_SCREEN);
   await welcome
-    .getByText("reading provider usage on this computer")
+    .getByText("starting the app")
     .waitFor({ timeout: 10_000 });
   assert(
     !(await welcome.innerText()).includes("Mac"),
@@ -6356,7 +6356,7 @@ async function testInitialHealthyStatusRaceAvoidsRepair(browser, appUrl) {
   await welcome.waitFor({ timeout: 10_000 });
   await welcome
     .getByRole("status")
-    .getByText("starting background service")
+    .getByText("starting the Mac App")
     .waitFor({ timeout: 10_000 });
   assert(
     (await page.getByRole("status").count()) === 1,
@@ -7869,14 +7869,14 @@ async function testProviderOnboardingUsesSharedHealthyDescriptor(
 
   const providerDialog = page.getByRole("dialog", { name: "Claude", exact: true });
   const signInClaude = providersScreen.getByRole("button", {
-    name: "Sign in to Claude",
+    name: "Sign in needed for Claude",
   });
   await signInClaude.waitFor({ timeout: 10_000 });
   assert(
     (await page.getByRole("dialog", { name: "Claude", exact: true }).count()) === 0,
     "setup must lead signed-out Claude to its sign-in button, not a popup",
   );
-  const signInRow = providersScreen.getByRole("listitem").filter({ has: page.getByRole("button", { name: "Sign in to Claude" }) });
+  const signInRow = providersScreen.getByRole("listitem").filter({ has: page.getByRole("button", { name: "Sign in needed for Claude" }) });
   assert(await signInRow.getByRole("button").count() === 1,
     "the sign-in row must not duplicate the action in a warning popup");
   assert(await signInRow.getByRole("switch").count() === 1,
@@ -13418,7 +13418,7 @@ async function assertNoThemeLibraryReleaseDiagnostics(page) {
 const SETUP_WELCOME_SCREEN = "Welcome";
 const SETUP_DEVICE_SCREEN = "Choose your VibeTV";
 const SETUP_PROVIDERS_SCREEN = "Choose AI providers";
-const SETUP_DISPLAY_SCREEN = "Display Mode";
+const SETUP_DISPLAY_SCREEN = "Display mode";
 const SETUP_THEME_SCREEN = "Choose your theme";
 const SETUP_LIVE_SCREEN = "Your VibeTV is live";
 

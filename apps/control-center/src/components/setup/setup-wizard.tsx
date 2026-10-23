@@ -184,6 +184,11 @@ export function SetupWizard(props: SetupWizardProps) {
   } = props;
 
   const [wentBackTo, setWentBackTo] = useState<SetupStep | null>(null);
+  // The customer picked what to connect (a card and Connect, or Cable/WiFi).
+  // Only then does the connect screen have a choice to go back to; a lone
+  // VibeTV that connects by itself has none.
+  const [connectChosen, setConnectChosen] = useState(false);
+  const [requireConnectionChoice, setRequireConnectionChoice] = useState(false);
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [connectionDeviceId, setConnectionDeviceId] = useState<string | null>(null);
   const [preferredTransport, setPreferredTransport] =
@@ -248,6 +253,7 @@ export function SetupWizard(props: SetupWizardProps) {
     () =>
       decideSetupConnection({
         candidates: connectionCandidates,
+        requireExplicitChoice: requireConnectionChoice,
         choiceRequired:
           preferredTransport === "choose" || props.connectionModeChoiceRequired,
         savedMode: props.connectionMode,
@@ -256,6 +262,7 @@ export function SetupWizard(props: SetupWizardProps) {
       }),
     [
       connectionCandidates,
+      requireConnectionChoice,
       preferredTransport,
       props.connectionMode,
       props.connectionModeChoiceRequired,
@@ -384,10 +391,12 @@ export function SetupWizard(props: SetupWizardProps) {
   }, [onSearchDevices]);
 
   const startConnect = useCallback(() => {
+    setRequireConnectionChoice(false);
     const candidate = visibleCandidates.find(
       (entry) => candidateKey(entry) === preselected,
     );
     if (candidate) {
+      setConnectChosen(true);
       if (candidate.transport === "cable" && candidate.deviceId &&
           (preferredTransport === "choose" || (!preferredTransport &&
             (props.connectionModeChoiceRequired || !props.connectionMode)))) {
@@ -402,6 +411,21 @@ export function SetupWizard(props: SetupWizardProps) {
     // is half way through setting up.
     connect.retry();
   }, [connect, preselected, preferredTransport, props.connectionMode, props.connectionModeChoiceRequired, visibleCandidates]);
+
+  // The device step's Back: the choice of Cable or WiFi again. Waiting for
+  // WiFi leaves nothing running here: the details are with VibeTV, and the
+  // search that waits for it stops with the step.
+  const backToConnectionChoice = () => {
+    // Back keeps the next scan from choosing a remaining path on its own.
+    setRequireConnectionChoice(true);
+    transportChoiceRef.current += 1;
+    setConnectChosen(false);
+    setPreferredTransport("choose");
+    setConnectionDeviceId(null);
+    setWiFiSetup(null);
+    setSelectedTarget(null);
+    searchAgain();
+  };
 
   const scanWiFiNetworks = useCallback(async () => {
     setWiFiScanning(true);
@@ -427,6 +451,7 @@ export function SetupWizard(props: SetupWizardProps) {
 
   const chooseTransport = useCallback(
     async (transport: SetupTransport) => {
+      setRequireConnectionChoice(false);
       const choice = ++transportChoiceRef.current;
       resetConnect();
       setWiFiError(null);
@@ -620,6 +645,9 @@ export function SetupWizard(props: SetupWizardProps) {
           // the connecting screen, because the search state only clears once
           // the connect answers.
           setAddressDialogOpen(false);
+          setRequireConnectionChoice(false);
+          // A typed address is a choice too: Back stays available during its pairing.
+          setConnectChosen(true);
           void connect.run(candidate);
           return null;
         } catch (error) {
@@ -716,6 +744,23 @@ export function SetupWizard(props: SetupWizardProps) {
   }
 
   if (step === "device") {
+    const choseTransport = Boolean(preferredTransport && preferredTransport !== "choose");
+    // Back during the sequence: the step that runs finishes (the companion has
+    // no cancel for a pairing or a firmware write), no further one starts, and
+    // then the connection choice shows again.
+    const leaveAfterConnect = () => connect.leaveWhenSettled(() => {
+      // Pairing publishes the VibeTV before the sequence ends, so the derived
+      // step may already be past this one: the connection choice is recorded
+      // either way, without reading the step ref that may still be stale.
+      directAttempt.current = "";
+      setWentBackTo("device");
+      backToConnectionChoice();
+    });
+    const onBack = connectInFlight
+      ? connectChosen || choseTransport ? leaveAfterConnect : undefined
+      : connect.state.phase === "idle" && choseTransport
+        ? backToConnectionChoice
+        : undefined;
     const connecting =
       connectInFlight ||
       connect.state.phase === "done" ||
@@ -735,27 +780,18 @@ export function SetupWizard(props: SetupWizardProps) {
             legacyCandidateFlow ? undefined : connectionDecision.alternative
           }
           candidates={visibleCandidates}
+          previewDevice={props.device}
+          previewFrame={props.displayFrame}
+          previewUsage={props.usage}
           connecting={connecting}
           connectPhase={connect.state.phase}
+          firmwarePercent={props.firmwareWrittenPercent}
           logLines={connectLogLines(connect.state, props.firmwareWrittenPercent)}
           macAppUpdate={pendingMacAppUpdate}
           onDismissMacAppUpdate={() => setMacAppUpdateDismissed(true)}
           onConnect={startConnect}
-          onBack={
-            connect.state.phase === "idle" &&
-            preferredTransport &&
-            preferredTransport !== "choose" &&
-            wifiSetup?.phase !== "waiting"
-              ? () => {
-                  transportChoiceRef.current += 1;
-                  setPreferredTransport("choose");
-                  setConnectionDeviceId(null);
-                  setWiFiSetup(null);
-                  setSelectedTarget(null);
-                  searchAgain();
-                }
-              : undefined
-          }
+          onBack={onBack}
+          stopping={connect.leaving}
           onChooseTransport={(transport) => void chooseTransport(transport)}
           onEditWiFi={() => setWiFiSetup((current) =>
             current ? { ...current, phase: "credentials" } : current,

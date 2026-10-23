@@ -28,6 +28,7 @@ export function candidateKey(candidate: DeviceCandidate): string {
 export function decideSetupConnection(options: {
   candidates: DeviceCandidate[];
   choiceRequired: boolean;
+  requireExplicitChoice?: boolean;
   savedMode?: string;
   activeDeviceId?: string;
   preferredTransport?: SetupTransport | null;
@@ -45,8 +46,9 @@ export function decideSetupConnection(options: {
     };
   }
   const singleCandidateKind = (candidate: DeviceCandidate) =>
-    options.activeDeviceId &&
-    candidate.deviceId?.toLowerCase() !== options.activeDeviceId.toLowerCase()
+    options.requireExplicitChoice ||
+    (options.activeDeviceId &&
+      candidate.deviceId?.toLowerCase() !== options.activeDeviceId.toLowerCase())
       ? "list" as const
       : "direct" as const;
 

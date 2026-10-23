@@ -20,6 +20,11 @@ import { downloadSupportReport, supportReportFilename } from "../support-report"
 
 const OUTCOME_MS = 5000;
 
+/** The master's menu rows: 36px, 13px semibold, muted 16px icons, 10px gap. */
+const HELP_ITEM_CLASS =
+  "h-9 w-full justify-start gap-2.5 px-2.5 text-[13px] font-semibold has-data-[icon=inline-start]:pl-2.5";
+const HELP_ICON_CLASS = "size-4 text-muted-foreground";
+
 /** The entries the customer can act on, in the order they are shown. */
 function menuEntries(menu: HTMLElement | null): HTMLElement[] {
   return Array.from(
@@ -248,12 +253,12 @@ export function SetupHelpMenu({
   }
 
   return (
-    <div className="fixed right-5 bottom-5 z-60" ref={containerRef}>
+    <div className="fixed right-[22px] bottom-5 z-60" ref={containerRef}>
       {open ? (
         <div
           className={cn(
-            "absolute right-0 bottom-11 flex w-58 flex-col gap-0.5 rounded-xl bg-card p-1.5 shadow-lg ring-1 ring-foreground/10",
-            showLog && "w-[min(420px,calc(100vw-2.5rem))]",
+            "absolute right-0 bottom-11 flex w-58 flex-col rounded-xl bg-card p-1.5 text-[13px] shadow-lg ring-1 ring-foreground/10",
+            showLog && "w-[min(340px,calc(100vw-2.5rem))]",
             SETUP_REVEAL,
           )}
           id="setup-help-menu"
@@ -263,7 +268,7 @@ export function SetupHelpMenu({
         >
           {aiFixPrompt && outcome !== "prompt-copied" ? (
             <Button
-              className="w-full justify-start font-medium"
+              className={HELP_ITEM_CLASS}
               onClick={() => void askAiToFix()}
               role="menuitem"
               size="sm"
@@ -272,7 +277,7 @@ export function SetupHelpMenu({
             >
               <Sparkles
                 aria-hidden
-                className="text-[var(--vibetv-support)]"
+                className={HELP_ICON_CLASS}
                 data-icon="inline-start"
               />
               <span>Ask AI to fix</span>
@@ -283,7 +288,7 @@ export function SetupHelpMenu({
           ) : null}
           {onCreateSupportReport && !belongsToReport(outcome) ? (
             <Button
-              className="w-full justify-start font-medium"
+              className={HELP_ITEM_CLASS}
               disabled={creating}
               onClick={() => void createSupportReport()}
               role="menuitem"
@@ -294,7 +299,7 @@ export function SetupHelpMenu({
               {creating ? (
                 <Spinner data-icon="inline-start" />
               ) : (
-                <FileText aria-hidden data-icon="inline-start" />
+                <FileText aria-hidden className={HELP_ICON_CLASS} data-icon="inline-start" />
               )}
               <span>
                 {creating ? "Creating report" : "Create support report"}
@@ -304,25 +309,28 @@ export function SetupHelpMenu({
           {setupLogAvailable ? (
             <Button
               aria-checked={showLog}
-              className="w-full justify-start font-medium"
+              className={cn(HELP_ITEM_CLASS, showLog && "bg-muted")}
               onClick={() => setShowLog((previous) => !previous)}
               role="menuitemcheckbox"
               size="sm"
               type="button"
               variant="ghost"
             >
-              <ScrollText aria-hidden data-icon="inline-start" />
+              <ScrollText aria-hidden className={HELP_ICON_CLASS} data-icon="inline-start" />
               <span>{showLog ? "Hide setup log" : "Show setup log"}</span>
             </Button>
           ) : null}
-          {showLog ? <SetupEventLog className="p-1 text-left" windowsHost={windowsHost} /> : null}
+          {showLog ? <SetupEventLog calm className="text-left" windowsHost={windowsHost} /> : null}
         </div>
       ) : null}
       <Button
         aria-controls="setup-help-menu"
         aria-expanded={open}
         aria-haspopup="menu"
-        className="text-muted-foreground"
+        className={cn(
+          "h-9 gap-1.5 px-2.5 text-[13px] text-muted-foreground has-data-[icon=inline-start]:pl-2.5",
+          open && "bg-muted text-foreground",
+        )}
         onClick={() => {
           setOpen((previous) => !previous);
           setOutcome(null);
@@ -332,7 +340,7 @@ export function SetupHelpMenu({
         type="button"
         variant="ghost"
       >
-        <CircleHelp data-icon="inline-start" />
+        <CircleHelp className="size-4" data-icon="inline-start" />
         <span>Help</span>
       </Button>
     </div>

@@ -59,6 +59,19 @@ describe("MacAppDownloadScreen", () => {
   });
 });
 
+describe("MacAppDownloadScreen look", () => {
+  it("uses the calm Setup look: Welcome to in sentence case, 13 px subtitle, 44 px buttons", () => {
+    const html = renderToStaticMarkup(
+      <MacAppDownloadScreen platform="macos" release={available} />,
+    );
+
+    expect(html).toContain('<p class="text-[13px] text-muted-foreground">Welcome to</p>');
+    expect(html).not.toContain("tracking-[0.3em]");
+    expect(html).toMatch(/class="[^"]*text-\[13px\][^"]*"[^>]*>Get the Mac App/);
+    expect(html).not.toContain("h-12");
+  });
+});
+
 describe("MacAppDownloadScreen on a recognised system", () => {
   it("opens an available shop theme in the installed app and keeps the download fallback", () => {
     for (const platform of ["macos", "windows"] as const) {

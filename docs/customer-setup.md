@@ -70,8 +70,7 @@ Control Center takes you through six steps, one screen at a time. It moves on
 when the step is really done, not when a button was pressed.
 
 1. A welcome screen with nothing to press. It shows what it is doing: starting
-   the background service, reading provider usage on this Mac, and looking for
-   your VibeTV.
+   the Mac App, reading your AI providers, and looking for your VibeTV.
 2. The app looks for Cable devices and devices already set up on your local
    WiFi. When both connection paths are found, choose Cable or WiFi. Select
    your device if more than one is found. For WiFi, the app sends your network
@@ -79,7 +78,7 @@ when the step is really done, not when a button was pressed.
    again. Leave VibeTV powered during any required update.
 3. `Choose AI providers` — switch on the tools whose usage VibeTV should show.
    At least one has to be switched on and working before you can continue.
-4. `Display Mode` — `Automatic` switches between your providers, `Manual` pins
+4. `Display mode` — `Automatic` switches between your providers, `Manual` pins
    the display to one of them. Automatic follows your activity: it shows the
    provider whose usage changed last. In `Settings` you can let it switch on a
    timer instead, every 30 seconds, every minute, or every 5 minutes.

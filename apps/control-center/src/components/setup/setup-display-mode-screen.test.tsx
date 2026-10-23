@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
+  DisplayModeChoice,
   SetupDisplayModeScreen,
   type SetupDisplayModeProvider,
 } from "./setup-display-mode-screen";
@@ -70,7 +71,7 @@ describe("SetupDisplayModeScreen", () => {
 
     expect(cards).toHaveLength(2);
     for (const card of cards) {
-      expect(card).toContain("items-start");
+      expect(card).toContain("flex-col");
       expect(card).not.toContain("items-center");
     }
   });
@@ -200,4 +201,23 @@ describe("SetupDisplayModeScreen", () => {
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Continue<\/button>/);
   });
 
+
+  it("draws the round mark only in Setup; Settings keeps the plain check", () => {
+    const choice = (calm: boolean) =>
+      renderToStaticMarkup(
+        <DisplayModeChoice
+          calm={calm}
+          automaticPreview={null}
+          manualPreview={null}
+          mode="automatic"
+          onSelectMode={vi.fn()}
+          onSelectProvider={vi.fn()}
+          providers={[codex, cursor]}
+          selectedProviderId={codex.id}
+        />,
+      );
+    expect(choice(false)).not.toContain("rounded-full");
+    expect(choice(true)).toContain("rounded-full");
+    expect(render()).toContain("rounded-full");
+  });
 });
