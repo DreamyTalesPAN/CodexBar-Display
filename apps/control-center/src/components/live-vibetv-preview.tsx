@@ -35,6 +35,8 @@ type LiveVibeTVPreviewProps = {
   onScreenLoading?: () => void;
   /** Render only the real display output when a 3D case provides the housing. */
   screenOnly?: boolean;
+  /** Keep real setup readiness when 3D fails, without rendering a substitute case. */
+  unavailable3D?: boolean;
   updateOwnedDisconnect?: boolean;
   usage: UsageSnapshot | null;
 };
@@ -416,6 +418,7 @@ export function LiveVibeTVPreview({
   onScreenSettled,
   onScreenLoading,
   screenOnly = false,
+  unavailable3D = false,
   updateOwnedDisconnect = false,
   usage,
 }: LiveVibeTVPreviewProps) {
@@ -623,6 +626,8 @@ export function LiveVibeTVPreview({
   ) : (
     <ThemeSpecLoading status={packStatus} themeId={themeId} />
   );
+
+  if (unavailable3D) return <p role="status">3D preview is unavailable.</p>;
 
   // The 3D case draws the housing itself and only needs the screen.
   if (screenOnly) return screen;

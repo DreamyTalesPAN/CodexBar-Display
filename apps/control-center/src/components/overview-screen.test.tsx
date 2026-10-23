@@ -8,15 +8,16 @@ import { OverviewScreen } from "./overview-screen";
 // The 3D case is switched on per test; the fake 3D preview hands back its
 // onReady so a test decides when the model is on screen.
 const support = vi.hoisted(() => ({ webgl: false }));
-const fake3D = vi.hoisted(() => ({ onReady: null as (() => void) | null }));
+const fake3D = vi.hoisted(() => ({ onReady: null as (() => void) | null, onFailed: null as (() => void) | null }));
 vi.mock("./vibetv-3d-support", () => ({
   hardwareWebGLAvailable: () => support.webgl,
 }));
 vi.mock("./vibetv-3d-preview", async () => {
   const { createElement } = await import("react");
   return {
-    VibeTV3DPreview: (props: { onReady?: () => void }) => {
+    VibeTV3DPreview: (props: { onReady?: () => void; onFailed?: () => void }) => {
       fake3D.onReady = props.onReady ?? null;
+      fake3D.onFailed = props.onFailed ?? null;
       return createElement("div", {
         "aria-label": "Interactive VibeTV preview. Drag to rotate.",
         role: "group",
@@ -25,7 +26,7 @@ vi.mock("./vibetv-3d-preview", async () => {
   };
 });
 
-// jsdom has no WebGL: the 3D case must fall back to the flat live preview.
+// jsdom has no WebGL: unavailable rendering must be reported honestly.
 vi.mock("three", async (importOriginal) => {
   const actual = await importOriginal<typeof import("three")>();
   class NoWebGLRenderer {
@@ -166,7 +167,7 @@ describe("OverviewScreen", () => {
     expect(html).not.toContain("Change connection");
   });
 
-  it("falls back to the flat live preview when WebGL is unavailable", async () => {
+  it("shows a neutral error without the old photo when WebGL is unavailable", async () => {
     render(
       <OverviewScreen
         companionStatus="online"
@@ -175,7 +176,8 @@ describe("OverviewScreen", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByLabelText("VibeTV live preview is offline")).toBeTruthy();
+      expect(screen.getByRole("status").textContent).toBe("3D preview is unavailable.");
+      expect(screen.queryByTestId("vibetv-case")).toBeNull();
     });
     expect(screen.queryByRole("group", { name: /Interactive VibeTV preview/ })).toBeNull();
   });
@@ -216,7 +218,7 @@ describe("OverviewScreen 3D handover", () => {
     act(() => fake3D.onReady?.());
 
     expect(wrapper?.className).not.toContain("opacity-0");
-    // The flat preview is dropped; the glass shows the offline placeholder.
+    // The neutral loading state is dropped; the glass owns its live screen.
     expect(screen.queryByLabelText("VibeTV live preview is offline")).toBeNull();
   });
 
@@ -235,4 +237,26 @@ describe("OverviewScreen 3D handover", () => {
     expect(wrapper?.hasAttribute("inert")).toBe(false);
     expect(screen.getByRole("group", { name: /Interactive VibeTV preview/ })).toBeTruthy();
   });
+  it("never mounts the old photo during initial load, navigation remount, ready or failure", async () => {
+    for (const tab of ["initial", "after Updates", "after Support"]) {
+      const view = render(<OverviewScreen key={tab} companionStatus="online" device={disconnected} />);
+      const noPhoto = () => {
+        expect(view.container.querySelector("img")).toBeNull();
+        expect(screen.queryByTestId("vibetv-case")).toBeNull();
+      };
+      expect(screen.getByRole("status").textContent).toBe("Loading 3D preview…");
+      noPhoto();
+      await waitFor(() => expect(threeDGroup()).not.toBeNull());
+      noPhoto();
+      act(() => fake3D.onReady?.());
+      expect(screen.getByRole("group", { name: /Interactive VibeTV preview/ })).toBeTruthy();
+      expect(screen.queryByRole("status")).toBeNull();
+      noPhoto();
+      act(() => fake3D.onFailed?.());
+      expect(screen.getByRole("status").textContent).toBe("3D preview is unavailable.");
+      noPhoto();
+      view.unmount();
+    }
+  });
+
 });

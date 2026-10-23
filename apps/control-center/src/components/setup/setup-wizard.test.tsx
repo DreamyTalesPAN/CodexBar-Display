@@ -508,7 +508,7 @@ describe("SetupWizard: initial provider scan", () => {
 });
 
 describe("SetupWizard: live handover", () => {
-  it("keeps setup visible until the fresh preview is actually rendered", async () => {
+  it("keeps setup visible until fresh device and theme data are ready when 3D is unavailable", async () => {
     vi.useFakeTimers();
     const onFinished = vi.fn();
     const themeSpecPath = "/themes/u/claude--6-546f9e.json";
@@ -607,11 +607,13 @@ describe("SetupWizard: live handover", () => {
       resolvePack();
       await Promise.resolve();
     });
-    expect(
-      screen.getByRole("img", {
-        name: /Rendered VibeTV theme claude-creature showing Claude/i,
-      }),
-    ).toBeTruthy();
+    // jsdom has no hardware WebGL. The real readiness contract is retained,
+    // but this branch must show an honest neutral state, never the old case.
+    expect(screen.getByText("3D preview is unavailable.")).toBeTruthy();
+    expect(screen.queryByTestId("vibetv-case")).toBeNull();
+    expect(screen.queryByRole("img", {
+      name: /Rendered VibeTV theme claude-creature showing Claude/i,
+    })).toBeNull();
     act(() => vi.advanceTimersByTime(2_999));
     expect(onFinished).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(1));
