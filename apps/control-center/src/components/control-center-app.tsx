@@ -1187,7 +1187,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     const writes = deviceSettingWritesRef.current;
     const brightnessWrites = writes.brightness;
     const standbyWrites = writes.standby;
-    setBusyAction("settings");
+    // The read after an install is part of that install: it must neither take
+    // the busy state from it nor end it.
+    setBusyAction((busy) => busy ?? "settings");
     try {
       const payload = await runCompanion<SettingsResponse>("/v1/settings");
       if (setupGeneration !== setupGenerationRef.current) {
@@ -1252,7 +1254,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       });
     } finally {
       if (setupGeneration === setupGenerationRef.current) {
-        setBusyAction(null);
+        setBusyAction((busy) => (busy === "settings" ? null : busy));
       }
     }
   }, [
