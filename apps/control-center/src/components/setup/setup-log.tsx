@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { SETUP_REVEAL } from "./setup-reveal";
 
@@ -14,9 +14,16 @@ export type SetupLogLine = {
 type SetupLogProps = {
   className?: string;
   lines: SetupLogLine[];
-  /** Renders the blinking caret after the last line while work is in flight. */
+  /** While work is in flight, a step that runs long gets a "Still …" line. */
   running?: boolean;
+  /** Off where the screen already writes its own "still …" lines. */
+  stillLines?: boolean;
 };
+
+/** A step that is still running after this long gets a "Still …" line. */
+const STILL_INTERVAL_MS = 8000;
+/** Most "Still …" lines one step gets; after that the log stops growing. */
+const STILL_MAX_LINES = 5;
 
 /**
  * Terminal-style progress log for the setup wizard.
@@ -25,16 +32,62 @@ type SetupLogProps = {
  * starts logging cannot move the controls the customer is already looking at.
  * New lines append at the bottom for the same reason: the box is a fixed size
  * and only the log inside it scrolls.
+ *
+ * While the last step runs for longer than STILL_INTERVAL_MS, a "Still …" line
+ * is added under it every interval. This is the only display timer: a real
+ * failure arrives from the companion as its own line or error.
  */
-export function SetupLog({ className, lines, running = false }: SetupLogProps) {
+export function SetupLog({
+  className,
+  lines,
+  running = false,
+  stillLines = true,
+}: SetupLogProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const lastLine = lines.length ? lines[lines.length - 1] : undefined;
+  const lastKey = lastLine ? stepKey(lastLine) : undefined;
+  // A step that already says it is finished is not running, whatever the screen says.
+  const active = running && lastLine !== undefined && !isFinished(lastLine);
+  // How many "Still …" lines each step has got, keyed by stepKey.
+  const [stillCounts, setStillCounts] = useState<Record<string, number>>({});
+  // A retry reuses the step's id: a step that starts running again counts from zero.
+  const [prevRun, setPrevRun] = useState({ key: lastKey, active });
+  if (prevRun.key !== lastKey || prevRun.active !== active) {
+    setPrevRun({ key: lastKey, active });
+    if (active && lastKey !== undefined) {
+      setStillCounts((counts) => ({ ...counts, [lastKey]: 0 }));
+    }
+  }
+
+  useEffect(() => {
+    if (!stillLines || !active || lastKey === undefined) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      // At the cap the same object comes back, so nothing re-renders or scrolls.
+      setStillCounts((counts) =>
+        (counts[lastKey] ?? 0) >= STILL_MAX_LINES
+          ? counts
+          : { ...counts, [lastKey]: (counts[lastKey] ?? 0) + 1 },
+      );
+    }, STILL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [stillLines, active, lastKey]);
+
+  const rows: SetupLogLine[] = lines.flatMap((line) => [
+    line,
+    ...Array.from({ length: stillCounts[stepKey(line)] ?? 0 }, (_, index) => ({
+      id: `${line.id}-still-${index + 1}`,
+      text: stillText(line.text),
+    })),
+  ]);
 
   useEffect(() => {
     const node = scrollRef.current;
     if (node) {
       node.scrollTop = node.scrollHeight;
     }
-  }, [lines, running]);
+  }, [lines, running, stillCounts]);
 
   return (
     <div
@@ -51,7 +104,7 @@ export function SetupLog({ className, lines, running = false }: SetupLogProps) {
       )}
       ref={scrollRef}
     >
-      {lines.map((line, index) => (
+      {rows.map((line) => (
         <div
           className={cn(
             // Keyed by id, so only a line that is genuinely new animates; the
@@ -66,18 +119,49 @@ export function SetupLog({ className, lines, running = false }: SetupLogProps) {
           key={line.id}
         >
           <span>&gt; {line.text}</span>
-          {running && index === lines.length - 1 ? <SetupLogCaret /> : null}
         </div>
       ))}
     </div>
   );
 }
 
-function SetupLogCaret() {
-  return (
-    <span
-      aria-hidden
-      className="inline-block h-[14px] w-[8px] shrink-0 bg-foreground [animation:vibetv-caret-blink_1.1s_step-end_infinite]"
-    />
-  );
+/** The step's words: its last sentence, without a ": …", " · " or " — " tail. */
+function stepWording(text: string): string {
+  const sentences = text.replace(/\.$/, "").split(/\. /);
+  return sentences[sentences.length - 1].split(/: | · | — /)[0];
+}
+
+/** Completion wording from setup-connect-log.ts: the step is over, not running. */
+function isFinished(line: SetupLogLine): boolean {
+  return /^(update complete|firmware is up to date)$/.test(stepWording(line.text));
+}
+
+/**
+ * Identifies one step for counting its Still lines. The id alone is not
+ * enough: a restored log numbers its lines by position, so a new step can
+ * take an old id. The wording stays put while a percentage changes.
+ */
+function stepKey(line: SetupLogLine): string {
+  return `${line.id}\u0000${stepWording(line.text)}`;
+}
+
+/**
+ * "Refreshing display stream." becomes "Still refreshing display stream – hang
+ * tight." Only the last sentence counts ("Upload interrupted. Retrying." reads
+ * "retrying"), a tail after ": ", " · " or " — " (a percentage, a version) is left out,
+ * so the line does not go stale as that number changes. A dot inside a number
+ * ("192.168") is kept. A past-tense text ("Uploaded theme layout.") says
+ * nothing about what is running, so it gets the generic line.
+ */
+function stillText(text: string): string {
+  const step = stepWording(text);
+  // Past tense at the start or the end ("Uploaded theme layout.",
+  // "Display stream refreshed.") is not what runs now; "installed" inside
+  // "Checking installed firmware." is.
+  if (!step || /^\w+ed\b|\b\w+ed$/i.test(step)) {
+    return "Still working on it – hang tight.";
+  }
+  // Lower-case a capitalised first word, but not a name such as VibeTV.
+  const doing = step.replace(/^[A-Z][a-z]+\b/, (word) => word.toLowerCase());
+  return `Still ${doing} – hang tight.`;
 }

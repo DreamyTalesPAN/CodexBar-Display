@@ -9844,3 +9844,155 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #873 as in its own entries plus the entries merged with d2f3fade; nothing else changes.
 - Scope: the merge of d2f3fade and this approval record. Pull request branch #873 only, not merged, not released.
 - What's new: none — merge of d2f3fade, no customer-visible change of its own
+
+## 2026-10-20 — #782: approval marker after merging main
+
+- User approval: no visible change – UI approval not needed (#782: approval marker after merging main: Merge of main into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+
+## 2026-10-19 — Step lists: "Still … – hang tight." lines and no cursor block
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: Step lists: "Still … – hang tight." lines and no cursor block
+- Approved customer-visible result: while a setup step runs longer than 8 s, one more line "> Still <step in lower-case continuous form> – hang tight." is added under it every 8 s, up to 5 lines per step; a step that ends in a past tense gets "> Still working on it – hang tight."; the last sentence of a multi-sentence step text is used ("Upload interrupted. Retrying." → "> Still retrying – hang tight."); the running step no longer shows a blinking black cursor block at the end of the log, on every step list (theme install, device connection, welcome, provider loading). The providers screen keeps its own "still checking, hang tight" line every 20 s and gets no "Still" line.
+  Before → after, example: theme install, "> Refreshing display stream." with a blinking black block after it → "> Refreshing display stream." then after 8 s "> Still refreshing display stream – hang tight.", after 16 s a second identical line, no block.
+- Scope: `apps/control-center/src/components/setup/setup-log.tsx`, `apps/control-center/src/components/setup/setup-log.test.tsx`, `apps/control-center/src/components/setup/setup-log-still.test.tsx` (new), `apps/control-center/src/components/setup/setup-providers-screen.tsx` (opt-out only), `apps/control-center/src/components/control-center-app.tsx` (comment only), `apps/control-center/src/app/globals.css` (unused caret keyframe removed). Pull request branch only, not merge or release.
+- What's new: none — step-line change only, no release-note item.
+
+## 2026-10-19 — Step lists: Codex review fix for the Still lines (no new approval)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: Step lists: Codex review fix for the Still lines (no new approval)
+- Approved customer-visible result: as in the entry above, plus two details: a progress text with a colon ("Updating VibeTV: 40%.") gives "> Still updating VibeTV – hang tight." without the percentage, and a step that is retried starts its Still lines from zero.
+- Scope: `apps/control-center/src/components/setup/setup-log.tsx`, `apps/control-center/src/components/setup/setup-log-still.test.tsx`. Pull request branch only, not merge or release.
+- What's new: none — review fix inside the approved step-line change.
+
+## 2026-10-19 — Step lists: second Codex review fix for the Still lines (no new approval)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: Step lists: second Codex review fix for the Still lines (no new approval)
+- Approved customer-visible result: as in the entry above. Only the counting changes: a restored log that reuses a line's position for a new step starts its Still lines from zero; a past-tense word inside a running step ("Checking installed firmware.") no longer gets the generic line.
+- Scope: `apps/control-center/src/components/setup/setup-log.tsx`, `apps/control-center/src/components/setup/setup-log-still.test.tsx`. Pull request branch only, not merge or release.
+- What's new: none — review fix inside the approved step-line change.
+
+## 2026-10-20 — #813: approval marker after merging main
+
+- User approval: no visible change – UI approval not needed (#813: approval marker after merging main: Merge of main into this branch; no visible change of its own; the entries it brings carry their own approvals; not seen by Paul)
+- Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
+- Scope: the merge and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — no customer-visible change of its own
+
+## 2026-10-20 — #813: correction — Paul's 7198 approval does not cover this PR yet
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #813: correction — Paul's 7198 approval does not cover this PR yet
+- Approved customer-visible result: #813 unchanged; this entry only corrects the record.
+- Scope: #813 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #813 record correction only
+
+## 2026-10-20 — #813: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#813 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #813 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #813 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #813 approval record only
+
+## 2026-10-20 — #813: approval marker after merging main at 4b0831d7
+
+- User approval: no visible change – UI approval not needed (merge of main (4b0831d7) into #813; the own entries of #813 keep their approvals)
+- Approved customer-visible result: #813 as in its own entries plus the entries merged with 4b0831d7; nothing else changes.
+- Scope: the merge of 4b0831d7 and this approval record. Pull request branch #813 only, not merged, not released.
+- What's new: none — merge of 4b0831d7, no customer-visible change of its own
+
+## 2026-10-20 — #813: approval marker after merging main at 5f09bf54
+
+- User approval: no visible change – UI approval not needed (merge of main (5f09bf54) into #813; the own entries of #813 keep their approvals)
+- Approved customer-visible result: #813 as in its own entries plus the entries merged with 5f09bf54; nothing else changes.
+- Scope: the merge of 5f09bf54 and this approval record. Pull request branch #813 only, not merged, not released.
+- What's new: none — merge of 5f09bf54, no customer-visible change of its own
+
+## 2026-10-21 — #813: approval marker after merging main at 12504ca6
+
+- User approval: no visible change – UI approval not needed (merge of main (12504ca6) into #813; the own entries of #813 keep their approvals)
+- Approved customer-visible result: #813 as in its own entries plus the entries merged with 12504ca6; nothing else changes.
+- Scope: the merge of 12504ca6 and this approval record. Pull request branch #813 only, not merged, not released.
+- What's new: none — merge of 12504ca6, no customer-visible change of its own
+
+## 2026-10-21 — #813: Paul's approval of build 7200 recorded
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" — #813 approval record for build 7200; the #813 entries that were in build 7200 now carry it, merge markers are marked as no visible change, entries added after build 7200 keep their own approval line.
+- Approved customer-visible result: #813 as described in its entries above, as seen in build 7200.
+- Scope: #813 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #813 approval record only
+
+## 2026-10-21 — #813: approval marker after merging main at e3503bda
+
+- User approval: no visible change – UI approval not needed (merge of main (e3503bda) into #813; the own entries of #813 keep their approvals)
+- Approved customer-visible result: #813 as in its own entries plus the entries merged with e3503bda; nothing else changes.
+- Scope: the merge of e3503bda and this approval record. Pull request branch #813 only, not merged, not released.
+- What's new: none — merge of e3503bda, no customer-visible change of its own
+
+## 2026-10-21 — #813: Still lines only while a step is really running
+
+- User approval: no visible change – UI approval not needed (#813 Codex fixes: Still lines only while a step is really running; no new wording or layout)
+- Approved customer-visible result: no new wording or layout; the log drops wrong "Still …" lines after a finished step or a closed device search, and no longer pulls a scrolled-up log back to the bottom at the five-line cap.
+- Scope: apps/control-center setup log and welcome screen, with the wizard passing the device search state. Pull request branch #813 only, not merged, not released.
+- What's new: none — removes wrong "Still …" lines and a scroll pull, no new wording or layout
+
+## 2026-10-21 — #813: approval marker after merging main at 41bf10cf
+
+- User approval: no visible change – UI approval not needed (merge of main (41bf10cf) into #813; the own entries of #813 keep their approvals)
+- Approved customer-visible result: #813 as in its own entries plus the entries merged with 41bf10cf; nothing else changes.
+- Scope: the merge of 41bf10cf and this approval record. Pull request branch #813 only, not merged, not released.
+- What's new: none — merge of 41bf10cf, no customer-visible change of its own
+
+## 2026-10-21 — #813: approval marker after merging main at f314106c
+
+- User approval: no visible change – UI approval not needed (merge of main (f314106c) into #813; the own entries of #813 keep their approvals)
+- Approved customer-visible result: #813 as in its own entries plus the entries merged with f314106c; nothing else changes.
+- Scope: the merge of f314106c and this approval record. Pull request branch #813 only, not merged, not released.
+- What's new: none — merge of f314106c, no customer-visible change of its own
+
+## 2026-10-21 — #813: approval marker after merging main at 5b9c0cb4
+
+- User approval: no visible change – UI approval not needed (merge of main (5b9c0cb4) into #813; the own entries of #813 keep their approvals)
+- Approved customer-visible result: #813 as in its own entries plus the entries merged with 5b9c0cb4; nothing else changes.
+- Scope: the merge of 5b9c0cb4 and this approval record. Pull request branch #813 only, not merged, not released.
+- What's new: none — merge of 5b9c0cb4, no customer-visible change of its own
+
+## 2026-10-21 — #813: approval marker after merging main at 467fd7fb
+
+- User approval: no visible change – UI approval not needed (merge of main (467fd7fb) into #813; the own entries of #813 keep their approvals)
+- Approved customer-visible result: #813 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
+- Scope: the merge of 467fd7fb and this approval record. Pull request branch #813 only, not merged, not released.
+- What's new: none — merge of 467fd7fb, no customer-visible change of its own
+
+## 2026-10-21 — #813: approval marker after merging main at 35152cc8
+
+- User approval: no visible change – UI approval not needed (merge of main (35152cc8) into #813; the own entries of #813 keep their approvals)
+- Approved customer-visible result: #813 as in its own entries plus the entries merged with 35152cc8; nothing else changes.
+- Scope: the merge of 35152cc8 and this approval record. Pull request branch #813 only, not merged, not released.
+- What's new: none — merge of 35152cc8, no customer-visible change of its own
+
+## 2026-10-21 — #813: approval marker after merging main at 3dc0a15b
+
+- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #813; the own entries of #813 keep their approvals)
+- Approved customer-visible result: #813 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
+- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #813 only, not merged, not released.
+- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
+
+## 2026-10-22 — #813: approval-log wording after Paul's 7200 quote
+
+- User approval: no visible change – UI approval not needed (approval-log wording only: the text after Paul's 7200 quote on the #813 approval record; the quote and date are unchanged)
+- Approved customer-visible result: #813 as in its own entries; nothing else changes.
+- Scope: docs/control-center-customer-ui-approval.md only. Pull request branch #813 only, not merged, not released.
+- What's new: none — approval-log wording only, no customer-visible change
+
+## 2026-10-22 — #813: approval marker after merging main at 242e4846
+
+- User approval: no visible change – UI approval not needed (merge of main (242e4846) into #813; the own entries of #813 keep their approvals)
+- Approved customer-visible result: #813 as in its own entries plus the entries merged with 242e4846; nothing else changes.
+- Scope: the merge of 242e4846 and this approval record. Pull request branch #813 only, not merged, not released.
+- What's new: none — merge of 242e4846, no customer-visible change of its own
+
+## 2026-10-22 — #813: approval marker after merging main at 1e1244fe
+
+- User approval: no visible change – UI approval not needed (merge of main (1e1244fe) into #813; the own entries of #813 keep their approval)
+- Approved customer-visible result: #813 as in its own entries plus the entries merged with 1e1244fe; nothing else changes.
+- Scope: the merge of 1e1244fe and this approval record. Pull request #813 only, not merged, not released.
+- What's new: none — merge of 1e1244fe, no customer-visible change of its own
