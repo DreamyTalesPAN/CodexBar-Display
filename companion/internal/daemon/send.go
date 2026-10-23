@@ -92,6 +92,8 @@ func prepareDeviceFrame(frame protocol.Frame, result cycleResult, caps protocol.
 	frame.V = protocol.NormalizeProtocolVersion(caps.NegotiatedProtocolVersion)
 	frame = applyDeviceUsageWindowLimit(frame, caps)
 	if !caps.SupportsProviderSlotsV1 {
+		// Firmware without provider-slots-v1 would carry these rows as dead
+		// wire bytes against its frame budget.
 		frame.ProviderSlots = nil
 	}
 	frame = attachClockFields(frame, now)
@@ -100,7 +102,9 @@ func prepareDeviceFrame(frame protocol.Frame, result cycleResult, caps protocol.
 	if theme != "" {
 		frame, applied = applyThemeToFrame(frame, theme, caps)
 	}
-	// Firmware consumes only these four update fields.
+	// ESP8266 firmware only reads these four update fields. Dropping release
+	// metadata before every send keeps the JSON document small enough for
+	// devices that have just left WiFi setup with a fragmented heap.
 	frame.Update = compactFrameUpdate(frame.Update)
 	frame.ActivityTTLSec = int64(ttl / time.Second)
 	return frame, applied
