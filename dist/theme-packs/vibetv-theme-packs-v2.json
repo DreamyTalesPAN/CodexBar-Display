@@ -46,9 +46,9 @@
       "id": "clippy",
       "title": "Clippy",
       "usage": "live",
-      "version": "1.2.8",
-      "themeRev": 14,
-      "themeSpecPath": "/themes/u/cp-14-34d85a79.json",
+      "version": "1.2.10",
+      "themeRev": 15,
+      "themeSpecPath": "/themes/u/cp-15-e256afd2.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -61,9 +61,9 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-clippy-v1.2.8.zip",
-      "sha256": "c69ca894705251fc5bd91b2c4d5814b5efd7ae2e5889e649459a6b6445aa07fb",
-      "bytes": 18695,
+      "downloadAsset": "vibetv-theme-clippy-v1.2.10.zip",
+      "sha256": "8282badbadd1c5cf9267366492195d126dd6d5ea018704cd32fd29afbfb929e7",
+      "bytes": 19016,
       "earlierThemeSpecPaths": [
         "/themes/u/clippy-1-5d86bb.json",
         "/themes/u/clippy-1-bb9192.json",
@@ -78,6 +78,7 @@
         "/themes/u/cp-11-820d61d9.json",
         "/themes/u/cp-12-e681c449.json",
         "/themes/u/cp-13-b6a98b9f.json",
+        "/themes/u/cp-14-34d85a79.json",
         "/themes/u/cp-7-8e3b005e.json",
         "/themes/u/cp-8-e3fbe9a5.json",
         "/themes/u/cp-9-47bef231.json"
@@ -87,9 +88,9 @@
       "id": "gauge",
       "title": "Gauge",
       "usage": "live",
-      "version": "0.2.8",
-      "themeRev": 18,
-      "themeSpecPath": "/themes/u/ga-18-903b3274.json",
+      "version": "0.2.10",
+      "themeRev": 19,
+      "themeSpecPath": "/themes/u/ga-19-9efaac59.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -101,9 +102,9 @@
       "tags": [
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-gauge-v0.2.8.zip",
-      "sha256": "339d05b354bf9095cde094b39bfa6e38f2b2f9a65a8cb4cff15525f1c0cc95e4",
-      "bytes": 975,
+      "downloadAsset": "vibetv-theme-gauge-v0.2.10.zip",
+      "sha256": "8a1824cc98b0547323c459e7ae45d6a5b526ceaea18ea331b1763236c4a572f3",
+      "bytes": 974,
       "earlierThemeSpecPaths": [
         "/themes/u/ga-10-317f5a1b.json",
         "/themes/u/ga-11-a3246430.json",
@@ -113,6 +114,7 @@
         "/themes/u/ga-15-9cfc333b.json",
         "/themes/u/ga-16-1bfe0b10.json",
         "/themes/u/ga-17-e32877ec.json",
+        "/themes/u/ga-18-903b3274.json",
         "/themes/u/ga-2-ad19500f.json"
       ]
     },
@@ -120,9 +122,9 @@
       "id": "mini-classic",
       "title": "Mini Classic",
       "usage": "live",
-      "version": "1.3.4",
-      "themeRev": 14,
-      "themeSpecPath": "/themes/u/mini-14-435458e6.json",
+      "version": "1.3.5",
+      "themeRev": 15,
+      "themeSpecPath": "/themes/u/mini-15-4d453c89.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -133,14 +135,15 @@
         "animated",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-mini-classic-v1.3.4.zip",
-      "sha256": "b3ca7909ce8823742ed5e7402947905c040c34fcb6aec1472e109ad24bbabee1",
-      "bytes": 18609,
+      "downloadAsset": "vibetv-theme-mini-classic-v1.3.5.zip",
+      "sha256": "6a80218a9b31e882a7a99ec044b1215fe2d67cd8cd6d9712f7bbebe14e38a4c3",
+      "bytes": 36145,
       "earlierThemeSpecPaths": [
         "/themes/u/mini-10-f0720a.json",
         "/themes/u/mini-11-93aee45e.json",
         "/themes/u/mini-12-d1bbb23e.json",
         "/themes/u/mini-13-5af8efb5.json",
+        "/themes/u/mini-14-435458e6.json",
         "/themes/u/mini-cl-1-410a37.json",
         "/themes/u/mini-cl-1-b3c3f7.json",
         "/themes/u/mini-cl-1-e4fe6b.json",
@@ -264,9 +267,9 @@
       "id": "synthwave",
       "title": "Synthwave",
       "usage": "live",
-      "version": "1.2.8",
-      "themeRev": 14,
-      "themeSpecPath": "/themes/u/syn-14-e6e94d89.json",
+      "version": "1.2.9",
+      "themeRev": 15,
+      "themeSpecPath": "/themes/u/syn-15-a1348694.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -277,13 +280,14 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-synthwave-v1.2.8.zip",
-      "sha256": "b96368aef49700d13f4ca17235f82da33a00f8773061b53e71fce96121892cdd",
-      "bytes": 4979,
+      "downloadAsset": "vibetv-theme-synthwave-v1.2.9.zip",
+      "sha256": "c4721bd2d6add2e0dc20497a0e927b639638a2fa6147ee28aceea538cfc2e8f6",
+      "bytes": 4989,
       "earlierThemeSpecPaths": [
         "/themes/u/syn-10-cc3fcc64.json",
         "/themes/u/syn-11-876b1fbe.json",
         "/themes/u/syn-12-319e19a2.json",
+        "/themes/u/syn-14-e6e94d89.json",
         "/themes/u/syn-7-c929bcfe.json",
         "/themes/u/syn-8-0b08afde.json",
         "/themes/u/syn-9-7e671d91.json",
