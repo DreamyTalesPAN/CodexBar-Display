@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,7 +15,9 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/firmwareupdate"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/usb"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/writerlock"
 )
 
 const rescueTestBoard = "esp8266-smalltv-st7789"
@@ -70,6 +74,84 @@ func rescueMarkerPresent(t *testing.T) bool {
 	return ok
 }
 
+// A second updater must fail before probing or clearing the live attempt's
+// marker, throughout rescue and verification, even in another process.
+func TestRunInstallUpdateCableRescueRejectsOverlappingProcess(t *testing.T) {
+	const childHomeEnv = "VIBETV_TEST_ACTIVE_RESCUE_HOME"
+	if home := os.Getenv(childHomeEnv); home != "" {
+		testenv.Home(t, home)
+		pinNoOtherRuntimeWriter(t)
+		pinCableRescue(t)
+		probes := 0
+		findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
+			probes++
+			return usb.CableDevice{}, errors.New("no mocked legacy device")
+		}
+		err := runInstallUpdate(rescueArgs("http://127.0.0.1:1/manifest.json"))
+		if errcode.Of(err) != errcode.RuntimeWriterLocked || probes != 0 {
+			t.Fatalf("overlapping rescue: error=%v probes=%d; want writer lock error before any probe", err, probes)
+		}
+		return
+	}
+	for _, failWrite := range []bool{false, true} {
+		t.Run(fmt.Sprintf("writeFailure=%v", failWrite), func(t *testing.T) {
+			home, manifestURL, _ := prepareCableFirmwareUpdateTest(t)
+			pinCableRescue(t)
+			markerPath := firmwareupdate.RescueMarkerPath(home)
+			contend := func(stage string) {
+				t.Helper()
+				before, _ := os.ReadFile(markerPath)
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestRunInstallUpdateCableRescueRejectsOverlappingProcess$")
+				cmd.Env = append(os.Environ(), childHomeEnv+"="+home)
+				if output, err := cmd.CombinedOutput(); err != nil {
+					t.Errorf("%s: competing updater was not rejected: %v\n%s", stage, err, output)
+				}
+				after, _ := os.ReadFile(markerPath)
+				if !bytes.Equal(before, after) {
+					t.Errorf("%s: competing updater changed the active rescue marker", stage)
+				}
+			}
+			findLegacyCableVibeTVFn = func() (usb.CableDevice, error) {
+				contend("before discovery")
+				return legacyRescueDevice()
+			}
+			flashCableRescueFn = func(_ context.Context, _ string, _ []byte, opts usb.ROMFlashOptions) error {
+				contend("before chip identification")
+				if err := opts.OnChipIdentified(rescueTestChip); err != nil {
+					return err
+				}
+				contend("after chip identification")
+				opts.OnWriteStarted()
+				if failWrite {
+					return usb.ErrROMLoaderNotEntered
+				}
+				return nil
+			}
+			verified := false
+			readCableFirmwareHelloFn = func(context.Context, string) (protocol.DeviceHello, error) {
+				contend("post-flash verification")
+				verified = true
+				return protocol.DeviceHello{DeviceID: rescueTestChipDeviceID, Board: rescueTestBoard, Firmware: "1.0.1"}, nil
+			}
+			err := runInstallUpdate(rescueArgs(manifestURL))
+			if (err != nil) != failWrite || verified == failWrite {
+				t.Fatalf("rescue: err=%v verified=%v writeFailure=%v", err, verified, failWrite)
+			}
+			marker, present := firmwareupdate.LoadRescueMarker(home, time.Now())
+			if present != failWrite || (present && marker.ChipMAC != rescueTestChip) {
+				t.Fatalf("rescue marker after return: %+v present=%v writeFailure=%v", marker, present, failWrite)
+			}
+			lock, err := writerlock.AcquireAt(markerPath + ".lock")
+			if err != nil {
+				t.Fatalf("rescue did not release its lock: %v", err)
+			}
+			lock.Release()
+		})
+	}
+}
+
 // Codex on #840: a first write that fails before the chip is read leaves a
 // marker without ChipMAC. A cancel during the pause before the second attempt
 // must still clear it, or it blocks every later rescue until it expires.
@@ -102,6 +184,111 @@ func TestCableRescueCancelledInThePauseClearsAChiplessMarker(t *testing.T) {
 	}
 	if rescueMarkerPresent(t) {
 		t.Fatal("a chipless marker must be cleared after a cancel in the pause")
+	}
+}
+
+// Issue #842: a marker saved before the chip was read is cleared by a replug,
+// because its VibeTV was never written.
+func TestResumableRescueMarkerClearsAFlaggedChiplessMarkerOnReplug(t *testing.T) {
+	prepareCableFirmwareUpdateTest(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := writeRescueMarkerFixture(t, "COM4", time.Hour)
+	marker.ChipMAC, marker.ChipNotRead, marker.Ports = "", true, []string{"COM4"}
+	if err := firmwareupdate.SaveRescueMarker(home, marker); err != nil {
+		t.Fatal(err)
+	}
+	listCablePortsFn = func() ([]string, error) { return []string{"COM9"}, nil }
+	readCableFirmwareHelloFn = func(context.Context, string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{}, errors.New("no hello")
+	}
+	if _, ok := resumableRescueMarker(home); ok {
+		t.Fatal("a flagged marker without a chip must not be resumed")
+	}
+	if rescueMarkerPresent(t) {
+		t.Fatal("a marker saved before the chip was read must be cleared on replug")
+	}
+}
+
+// Issue #842: a marker without the flag may come from a #819 or #840 build,
+// where a failed write could have erased the VibeTV, so it is kept.
+func TestResumableRescueMarkerKeepsALegacyChiplessMarker(t *testing.T) {
+	prepareCableFirmwareUpdateTest(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := writeRescueMarkerFixture(t, "COM4", time.Hour)
+	marker.ChipMAC, marker.Ports = "", []string{"COM4"}
+	if err := firmwareupdate.SaveRescueMarker(home, marker); err != nil {
+		t.Fatal(err)
+	}
+	listCablePortsFn = func() ([]string, error) { return []string{"COM9"}, nil }
+	readCableFirmwareHelloFn = func(context.Context, string) (protocol.DeviceHello, error) {
+		return protocol.DeviceHello{}, errors.New("no hello")
+	}
+	if _, ok := resumableRescueMarker(home); ok {
+		t.Fatal("a legacy chipless marker must not be resumed")
+	}
+	if !rescueMarkerPresent(t) {
+		t.Fatal("a legacy chipless marker may hold a half-written VibeTV and must be kept")
+	}
+}
+
+// Issue #842: the rescue saves the flagged marker before the first write and
+// replaces it with the chip identity once the chip is read.
+func TestCableRescueMarkerIsFlaggedUntilTheChipIsRead(t *testing.T) {
+	prepareCableFirmwareUpdateTest(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	listCablePortsFn = func() ([]string, error) { return []string{"COM4"}, nil }
+	var beforeChip firmwareupdate.RescueMarker
+	flashCableRescueFn = func(_ context.Context, _ string, _ []byte, opts usb.ROMFlashOptions) error {
+		beforeChip, _ = firmwareupdate.LoadRescueMarker(home, time.Now())
+		return opts.OnChipIdentified(rescueTestChip)
+	}
+	marker := firmwareupdate.RescueMarker{Port: "COM4", Board: rescueTestBoard, Firmware: "1.0.0", TargetFirmware: "1.0.1",
+		ImagePath: filepath.Join(t.TempDir(), "firmware.bin")}
+	if err := flashCableRescueWithRetry(context.Background(), home, marker, []byte("cable firmware"), false); err != nil {
+		t.Fatalf("rescue write: %v", err)
+	}
+	if !beforeChip.ChipNotRead || beforeChip.ChipMAC != "" {
+		t.Fatalf("marker before the chip read = %+v, want flagged without a chip", beforeChip)
+	}
+	after, ok := firmwareupdate.LoadRescueMarker(home, time.Now())
+	if !ok || after.ChipNotRead || after.ChipMAC != rescueTestChip {
+		t.Fatalf("marker after the chip read = %+v ok=%v, want the chip and no flag", after, ok)
+	}
+}
+
+// Issue #842: the hello probe that finds a stale marker leaves the default
+// sender's port open, so the loader found it busy on both write attempts.
+func TestCableRescueClosesTheProbePortBeforeWriting(t *testing.T) {
+	prepareCableFirmwareUpdateTest(t)
+	pinCableRescue(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousClose := closeCableSenderFn
+	t.Cleanup(func() { closeCableSenderFn = previousClose })
+	var events []string
+	closeCableSenderFn = func() { events = append(events, "close") }
+	flashCableRescueFn = func(context.Context, string, []byte, usb.ROMFlashOptions) error {
+		events = append(events, "write")
+		return nil
+	}
+	marker := firmwareupdate.RescueMarker{Port: "COM4", Board: rescueTestBoard, Firmware: "1.0.0", TargetFirmware: "1.0.1",
+		ImagePath: filepath.Join(t.TempDir(), "firmware.bin")}
+	if err := flashCableRescueWithRetry(context.Background(), home, marker, []byte("cable firmware"), false); err != nil {
+		t.Fatalf("rescue write: %v", err)
+	}
+	if strings.Join(events, ",") != "close,write" {
+		t.Fatalf("events = %v, want the probe port closed before the write", events)
 	}
 }
 
