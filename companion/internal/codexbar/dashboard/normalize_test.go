@@ -2,9 +2,82 @@ package dashboard
 
 import (
 	"encoding/json"
+	"os"
 	"testing"
 	"time"
 )
+
+// Derived from the exact bundled fork source, not a live capture; provenance
+// is in ../testdata/win-codexbar-0.60.3-vibetv.12-README.md.
+func TestNormalizeWindowsUsageResetFallback(t *testing.T) {
+	raw, err := os.ReadFile("../testdata/win-codexbar-0.60.3-vibetv.12-usage.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage, err := DecodeUsage(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dashboardReset := range []string{"", "2026-10-24T15:00:00Z"} {
+		t.Run("dashboard-reset="+dashboardReset, func(t *testing.T) {
+			var reset *time.Time
+			if dashboardReset != "" {
+				parsed, err := time.Parse(time.RFC3339, dashboardReset)
+				if err != nil {
+					t.Fatal(err)
+				}
+				reset = &parsed
+			}
+			session, weekly, extra := 31.0, 82.0, 0.0
+			result := NormalizeProvider(DashboardProvider{ID: "claude", Windows: []DashboardWindow{
+				{Kind: "session", Label: "Session", UsedPercent: &session, ResetAt: reset},
+				{Kind: "weekly", Label: "Weekly", UsedPercent: &weekly, ResetAt: reset},
+				{Kind: "claude-weekly-scoped-fable", Label: "Fable only", UsedPercent: &extra, ResetAt: reset},
+			}}, usage[0])
+			assertWindowLabels(t, result.Windows, "Session", "Weekly", "Fable only")
+			for i, window := range result.Windows {
+				want := "2026-10-29T12:00:00Z"
+				if i == 0 {
+					want = "2026-10-23T12:00:00Z"
+				}
+				if dashboardReset != "" {
+					want = dashboardReset
+				}
+				if window.ResetAt == nil || window.ResetAt.Format(time.RFC3339) != want {
+					t.Errorf("window %s reset = %v, want %s", window.ID, window.ResetAt, want)
+				}
+			}
+		})
+	}
+}
+
+func TestRateWindowResetAliases(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"missing", `{}`, ""},
+		{"null", `{"resets_at":null}`, ""},
+		{"snake", `{"resets_at":"2026-10-29T12:00:00Z"}`, "2026-10-29T12:00:00Z"},
+		{"resetAt precedence", `{"resetAt":"2026-10-28T12:00:00Z","resets_at":"2026-10-29T12:00:00Z"}`, "2026-10-28T12:00:00Z"},
+		{"resetsAt precedence", `{"resetsAt":"2026-10-27T12:00:00Z","resetAt":"2026-10-28T12:00:00Z","resets_at":"2026-10-29T12:00:00Z"}`, "2026-10-27T12:00:00Z"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var window RateWindow
+			if err := json.Unmarshal([]byte(tt.raw), &window); err != nil {
+				t.Fatal(err)
+			}
+			got := ""
+			if reset := window.resetAt(); reset != nil {
+				got = reset.Format(time.RFC3339)
+			}
+			if got != tt.want {
+				t.Fatalf("reset = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
 
 func TestNormalizeCodexWindowsKeepsWeeklyAndNamedExtra(t *testing.T) {
 	result := normalizeFixture(t, codexDashboardFixture, codexUsageFixture, "codex")

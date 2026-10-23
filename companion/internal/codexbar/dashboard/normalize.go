@@ -58,6 +58,7 @@ type RateWindow struct {
 	WindowMinutesSnake     *int       `json:"window_minutes"`
 	ResetsAt               *time.Time `json:"resetsAt"`
 	ResetAt                *time.Time `json:"resetAt"`
+	ResetsAtSnake          *time.Time `json:"resets_at"`
 	IsSyntheticPlaceholder bool       `json:"isSyntheticPlaceholder"`
 	IsInformational        bool       `json:"isInformational"`
 	IsInformationalSnake   bool       `json:"is_informational"`
@@ -258,7 +259,10 @@ func (window RateWindow) resetAt() *time.Time {
 	if window.ResetsAt != nil {
 		return window.ResetsAt
 	}
-	return window.ResetAt
+	if window.ResetAt != nil {
+		return window.ResetAt
+	}
+	return window.ResetsAtSnake
 }
 
 func dedupeStructuralAliases(candidates []windowCandidate) []UsageWindow {
