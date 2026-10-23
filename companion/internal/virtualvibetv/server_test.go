@@ -518,6 +518,9 @@ func TestThemeActivationRefusesPrimitivesThatDoNotCompile(t *testing.T) {
 		// CompilePrimitive, progress: width and height above zero.
 		{"progress without height", `{"t":"p","w":10}`, true},
 		{"progress with width and height", `{"t":"p","w":10,"h":10}`, false},
+		{"needle at display size", `{"t":"p","w":240,"h":240,"ps":"needle","aw":180,"a":"/themes/u/n.CBI"}`, false},
+		{"needle wider than display", `{"t":"p","w":241,"h":1,"ps":"needle","aw":180,"a":"/themes/u/n.cbi"}`, true},
+		{"needle taller than display", `{"t":"p","w":1,"h":241,"ps":"needle","aw":180,"a":"/themes/u/n.cbi"}`, true},
 		// CompilePrimitive, progress arc: start 0-359, sweep 1-360, thickness at
 		// least 1 and at most half the smaller side.
 		{"arc starting at 360", `{"t":"p","w":10,"h":10,"ps":"arc","as":360,"aw":90,"at":2}`, true},

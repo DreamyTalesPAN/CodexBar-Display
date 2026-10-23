@@ -1177,6 +1177,11 @@ bool loadDecodedNeedle(const char* assetPath) {
     decodedNeedle.palette[i] = palette[i];
   }
   decodedNeedle.valid = true;
+  // Every declared row was decoded in this pass. Only this asset's successful
+  // decode can retire its earlier failure; a cached or unrelated draw cannot.
+  if (lastSpriteErrorAsset == assetPath) {
+    clearSpriteRenderError();
+  }
   return true;
 }
 
@@ -1187,7 +1192,8 @@ bool drawNeedleAsset(
     int targetWidth,
     int targetHeight,
     int angle) {
-  if (assetPath == nullptr || assetPath[0] == '\0' || targetWidth <= 0 || targetHeight <= 0) {
+  if (assetPath == nullptr || assetPath[0] == '\0' ||
+      !themespec::NeedleDestinationSizeValid(targetWidth, targetHeight)) {
     return false;
   }
   if (!loadDecodedNeedle(assetPath)) {

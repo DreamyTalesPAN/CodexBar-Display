@@ -208,6 +208,12 @@ constexpr int kProgressStyleNeedle = 3;
 // static index buffer in the ESP8266 renderer: 64×64 fills it exactly.
 constexpr int kMaxNeedleSpriteSide = 96;
 constexpr int kMaxNeedleSpritePixels = 4096;
+constexpr int kMaxNeedleDestinationSide = kThemeSpecCanvasSize;
+
+inline bool NeedleDestinationSizeValid(int width, int height) {
+  return width > 0 && height > 0 &&
+         width <= kMaxNeedleDestinationSide && height <= kMaxNeedleDestinationSide;
+}
 
 struct CompiledProviderAsset {
   const char* key = nullptr;
@@ -1509,7 +1515,8 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
       }
       if (out.segments < 0 || out.segments > 359 ||
           out.segmentGap < 1 || out.segmentGap > 360 ||
-          out.assetPath[0] == '\0' || !AssetPathLooksCbi(out.assetPath)) {
+          out.assetPath[0] == '\0' || !AssetPathLooksCbi(out.assetPath) ||
+          !NeedleDestinationSizeValid(out.width, out.height)) {
         return false;
       }
     } else {
@@ -2094,7 +2101,8 @@ inline bool NeedleOpaqueBounds(
     int angleDegrees,
     uint8_t transparent,
     Bounds& bounds) {
-  if (index == nullptr || srcW <= 0 || srcH <= 0 || destW <= 0 || destH <= 0) {
+  if (index == nullptr || srcW <= 0 || srcH <= 0 ||
+      !NeedleDestinationSizeValid(destW, destH)) {
     return false;
   }
   int minX = destW;

@@ -100,13 +100,16 @@ export function resolveActiveThemeUpgrade(
     device.capabilities?.theme?.supportsTextValignV1 !== true;
   const needsProgressArc =
     device.capabilities?.theme?.supportsProgressArcV1 !== true;
+  const needsProgressNeedle =
+    device.capabilities?.theme?.supportsProgressNeedleV1 !== true;
   const hasCapabilityGap =
     needsUsageSlots ||
     needsUsageWindows ||
     needsProviderAssets ||
     needsColorStops ||
     needsTextValign ||
-    needsProgressArc;
+    needsProgressArc ||
+    needsProgressNeedle;
   const activePath = standbyActive
     ? standbyLivePath
     : device.display?.themeSpec?.path?.trim();
@@ -153,7 +156,7 @@ export function resolveActiveThemeUpgrade(
     (theme.requiredCapabilities.includes("text-valign-v1") && needsTextValign) ||
     (theme.requiredCapabilities.includes("progress-arc-v1") && needsProgressArc) ||
     (theme.requiredCapabilities.includes("progress-needle-v1") &&
-      device.capabilities?.theme?.supportsProgressNeedleV1 !== true);
+      needsProgressNeedle);
   return {
     needed: needsRequiredCapability || pathIsOutdated,
     needsFirmwareCapability: needsRequiredCapability,

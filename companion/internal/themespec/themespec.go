@@ -22,6 +22,8 @@ const (
 	// kMaxCompiledThemeSpecStringBytes: null-terminated compiled strings
 	// (bindings, text, asset paths, provider keys/paths, pixel data).
 	MaxCompiledThemeSpecStringBytes = 1024
+	// Matches firmware kMaxNeedleDestinationSide; rotation scans this box.
+	maxNeedleDestinationSide = 240
 )
 
 var (
@@ -850,6 +852,9 @@ func validateProgressArc(p Primitive) error {
 func validateProgressNeedle(p Primitive) error {
 	if p.Type != "progress" || p.ProgressStyle != "needle" {
 		return nil
+	}
+	if p.Width > maxNeedleDestinationSide || p.Height > maxNeedleDestinationSide {
+		return fmt.Errorf("needle destination width/height must be <= %d", maxNeedleDestinationSide)
 	}
 	if p.ArcStart < 0 || p.ArcStart > 359 {
 		return errors.New("arcStart must be between 0 and 359")

@@ -792,7 +792,7 @@ func progressCompiles(primitive map[string]any) bool {
 		start := jsonInt(primitive, "arcStart", "as", 0)
 		sweep := jsonInt(primitive, "arcSweep", "aw", 0)
 		asset := jsonFor[string](primitive, "assetPath", "a")
-		if start < 0 || start > 359 || sweep < 1 || sweep > 360 || !strings.HasSuffix(strings.ToLower(asset), ".cbi") {
+		if start < 0 || start > 359 || sweep < 1 || sweep > 360 || width > 240 || height > 240 || !strings.HasSuffix(strings.ToLower(asset), ".cbi") {
 			return false
 		}
 	}

@@ -3579,6 +3579,30 @@ void testNeedleAcceptsUppercaseCbiExtension() {
   ReleaseCompiledThemeSpec(scene);
 }
 
+void testNeedleDestinationScanIsBoundedToCanvasSize() {
+  for (const int width : {1, 240, 241, 100000, 2147483647}) {
+    for (const int height : {1, 240, 241, 100000, 2147483647}) {
+      char spec[300];
+      std::snprintf(spec, sizeof(spec),
+          R"JSON({"v":1,"id":"size","rev":1,"p":[{"t":"p","x":-10,"y":-10,"w":%d,"h":%d,"ps":"needle","as":0,"aw":180,"a":"/themes/u/n.cbi"},{"t":"tx","x":0,"y":0,"s":1,"v":"ok"}]})JSON",
+          width, height);
+      JsonDocument doc;
+      CompiledThemeSpec scene;
+      TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
+      const bool allowed = width <= 240 && height <= 240;
+      TEST_ASSERT_EQUAL_UINT32(allowed ? 2 : 1, scene.primitiveCount);
+      ReleaseCompiledThemeSpec(scene);
+    }
+  }
+  uint8_t pixel = 0;
+  Bounds bounds;
+  TEST_ASSERT_FALSE(NeedleOpaqueBounds(&pixel, 1, 1, 0, 0, 241, 240, 0, 0xFF, bounds));
+  TEST_ASSERT_FALSE(NeedleOpaqueBounds(&pixel, 1, 1, 0, 0, 240, 2147483647, 0, 0xFF, bounds));
+  TEST_ASSERT_TRUE(NeedleOpaqueBounds(&pixel, 1, 1, -10, -10, 240, 240, 0, 0xFF, bounds));
+  TEST_ASSERT_EQUAL_INT(240, bounds.width);
+  TEST_ASSERT_EQUAL_INT(240, bounds.height);
+}
+
 void testNeedleWithoutACbiSpriteIsSkipped() {
   for (const char* spec : {
            R"JSON({"v":1,"id":"fuel","rev":1,"p":[{"t":"p","x":0,"y":0,"w":64,"h":64,"ps":"needle","as":300,"aw":120},{"t":"tx","x":0,"y":0,"s":1,"v":"ok"}]})JSON",
@@ -4968,6 +4992,7 @@ int main() {
   RUN_TEST(testNeedleTrackingSeparatesPrimitivesWithTheSameSpriteAndBox);
   RUN_TEST(testNeedleTrackingInvalidatesBoundsWhenTheDrawnPrimitiveChanges);
   RUN_TEST(testNeedleAcceptsUppercaseCbiExtension);
+  RUN_TEST(testNeedleDestinationScanIsBoundedToCanvasSize);
   RUN_TEST(testNeedleWithoutACbiSpriteIsSkipped);
   RUN_TEST(testProgressArcOutsideItsLimitsIsSkipped);
   RUN_TEST(testValignDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont);

@@ -9789,3 +9789,11 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Proposed, pending review: a theme can show its own needle graphic following the usage value across its configured sweep. The preview clips the rotated graphic to the same rectangle as VibeTV. Exported themes retain that graphic. The 3D preview housing is neutral white and its display rim black. A theme that needs newer needle support keeps the existing firmware-update handling.
 - Scope: PR #963 Control Center theme serialization, capability handling, active-theme upgrade checks, 2D and 3D previews, their tests, and this approval record. No merge, release, or hardware write is authorized by this entry.
 - What's new: none — this draft corrects theme rendering, export, and previews; it adds no catalog theme or new customer control.
+
+
+## 2026-10-23 — #963: preserve update attention for unresolved needle support
+
+- User approval: pending — Florian requested fixes for Codex PR review findings in this chat. Paul's review of the exact visible result is still required before merge; no completed visual approval is claimed.
+- Approved customer-visible result: Proposed, pending review: the existing update attention state remains when the device lacks needle support and the active theme cannot be resolved from the catalog or its capability requirements are missing. Known themes that do not require needles keep their existing behavior. No copy or controls are added.
+- Scope: active-theme-upgrade.ts, its regression tests, and this approval record in PR #963. No merge, release, or hardware write.
+- What's new: none — fixes the existing post-update attention state without a new customer action.
