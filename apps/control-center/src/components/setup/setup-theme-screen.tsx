@@ -8,7 +8,7 @@ import { THEME_CARD_TITLE_CLASS, THEME_GRID_CLASS, THEME_GRID_STYLE } from "@/li
 import { cn } from "@/lib/utils";
 import { ThemeRenderPreview } from "../theme-render-preview";
 import { SetupLog, type SetupLogLine } from "./setup-log";
-import { SelectionDot, calmCardClass, moveAmongRadios } from "./setup-selectable-card";
+import { RING_SCROLL_BOX_CLASS, SelectionDot, calmCardClass, moveAmongRadios } from "./setup-selectable-card";
 import {
   CALM_BUTTON_CLASS,
   CALM_SUBTITLE_CLASS,
@@ -72,12 +72,13 @@ export function SetupThemeScreen({
         You can always switch themes later.
       </SetupWizardSubtitle>
 
-      {/* The grid fills the window's height and scrolls inside its box. 286 px is the chrome above it (142 px) and below it (the 32 px log line, the 44 px button, the 68 px page bottom), so the page itself never scrolls and the box never changes size: the log line has its room from the start. */}
+      {/* The grid fills the window's height and scrolls inside its box. 286 px is the chrome above it (142 px) and below it (the 32 px log line, the 44 px button, the 68 px page bottom), so the page itself never scrolls and the box never changes size: the log line has its room from the start. The box starts 4 px higher and is 4 px wider each side for the cards' rings: 20 px margin, 282 px chrome. */}
       <ItemGroup
         aria-label="Themes"
         className={cn(
           THEME_GRID_CLASS,
-          "mt-6 max-h-[calc(100dvh-286px)] overflow-y-auto pb-6 [mask-image:linear-gradient(to_bottom,black_calc(100%_-_24px),transparent)]",
+          RING_SCROLL_BOX_CLASS,
+          "mt-5 max-h-[calc(100dvh-282px)] w-[calc(100%+8px)]",
         )}
         onKeyDown={moveAmongRadios}
         role="radiogroup"

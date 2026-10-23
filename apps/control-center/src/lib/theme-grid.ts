@@ -4,7 +4,7 @@
  * as a group in the middle of the page (7197 review, point 8). gap-8!: ItemGroup's
  * own gap for small items (gap-2.5) would win.
  */
-export const THEME_GRID_CLASS = "mx-auto grid justify-center gap-8!";
+export const THEME_GRID_CLASS = "grid justify-center gap-8!";
 
 export const THEME_GRID_STYLE = { gridTemplateColumns: "repeat(auto-fill, 200px)" };
 
