@@ -91,7 +91,7 @@ var providerSignInLaunches = map[string]providerSignInLaunch{
 	},
 	"augment": {
 		cliNames:    []string{"auggie"},
-		cliWindows:  []string{"AppData/Roaming/npm/auggie.cmd", "AppData/Local/Programs/Augment/auggie.exe"},
+		cliWindows:  []string{"AppData/Roaming/npm/auggie.cmd"},
 		cliDarwin:   []string{"/opt/homebrew/bin/auggie", "/usr/local/bin/auggie"},
 		loginArgs:   []string{"login", "--headless"},
 		downloadURL: "https://docs.augmentcode.com/cli/setup-auggie/install-auggie-cli",
