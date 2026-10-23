@@ -40,7 +40,13 @@ export function connectLogLines(
   }
   const reached = phase === "failed" ? (state.failedAt ?? "connecting") : phase;
   const lines: SetupLogLine[] = [
-    { id: "connecting", text: `connecting to ${state.address}` },
+    {
+      id: "connecting",
+      // The cable has no address, only the target id the app keeps for it.
+      text: state.address.startsWith("cable://")
+        ? "connecting by Cable"
+        : `connecting to ${state.address}`,
+    },
   ];
 
   if (reached !== "connecting") {

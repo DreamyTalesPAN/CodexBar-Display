@@ -20423,3 +20423,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: On "Choose your theme", from "Theme is active on VibeTV." until setup moves on to "Display mode", the button stays in its installing look (spinner, "Installing", not clickable) in the running app; when VibeTV does not confirm the theme, it returns to "Install" once the app's reads are done. No text changes.
 - Scope: ControlCenterApp (the settings read no longer takes the busy state from a running action or ends it) and control-center-app.setup-theme-confirmation.test.tsx (install, settings read and VibeTV read through the mocked Mac App, in both outcomes).
 - What's new: none — setup button state only
+
+## 2026-10-23 — #7216: setup "Choose AI providers" uses the window's free height instead of stopping after four rows, and "Connecting to VibeTV" names the cable instead of its target id
+
+- User approval: pending — 7216 visual review, 23.10.2026: on "Choose AI providers" the list stopped after four rows with a 3–4 px strip of the fifth and 315 px (1440×900) / 215 px (1280×800) of empty space down to Continue (B5); the log of "Connecting to VibeTV" read "connecting to cable://vibetv" (B6)
+- Approved customer-visible result: On "Choose AI providers" the list grows with the window down to the Continue button, which stays 68 px above the bottom edge, and scrolls inside that space; it shows whole rows and then 40 px of the next row fading out, never a thin strip of one. On "Connecting to VibeTV" over the cable the first log line reads "connecting by Cable"; over WiFi it still reads "connecting to" and the IP address.
+- Scope: SetupProvidersScreen (the scroll box height follows the window in whole 64 px rows), connectLogLines (the cable target id becomes "connecting by Cable") and their tests.
+- What's new: none — setup layout and one log line

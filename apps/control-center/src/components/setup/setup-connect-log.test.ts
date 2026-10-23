@@ -19,6 +19,15 @@ describe("connectLogLines", () => {
     expect(texts(base)).toEqual(["connecting to 192.168.178.153"]);
   });
 
+  // The cable has no address; the target id the app keeps for it is not text
+  // for a customer (B6, build 7216: "connecting to cable://vibetv").
+  it("names the cable, not the target id the app keeps for it", () => {
+    const lines = texts({ ...base, address: "cable://vibetv" });
+
+    expect(lines).toEqual(["connecting by Cable"]);
+    expect(lines.join(" ")).not.toContain("://");
+  });
+
   it("names the device once it answered, then checks its firmware", () => {
     expect(texts({ ...base, phase: "checking-firmware" })).toEqual([
       "connecting to 192.168.178.153",

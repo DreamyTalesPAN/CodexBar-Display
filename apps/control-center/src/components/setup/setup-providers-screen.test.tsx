@@ -395,7 +395,11 @@ describe("SetupProvidersScreen", () => {
     );
     const list = screen.getByText("Claude Code").closest(".overflow-y-auto");
 
-    expect(list?.className).toMatch(/max-h-\[/);
+    // The window's free height down to Continue, in whole rows plus 40 px of
+    // the next one: a fixed 264 px stopped after four and a sliver of the fifth
+    // with 300 px of nothing below it (B5, build 7216).
+    expect(list?.className).toContain("max-h-[calc(round(down,100dvh_-_370px,64px)+40px)]");
+    expect(list?.className).not.toContain("264px");
     expect(list?.className).toContain("mask-image:");
     expect(list?.contains(screen.getByText("GitHub Copilot"))).toBe(true);
     expect(screen.getByRole("button", { name: "Continue" }).closest(".overflow-y-auto")).toBeNull();
