@@ -139,7 +139,7 @@ the meaning must remain the same; a compact key is not permission to invent a
 provider-specific fallback.
 
 CodexBar's pace for usage windows 1 and 2 has its own bindings, ready to show:
-`{usageSlot1PaceText}` renders `6% in reserve`, `On pace` or `14% in deficit`,
+`{usageSlot1PaceText}` renders `6% reserve`, `On pace` or `14% deficit`,
 `{usageSlot1PaceShort}` the short form `6% reserve`, `on pace`, `14% deficit`,
 `{usageSlot1PaceLasts}` whether the pace lasts (`lasts until reset`, `runs out`)
 and `{usageSlot1PaceRunsOut}` only `runs out`, plus their slot-2 equivalents.
