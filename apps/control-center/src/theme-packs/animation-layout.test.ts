@@ -477,6 +477,114 @@ function tickHits(pack: ThemeRenderPack): string[] {
   return [...found.values()].map(({ plans, detail }) => `${detail}; the tick is that close at ${plans.size} plan positions, ${Math.min(...plans)} to ${Math.max(...plans)}`);
 }
 
+// Captions are read as one typeset row. Mini Classic drew "remaining" under both numbers in GLCD at size 2 (12 px cells filling a
+// 108 px lane) between limit names and pace sentences in Font16: two words 12 px apart read as one phrase, in a heavier hand (7216).
+// A mode word beside a limit's name is drawn in that name's font and size; the same-named texts of the two columns of a row keep one
+// caption line (a Font16 cell, 16 px) between their ink; a limit's name and its value in one row stand on one baseline (Gauge's
+// "Weekly" was centred on the stack of "23%" and its pace sentence, 8 px below the number's baseline); and a number keeps 4 px above its
+// own pace sentence (Gauge and Synthwave were at 3 and 4, the review reads a 3 px gap as 2.8); a pace sentence stays on one line ("100% reserve"
+// wrapped to "100%" and "reserve" in Mini Classic's 80 px lane beside "on pace").
+const COLUMN_GAP = 16, NUMBER_OVER_PACE = 4;
+
+function modeWordHits(pack: ThemeRenderPack): string[] {
+  const prims = pack.spec?.p ?? [];
+  const font = (p: ThemePrimitive) => `font ${p.f ?? 1} size ${p.s ?? 1}`;
+  return prims.filter((p) => p.t === "tx" && source(p) === "{usageModeStandalone}" && slotOf(p) !== undefined).flatMap((mode) => {
+    const name = prims.find((q) => q.t === "tx" && /Label/.test(source(q)) && slotOf(q) === slotOf(mode));
+    return name && font(name) !== font(mode) ? [`the mode word of limit ${slotOf(mode)} is drawn at ${font(mode)}, its limit name at ${font(name)}`] : [];
+  });
+}
+
+function captionRowHits(pack: ThemeRenderPack): string[] {
+  const prims = pack.spec?.p ?? [];
+  const found = new Map<string, string>(), seen = new Set<string>();
+  const baseline = (t: { p: ThemePrimitive }) => { const h = textInk(t.p, "H"); return h.y + h.h; };
+  for (const [state, frame] of REACHABLE_FRAMES) {
+    const texts = prims.filter((p) => p.t === "tx" && primitiveUsageSlotVisible(p, frame))
+      .map((p) => ({ p, text: renderTextPrimitive(p, frame, prims) })).filter(({ text }) => text.trim())
+      .map(({ p, text }) => ({ p, text, ...textInk(p, text) }));
+    const key = texts.map((t) => `${prims.indexOf(t.p)} ${t.text}`).join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const note = (what: string, detail: string) => found.has(what) || found.set(what, `${detail} (first in: ${state})`);
+    const role = (p: ThemePrimitive) => source(p).replace(/usageSlot\d/g, "usageSlot#");
+    for (const t of texts) {
+      if (/Pace(Text|Short)/.test(source(t.p)) && themeTextFit(t.text, t.p.f ?? 1, t.p.s ?? 1, t.p.w ?? 0, t.p.ft === "shrink", t.p.h ?? 0).lines.length > 1) note(`wrap ${source(t.p)}`, `the pace sentence "${t.text}" [${show(t)}] wraps to two lines`);
+    }
+    texts.forEach((a, i) => texts.slice(i + 1).forEach((b) => {
+      const sameRows = a.y < b.y + b.h && b.y < a.y + a.h, sameColumns = a.x < b.x + b.w && b.x < a.x + a.w;
+      if (sameRows && slotOf(a.p) !== slotOf(b.p) && role(a.p) === role(b.p)) {
+        const [left, right] = a.x < b.x ? [a, b] : [b, a];
+        if (right.x - (left.x + left.w) < COLUMN_GAP) note(`columns ${role(a.p)}`, `"${left.text}" [${show(left)}] and "${right.text}" [${show(right)}] stand ${Math.round(right.x - (left.x + left.w))} px apart in one row, under ${COLUMN_GAP} px`);
+      }
+      for (const [name, value] of [[a, b], [b, a]]) {
+        if (sameRows && /Label/.test(source(name.p)) && /Percent/.test(source(value.p)) && slotOf(name.p) === slotOf(value.p) && Math.abs(baseline(name) - baseline(value)) > 1) {
+          note(`baseline ${source(name.p)}`, `"${name.text}" stands on row ${baseline(name)}, its value "${value.text}" on row ${baseline(value)}: no common baseline`);
+        }
+        const gap = verticalGap(name, value);
+        if (sameColumns && !sameRows && /Percent/.test(source(name.p)) && /Pace(Text|Short)/.test(source(value.p)) && slotOf(name.p) === slotOf(value.p) && value.y > name.y && gap < NUMBER_OVER_PACE) {
+          note(`number over pace ${source(name.p)}`, `"${name.text}" [${show(name)}] is ${gap} px above its pace sentence "${value.text}" [${show(value)}], under ${NUMBER_OVER_PACE} px`);
+        }
+      }
+    }));
+  }
+  return [...found.values()];
+}
+
+// A pace sentence follows the colour of its limit's row: where a theme colours the numbers of its two limits differently (Synthwave: pink,
+// then cyan), "On pace" under the pink limit was cyan (7216), as if it belonged to the other row.
+function paceColourHits(pack: ThemeRenderPack): string[] {
+  const prims = pack.spec?.p ?? [];
+  const rowColour = (slot: unknown) => prims.find((q) => q.t === "tx" && /Percent/.test(source(q)) && slotOf(q) === slot)?.c?.toUpperCase();
+  const slots = prims.filter((q) => q.t === "tx" && /Percent/.test(source(q)) && slotOf(q) !== undefined).map(slotOf);
+  if (new Set(slots.map(rowColour)).size < 2) return [];
+  return prims.filter((p) => p.t === "tx" && /Pace(Text|Short)/.test(source(p)) && slotOf(p) !== undefined).flatMap((p) => {
+    const neutral = (p.cs?.find((stop) => stop.gte === 50)?.c ?? p.c)?.toUpperCase();
+    return neutral === rowColour(slotOf(p)) ? [] : [`the pace sentence of limit ${slotOf(p)} is ${neutral} when it is on pace, its row ${rowColour(slotOf(p))}`];
+  });
+}
+
+type Blob = { x0: number; y0: number; x1: number; y1: number; n: number };
+// The 4-connected regions of the pixels that share one key (an undefined key belongs to no region), inside an area.
+function blobs(keyAt: (x: number, y: number) => string | undefined, [ax0, ay0, ax1, ay1]: [number, number, number, number] = [0, 0, 239, 239]): Blob[] {
+  const done = new Set<number>(), out: Blob[] = [];
+  for (let y = ay0; y <= ay1; y++) for (let x = ax0; x <= ax1; x++) {
+    const key = keyAt(x, y);
+    if (key === undefined || done.has(y * 240 + x)) continue;
+    const blob: Blob = { x0: x, y0: y, x1: x, y1: y, n: 0 }, todo: Array<[number, number]> = [[x, y]];
+    done.add(y * 240 + x);
+    while (todo.length) {
+      const [cx, cy] = todo.pop()!;
+      blob.n++; blob.x0 = Math.min(blob.x0, cx); blob.x1 = Math.max(blob.x1, cx); blob.y0 = Math.min(blob.y0, cy); blob.y1 = Math.max(blob.y1, cy);
+      for (const [nx, ny] of [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]]) {
+        if (nx < ax0 || nx > ax1 || ny < ay0 || ny > ay1 || done.has(ny * 240 + nx) || keyAt(nx, ny) !== key) continue;
+        done.add(ny * 240 + nx); todo.push([nx, ny]);
+      }
+    }
+    out.push(blob);
+  }
+  return out;
+}
+
+// The controls on a bar painted into the background (Clippy's title bar, a flat band at least 100 px wide and 20 to 48 px high that
+// stands free of the screen edge): they
+// are one width, and they keep the same margin to the bar's right, top and bottom edge (within 1 px), at least 3 px. Clippy's three
+// buttons were 18, 19 and 18 px wide and the last stood on the bar's right end (7216).
+function barControlHits(pack: ThemeRenderPack): string[] {
+  const artAt = staticArt(pack);
+  return blobs(artAt).filter((b) => b.x0 > 0 && b.y0 > 0 && b.x1 < 239 && b.y1 < 239 && b.x1 - b.x0 >= 99 && b.y1 - b.y0 >= 19 && b.y1 - b.y0 <= 47 && b.n >= 0.6 * (b.x1 - b.x0 + 1) * (b.y1 - b.y0 + 1)).flatMap((bar) => {
+    const colour = artAt(bar.x0, bar.y0);
+    const controls = blobs((x, y) => (artAt(x, y) === colour ? undefined : "control"), [bar.x0, bar.y0, bar.x1, bar.y1]);
+    const where = `on the bar [${bar.x0},${bar.y0} ${bar.x1 - bar.x0 + 1}x${bar.y1 - bar.y0 + 1}]`;
+    const widths = new Set(controls.map((c) => c.x1 - c.x0 + 1));
+    const margins = controls.length ? [bar.x1 - Math.max(...controls.map((c) => c.x1)), ...controls.flatMap((c) => [c.y0 - bar.y0, bar.y1 - c.y1])] : [];
+    return [
+      ...(controls.length > 1 && widths.size > 1 ? [`the controls ${where} are ${controls.map((c) => c.x1 - c.x0 + 1).join(", ")} px wide, not one width`] : []),
+      ...(margins.length > 0 && (Math.min(...margins) < CLEAR || Math.max(...margins) - Math.min(...margins) > 1) ? [`the controls ${where} keep margins of ${margins.join(", ")} px (right end, then top and bottom of each), not one margin of at least ${CLEAR} px`] : []),
+    ];
+  });
+}
+
 describe("no text is drawn smaller than its theme declares", () => {
   it.each(catalogIds)("%s", (themeId) => {
     expect(shrunkTexts(themeId, loadPack(themeId))).toEqual([]);
@@ -517,5 +625,25 @@ describe("no text ink comes within 3 px of a divider, frame line, bar or ring", 
 describe("no text ink comes within 3 px of the plan tick of a pace bar, at any plan position", () => {
   it.each(catalogIds)("%s", (themeId) => {
     expect(tickHits(loadPack(themeId))).toEqual([]);
+  });
+});
+
+describe("a row of captions reads as one typeset line", () => {
+  it.each(catalogIds)("%s: a mode word shares its limit name's font and size", (themeId) => {
+    expect(modeWordHits(loadPack(themeId))).toEqual([]);
+  });
+
+  it.each(catalogIds)("%s: columns, baseline of a name and its value, number over its pace sentence, pace on one line", (themeId) => {
+    expect(captionRowHits(loadPack(themeId))).toEqual([]);
+  });
+
+  it.each(catalogIds)("%s: a pace sentence follows the colour of its limit's row", (themeId) => {
+    expect(paceColourHits(loadPack(themeId))).toEqual([]);
+  });
+});
+
+describe("the controls on a painted bar keep one width and one margin", () => {
+  it.each(catalogIds)("%s", (themeId) => {
+    expect(barControlHits(loadPack(themeId))).toEqual([]);
   });
 });
