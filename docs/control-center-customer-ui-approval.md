@@ -20458,3 +20458,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The border of the selected theme card, and the focus ring of a card reached with the keyboard, is whole on every side in every row and column, also in the top row and in the window width where five cards fill the step exactly. The frame of the first and last provider row in "Choose providers" is whole as well (it lost 1 px at the top and on both sides). Nothing moves: every card and row stands where it stood, and the Install button stays 68 px above the window bottom at 1280×800 and 1440×900. No text changes.
 - Scope: the scroll boxes of the setup's theme grid and provider list (setup-selectable-card.tsx RING_SCROLL_BOX_CLASS, setup-theme-screen.tsx, setup-providers-screen.tsx, a dead mx-auto removed from theme-grid.ts) and the guard test that renders every grid with a selected and keyboard-focused item at every edge position in the real stylesheet and measures the ring against every clipping ancestor (selection-ring-clip.test.tsx, test/ring-clip.ts), with the provider list's max-height pin.
 - What's new: none — border no longer cut off
+
+## 2026-10-23 — #7216: The ring guard also measures the Appearance "Show" choice
+
+- User approval: no visible change – UI approval not needed (the ring guard test also measures the Appearance "Show" choice; no app code changes)
+- Approved customer-visible result: Nothing changes in the app: the guard test adds the Show choice (All, Themes, Screensavers) of the Appearance toolbar to the items it measures, and it passes without a change to the app.
+- Scope: selection-ring-clip.test.tsx only.
+- What's new: none — test only
