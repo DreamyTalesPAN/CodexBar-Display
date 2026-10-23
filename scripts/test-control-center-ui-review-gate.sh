@@ -1036,6 +1036,65 @@ test_code_example_in_log_is_no_entry() {
   expect_gate_due "$repo"
 }
 
+# A fake entry inserted into a code block that is already in the log is no
+# entry either (Codex review of #823 at a6d563b4): the fence opens in an
+# unchanged line the change does not touch.
+test_entry_inside_existing_code_block_is_no_entry() {
+  local repo="${TMP_ROOT}/entry-in-existing-fence"
+  setup_repo "$repo"
+  printf '\nExample of an entry:\n\n~~~markdown\nplaceholder\n~~~\n' \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" commit -q -am "Add an example block"
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Unapproved visible UI change"
+  ENTRY="$(approval_entry "Fake inside the block")" perl -0pi -e 's/placeholder\n/placeholder\n$ENV{ENTRY}\n/' \
+    "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" commit -q -am "Insert an entry into the example block"
+  expect_gate_due "$repo"
+}
+
+# An entry that reuses the heading of an older one and is removed again
+# approves nothing (Codex review of #823 at a6d563b4): the older entry with the
+# same heading does not keep it alive.
+test_removed_entry_with_duplicate_heading_does_not_cover_ui() {
+  local repo="${TMP_ROOT}/removed-duplicate-heading"
+  setup_repo "$repo"
+  commit_approval "$repo" "Same heading"
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Unapproved visible UI change"
+  printf '\n## Same heading\n\n- User approval: approved by Paul in the communicator chat, 2026-10-21 08:00: "Ja (second entry)."\n- Approved customer-visible result: Second entry.\n- Scope: the second entry and this approval record.\n%s\n' \
+    "$WHATS_NEW_NONE" >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" commit -q -am "Approve with a second entry of the same heading"
+  expect_gate_success "$repo"
+  perl -0pi -e 's/\n## Same heading\n\n- User approval: approved by Paul in the communicator chat, 2026-10-21 08:00:.*\z//s' \
+    "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" commit -q -am "Remove the second entry again"
+  expect_gate_due "$repo"
+  assert_contains "$(run_gate "$repo")" "apps/control-center/src/components/overview-screen.tsx"
+}
+
+# An entry committed as "no visible change" and corrected in place to Paul's
+# approval counts as Paul's approval (Codex review of #823 at a6d563b4).
+test_no_visible_change_corrected_to_paul_approval_covers_ui() {
+  local repo="${TMP_ROOT}/no-visible-change-corrected-to-approval"
+  setup_repo "$repo"
+  export GIT_COMMITTER_DATE="2026-10-23T07:00:00Z"
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Visible UI change"
+  commit_file "$repo" "companion/fix.go" "Companion fix"
+  printf '\n## Companion fix\n\n%s\n- Approved customer-visible result: No screen differs.\n- Scope: companion/fix.go and this approval record.\n%s\n' \
+    "$NO_CHANGE_LINE" "$WHATS_NEW_NONE" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" commit -q -am "Record the companion fix"
+  expect_gate_due "$repo"
+  NO_CHANGE_LINE="$NO_CHANGE_LINE" perl -pi -e 's/^\Q$ENV{NO_CHANGE_LINE}\E$/- User approval: approved by Paul in the communicator chat, 2026-10-23 09:00: "Ja, die Übersicht passt so."/' \
+    "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" commit -q -am "Correct the entry to Paul's approval"
+  expect_gate_success "$repo"
+  export GIT_COMMITTER_DATE="2026-10-18T07:00:00Z"
+}
+
 # An approval entry that a later commit removes again approves nothing (Codex
 # review of #823): the UI change before it is due again.
 test_removed_approval_entry_does_not_cover_ui() {
@@ -1343,6 +1402,9 @@ test_no_visible_change_keeps_earlier_unscoped_approval_ui_due
 test_no_visible_change_after_merge_of_base_ui_passes
 test_corrected_no_visible_change_entry_needs_its_scope
 test_code_example_in_log_is_no_entry
+test_entry_inside_existing_code_block_is_no_entry
+test_removed_entry_with_duplicate_heading_does_not_cover_ui
+test_no_visible_change_corrected_to_paul_approval_covers_ui
 test_pending_and_draft_stay_due_next_to_the_new_forms
 test_unrecognized_approval_value_is_due
 test_every_added_entry_needs_all_four_fields

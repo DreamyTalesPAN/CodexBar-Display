@@ -14,7 +14,9 @@ process.chdir(repoRoot);
 const GIT_MAX_BUFFER = 1 << 28;
 
 // CRLF from a Windows autocrlf checkout must not make old entries look new.
-const DIFF_OPTIONS = ["--unified=0", "--ignore-cr-at-eol"];
+// The whole log is the diff's context: a code fence that opens in an unchanged
+// line must be known to the lines added inside it (Codex review of #823).
+const DIFF_OPTIONS = ["--unified=100000000", "--ignore-cr-at-eol"];
 
 const APPROVAL_FILE = "docs/control-center-customer-ui-approval.md";
 const PRINCIPLES_FILE = "docs/control-center-ui-principles.md";
@@ -196,14 +198,30 @@ function analysisHeadRef() {
 function latestApprovalCommit(ref) {
   const commits = lines(git(["log", "--format=%H", ref, "--", APPROVAL_FILE]));
   // An entry a later commit removed again approves nothing: it must still be
-  // in the file at ref (by its heading), else the UI change before it would be
-  // counted as covered by an approval that is gone.
-  const headingsAtRef = new Set(lines(readRecordFile(APPROVAL_FILE, ref)).filter((line) => line.startsWith("## ")));
+  // in the file at ref, else the UI change before it would be counted as
+  // covered by an approval that is gone. Entries are told apart by heading; an
+  // entry whose heading is in the log more than once survives only while the
+  // log at ref has as many entries with that heading as right after the commit
+  // (Codex review of #823): an older entry with the same heading does not keep
+  // a removed one alive.
+  const countsAtRef = headingCounts(readRecordFile(APPROVAL_FILE, ref));
   return (
-    commits.find((commit) =>
-      addedEntries(commitDiff(commit)).some((entry) => headingsAtRef.has(entry.split("\n")[0].trim())),
-    ) || null
+    commits.find((commit) => {
+      const countsAtCommit = headingCounts(readRecordFile(APPROVAL_FILE, commit));
+      return addedEntries(commitDiff(commit)).some((entry) => {
+        const heading = entryHeading(entry);
+        return (countsAtRef.get(heading) || 0) >= Math.max(1, countsAtCommit.get(heading) || 0);
+      });
+    }) || null
   );
+}
+
+function headingCounts(text) {
+  const counts = new Map();
+  for (const entry of entriesOf(recordLines(text.split("\n")))) {
+    counts.set(entryHeading(entry), (counts.get(entryHeading(entry)) || 0) + 1);
+  }
+  return counts;
 }
 
 function changedFilesSince(commit, ref) {
@@ -266,9 +284,7 @@ function noVisibleChangeUncoveredUiFiles(commit) {
   const branchFiles = forkPoint
     ? lines(tryGit(["diff", "--no-renames", "--name-only", forkPoint, parent]))
     : null;
-  // The entries as they read now count too: one corrected in place may name
-  // its scope only in the corrected text.
-  const entryText = [addedApprovalText(commitDiff(commit)), ...entryVersions(commit).flatMap((versions) => versions.slice(1))].join("\n");
+  const entryText = entriesAsTheyReadNow(commit).map(({ text }) => text).join("\n");
   return unique([
     ...changedFilesSince(previous, parent)
       .filter(isUiFile)
@@ -280,27 +296,31 @@ function noVisibleChangeUncoveredUiFiles(commit) {
 }
 
 function onlyNoVisibleChange(commit) {
-  const versions = entryVersions(commit);
-  return (
-    versions.length > 0 &&
-    versions.every((entryAsCommittedAndNow) => entryAsCommittedAndNow.some(saysNoVisibleChange))
-  );
+  const entries = entriesAsTheyReadNow(commit);
+  return entries.length > 0 && entries.every(({ noVisibleChange }) => noVisibleChange);
 }
 
 function saysNoVisibleChange(entry) {
   return NO_VISIBLE_CHANGE_START.test(entryField(entry, "- User approval:").replace(LEADING_MARKDOWN, ""));
 }
 
-// Each entry a commit adds, as committed and as it reads in the analysed head
-// (Codex review of #823): an entry committed as pending and corrected in place
-// to "no visible change" later is a "no visible change" entry, though the
-// commit that added it does not say so.
-function entryVersions(commit) {
+// Each entry a commit adds, as it reads in the analysed head (Codex and Paul's
+// reviews of #823): an entry corrected in place later counts as corrected, from
+// pending to "no visible change" as well as from "no visible change" to Paul's
+// approval, and its corrected Scope is the one that names paths. An entry whose
+// heading is not in the log exactly once cannot be told apart: it reads as
+// committed, and counts as "no visible change" when it or any entry with its
+// heading says so.
+function entriesAsTheyReadNow(commit) {
   const now = entriesOf(recordLines(readRecordFile(APPROVAL_FILE, analysisRef).split("\n")));
-  return addedEntries(commitDiff(commit)).map((entry) => [
-    entry,
-    ...now.filter((block) => entryHeading(block) === entryHeading(entry)),
-  ]);
+  return addedRuns(commitDiff(commit))
+    .flatMap(entriesOf)
+    .map((entry) => {
+      const same = now.filter((block) => entryHeading(block) === entryHeading(entry));
+      return same.length === 1
+        ? { text: same[0], noVisibleChange: saysNoVisibleChange(same[0]) }
+        : { text: entry, noVisibleChange: [entry, ...same].some(saysNoVisibleChange) };
+    });
 }
 
 function entryHeading(entry) {
@@ -345,15 +365,10 @@ function namesPath(text, file) {
 }
 
 // The text of the entries the diff adds: only "## " blocks name a path. Each
-// hunk is read on its own, so a line added under an older entry further down
-// does not join a new entry added above it.
+// run of added lines is read on its own, so a line added under an older entry
+// further down does not join a new entry added above it.
 function addedApprovalText(diff) {
-  return diff
-    .split(/^(?=@@ )/m)
-    .flatMap((hunk) =>
-      entriesOf(recordLines(addedRawLines(hunk))),
-    )
-    .join("\n");
+  return addedRuns(diff).flatMap(entriesOf).join("\n");
 }
 
 function changedFilesInWorkingTree() {
@@ -366,8 +381,8 @@ function changedFilesInWorkingTree() {
 
 function workingTreeApprovalDiff() {
   return [
-    git(["diff", "--ignore-cr-at-eol", "--", APPROVAL_FILE]),
-    git(["diff", "--ignore-cr-at-eol", "--cached", "--", APPROVAL_FILE]),
+    git(["diff", ...DIFF_OPTIONS, "--", APPROVAL_FILE]),
+    git(["diff", ...DIFF_OPTIONS, "--cached", "--", APPROVAL_FILE]),
     untrackedFileContents(APPROVAL_FILE),
   ].join("\n");
 }
@@ -410,15 +425,59 @@ function approvalDiff(from, to) {
 }
 
 function addedLinesOf(diff) {
-  return diff.split(/^(?=@@ )/m).flatMap((hunk) => recordLines(addedRawLines(hunk)));
+  return addedRuns(diff).flat();
 }
 
-// The added lines of a diff with their indentation.
-function addedRawLines(diff) {
-  return diff
-    .split("\n")
-    .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
-    .map((line) => line.slice(1));
+// The added lines of a diff that can be part of an entry (see recordLines),
+// trimmed, in runs: a run ends at an unchanged line, a hunk or a new file, as
+// the hunks of a diff without context would. The diff holds the whole log as
+// context, so a code fence is followed through unchanged lines too.
+function addedRuns(diff) {
+  const runs = [];
+  let run = [];
+  let fence = "";
+  const endRun = () => {
+    if (run.length > 0) {
+      runs.push(run);
+    }
+    run = [];
+  };
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("diff --git ")) {
+      endRun();
+      fence = "";
+      continue;
+    }
+    if (line.startsWith("-") || line.startsWith("\\")) {
+      continue;
+    }
+    const added = line.startsWith("+") && !line.startsWith("+++");
+    const unchanged = line.startsWith(" ") || line === "";
+    if (!added) {
+      endRun();
+      if (!unchanged) {
+        continue;
+      }
+    }
+    const raw = line.slice(1);
+    const text = raw.trim();
+    const marker = /^(`{3,}|~{3,})/.exec(text);
+    if (fence) {
+      if (marker && marker[1][0] === fence) {
+        fence = "";
+      }
+      continue;
+    }
+    if (marker) {
+      fence = marker[1][0];
+      continue;
+    }
+    if (added && !(/^( {4}|\t)/.test(raw) && text.startsWith("#"))) {
+      run.push(text);
+    }
+  }
+  endRun();
+  return runs;
 }
 
 // The trimmed lines of the log that can be part of an entry (Codex review of
