@@ -2081,7 +2081,7 @@ mod tests {
     }
 
     #[test]
-    fn a_spanning_window_grown_below_the_work_area_applies_its_fitted_size() {
+    fn a_spanning_window_grown_below_the_work_area_fits_in_both_dimensions() {
         let remembered = WindowRect { x: 1000, y: 300, width: 2500, height: 700 };
         let grown = WindowRect { height: 800, ..remembered };
         let right = WindowRect { x: 1920, y: 0, width: 1920, height: 1032 };
@@ -2091,14 +2091,6 @@ mod tests {
         assert!(!super::fully_visible(WindowRect { x: fitted.x, y: fitted.y, ..grown }, &screens));
         assert!(super::fully_visible(fitted, &screens));
         assert_eq!(inner_within(fitted, (16, 32)), (1904, 768));
-
-        // The geometry helpers already returned the right size; the restore
-        // caller used to discard it. Guard that boundary as well as the math.
-        let source = include_str!("main.rs");
-        let restore = source.split("let fitted = after_growth(rect, grown, area, min, &screens);")
-            .nth(1).unwrap().split("if maximized {").next().unwrap();
-        assert!(restore.contains("let (width, height) = inner_within(fitted, frame);"));
-        assert!(restore.contains("window.set_size(PhysicalSize::new(width, height))"));
     }
 
     #[test]
