@@ -64,11 +64,15 @@ type UsageMetadata struct {
 	Tertiary         *RateWindow       `json:"tertiary"`
 	ExtraRateWindows []NamedRateWindow `json:"extraRateWindows"`
 	Extra            []NamedRateWindow `json:"extra"`
+
+	// Win-CodexBar's /usage serializes UsageSnapshot with snake_case keys.
+	ExtraRateWindowsSnake []NamedRateWindow `json:"extra_rate_windows"`
 }
 
 type RateWindow struct {
 	UsedPercent            *float64   `json:"usedPercent"`
 	WindowMinutes          *int       `json:"windowMinutes"`
+	WindowMinutesSnake     *int       `json:"window_minutes"`
 	ResetsAt               *time.Time `json:"resetsAt"`
 	ResetAt                *time.Time `json:"resetAt"`
 	IsSyntheticPlaceholder bool       `json:"isSyntheticPlaceholder"`
@@ -216,8 +220,10 @@ func indexUsageMetadata(usage UsageMetadata) map[string]usageWindowMetadata {
 	addStructuralWindow(index, "session", usage.Primary)
 	addStructuralWindow(index, "weekly", usage.Secondary)
 	addStructuralWindow(index, "tertiary", usage.Tertiary)
-	for _, extra := range append(usage.ExtraRateWindows, usage.Extra...) {
-		addNamedWindow(index, extra)
+	for _, extras := range [][]NamedRateWindow{usage.ExtraRateWindows, usage.ExtraRateWindowsSnake, usage.Extra} {
+		for _, extra := range extras {
+			addNamedWindow(index, extra)
+		}
 	}
 	return index
 }
@@ -229,7 +235,7 @@ func addStructuralWindow(index map[string]usageWindowMetadata, dashboardKind str
 	index[dashboardKind] = usageWindowMetadata{
 		usageKnown:      knownUsage(window.UsageKnown),
 		synthetic:       window.IsSyntheticPlaceholder || window.IsInformational || window.IsInformationalSnake,
-		windowMinutes:   window.WindowMinutes,
+		windowMinutes:   window.minutes(),
 		metadataReset:   window.resetAt(),
 		structuralAlias: true,
 	}
@@ -253,9 +259,16 @@ func addNamedWindow(index map[string]usageWindowMetadata, named NamedRateWindow)
 	index[id] = usageWindowMetadata{
 		usageKnown:    usageKnown,
 		synthetic:     named.Window.IsSyntheticPlaceholder || named.Window.IsInformational || named.Window.IsInformationalSnake,
-		windowMinutes: named.Window.WindowMinutes,
+		windowMinutes: named.Window.minutes(),
 		metadataReset: named.Window.resetAt(),
 	}
+}
+
+func (window RateWindow) minutes() *int {
+	if window.WindowMinutes != nil {
+		return window.WindowMinutes
+	}
+	return window.WindowMinutesSnake
 }
 
 func (window RateWindow) resetAt() *time.Time {

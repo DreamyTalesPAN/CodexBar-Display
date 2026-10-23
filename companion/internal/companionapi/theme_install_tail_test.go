@@ -92,7 +92,7 @@ func (tail *themeInstallTailServer) waitForPhase(t *testing.T, jobID string, pha
 	t.Helper()
 	var job themeInstallJob
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
-		job, _ = tail.server.themeInstallJobSnapshot(jobID)
+		job, _ = tail.server.installJobs.snapshot(jobID)
 		if job.Phase == phase {
 			return job
 		}
@@ -135,7 +135,7 @@ func TestThemeInstallReportsInstalledOnceVibeTVShowsTheme(t *testing.T) {
 			t.Fatal("device lock was not released after the stream refresh")
 		}
 	}
-	job, _ = tail.server.themeInstallJobSnapshot(jobID)
+	job, _ = tail.server.installJobs.snapshot(jobID)
 	if job.Phase != "complete" || job.Message != "Theme is active on VibeTV." {
 		t.Fatalf("stream refresh lines changed the finished job: %+v", job)
 	}
@@ -148,7 +148,7 @@ func TestThemeInstallWithoutUsageFrameWaitsForStreamRefresh(t *testing.T) {
 	jobID := tail.start(t, "clippy")
 	tail.waitForStream(t)
 	time.Sleep(50 * time.Millisecond)
-	if job, _ := tail.server.themeInstallJobSnapshot(jobID); job.Phase != "installing" {
+	if job, _ := tail.server.installJobs.snapshot(jobID); job.Phase != "installing" {
 		t.Fatalf("install without a usage frame finished before the stream refresh: %+v", job)
 	}
 	tail.finishFirstRefresh()
@@ -168,7 +168,7 @@ func TestSecondThemeInstallWaitsForPreviousStreamRefresh(t *testing.T) {
 	if calls := tail.installCalls.Load(); calls != 1 {
 		t.Fatalf("second install reached VibeTV during the first one's stream refresh: calls=%d", calls)
 	}
-	if job, _ := tail.server.themeInstallJobSnapshot(second); job.Phase != "installing" {
+	if job, _ := tail.server.installJobs.snapshot(second); job.Phase != "installing" {
 		t.Fatalf("waiting second install must stay installing: %+v", job)
 	}
 
@@ -238,7 +238,7 @@ func TestStreamRefreshFailureAfterInstalledStaysOutOfSetupLog(t *testing.T) {
 	if got := strings.Join(statuses, ","); got != "started,succeeded" {
 		t.Fatalf("setup log theme_install = %s, want started,succeeded", got)
 	}
-	if job, _ := tail.server.themeInstallJobSnapshot(jobID); job.Phase != "complete" || job.Error != nil {
+	if job, _ := tail.server.installJobs.snapshot(jobID); job.Phase != "complete" || job.Error != nil {
 		t.Fatalf("stream refresh failure changed the finished job: %+v", job)
 	}
 }
