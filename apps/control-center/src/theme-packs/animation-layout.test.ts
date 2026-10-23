@@ -47,9 +47,9 @@ function bakedDividers(pack: ThemeRenderPack): Rect[] {
 // The colour every pixel of the screen shows from the static sprites (CBI) of a theme, painted in spec order; a pixel no
 // sprite paints shows the spec background. A sprite row r covers the pixels floor(r*H/h) up to floor((r+1)*H/h), the way
 // the device scales a sprite.
-function staticArt(pack: ThemeRenderPack): (x: number, y: number) => string {
+function staticArt(pack: ThemeRenderPack, drawn: (p: ThemePrimitive) => boolean = () => true): (x: number, y: number) => string {
   const screen: string[] = new Array(240 * 240).fill(pack.spec?.bg ?? "#000000");
-  for (const p of pack.spec?.p ?? []) {
+  for (const p of (pack.spec?.p ?? []).filter(drawn)) {
     const asset = p.t === "sp" && p.a?.endsWith(".cbi") ? pack.assets?.[p.a] : undefined;
     const sprite = asset?.data.startsWith("CBI1") ? decodeSprite(asset.data) : null;
     if (!sprite) continue;
@@ -425,5 +425,37 @@ describe("no text ink comes within 3 px of the screen edge", () => {
 describe("no text ink comes within 3 px of a divider, frame line, bar or ring", () => {
   it.each(catalogIds)("%s", (themeId) => {
     expect(inkHits(loadPack(themeId), themeId)).toEqual([]);
+  });
+});
+
+// Codex as the only provider has one window, so one limit. What stands for a second limit that is not there is not drawn: Clippy's etched
+// divider, Gauge's footer divider and Pixel Battery's second battery belong to slot 2 (7215: a divider over an empty lower half, an empty battery
+// without a name).
+describe("one window draws nothing of a second limit", () => {
+  const one = frameFor(false, "remaining", undefined, undefined, undefined, 424000, SCENARIOS[2]);
+  const two = frameFor(false, "remaining", undefined, undefined, undefined, 424000, SCENARIOS[0]);
+
+  it.each([["clippy", 2], ["gauge", 1]])("%s's divider is drawn between two limits only", (themeId, dividers) => {
+    const prims = loadPack(themeId).spec?.p ?? [];
+    const rects = (frame: FrameData) => prims.filter((p) => p.t === "r" && primitiveUsageSlotVisible(p, frame));
+    expect(rects(one)).toEqual([]);
+    expect(rects(two)).toHaveLength(dividers);
+  });
+
+  it.each(catalogIds)("%s: no art around the second limit's bar", (themeId) => {
+    const pack = loadPack(themeId), prims = pack.spec?.p ?? [];
+    const artAt = staticArt(pack, (p) => primitiveUsageSlotVisible(p, one));
+    for (const bar of prims.filter((p) => p.t === "p" && slotOf(p) === 2)) {
+      const colours = new Set<string>();
+      for (let y = (bar.y ?? 0) - 4; y < (bar.y ?? 0) + (bar.h ?? 0) + 4; y++) for (let x = (bar.x ?? 0) - 4; x < (bar.x ?? 0) + (bar.w ?? 0) + 4; x++) colours.add(artAt(x, y));
+      expect([...colours]).toHaveLength(1);
+    }
+  });
+
+  it("Pixel Battery draws the second battery with two windows", () => {
+    const prims = loadPack("pixel-battery").spec?.p ?? [];
+    const second = (frame: FrameData) => prims.filter((p) => p.a === "/themes/u/pba-b2.cbi" && primitiveUsageSlotVisible(p, frame));
+    expect(second(one)).toEqual([]);
+    expect(second(two)).toHaveLength(1);
   });
 });
