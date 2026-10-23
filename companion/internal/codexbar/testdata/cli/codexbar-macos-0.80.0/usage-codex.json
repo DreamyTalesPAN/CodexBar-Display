@@ -1,0 +1,101 @@
+[
+  {
+    "credits": {
+      "balanceIsWorkspace": false,
+      "balanceReadSucceeded": true,
+      "creditsAvailable": true,
+      "events": [],
+      "remaining": 58866.22830125,
+      "updatedAt": "2026-10-23T07:28:03Z"
+    },
+    "openaiDashboard": {
+      "accountID": "",
+      "accountPlan": "Pro 20x",
+      "creditEvents": [],
+      "creditsAvailable": true,
+      "creditsRemaining": 62633.92747425,
+      "dailyBreakdown": [],
+      "primaryLimit": {
+        "resetDescription": "Oct 24 at 23:14",
+        "resetsAt": "2026-10-24T21:14:05Z",
+        "usedPercent": 10,
+        "windowMinutes": 10080
+      },
+      "signedInEmail": "redacted@example.com",
+      "subscriptionRenewsAt": "2026-11-09T09:04:37Z",
+      "updatedAt": "2026-10-19T08:54:40Z",
+      "usageBreakdown": []
+    },
+    "pace": {
+      "secondary": {
+        "deltaPercent": -3,
+        "expectedUsedPercent": 9,
+        "stage": "slightlyBehind",
+        "summary": "3% in reserve | Expected 9% used | Lasts until reset",
+        "willLastToReset": true
+      }
+    },
+    "provider": "codex",
+    "rateWindowLabels": {
+      "secondary": "Weekly"
+    },
+    "resetCredits": {
+      "available": 2,
+      "nextExpiresAt": "2026-10-29T18:57:50Z"
+    },
+    "source": "oauth",
+    "usage": {
+      "accountEmail": "redacted@example.com",
+      "codexResetCredits": {
+        "availableCount": 2,
+        "credits": [
+          {
+            "description": "Thanks for using Codex! You've been granted one free rate limit reset.",
+            "expires_at": "2026-10-29T18:57:50Z",
+            "granted_at": "2026-09-29T18:57:50Z",
+            "id": "redacted-reset-credit",
+            "reset_type": "codex_rate_limits",
+            "status": "available",
+            "title": "Full reset"
+          },
+          {
+            "description": "Thanks for using Codex! You've been granted one free rate limit reset.",
+            "expires_at": "2026-11-06T23:27:33Z",
+            "granted_at": "2026-10-07T23:27:33Z",
+            "id": "redacted-reset-credit",
+            "reset_type": "codex_rate_limits",
+            "status": "available",
+            "title": "Full reset"
+          }
+        ],
+        "updatedAt": "2026-10-23T07:28:03Z"
+      },
+      "dataConfidence": "exact",
+      "identity": {
+        "accountEmail": "redacted@example.com",
+        "loginMethod": "pro",
+        "providerID": "codex"
+      },
+      "loginMethod": "pro",
+      "primary": null,
+      "providerCost": {
+        "balance": 58866.22830125,
+        "balanceUpdatedAt": "2026-10-23T07:28:03Z",
+        "currencyCode": "Credits",
+        "limit": 0,
+        "period": "Extra usage",
+        "updatedAt": "2026-10-23T07:28:03Z",
+        "used": 0
+      },
+      "secondary": {
+        "resetDescription": "Oct 29 at 6:09\u202fPM",
+        "resetsAt": "2026-10-29T17:09:54Z",
+        "usedPercent": 6,
+        "windowMinutes": 10080
+      },
+      "tertiary": null,
+      "updatedAt": "2026-10-23T07:28:03Z"
+    },
+    "version": "0.153.0"
+  }
+]

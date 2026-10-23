@@ -125,3 +125,55 @@ func TestCLIFixtures(t *testing.T) {
 		})
 	}
 }
+
+// TestCodexDashboardLimitIsNotSession pins the recorded 0.80 Codex shape: the
+// only limit in usage.primary's place is openaiDashboard.primaryLimit, a
+// 10080-minute (weekly) window. It must not become the Session slot.
+func TestCodexDashboardLimitIsNotSession(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "cli", "codexbar-macos-0.80.0", "usage-codex.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame, err := parseUsageJSON(raw)
+	if err != nil {
+		t.Fatalf("parseUsageJSON: %v", err)
+	}
+	if !frame.Frame.SessionUnavailable {
+		t.Fatalf("session = %d%%, want unavailable: the dashboard limit is a 10080-minute window", frame.Frame.Session)
+	}
+	for _, window := range frame.Meta.Windows {
+		if window.ID == "primary" {
+			t.Fatalf("window %+v labelled as the primary slot", window)
+		}
+	}
+	if frame.Frame.Weekly != 6 || frame.Frame.WeeklyUnavailable {
+		t.Fatalf("weekly = %d%% (unavailable=%v), want 6%%", frame.Frame.Weekly, frame.Frame.WeeklyUnavailable)
+	}
+}
+
+// The pinned release must keep the recorded signed-in providers ready in both
+// the all-provider collection and the exact provider checks.
+func TestPinnedCLIFixtureReadiness(t *testing.T) {
+	for _, name := range []string{"usage-all.json", "serve-usage.json", "usage-codex.json", "usage-claude.json"} {
+		t.Run(name, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join("testdata", "cli", "codexbar-macos-"+PinnedVersion, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids := []string{"codex", "claude"}
+			if name == "usage-codex.json" {
+				ids = ids[:1]
+			}
+			if name == "usage-claude.json" {
+				ids = ids[1:]
+			}
+			for _, id := range ids {
+				got := exactProviderReadinessFromOutput(id, raw, nil, nil)
+				if got.Status != ProviderReady {
+					t.Fatalf("%s readiness = %s, want ready", id, got.Status)
+				}
+				t.Logf("%s: %s (%s)", id, got.Status, got.Source)
+			}
+		})
+	}
+}
