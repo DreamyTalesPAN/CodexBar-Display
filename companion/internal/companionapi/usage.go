@@ -342,18 +342,19 @@ func usageHasFreshSnapshotAfter(usage daemon.PersistedUsage, requestedAt time.Ti
 	if requestedAt.IsZero() {
 		return usageHasFreshSnapshot(usage)
 	}
-	if len(usage.Providers) == 0 {
-		return false
-	}
+	hasFresh := false
 	for _, provider := range usage.Providers {
-		if provider.Stale || provider.CollectedAt.IsZero() {
+		// Failed providers stay unavailable, but cannot keep working providers
+		// refreshing (#936). A failed first reading has a timestamp, too.
+		if provider.Stale || provider.NoReading || provider.Frame.UsageUnavailable {
+			continue
+		}
+		if provider.CollectedAt.IsZero() || provider.CollectedAt.Before(requestedAt) {
 			return false
 		}
-		if provider.CollectedAt.Before(requestedAt) {
-			return false
-		}
+		hasFresh = true
 	}
-	return true
+	return hasFresh
 }
 
 func usageHasFreshSnapshot(usage daemon.PersistedUsage) bool {
