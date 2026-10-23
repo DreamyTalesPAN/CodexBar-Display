@@ -9942,3 +9942,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: an installed legacy Mac App keeps its existing verified hosted DMG migration action. Installed non-legacy apps still use their runtime release result, so the initial firmware update remains available despite an unrelated hosted download failure; outside-installed and failed-runtime behavior remain unchanged.
 - Scope: exclude required legacy migration from the runtime-only condition in `control-center-app.tsx`, extend `control-center-app.mac-app-up-to-date.test.tsx` with the existing legacy download path, and this record. New-head CI, Codex and Mac/Windows cold/warm validation remain required; earlier hardware results remain historical.
 - What's new: none — preserves an existing migration action while retaining the firmware-check fix.
+
+## 2026-10-23 — #214: apply Reduce motion to the open 3D preview
+
+- User approval: pending final rendered acceptance by Paul. The autonomous night-work task and O19 message msg_c2eaa4982ec5 authorize this isolated accessibility fix; they do not establish personal sight approval.
+- Approved customer-visible result: switching on the computer's Reduce motion setting stops the existing 3D device sway immediately, including its pending idle delay. Switching it off restores the existing sway behavior without reopening the page. Layout, model, live usage and manual rotation remain unchanged.
+- Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx`, its focused regression tests and this append-only record. This addresses one part of #214; its remaining accessibility targets stay open. Exact-head CI, Codex and native validation are pending; no merge or release approval is implied.
+- What's new: none — accessibility correction to the existing motion preference, no new feature or control.
