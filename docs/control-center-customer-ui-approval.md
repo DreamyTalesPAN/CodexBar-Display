@@ -11365,3 +11365,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #909 as in its own entries plus the entries merged with 9ea560c7; the reset-in-footer switch stays in Limits on VibeTV and its Update needed line is 13 px like the other small text of the calm Settings.
 - Scope: the merge of 9ea560c7 and this approval record. Pull request branch #909 only, not merged, not released.
 - What's new: none — merge of 9ea560c7, no customer-visible change of its own
+
+## 2026-10-23 — #909: approval marker after merging main at 81dfc95b
+
+- User approval: no visible change – UI approval not needed (merge of main (81dfc95b) into #909; the existing approval entries remain unchanged).
+- Approved customer-visible result: #909 retains its existing customer-visible behavior; the merge adapts regression tests to the recorded CodexBar 0.80 fixture, without changing runtime behavior.
+- Scope: the merge of 81dfc95b into PR #909 and this approval record; no main merge, release, or device write.
+- What's new: none — merge with main, no customer-visible change of its own
