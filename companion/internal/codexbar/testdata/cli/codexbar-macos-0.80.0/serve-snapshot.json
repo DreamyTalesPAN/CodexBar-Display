@@ -1,18 +1,18 @@
 {
-  "generatedAt": "2026-10-14T07:42:19Z",
+  "generatedAt": "2026-10-23T07:28:26Z",
   "host": {
-    "codexBarVersion": "0.75.0",
+    "codexBarVersion": "0.80.0",
     "refreshIntervalSeconds": 60,
     "usageBarsShowUsed": false
   },
   "providers": [
     {
       "cost": {
-        "last30DaysUSD": 1631.13689309,
-        "todayUSD": 4.27091928
+        "last30DaysUSD": 888.1057176800018,
+        "todayUSD": null
       },
       "credits": {
-        "remaining": 62633.92747425,
+        "remaining": 58866.22830125,
         "unit": "credits"
       },
       "display": {
@@ -30,20 +30,20 @@
       "name": "Codex",
       "source": "oauth",
       "status": null,
-      "updatedAt": "2026-10-14T07:42:13Z",
+      "updatedAt": "2026-10-23T07:28:24Z",
       "windows": [
         {
           "kind": "weekly",
           "label": "Weekly",
-          "remainingPercent": 30,
-          "resetAt": "2026-10-20T05:30:11Z",
-          "usedPercent": 70
+          "remainingPercent": 94,
+          "resetAt": "2026-10-29T17:09:54Z",
+          "usedPercent": 6
         }
       ]
     },
     {
       "cost": {
-        "last30DaysUSD": 1.8395444,
+        "last30DaysUSD": 0,
         "todayUSD": null
       },
       "credits": null,
@@ -62,27 +62,27 @@
       "name": "Claude",
       "source": "web",
       "status": null,
-      "updatedAt": "2026-10-14T07:42:19Z",
+      "updatedAt": "2026-10-23T07:28:25Z",
       "windows": [
         {
           "kind": "session",
           "label": "Session",
-          "remainingPercent": 95,
-          "resetAt": "2026-10-14T10:30:00Z",
-          "usedPercent": 5
+          "remainingPercent": 51,
+          "resetAt": "2026-10-23T08:29:59Z",
+          "usedPercent": 49
         },
         {
           "kind": "weekly",
           "label": "Weekly",
-          "remainingPercent": 90,
-          "resetAt": "2026-10-20T11:00:00Z",
-          "usedPercent": 10
+          "remainingPercent": 14,
+          "resetAt": "2026-10-27T10:59:59Z",
+          "usedPercent": 86
         },
         {
           "kind": "claude-weekly-scoped-fable",
           "label": "Fable only",
           "remainingPercent": 100,
-          "resetAt": "2026-10-20T11:00:00Z",
+          "resetAt": "2026-10-27T11:00:00Z",
           "usedPercent": 0
         }
       ]
