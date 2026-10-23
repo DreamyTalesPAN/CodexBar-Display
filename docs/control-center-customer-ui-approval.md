@@ -10781,3 +10781,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: none new; a refresh that waits shows only the spinning Refresh button, with nothing above the token total.
 - Scope: one test in usage-screen.test.tsx and this approval record. Pull request branch #783 only, not merged, not released.
 - What's new: none — test only
+
+## 2026-10-23 — #783: approval marker after merging main at 81dfc95b
+
+- User approval: no visible change – UI approval not needed (merge of main (81dfc95b) into #783; the existing approval entries remain unchanged).
+- Approved customer-visible result: #783 retains its existing customer-visible behavior; the merge adapts regression tests to the recorded CodexBar 0.80 fixture, without changing runtime behavior.
+- Scope: the merge of 81dfc95b into PR #783 and this approval record; no main merge, release, or device write.
+- What's new: none — merge with main, no customer-visible change of its own
