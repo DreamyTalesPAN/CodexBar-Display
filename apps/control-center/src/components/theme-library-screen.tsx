@@ -89,6 +89,7 @@ import { ThemeRenderPreview } from "./theme-render-preview";
 import { ReplaceDraftDialog } from "./theme-studio/replace-draft-dialog";
 import { clampProgress } from "./update-jobs";
 import { SetupStepFailedDialog } from "./setup/setup-provider-dialogs";
+import { ProcessSteps, type ProcessStep } from "./process-steps";
 import type { ApiError, StandbySettings } from "./control-center-types";
 import {
   ThemeStudioScreen,
@@ -1367,8 +1368,18 @@ function InlineInstallProgress({
   const detail = complete
     ? installedDetail || status.message || (usage === "screensaver" ? "Screensaver is ready on VibeTV." : "Theme is active on VibeTV.")
     : status.message || status.logs[status.logs.length - 1] || `Preparing ${noun.toLowerCase()} install.`;
-  const previousSteps = complete ? [] : status.logs.slice(-4, -1);
   const title = complete ? "Installed" : "Installing";
+  // The steps of a running install read as the setup log does. Ids keep their
+  // log position, so a step that has been shown does not fly in again.
+  const logOffset = Math.max(0, status.logs.length - 4);
+  const steps: ProcessStep[] = [
+    ...status.logs.slice(-4, -1).map((text, index) => ({
+      id: `${logOffset + index}-${text}`,
+      text,
+      tone: "done" as const,
+    })),
+    { id: `${status.logs.length - 1}-${detail}`, text: detail },
+  ];
   return (
     <div className="flex flex-col gap-3" ref={noticeRef} role="status" aria-live="polite">
       {complete ? null : <Progress aria-label={title} className="animate-pulse" value={clampProgress(status.progress)} />}
@@ -1376,12 +1387,7 @@ function InlineInstallProgress({
         {complete ? <ShieldCheck aria-hidden /> : <Spinner />}
         <AlertTitle>{title}</AlertTitle>
         <AlertDescription>
-          <p>{detail}</p>
-          {previousSteps.length > 0 ? (
-            <ol className="mt-2 flex flex-col gap-1 text-xs leading-5">
-              {previousSteps.map((step) => <li key={step}>{step}</li>)}
-            </ol>
-          ) : null}
+          {complete ? <p>{detail}</p> : <ProcessSteps steps={steps} />}
         </AlertDescription>
       </Alert>
     </div>

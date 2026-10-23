@@ -40,6 +40,7 @@ import {
 import { hasFirmwareUpdate, type FirmwareUpdateInfo } from "@/lib/firmware";
 import { statusForHost } from "@/lib/customer-platform";
 import type { CompanionInfo } from "./control-center-types";
+import { ProcessSteps } from "./process-steps";
 import { SetupDialog } from "./setup/setup-dialog";
 import { clampProgress } from "./update-jobs";
 
@@ -566,7 +567,13 @@ function InlineUpdateProgress({
           <RefreshCw className="animate-spin" aria-hidden />
         )}
         <AlertTitle>{title}</AlertTitle>
-        <AlertDescription>{detail}</AlertDescription>
+        <AlertDescription>
+          {complete || attention ? (
+            detail
+          ) : (
+            <ProcessSteps steps={[{ id: detail, text: detail }]} variant="single" />
+          )}
+        </AlertDescription>
         {attention ? (
           <AlertAction className="flex gap-2">
             {status.outcome === "firmware_current_theme_attention" ? (

@@ -97,12 +97,13 @@ export function SetupDialog({
         data-notice-kind={noticeKind}
         className={wide ? "sm:max-w-[480px]" : undefined}
         style={{ animation: "none" }}
+        {...(description === undefined ? { "aria-describedby": undefined } : {})}
         onInteractOutside={(event) => event.preventDefault()}
         onOpenAutoFocus={onOpenAutoFocus}
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          {description !== undefined ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
         {children}
         {primaryAction || secondaryAction || showCloseButton ? (

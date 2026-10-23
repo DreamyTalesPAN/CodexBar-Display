@@ -102,7 +102,7 @@ try {
   }
   await input.fill("A quiet office");
   await create.click();
-  await page.getByRole("dialog",{name:"Create with AI",exact:true}).waitFor();
+  await page.getByRole("dialog",{name:"Add OpenAI key",exact:true}).waitFor();
   await page.keyboard.press("Escape");
   assert.equal(await input.inputValue(),"A quiet office");
   assert.equal(requests.length,0);
@@ -304,7 +304,7 @@ try {
   const count=requests.length;
   await input.fill("A softer atmosphere");
   await create.click();
-  await page.getByRole("dialog",{name:"Create with AI",exact:true}).waitFor();
+  await page.getByRole("dialog",{name:"Add OpenAI key",exact:true}).waitFor();
   assert.equal(requests.length,count);
   assert.equal(await page.getByLabel("OpenAI key",{exact:true}).inputValue(),"");
   await page.keyboard.press("Escape");

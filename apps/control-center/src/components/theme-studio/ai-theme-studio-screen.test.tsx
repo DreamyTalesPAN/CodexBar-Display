@@ -2,12 +2,10 @@
 import { readFileSync } from "node:fs";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildAIThemeCandidate, fetchAIThemeCapabilities, generateAIThemeConcept, planAIThemeLayout } from "@/lib/ai-theme";
+import { buildAIThemeCandidate, fetchAIThemeCapabilities, generateAIThemeConcept, planAIThemeLayout, saveAIThemeCredential, verifyAIThemeCredential } from "@/lib/ai-theme";
+import { createBlankThemeSpec } from "@/lib/theme-studio";
 import { AIThemeStudioScreen } from "./ai-theme-studio-screen";
-
-vi.mock("@/components/ui/sidebar", () => ({
-  useSidebar: () => ({ open: true, setOpen: () => {} }),
-}));
+import { createDesignElement } from "./design-controls";
 
 vi.mock("@/lib/ai-theme", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/ai-theme")>()),
@@ -79,8 +77,12 @@ describe("Theme Studio progress line", () => {
     await waitFor(() => expect(statusLines()).toHaveLength(1));
     expect(PLANNING).toContain(statusLines()[0].textContent?.replace(/^> /, ""));
     expect(statusLines()[0].textContent).toBe("> Understanding your idea…");
-    // No black cursor block after the words any more.
+    // The line is the shared ProcessSteps component, single variant, and has no cursor block.
+    const processSteps = document.querySelector('[data-slot="process-steps"]');
+    expect(processSteps?.getAttribute("data-variant")).toBe("single");
+    expect(processSteps?.querySelectorAll(":scope > div")).toHaveLength(1);
     expect(document.querySelector('[class*="vibetv-caret-blink"]')).toBeNull();
+    expect(document.querySelector('[class*="caret"]')).toBeNull();
 
     // Within the planning step the word swaps after 2.5 s, still one line.
     await waitFor(() => expect(statusLines()[0].textContent).not.toBe("> Understanding your idea…"), { timeout: 4000 });
@@ -131,15 +133,160 @@ describe("Theme Studio progress line", () => {
 });
 
 describe("Theme Studio notices", () => {
-  it("shows a notice under the toolbar, not at the bottom of the chat column", async () => {
+  it("shows a notice in the header row, right-aligned and left of Save, not in the chat column", async () => {
     render(<AIThemeStudioScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Add manually" }));
     fireEvent.click(await screen.findByRole("button", { name: /^Text/ }));
 
     const notice = await screen.findByText("Element added. Select it on the display to make it yours.");
     const header = document.querySelector("header") as HTMLElement;
-    expect(header.nextElementSibling?.contains(notice)).toBe(true);
+    expect(header.contains(notice)).toBe(true);
+    expect(notice.parentElement?.className).toContain("text-right");
+    expect(notice.className).toContain("font-normal");
+    expect(notice.compareDocumentPosition(screen.getByRole("button", { name: "Save" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole("region", { name: "AI creation" }).contains(notice)).toBe(false);
+    // The buttons keep their width, so a long notice wraps instead of pushing them out of the window.
+    expect(screen.getByRole("button", { name: "Save" }).parentElement?.className).toContain("shrink-0");
+    // The notice keeps a reserved width (two lines at most) and the design name is what gives way:
+    // the header stays one row from 960 px up, so it does not grow taller.
+    expect(notice.parentElement?.className).toContain("min-w-40");
+    expect(notice.parentElement?.className).not.toContain("min-w-0");
+    // Below 960 px the header wraps into two rows instead of pushing the buttons out of the window.
+    expect(header.className.split(" ")).toContain("flex-wrap");
+    expect(header.className.split(" ")).not.toContain("flex-nowrap");
+    expect(header.className.split(" ")).toContain("min-[960px]:flex-nowrap");
+  });
+
+  it("cuts a long design name with an ellipsis and shows it in full on hover", () => {
+    render(<AIThemeStudioScreen initialTheme={{ packName: "Freche Sonnenbrillen-Sammlung", source: "custom", spec: createBlankThemeSpec() }} />);
+    const name = screen.getByLabelText("Design name") as HTMLInputElement;
+    expect(name.title).toBe("Freche Sonnenbrillen-Sammlung");
+    expect(name.className).toContain("text-ellipsis");
+    fireEvent.change(name, { target: { value: "Neu" } });
+    expect(name.value).toBe("Neu");
+    expect(name.title).toBe("Neu");
+  });
+
+  it("does not touch the navigation, so the sidebar stays as the customer left it (no provider needed)", () => {
+    render(<AIThemeStudioScreen />);
+    expect(screen.getByLabelText("Design name")).toBeTruthy();
+  });
+
+  it("sets the chat text at 13 px", async () => {
+    vi.mocked(planAIThemeLayout).mockReturnValue(new Promise(() => {}));
+    render(<AIThemeStudioScreen />);
+    expect(screen.getByText(/Describe a design, ask for a change/).className).toContain("text-[13px]");
+    await sendIdea();
+    expect((await screen.findByText("A tiny office at dusk")).className).toContain("text-[13px]");
+  });
+
+  it("sets the File menu entries in regular weight", async () => {
+    render(<AIThemeStudioScreen />);
+    fireEvent.click(within(document.querySelector("header") as HTMLElement).getByRole("button", { name: "File" }));
+    for (const name of ["New design", "Open saved design…", "Open design file…", "Download editable design", "Export theme pack"]) {
+      expect((await screen.findByRole("button", { name })).className).toContain("font-normal");
+    }
+  });
+
+  it("opens the key dialog with a plain heading and no subtitle", async () => {
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue({ enabled: true, providers: [{ id: "openai", configured: false }] } as never);
+    vi.mocked(planAIThemeLayout).mockReturnValue(new Promise(() => {}));
+    render(<AIThemeStudioScreen />);
+    await sendIdea();
+    const dialog = await screen.findByRole("dialog", { name: "Add OpenAI key" });
+    expect(dialog.textContent).not.toContain("Create with AI");
+    expect(dialog.textContent).not.toContain("Connect OpenAI to create your design.");
+  });
+});
+
+describe("Theme Studio composer (master 19.10.)", () => {
+  it("keeps Add/Cancel, Attach and the round Send button in the one input frame", async () => {
+    render(<AIThemeStudioScreen />);
+    const idea = await screen.findByLabelText("Your idea");
+    const frame = idea.parentElement as HTMLElement;
+    for (const name of ["Add manually", "Attach reference images", "Create"]) {
+      expect(frame.contains(screen.getByRole("button", { name }))).toBe(true);
+    }
+    expect(screen.getByRole("button", { name: "Create" }).getAttribute("class")).toContain("size-8 rounded-full");
+  });
+
+  it("draws the composer in the template's sizes: 32 px buttons, 12 px gaps, no space under it, editor 520 px high in an 800 px window", async () => {
+    render(<AIThemeStudioScreen />);
+    const classes = (element: Element) => element.getAttribute("class")?.split(/\s+/) ?? [];
+    const idea = await screen.findByLabelText("Your idea");
+    const row = screen.getByRole("button", { name: "Create" }).parentElement as HTMLElement;
+    // Textarea and button row each start 11 px under the line above (plus the 1 px frame), the row ends 7 px above it.
+    expect(classes(idea)).toEqual(expect.arrayContaining(["min-h-0", "pt-[11px]"]));
+    expect(classes(row)).toEqual(expect.arrayContaining(["pt-[11px]", "pb-[7px]"]));
+    expect(classes(screen.getByRole("button", { name: "Add manually" }))).toContain("size-8");
+    expect(classes(screen.getByRole("button", { name: "Attach reference images" }))).toContain("size-8");
+    // The round Send button wins over the shell's own radius rule only with the important marker.
+    expect(classes(screen.getByRole("button", { name: "Create" }))).toContain("rounded-full!");
+    // The empty alert area under the composer takes no margin.
+    expect(classes(screen.getByRole("region", { name: "AI creation" }).nextElementSibling!)).toContain("empty:mt-0");
+    // The composer sits on the bottom edge: no fixed margin under the editor.
+    expect(classes(document.querySelector("[data-theme-studio-root] main")!)).not.toContain("lg:mb-[98px]");
+  });
+
+  it("says what the field is for once there is a conversation, instead of a typed idea", async () => {
+    vi.mocked(planAIThemeLayout).mockReturnValue(new Promise(() => {}));
+    render(<AIThemeStudioScreen />);
+    await sendIdea();
+
+    const idea = screen.getByLabelText("Your idea") as HTMLTextAreaElement;
+    await waitFor(() => expect(idea.placeholder).toBe("Describe your design or what to change…"));
+  });
+});
+
+describe("Theme Studio small window", () => {
+  it("keeps the chat input in a bounded chat column while the preview scrolls above it", async () => {
+    render(<AIThemeStudioScreen />);
+    const classes = (element: Element) => element.getAttribute("class")?.split(/\s+/) ?? [];
+    const root = document.querySelector("[data-theme-studio-root]") as HTMLElement;
+    const preview = document.getElementById("theme-design-canvas")!.parentElement!;
+    const chatColumn = (await screen.findByRole("region", { name: "AI creation" })).parentElement!;
+
+    // Below the wide layout the editor has the window height and only the preview scrolls.
+    expect(classes(root)).toContain("h-[calc(100svh-86px)]");
+    expect(classes(preview)).toContain("overflow-y-auto");
+    // The chat column keeps its height, so the message list scrolls and the input stays visible.
+    expect(classes(chatColumn)).toEqual(expect.arrayContaining(["max-lg:max-h-[40svh]", "max-lg:shrink-0"]));
+    expect(chatColumn.contains(document.getElementById("ai-scene-request"))).toBe(true);
+  });
+
+  it("splits the wide editor 50/50, centers the preview and starts the chat at the top", async () => {
+    render(<AIThemeStudioScreen />);
+    const classes = (element: Element) => element.getAttribute("class")?.split(/\s+/) ?? [];
+    const preview = document.getElementById("theme-design-canvas")!.parentElement!;
+    const chatColumn = (await screen.findByRole("region", { name: "AI creation" })).parentElement!;
+    for (const column of [preview, chatColumn]) expect(classes(column)).toEqual(expect.arrayContaining(["lg:flex-1", "lg:basis-0"]));
+    expect(classes(chatColumn)).not.toContain("lg:w-[464px]");
+    const frame = document.querySelector('[aria-label="Selection workspace"]')!.querySelector(":scope > div") as HTMLElement;
+    expect(classes(frame)).toContain("row-start-2");
+    expect(classes(frame.firstElementChild!)).toContain("mx-auto");
+    expect(classes(screen.getByRole("log", { name: "Conversation" }))).not.toContain("[&>:first-child]:mt-auto");
+  });
+});
+
+describe("Theme Studio Details in a low window", () => {
+  it("gives Details their natural height so the left column scrolls as one and the colour field and palette are never cut off", async () => {
+    const text = { ...createDesignElement("text", 1), text: "Hello" };
+    render(<AIThemeStudioScreen initialTheme={{ packName: "Palette", source: "custom", spec: { ...createBlankThemeSpec(), primitives: [text] } }} />);
+    Element.prototype.setPointerCapture = () => {};
+    Element.prototype.releasePointerCapture = () => {};
+    const picked = document.querySelector('[aria-label^="Select "]') as Element;
+    fireEvent.pointerDown(picked, { button: 0, pointerId: 1 });
+    fireEvent.pointerUp(picked, { button: 0, pointerId: 1 });
+    const trigger = await screen.findByRole("button", { name: "Details" });
+    if (trigger.getAttribute("aria-expanded") !== "true") fireEvent.click(trigger);
+    const tools = await screen.findByRole("region", { name: "Selected element tools" });
+    const column = document.getElementById("theme-design-canvas")!.parentElement!;
+    // Between the Details content and the left column only the column scrolls: no scroll area of its own that would cut the palette off.
+    for (let node: HTMLElement | null = tools.parentElement; node && node !== column; node = node.parentElement) {
+      expect(node.className, node.className).not.toMatch(/overflow-y-auto|overflow-auto|overflow-hidden/);
+      expect(node.className, node.className).not.toMatch(/(^|\s)(lg:)?max-h-/);
+    }
+    expect(column.className).toContain("overflow-y-auto");
   });
 });
 
@@ -224,7 +371,7 @@ describe("Theme Studio example copy", () => {
 });
 
 describe("Theme Studio header", () => {
-  it("puts a File menu with five icon entries in the header and removes the gear dialog", async () => {
+  it("puts a File menu with five text entries in the header and removes the gear dialog", async () => {
     render(<AIThemeStudioScreen />);
     expect(screen.queryByRole("button", { name: "Design settings" })).toBeNull();
 
@@ -233,10 +380,187 @@ describe("Theme Studio header", () => {
     const entries = ["New design", "Open saved design…", "Open design file…", "Download editable design", "Export theme pack"];
     for (const name of entries) {
       const item = await screen.findByRole("button", { name });
-      expect(item.querySelector("svg")).not.toBeNull();
+      expect(item.querySelector("svg")).toBeNull();
     }
     expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
     expect(screen.getByRole("button", { name: "Undo last edit" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Redo edit" })).toBeTruthy();
+  });
+});
+
+describe("Theme Studio send reason", () => {
+  const sendButton = () => screen.getByRole("button", { name: "Send to VibeTV" });
+  const reasonLine = () => document.getElementById("send-blocked-reason");
+  // The tooltip sits on the wrapper: a disabled button takes no hover.
+  const tooltipOf = (button: HTMLElement) => button.parentElement;
+
+  it("says why an empty design cannot be sent, in the header and on the button", () => {
+    render(<AIThemeStudioScreen />);
+
+    expect(sendButton().hasAttribute("disabled")).toBe(true);
+    const reason = reasonLine();
+    expect(reason?.textContent).toBe("Add at least one visual element.");
+    const header = document.querySelector("header") as HTMLElement;
+    expect(header.contains(reason)).toBe(true);
+    expect(reason?.getAttribute("role")).toBe("status");
+    expect(tooltipOf(sendButton())?.getAttribute("title")).toBe("Add at least one visual element.");
+    expect(sendButton().hasAttribute("title")).toBe(false);
+    expect(sendButton().getAttribute("aria-describedby")).toBe("send-blocked-reason");
+  });
+
+  it("shows a design limit reason once, in the header, not again in the chat alert", () => {
+    const text = { ...createDesignElement("text", 1), text: "x".repeat(1100) };
+    render(<AIThemeStudioScreen initialTheme={{ packName: "Long text", source: "custom", spec: { ...createBlankThemeSpec(), primitives: [text] } }} />);
+
+    expect(sendButton().hasAttribute("disabled")).toBe(true);
+    const reason = reasonLine()?.textContent;
+    expect(reason).toBeTruthy();
+    expect(reason).not.toBe("Add at least one visual element.");
+    expect(screen.queryByText(/This design needs an adjustment/)).toBeNull();
+    expect(screen.getAllByText(reason as string)).toHaveLength(1);
+    expect(tooltipOf(sendButton())?.getAttribute("title")).toBe(reason);
+  });
+
+  it("gives no reason while an install is running", () => {
+    render(<AIThemeStudioScreen installStatus={{ phase: "installing", themeId: "other", title: "Other", startedAt: "10:00:00", logs: [] }} />);
+
+    expect(sendButton().hasAttribute("disabled")).toBe(true);
+    expect(reasonLine()).toBeNull();
+    expect(tooltipOf(sendButton())?.hasAttribute("title")).toBe(false);
+  });
+
+  it("keeps the chat alert while no reason line can show, so the reason is never lost", () => {
+    const text = { ...createDesignElement("text", 1), text: "x".repeat(1100) };
+    render(<AIThemeStudioScreen
+      initialTheme={{ packName: "Long text", source: "custom", spec: { ...createBlankThemeSpec(), primitives: [text] } }}
+      installStatus={{ phase: "installing", themeId: "other", title: "Other", startedAt: "10:00:00", logs: [] }}
+    />);
+
+    expect(reasonLine()).toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain("This design needs an adjustment before saving.");
+  });
+
+  it("gives no reason while the design is being sent", async () => {
+    const send = deferred<boolean>();
+    render(<AIThemeStudioScreen onInstallTheme={() => send.promise} />);
+    fireEvent.click(screen.getByRole("button", { name: "Add manually" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Text/ }));
+    fireEvent.click(sendButton());
+
+    await screen.findByRole("button", { name: "Sending…" });
+    expect(reasonLine()).toBeNull();
+    expect(tooltipOf(screen.getByRole("button", { name: "Sending…" }))?.hasAttribute("title")).toBe(false);
+  });
+
+  it("keeps the send button width while it sends, so the toolbar does not move (#579)", async () => {
+    const send = deferred<boolean>();
+    render(<AIThemeStudioScreen onInstallTheme={() => send.promise} />);
+    fireEvent.click(screen.getByRole("button", { name: "Add manually" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Text/ }));
+    expect(sendButton().className).toContain("min-w-36");
+
+    fireEvent.click(sendButton());
+    expect(screen.getByRole("button", { name: "Sending…" }).className).toContain("min-w-36");
+  });
+
+  it("gives no reason when a valid design can be sent", async () => {
+    render(<AIThemeStudioScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Add manually" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Text/ }));
+
+    expect(sendButton().hasAttribute("disabled")).toBe(false);
+    expect(reasonLine()).toBeNull();
+    expect(tooltipOf(sendButton())?.hasAttribute("title")).toBe(false);
+  });
+});
+
+describe("Theme Studio key state against late capability answers (#847)", () => {
+  const theme = { assets: {}, packName: "Idea", source: "blank" as const, spec: createBlankThemeSpec(), usage: "live" as const };
+  const caps = (configured: boolean, verificationRequired = false) =>
+    ({ enabled: true, providers: [{ id: "openai", configured, verificationRequired }] }) as unknown as Awaited<ReturnType<typeof fetchAIThemeCapabilities>>;
+  // Consent is remembered in the browser; each test starts without it.
+  beforeEach(() => localStorage.removeItem("vibetv.aiTheme.consent"));
+
+  // The screen's mount read is still pending; a rerender with a new theme starts a second read, which enables Create.
+  async function openSetupWithMountReadPending(stale: ReturnType<typeof deferred<Awaited<ReturnType<typeof fetchAIThemeCapabilities>>>>) {
+    vi.mocked(fetchAIThemeCapabilities)
+      .mockReturnValueOnce(stale.promise)
+      .mockResolvedValueOnce(caps(false)) // the rerender's read: ready, no key yet
+      .mockResolvedValueOnce(caps(false)); // the key form's mount read
+    vi.mocked(planAIThemeLayout).mockResolvedValue({ mode: "answer", notes: "Done." } as never);
+    const { rerender } = render(<AIThemeStudioScreen initialTheme={theme} />);
+    rerender(<AIThemeStudioScreen initialTheme={{ ...theme }} />);
+    await sendIdea();
+    fireEvent.change(await screen.findByLabelText("OpenAI key", { selector: "input" }), { target: { value: "sk-test-key" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+  }
+
+  it("keeps the pending state after a failed save when a pre-save capability read answers late", async () => {
+    const stale = deferred<Awaited<ReturnType<typeof fetchAIThemeCapabilities>>>();
+    await openSetupWithMountReadPending(stale);
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValueOnce(caps(true, true)); // the read after the failed check
+    vi.mocked(saveAIThemeCredential).mockResolvedValue(undefined as never);
+    vi.mocked(verifyAIThemeCredential).mockRejectedValue(new Error("Check failed."));
+    fireEvent.click(screen.getByRole("button", { name: "Connect and continue" }));
+    await screen.findByRole("button", { name: "Retry connection check" });
+
+    stale.resolve(caps(false));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getByRole("dialog", { name: "Replace OpenAI key" })).toBeTruthy();
+  });
+
+  it("keeps a saved key ready when a pre-save capability read answers late", async () => {
+    const stale = deferred<Awaited<ReturnType<typeof fetchAIThemeCapabilities>>>();
+    await openSetupWithMountReadPending(stale);
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(caps(true));
+    vi.mocked(saveAIThemeCredential).mockResolvedValue(undefined as never);
+    vi.mocked(verifyAIThemeCredential).mockResolvedValue(true as never);
+    fireEvent.click(screen.getByRole("button", { name: "Connect and continue" }));
+    // The saved key carries the first request straight through to the AI.
+    await waitFor(() => expect(planAIThemeLayout).toHaveBeenCalledTimes(1));
+
+    stale.resolve(caps(false));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // A new idea goes straight to the AI: no key dialog opens again.
+    await sendIdea();
+    await waitFor(() => expect(planAIThemeLayout).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeps a saved key ready when a dismissed dialog's read answers after a newer dialog saved it", async () => {
+    const stale = deferred<Awaited<ReturnType<typeof fetchAIThemeCapabilities>>>();
+    vi.mocked(fetchAIThemeCapabilities)
+      .mockResolvedValueOnce(caps(false)) // the screen's mount read
+      .mockReturnValueOnce(stale.promise) // the first dialog's read, held
+      .mockResolvedValueOnce(caps(false)); // the second dialog's read
+    vi.mocked(planAIThemeLayout).mockResolvedValue({ mode: "answer", notes: "Done." } as never);
+    render(<AIThemeStudioScreen initialTheme={theme} />);
+    await sendIdea();
+    fireEvent.click(await screen.findByRole("button", { name: "Not now" }));
+    await sendIdea();
+    fireEvent.change(await screen.findByLabelText("OpenAI key", { selector: "input" }), { target: { value: "sk-test-key" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    vi.mocked(fetchAIThemeCapabilities).mockResolvedValue(caps(true));
+    vi.mocked(saveAIThemeCredential).mockResolvedValue(undefined as never);
+    vi.mocked(verifyAIThemeCredential).mockResolvedValue(true as never);
+    fireEvent.click(screen.getByRole("button", { name: "Connect and continue" }));
+    await waitFor(() => expect(planAIThemeLayout).toHaveBeenCalledTimes(1));
+
+    stale.resolve(caps(false));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await sendIdea();
+    await waitFor(() => expect(planAIThemeLayout).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("Theme Studio export notice", () => {
+  it("says on Windows where the theme pack went, without naming the file", async () => {
+    const text = { ...createDesignElement("text", 1), text: "Hello" };
+    render(<AIThemeStudioScreen windowsHost initialTheme={{ packName: "Palette", source: "custom", spec: { ...createBlankThemeSpec(), primitives: [text] } }} />);
+    const header = document.querySelector("header") as HTMLElement;
+    fireEvent.click(within(header).getByRole("button", { name: "File" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Export theme pack" }));
+    expect(await screen.findByText("Saved in your Downloads folder. Nothing was sent.")).toBeTruthy();
   });
 });

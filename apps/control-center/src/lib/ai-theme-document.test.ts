@@ -213,6 +213,82 @@ describe("companion sprites on the device", () => {
     for(const frame of decodeSprite(flattenCompanionSprites(document).assets[pet].data)!.frames)
       expect(frame.find(r=>r.x===0&&r.y===0)?.color).toBe('#0000FF');
   });
+  it("keeps every companion colour when a many-coloured backdrop is added", () => {
+    const pet = "/themes/u/ai-pet-1.cba";
+    const hex = (rgb: number[]) => `#${rgb.map((value) => value.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+    const companion = Array.from({ length: 12 }, (_, i) => [(i % 4) * 85, Math.floor(i / 4) * 85, 255]);
+    const frames = Array.from({ length: 4 }, () => {
+      const rgba = new Uint8ClampedArray(32 * 32 * 4);
+      companion.forEach((rgb, y) => rgba.set([...rgb, 255], y * 32 * 4));
+      return rgba;
+    });
+    const art = new Uint8ClampedArray(240 * 240 * 4);
+    for (let i = 0; i < 240 * 240; i++) {
+      const k = i % 26;
+      art.set([(k % 6) * 51, Math.floor(k / 6) * 51, 0, 255], i * 4);
+    }
+    const document = { packName: "Mixed", assets: {
+      [ART]: { contentType: "text/plain", encoding: "text", data: encodeAIThemeCBI1(art, 240, 240) },
+      [pet]: { contentType: "text/plain", encoding: "text", data: encodeAIThemeCBA1(frames, 32, 32, 2) },
+    }, spec: { primitives: [
+      { type: "sprite", x: 0, y: 0, width: 240, height: 240, assetPath: ART },
+      { type: "sprite", x: 0, y: 0, width: 32, height: 32, assetPath: pet },
+    ] } } as unknown as ThemeStudioDocument;
+    const sprite = decodeSprite(flattenCompanionSprites(document).assets[pet].data)!;
+    for (const frame of sprite.frames)
+      companion.forEach((rgb, y) => expect(frame.find((r) => r.x === 0 && r.y === y)?.color).toBe(hex(rgb)));
+  });
+  it("keeps every companion colour when the picture has only a few colours", () => {
+    const pet = "/themes/u/ai-pet-1.cba";
+    const hex = (rgb: number[]) => `#${rgb.map((value) => value.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+    const companion = Array.from({ length: 20 }, (_, y) => [(y % 6) * 51, Math.floor(y / 6) * 51, 255]);
+    const frames = Array.from({ length: 4 }, () => {
+      const rgba = new Uint8ClampedArray(48 * 48 * 4);
+      companion.forEach((rgb, y) => { for (let x = 0; x < 48; x++) rgba.set([...rgb, 255], (y * 48 + x) * 4); });
+      return rgba;
+    });
+    const art = new Uint8ClampedArray(240 * 240 * 4);
+    for (let i = 0; i < 240 * 240; i++) art.set([0, 0, 0, 255], i * 4);
+    const document = { packName: "Plain", assets: {
+      [ART]: { contentType: "text/plain", encoding: "text", data: encodeAIThemeCBI1(art, 240, 240) },
+      [pet]: { contentType: "text/plain", encoding: "text", data: encodeAIThemeCBA1(frames, 48, 48, 2) },
+    }, spec: { primitives: [
+      { type: "sprite", x: 0, y: 0, width: 240, height: 240, assetPath: ART },
+      { type: "sprite", x: 0, y: 0, width: 48, height: 48, assetPath: pet },
+    ] } } as unknown as ThemeStudioDocument;
+    const sprite = decodeSprite(flattenCompanionSprites(document).assets[pet].data)!;
+    for (const frame of sprite.frames)
+      companion.forEach((rgb, y) => expect(frame.find((r) => r.x === 0 && r.y === y)?.color).toBe(hex(rgb)));
+  });
+  it("keeps the picture's colours behind a companion that uses all 26 slots", () => {
+    const pet = "/themes/u/ai-pet-1.cba";
+    const hex = (rgb: number[]) => `#${rgb.map((value) => value.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+    const companion = Array.from({ length: 26 }, (_, y) => [(y % 6) * 51, Math.floor(y / 6) * 51, 255]);
+    const backdrop = Array.from({ length: 26 }, (_, k) => [(k % 6) * 51, Math.floor(k / 6) * 51, 0]);
+    const frames = Array.from({ length: 4 }, () => {
+      const rgba = new Uint8ClampedArray(48 * 48 * 4);
+      companion.forEach((rgb, y) => { for (let x = 0; x < 48; x++) rgba.set([...rgb, 255], (y * 48 + x) * 4); });
+      return rgba;
+    });
+    const art = new Uint8ClampedArray(240 * 240 * 4);
+    for (let i = 0; i < 240 * 240; i++) art.set([...backdrop[i % 26], 255], i * 4);
+    const document = { packName: "Full", assets: {
+      [ART]: { contentType: "text/plain", encoding: "text", data: encodeAIThemeCBI1(art, 240, 240) },
+      [pet]: { contentType: "text/plain", encoding: "text", data: encodeAIThemeCBA1(frames, 48, 48, 2) },
+    }, spec: { primitives: [
+      { type: "sprite", x: 0, y: 0, width: 240, height: 240, assetPath: ART },
+      { type: "sprite", x: 0, y: 0, width: 48, height: 48, assetPath: pet },
+    ] } } as unknown as ThemeStudioDocument;
+    const backdropColors = new Set(backdrop.map(hex));
+    const sprite = decodeSprite(flattenCompanionSprites(document).assets[pet].data)!;
+    // Rows 26 to 47 show the picture: its colours must stay picture colours, not companion colours.
+    for (const frame of sprite.frames)
+      for (let y = 26; y < 48; y++)
+        for (let x = 0; x < 48; x++) {
+          const color = frame.find((r) => x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height)?.color;
+          expect(backdropColors.has(String(color))).toBe(true);
+        }
+  });
   it("keeps warm artwork when a companion already uses all 26 palette slots", () => {
     const pet = "/themes/u/ai-pet-1.cba";
     const art = new Uint8ClampedArray(240 * 240 * 4);

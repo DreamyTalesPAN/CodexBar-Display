@@ -85,6 +85,38 @@ it("leaves the page where it is when the list opens with a finished install", ()
   expect(scrollIntoView).not.toHaveBeenCalled();
 });
 
+// Design rule of 2026-10-17: the steps of a running install read as the setup
+// log does, one "> text" line each, the finished ones paler.
+it("shows the install steps as the setup log, finished ones paler", () => {
+  render(
+    list({
+      ...install,
+      logs: ["Preparing theme install.", "Uploading theme files.", "Checking VibeTV.", "Preparing theme files."],
+    }),
+  );
+
+  const steps = screen.getByRole("status").querySelector('[data-slot="process-steps"]');
+  expect(steps?.getAttribute("data-variant")).toBe("list");
+  expect(steps?.textContent).toContain("> Preparing theme install.");
+  expect(steps?.textContent).toContain("> Preparing theme files.");
+  expect(steps?.querySelectorAll(".opacity-55")).toHaveLength(3);
+  expect(steps?.querySelector("[class*=vibetv-caret-blink]")).toBeNull();
+});
+
+it("keeps a step's line when it turns finished, so it does not fly in again", () => {
+  const view = render(list({ ...install, logs: ["Preparing theme install.", "Uploading theme files.", "Checking VibeTV."] }));
+  const before = screen.getByText("> Checking VibeTV.");
+
+  view.rerender(
+    list({
+      ...install,
+      logs: ["Preparing theme install.", "Uploading theme files.", "Checking VibeTV.", "Preparing theme files."],
+    }),
+  );
+
+  expect(screen.getByText("> Checking VibeTV.")).toBe(before);
+});
+
 // Seen in the Windows app (#579): the notice already read "Installed" while
 // the row's button said "Wait" for about two seconds, because the app reads
 // VibeTV's settings after an install and the button followed that read.
