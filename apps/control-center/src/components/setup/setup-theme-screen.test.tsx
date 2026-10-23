@@ -132,14 +132,14 @@ describe("SetupThemeScreen", () => {
     expect(html).not.toContain('data-slot="theme-blocked-reason"');
   });
 
-  it("shows the install steps the companion reported", () => {
+  it("shows the newest install step the companion reported", () => {
     const html = render({
       installLogs: ["Uploading theme", "Activating theme"],
       installing: true,
     });
 
-    expect(html).toContain("&gt; Uploading theme");
     expect(html).toContain("&gt; Activating theme");
+    expect(html).not.toContain("Uploading theme");
   });
 
   it("reserves the log area before the install has said anything", () => {
@@ -149,13 +149,44 @@ describe("SetupThemeScreen", () => {
     expect(html).not.toContain("&gt;");
   });
 
-  // The log grows under the Install button by up to 12 + 120 px; the page must
-  // not scroll for it, so the theme box gives that room up while it has lines.
-  it("shrinks the theme box by the log's room once the log has lines", () => {
-    expect(render()).toContain("max-h-[calc(100dvh-278px)]");
-    const html = render({ installLogs: ["Uploading theme"], installing: true });
-    expect(html).toContain("max-h-[calc(100dvh-410px)]");
-    expect(html).not.toContain("max-h-[calc(100dvh-278px)]");
+  // The log used to sit under the button and the theme box gave its room up
+  // line by line: the button climbed 132 px while the install ran and the
+  // second row of cards was cut at the fade. The screen is now laid out the
+  // same before, during and after the install.
+  it("lays the theme box out the same while the install runs", () => {
+    const box = (html: string) => html.match(/<div[^>]*role="radiogroup"[^>]*>/)?.[0];
+    const running = render({
+      installLogs: ["Preparing theme install.", "Uploading theme files."],
+      installing: true,
+    });
+
+    expect(box(running)).toBeDefined();
+    expect(box(running)).toBe(box(render()));
+  });
+
+  it("keeps the log above the button, in the button's 460 px column at the bottom of the window", () => {
+    for (const html of [
+      render(),
+      render({ installLogs: ["Uploading theme files."], installing: true }),
+    ]) {
+      const bar = html.match(/<div[^>]*data-slot="theme-install-bar"[^>]*>/)?.[0] ?? "";
+      expect(bar).toContain("mt-auto");
+      expect(bar).toContain("max-w-[460px]");
+      const log = html.indexOf('role="status"');
+      const button = html.search(/<span>Install(ing)?<\/span>/);
+      expect(html.indexOf("data-slot=\"theme-install-bar\"")).toBeLessThan(log);
+      expect(log).toBeLessThan(button);
+    }
+  });
+
+  it("shows why a theme is blocked above the button too, so the button does not move for it", () => {
+    const html = render({
+      themes: themes.map((theme) =>
+        theme.id === "clippy" ? { ...theme, blockedReason: "Update VibeTV first." } : theme,
+      ),
+    });
+
+    expect(html.indexOf("Update VibeTV first.")).toBeLessThan(html.search(/<span>Install<\/span>/));
   });
 
   // Install is closed while one runs, so a new pick has nothing to act on: the

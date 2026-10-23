@@ -72,13 +72,12 @@ export function SetupThemeScreen({
         You can always switch themes later.
       </SetupWizardSubtitle>
 
-      {/* The grid fills the window's height and scrolls inside its box. 278 px is the chrome above it (142 px) and below it (the 24 px gap, the 44 px button, the 68 px page bottom), so the page itself never scrolls. Once the install log has lines the box gives up the log's room too: its 12 px margin and 120 px at most. */}
+      {/* The grid fills the window's height and scrolls inside its box. 286 px is the chrome above it (142 px) and below it (the 32 px log line, the 44 px button, the 68 px page bottom), so the page itself never scrolls and the box never changes size: the log line has its room from the start. */}
       <ItemGroup
         aria-label="Themes"
         className={cn(
           THEME_GRID_CLASS,
-          "mt-6 overflow-y-auto pb-6 [mask-image:linear-gradient(to_bottom,black_calc(100%_-_24px),transparent)]",
-          installLogs.length ? "max-h-[calc(100dvh-410px)]" : "max-h-[calc(100dvh-278px)]",
+          "mt-6 max-h-[calc(100dvh-286px)] overflow-y-auto pb-6 [mask-image:linear-gradient(to_bottom,black_calc(100%_-_24px),transparent)]",
         )}
         onKeyDown={moveAmongRadios}
         role="radiogroup"
@@ -101,35 +100,39 @@ export function SetupThemeScreen({
         ))}
       </ItemGroup>
 
-      {/* The wide column would stretch the button across the window; 460 px is the size every calm step ends in. */}
-      <Button
-        className={cn(CALM_BUTTON_CLASS, "max-w-[460px]")}
-        disabled={installing || !selected || Boolean(selected.blockedReason)}
-        onClick={onInstall}
-        type="button"
+      {/* The wide column would stretch the button across the window; 460 px is the size every calm step ends in. The log line and the blocked reason stand above the button in one line's room, so nothing moves the button. */}
+      <div
+        className="mt-auto flex w-full max-w-[460px] flex-col"
+        data-slot="theme-install-bar"
       >
-        {installing ? <Spinner data-icon="inline-start" /> : null}
-        <span>{installing ? "Installing" : "Install"}</span>
-      </Button>
-      {selected?.blockedReason ? (
-        <p
-          className="mt-2 text-[13px] text-muted-foreground"
-          data-slot="theme-blocked-reason"
+        <div className="mb-2 min-h-6">
+          <SetupLog lines={installLogLines(installLogs)} />
+          {selected?.blockedReason ? (
+            <p
+              className="text-[13px] text-muted-foreground"
+              data-slot="theme-blocked-reason"
+            >
+              {selected.blockedReason}
+            </p>
+          ) : null}
+        </div>
+        <Button
+          className={CALM_BUTTON_CLASS}
+          disabled={installing || !selected || Boolean(selected.blockedReason)}
+          onClick={onInstall}
+          type="button"
         >
-          {selected.blockedReason}
-        </p>
-      ) : null}
-
-      <SetupLog
-        className="mt-3 empty:mt-0"
-        lines={installLogLines(installLogs)}
-      />
+          {installing ? <Spinner data-icon="inline-start" /> : null}
+          <span>{installing ? "Installing" : "Install"}</span>
+        </Button>
+      </div>
     </SetupWizardScreen>
   );
 }
 
+/** Only the newest step: one line is all the room the grid leaves, and it is the one that says where the install is. */
 function installLogLines(logs: string[]): SetupLogLine[] {
-  return logs.map((text, index) => ({ id: `${index}-${text}`, text }));
+  return logs.slice(-1).map((text) => ({ id: `${logs.length}-${text}`, text }));
 }
 
 function SetupThemeCard({

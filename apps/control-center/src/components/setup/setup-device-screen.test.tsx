@@ -144,6 +144,24 @@ describe("SetupDeviceScreen", () => {
     expect(empty).toContain("Enter hidden network");
   });
 
+  // c99106b5 pinned every calm step's main button with mt-auto, but this form
+  // sat in the column as a plain block, so the auto margin had nothing to grow
+  // into: "Connect to WiFi" hung 0 px under the password field in mid-window.
+  it("pins Connect to WiFi to the bottom of the window, at least 32 px under the password field", () => {
+    const html = render({
+      candidates: [],
+      showCandidates: false,
+      wifiSetupPhase: "credentials",
+      wifiNetworks: [{ ssid: "Home", rssi: -50, encrypted: true }],
+    });
+
+    const form = html.match(/<form[^>]*>/)?.[0] ?? "";
+    expect(form).toMatch(/class="[^"]*\bflex-1\b[^"]*\bflex-col\b|class="[^"]*\bflex-col\b[^"]*\bflex-1\b/);
+    expect(html.match(/<div[^>]*data-slot="field-group"[^>]*>/)?.[0]).toMatch(/\bflex-1\b/);
+    expect(html.match(/<button[^>]*type="submit"[^>]*>/)?.[0]).toMatch(/\bmt-auto\b/);
+    expect(html).toMatch(/<div[^>]*class="[^"]*\bmb-8\b[^"]*"[^>]*><label[^>]*for="setup-wifi-password"/);
+  });
+
   // A firmware install is the longest thing behind this button and the one the
   // customer must not unplug through. "Connecting" for all of it hid that.
   it("names the phase it is in, not just that it is busy", () => {
