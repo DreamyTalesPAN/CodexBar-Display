@@ -20409,3 +20409,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: On "Choose your theme" the progress is one line, always the newest step ("Uploading theme files.", then "Theme is active on VibeTV."), in the 460 px column right above the Install button; the button stays 68 px above the bottom edge before, during and after the install, the theme cards keep their size and no card is cut at the scroll fade while it runs, and the reason a theme cannot be installed stands in that same line above the button instead of below it. On "Connect VibeTV to WiFi" over the cable the button "Connect to WiFi" stands 68 px above the bottom edge like the main button of every other step, with at least 32 px between the password field and the button. No text changes.
 - Scope: SetupThemeScreen (the log and the blocked reason moved into one bar above the button, the theme box has one fixed height, the log shows its newest line) and SetupDeviceScreen (the WiFi form fills the column so the shared mt-auto button class reaches the bottom, 32 px minimum under the password field) with their tests.
 - What's new: none — setup layout only
+
+## 2026-10-23 — #7216: setup "Choose your theme" keeps the button in its installing look from the finished install until VibeTV confirms the theme
+
+- User approval: pending — 7215 visual review, 23.10.2026 (B3, last point): after "Theme is active on VibeTV." the button read "Install" again and could be clicked while setup waited for VibeTV to confirm the theme
+- Approved customer-visible result: On "Choose your theme", from the finished install until setup moves on to "Display mode", the button keeps its installing look (spinner, "Installing", not clickable) next to the line "Theme is active on VibeTV."; when VibeTV does not confirm the theme, the button returns to "Install" as soon as the app has asked once, so the customer can try again. No text changes.
+- Scope: SetupWizard (new confirmingTheme prop, set while the app's install action runs) and its test.
+- What's new: none — setup button state only

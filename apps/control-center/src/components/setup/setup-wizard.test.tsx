@@ -77,6 +77,7 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     displayProviderId: null,
     displaySavePending: false,
     displayProviders: [{ id: "codex", label: "Codex" }],
+    confirmingTheme: false,
     installingTheme: false,
     onCreateSupportReport: vi.fn(),
     onConfigureWiFi: vi.fn(),
@@ -515,6 +516,38 @@ describe("SetupWizard: theme failures", () => {
     expect(screen.getByText("Theme install did not finish.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(onRetryTheme).toHaveBeenCalledOnce();
+  });
+});
+
+describe("SetupWizard: theme confirmation", () => {
+  // The install job is done ("Theme is active on VibeTV.") but the step only
+  // moves on once the device confirms, so the button must not offer Install
+  // again in between, and must offer it again when the confirmation is over.
+  const themeStep = (confirmingTheme: boolean) => (
+    <SetupWizard
+      {...baseProps({
+        step: "theme",
+        themes: [{ id: "clippy", name: "Clippy" }],
+        selectedThemeId: "clippy",
+        themeInstallLogs: ["Theme is active on VibeTV."],
+        confirmingTheme,
+      })}
+    />
+  );
+
+  it("keeps the button in its installing look until the device confirms", () => {
+    render(themeStep(true));
+
+    const button = screen.getByRole("button", { name: "Installing" });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/Theme is active on VibeTV\./)).toBeTruthy();
+  });
+
+  it("offers Install again when the confirmation did not arrive", () => {
+    render(themeStep(false));
+
+    const button = screen.getByRole("button", { name: "Install" });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
   });
 });
 

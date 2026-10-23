@@ -109,6 +109,8 @@ export type SetupWizardProps = {
   /** A running update restored from the Companion after reopening the app. */
   firmwareInstallLogs?: string[];
   installingTheme: boolean;
+  /** The install finished and the app is still asking VibeTV to confirm the theme; the step moves on or this ends. */
+  confirmingTheme: boolean;
   /** Resolves with the VibeTV at that address, or rejects with what to show. */
   onFindManualTarget: (target: string) => Promise<DeviceCandidate>;
   onConfigureWiFi: (
@@ -1212,7 +1214,7 @@ export function SetupWizard(props: SetupWizardProps) {
         <SetupThemeScreen
           {...help}
           installLogs={props.themeInstallLogs}
-          installing={props.installingTheme}
+          installing={props.installingTheme || props.confirmingTheme}
           onBack={goBack}
           onInstall={props.onInstallTheme}
           onSelect={props.onSelectTheme}
