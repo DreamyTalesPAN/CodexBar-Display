@@ -42,7 +42,7 @@ import {
   withOnlyWindowShown,
   type DisplayLimitsChange,
 } from "./display-limits-settings";
-import { themePairNote, useActiveThemeLimits } from "./live-vibetv-preview";
+import { themeDisplayMode, useActiveThemeLimits } from "./live-vibetv-preview";
 import {
   ProviderList,
   setupProviderCanDisplay,
@@ -216,7 +216,10 @@ export function SettingsScreen({
   )
     ? currentProviderId
     : displayable[0]?.providerId;
-  const displayMode = providerPicker.display?.mode ?? "automatic";
+  const activeTheme = useActiveThemeLimits(device);
+  const { mode: displayMode, pairNote: themeNote } = themeDisplayMode(
+    activeTheme, providerPicker.display?.mode ?? "automatic",
+  );
   // The provider VibeTV last received, named only while the stream is healthy.
   const showingNow =
     deviceIsReady(device) && device?.stream?.healthy === true
@@ -238,8 +241,6 @@ export function SettingsScreen({
     manualProviderId,
     pairChoices,
   );
-  const activeTheme = useActiveThemeLimits(device);
-  const themeNote = themePairNote(activeTheme, displayMode);
   const providerError =
     providerPicker.preferencesError || providerPicker.displayError;
   const usageMode = displayPreferences.find(

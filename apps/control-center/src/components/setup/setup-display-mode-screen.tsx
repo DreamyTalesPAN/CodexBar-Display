@@ -16,7 +16,7 @@ import type {
   SupportDiagnostics,
   UsageSnapshot,
 } from "../control-center-types";
-import { themeLimitsFromPack, themePairNote, type DisplayFrame } from "../live-vibetv-preview";
+import { themeLimitsFromPack, themeDisplayMode, type DisplayFrame } from "../live-vibetv-preview";
 import {
   Item,
   ItemActions,
@@ -298,7 +298,7 @@ export function DisplayModeChoice({
   onSelectLimit,
   ink = false,
   manualPreview,
-  mode,
+  mode: savedMode,
   onSelectMode,
   onSelectPair,
   onSelectProvider,
@@ -312,6 +312,9 @@ export function DisplayModeChoice({
   selectedProviderId,
   themePack = NO_THEME_PACK,
 }: DisplayModeChoiceProps) {
+  const { mode, pairNote: themeNote } = themeDisplayMode(
+    themePack.pack ? themeLimitsFromPack(themePack.pack) : null, savedMode,
+  );
   const choiceRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (!calm) return;
@@ -352,7 +355,6 @@ export function DisplayModeChoice({
     providers,
   );
   const { index, reducedMotion } = useProviderRotation(rotation.length);
-  const themeNote = themePairNote(themePack.pack ? themeLimitsFromPack(themePack.pack) : null, mode);
   const offersPair = Boolean(onSelectPair) && pairProviders.length >= 2;
   const manualFrames = manualPreview ? [pinnedPreview(manualPreview)] : [];
   const tiles = (frames: SetupDisplayModePreview[], at: number) => {

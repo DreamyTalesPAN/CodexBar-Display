@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import type { ReactNode } from "react";
-import type { DeviceInfo, UsageSnapshot } from "./control-center-types";
+import type { DeviceInfo, ProviderDisplaySelection, UsageSnapshot } from "./control-center-types";
 import {
   deviceAwaitsProviderSetup,
   deviceIsActive,
@@ -1816,10 +1816,13 @@ export type ActiveThemeLimits = {
   limits: number;
 };
 
-export function themePairNote(theme: ActiveThemeLimits | null, mode: string): string | null {
-  return theme?.maxProviders === 1
-    ? `${theme.name} shows one provider at a time.${mode === "pair" ? " Provider 1 is shown." : ""}`
-    : null;
+/** The theme limits the visible choice without rewriting the saved selection. */
+export function themeDisplayMode(theme: ActiveThemeLimits | null, savedMode: ProviderDisplaySelection["mode"]) {
+  const singleProvider = theme?.maxProviders === 1;
+  return {
+    mode: singleProvider && savedMode === "pair" ? "fixed" as const : savedMode,
+    pairNote: singleProvider ? `${theme.name} shows one provider at a time.` : null,
+  };
 }
 
 export function themeLimitsFromPack(

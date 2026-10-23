@@ -20513,3 +20513,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: While Token Counter is active, Two at once is greyed out with a short explanation. A saved pair shows Provider 1 with its own token count; switching to a theme that supports two providers restores the pair without changing the saved preference.
 - Scope: ThemeSpec maxProviders capability, Token Counter pack, Settings display mode, and the shared Companion frame selection used by the device and previews.
 - What's new: none — part of the unreleased Paul test-line corrections.
+
+## 2026-10-23 — Q15: Token Counter selects One provider and hides Provider 2
+
+- User approval: approved by Paul, 2026-10-23 09:09
+- Approved customer-visible result: While Token Counter (ThemeSpec maxProviders: 1) is active, Settings and setup show One provider selected with Provider 1 and its own token count. Two at once is greyed out, unselected and unavailable, with only “Token Counter shows one provider at a time.” below it; Provider 2 is hidden, just as in One provider mode. The saved Two at once mode and both providers remain unchanged in the background; switching to a theme that supports two providers restores Two at once and both provider fields.
+- What's new: none — corrects the Q15 display-mode choice
