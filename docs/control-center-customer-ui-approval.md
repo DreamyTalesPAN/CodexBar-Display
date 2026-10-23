@@ -10384,3 +10384,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 as in its own entries plus the entries merged with 2d42c92f; nothing else changes.
 - Scope: the merge of 2d42c92f and this approval record. Pull request #781 only, not merged, not released.
 - What's new: none — merge of 2d42c92f, no customer-visible change of its own
+
+## 2026-10-23 — #781: approval marker after merging main at 81dfc95b
+
+- User approval: no visible change – UI approval not needed (merge of main (81dfc95b) into #781; the existing approval entries remain unchanged).
+- Approved customer-visible result: #781 retains its existing product diff unchanged; the merge imports main without additional customer-visible changes of its own.
+- Scope: the merge of 81dfc95b into PR #781 and this approval record; no main merge, release, or device write.
+- What's new: none — merge with main, no customer-visible change of its own
