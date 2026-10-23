@@ -227,8 +227,6 @@ async function openThemesWithSavedTheme(
   };
   await wait(10);
   fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
-  await wait(1);
-  fireEvent.click(screen.getByRole("button", { name: "Themes" }));
   await wait(2);
   return { installs, wait };
 }

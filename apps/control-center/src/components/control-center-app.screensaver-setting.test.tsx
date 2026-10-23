@@ -63,10 +63,12 @@ async function wait(seconds: number) {
 it.each([
   // The read is tried again by itself once,
   [1, 2],
-  // and when that fails too, when Screensavers is opened.
+  // and when that fails too, when Appearance is opened (it lists screensavers on All),
   [2, 3],
-  // Leaving Screensavers while the setting is still missing reads nothing.
-  [3, 3],
+  // and again when Screensavers is opened from All,
+  [3, 4],
+  // but leaving Screensavers while the setting is still missing reads nothing.
+  [4, 4],
 ])("reads the screensaver setting again after %s failed read(s), without a visit to Settings", async (failures, reads) => {
   let settingsReads = 0;
   window.localStorage.clear();
@@ -177,12 +179,12 @@ it.each([
 
   fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
   await wait(1);
-  fireEvent.click(screen.getByRole("button", { name: "Screensavers" }));
+  fireEvent.click(screen.getByRole("radio", { name: /^Screensavers/ }));
   await wait(2);
 
   expect(settingsReads).toBe(reads);
   if (failures >= reads) {
-    fireEvent.click(screen.getByRole("button", { name: "Themes" }));
+    fireEvent.click(screen.getByRole("radio", { name: /^Themes/ }));
     await wait(2);
     expect(settingsReads).toBe(reads);
     return;

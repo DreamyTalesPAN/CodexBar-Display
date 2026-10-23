@@ -263,6 +263,68 @@ it("rule 3: an error waits for the open dialog and shows once it closes", async 
   expect(within(failed).getByText("Theme could not be opened.")).toBeTruthy();
 });
 
+// Codex review on #802 (P2): an install that fails while the preview is open
+// waits for it, like every other page dialog, and shows once it closes.
+it("an install failure waits for the open preview and shows once it closes", async () => {
+  vi.stubGlobal("fetch", async () => ({ ok: false }));
+  const props = { device: { connected: true, paired: true, ready: true }, themeInstallEnabled: true };
+  const failed = {
+    logs: [],
+    phase: "error" as const,
+    startedAt: "10:00:00",
+    themeId: "drift",
+    title: "Drift",
+  };
+  const view = renderLibrary({ ...props, themes: [drift] });
+  fireEvent.click(screen.getByRole("button", { name: "Preview Drift" }));
+  const preview = screen.getByRole("dialog", { name: "Drift" });
+
+  view.rerender(
+    <ThemeLibraryScreen
+      busyAction={null}
+      companionStatus="online"
+      installStatus={failed}
+      onInstallCustomTheme={async () => false}
+      onInstallTheme={vi.fn()}
+      onSelectTheme={vi.fn()}
+      selectedThemeId=""
+      storefrontConfigured={false}
+      themes={[drift]}
+      {...props}
+    />,
+  );
+  expect(screen.queryAllByRole("dialog")).toEqual([preview]);
+
+  fireEvent.click(within(preview).getByRole("button", { name: "Close" }));
+  expect(await screen.findByRole("dialog", { name: "Theme install failed." })).toBeTruthy();
+});
+
+// Codex review on #802 (P2): OK on an install failure stays dismissed when a
+// preview opens and closes while the same failed status is still retained.
+it("a dismissed install failure stays dismissed across a preview", async () => {
+  vi.stubGlobal("fetch", async () => ({ ok: false }));
+  renderLibrary({
+    device: { connected: true, paired: true, ready: true },
+    installStatus: {
+      logs: [],
+      phase: "error",
+      startedAt: "10:00:00",
+      themeId: "drift",
+      title: "Drift",
+    },
+    themeInstallEnabled: true,
+    themes: [drift],
+  });
+  const failed = await screen.findByRole("dialog", { name: "Theme install failed." });
+  fireEvent.click(within(failed).getByRole("button", { name: "Close" }));
+  await waitFor(() => expect(screen.queryAllByRole("dialog")).toEqual([]));
+
+  fireEvent.click(screen.getByRole("button", { name: "Preview Drift" }));
+  const preview = screen.getByRole("dialog", { name: "Drift" });
+  fireEvent.click(within(preview).getByRole("button", { name: "Close" }));
+  await waitFor(() => expect(screen.queryAllByRole("dialog")).toEqual([]));
+});
+
 // OK clears the error; the next failure sets it again and opens it again.
 it("OK clears an error, and the next failure opens it again", async () => {
   vi.stubGlobal("fetch", async () => ({ ok: false }));

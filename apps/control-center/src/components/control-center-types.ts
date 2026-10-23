@@ -397,8 +397,6 @@ export type StandbySettings = {
   screensaverPath?: string | null;
 };
 
-export type AppearanceSection = "themes" | "screensavers";
-
 export type ActiveTab =
   "overview" | "usage" | "settings" | "theme-library" | "updates" | "logs";
 

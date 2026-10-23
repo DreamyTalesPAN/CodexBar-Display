@@ -252,6 +252,36 @@ describe("mergeThemeProductWithCatalog", () => {
       themeSpecPath: undefined,
     });
   });
+
+  it("takes the catalog tags when its pack metadata is incomplete", () => {
+    const product = {
+      id: "gid://shopify/Product/1",
+      isFree: true,
+      packSha256: shopifySHA,
+      packSizeBytes: 123,
+      packUrl: "https://shop.example/legacy.zip",
+      priceLabel: "Kostenlos",
+      source: "shopify",
+      themeId: "synthwave",
+      title: "Synthwave Shop",
+    } satisfies ThemeProduct;
+    const incompleteCatalogTheme = {
+      id: "synthwave",
+      isFree: true,
+      packUrl: "https://github.example/synthwave-v1.1.0.zip",
+      priceLabel: "Kostenlos",
+      source: "github-catalog",
+      tags: ["clock", "pixel-art"],
+      themeId: "synthwave",
+      title: "Synthwave",
+    } satisfies ThemeProduct;
+
+    const merged = mergeThemeProductWithCatalog(product, incompleteCatalogTheme);
+
+    expect(merged.tags).toEqual(["clock", "pixel-art"]);
+    expect(merged.packUrl).toBe(product.packUrl);
+    expect(merged.packSha256).toBe(shopifySHA);
+  });
 });
 
 describe("requireCurrentThemeCatalog", () => {

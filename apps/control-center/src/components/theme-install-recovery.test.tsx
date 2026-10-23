@@ -24,7 +24,9 @@ it("keeps failed Cable rendering recoverable through a dismissible popup and the
   fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
   view.rerender(<ThemeLibraryScreen {...props} installStatus={{ ...status }} />);
   expect(screen.queryByRole("dialog")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  // No extra button in the card (it never changes height): the row's own Install retries.
+  expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Install" }));
   expect(retry).toHaveBeenCalledTimes(1);
   expect(retry.mock.calls[0][0].themeId).toBe("test-theme");
   view.rerender(<ThemeLibraryScreen {...props} installStatus={{ ...status, phase: "installing", startedAt: "10:00:01" }} />);

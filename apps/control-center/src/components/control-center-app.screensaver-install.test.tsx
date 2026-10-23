@@ -199,7 +199,7 @@ it.each([
   await wait(10);
   fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
   await wait(1);
-  fireEvent.click(screen.getByRole("button", { name: section }));
+  fireEvent.click(screen.getByRole("radio", { name: new RegExp(`^${section}`) }));
   await wait(2);
 
   const row = screen
@@ -207,7 +207,9 @@ it.each([
     .find((item) => within(item).queryByText(title))!;
   fireEvent.click(within(row).getByRole("button", { name: "Install" }));
   await wait(1);
-  expect(screen.getByText(`Preparing ${noun.toLowerCase()} install.`)).toBeTruthy();
+  // The card shows no steps; its Install button says "Installing" (the lines are for the failure dialog below).
+  expect(within(row).getByRole("button", { name: "Installing" })).toBeTruthy();
+  expect(screen.queryByText(`> Preparing ${noun.toLowerCase()} install.`)).toBeNull();
 
   answerInstall(jsonResponse({ ok: true, job }, 202));
   await wait(3);

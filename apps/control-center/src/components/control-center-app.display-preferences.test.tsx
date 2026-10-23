@@ -745,7 +745,7 @@ it("keeps Brightness in screensaver focused through two arrow keys", async () =>
   ]);
 });
 
-it("keeps Show screensaver focused while it is saved", async () => {
+it("keeps Show screensaver in Settings focused while it is saved", async () => {
   const window = startWindow();
   await window.wait(10);
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
@@ -779,7 +779,7 @@ const openSettings = async (window: ReturnType<typeof startWindow>) => {
 const openScreensavers = async (window: ReturnType<typeof startWindow>) => {
   fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
   await window.wait(1);
-  fireEvent.click(screen.getByRole("button", { name: "Screensavers" }));
+  fireEvent.click(screen.getByRole("radio", { name: /^Screensavers/ }));
   await window.wait(1);
 };
 
@@ -799,9 +799,10 @@ it("opens Settings at Show screensaver from the line under Screensavers", async 
   await window.wait(1);
   expect(window.companion.settings.standby.enabled).toBe(true);
 
-  fireEvent.click(screen.getByRole("button", { name: "Screensavers" }));
+  fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
   await window.wait(1);
-  expect(screen.getByRole("heading", { name: "Screensavers" })).toBeTruthy();
+  // The segment is kept; the line is gone now.
+  expect(screen.getByRole("radio", { name: /^Screensavers/ }).getAttribute("aria-checked")).toBe("true");
   expect(window.text()).not.toContain("Screensaver is off.");
   expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
 });
@@ -1013,11 +1014,16 @@ it("keeps the new VibeTV's theme selected when a read for the first VibeTV answe
 
   // No later read may answer and hide the result.
   window.companion.holdSettingsRead = new Promise<void>(() => {});
-  fireEvent.click(screen.getByRole("button", { name: "Themes" }));
+  fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("radio", { name: /^Themes/ }));
   await window.wait(1);
   const row = (themeId: string) => document.getElementById(`catalog-theme-${themeId}`);
-  expect(row("gauge")?.dataset.variant).toBe("muted");
+  // Every card looks the same; the Active pill on the picture marks the theme VibeTV shows.
+  expect(row("gauge")?.dataset.variant).toBe("outline");
   expect(row("codex")?.dataset.variant).toBe("outline");
+  expect(row("gauge")?.querySelector('[data-testid="theme-status-pill"]')?.textContent).toBe("Active");
+  expect(row("codex")?.querySelector('[data-testid="theme-status-pill"]')?.textContent).not.toBe("Active");
 });
 
 it("keeps the display mode cards focused while the mode is saved", async () => {
@@ -1235,9 +1241,16 @@ it("has no accessibility violations on any tab or in the setup question", async 
   const window = startWindow();
   await window.wait(10);
   const pages: string[] = [];
-  // "Appearance" opens the submenu that holds Themes and Screensavers.
-  for (const tab of ["Overview", "Usage", "Settings", "Appearance", "Themes", "Screensavers", "Updates", "Support"]) {
+  for (const tab of ["Overview", "Usage", "Settings", "Appearance", "Updates", "Support"]) {
     fireEvent.click(screen.getByRole("button", { name: tab }));
+    await window.wait(1);
+    pages.push(document.body.innerHTML);
+  }
+  // Appearance lists everything; its two other lists are checked as well.
+  fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+  await window.wait(1);
+  for (const segment of [/^Themes/, /^Screensavers/]) {
+    fireEvent.click(screen.getByRole("radio", { name: segment }));
     await window.wait(1);
     pages.push(document.body.innerHTML);
   }

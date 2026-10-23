@@ -494,7 +494,9 @@ it("opens Themes from a new theme at that theme and counts the notice as read", 
 
   expect(notice()).toBeNull();
   expect(seen()).toEqual(allIds);
-  expect(screen.getByRole("heading", { level: 1, name: "Themes" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 1, name: "Appearance" })).toBeTruthy();
+  // A new theme is shown in the Themes segment, not among the screensavers.
+  expect(screen.getByRole("radio", { name: /^Themes/ }).getAttribute("aria-checked")).toBe("true");
   // Issue #584: the list is longer than the window; the row of the theme the
   // entry announces is brought into view.
   expect(shown).toEqual([
@@ -555,7 +557,7 @@ it("ends at the customer's input even when a control keeps the event to itself",
   );
   await vi.advanceTimersByTimeAsync(0);
   shown.length = 0;
-  const control = screen.getByRole("heading", { level: 1, name: "Themes" });
+  const control = screen.getByRole("heading", { level: 1, name: "Appearance" });
   control.addEventListener("keydown", (event) => event.stopPropagation());
 
   fireEvent.keyDown(control);
@@ -574,7 +576,7 @@ it("brings the place into view once in an app that cannot watch the page's heigh
   );
   await window.wait(1);
 
-  expect(screen.getByRole("heading", { level: 1, name: "Themes" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 1, name: "Appearance" })).toBeTruthy();
   expect(shown).toEqual([
     screen.getByRole("button", { name: "Preview Gauge" }).closest("[role=listitem]"),
   ]);

@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoAxeViolations } from "@/test/axe";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ControlCenterShell } from "./control-center-shell";
-import type { ActiveTab, AppearanceSection } from "./control-center-types";
+import type { ActiveTab } from "./control-center-types";
 
 afterEach(() => {
   cleanup();
@@ -17,17 +16,13 @@ describe("ControlCenterShell", () => {
   // Issue #558: a button far down in Settings opened Support 1086 px down,
   // and Choose screensaver cut off the heading Screensavers. The window
   // scrolls, so it kept the place of the last tab.
-  it("opens a tab and an Appearance section at the top of the page", () => {
+  it("opens a tab at the top of the page", () => {
     vi.stubGlobal("matchMedia", () => ({
       matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
     }));
-    const shell = (activeTab: ActiveTab, section: AppearanceSection = "themes") => (
+    const shell = (activeTab: ActiveTab) => (
       <TooltipProvider>
-        <ControlCenterShell
-          activeAppearanceSection={section}
-          activeTab={activeTab}
-          onTabChange={vi.fn()}
-        >
+        <ControlCenterShell activeTab={activeTab} onTabChange={vi.fn()}>
           <div>Content</div>
         </ControlCenterShell>
       </TooltipProvider>
@@ -45,10 +40,6 @@ describe("ControlCenterShell", () => {
 
     page.scrollTop = 300;
     rerender(shell("theme-library"));
-    expect(page.scrollTop).toBe(0);
-
-    page.scrollTop = 300;
-    rerender(shell("theme-library", "screensavers"));
     expect(page.scrollTop).toBe(0);
   });
 
@@ -177,57 +168,6 @@ describe("ControlCenterShell", () => {
     }
   });
 
-  // Windows click run 1018b, finding N1: collapsed to icons, the Appearance
-  // chevron still showed beside its icon, stuck out of the active pill and
-  // was cut by the sidebar edge. It is decorative, so the icon-only sidebar
-  // hides it.
-  it("hides the Appearance chevron when the sidebar is collapsed to icons", () => {
-    vi.stubGlobal("matchMedia", () => ({
-      matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
-    }));
-    const { container } = render(
-      <TooltipProvider>
-        <ControlCenterShell activeTab="overview" onTabChange={vi.fn()}>
-          <div>Overview content</div>
-        </ControlCenterShell>
-      </TooltipProvider>,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
-    expect(container.querySelector('[data-collapsible="icon"]')).not.toBeNull();
-
-    const nav = screen.getByRole("navigation", { name: "Control Center" });
-    const chevron = within(nav).getByText("Appearance").closest("button")?.querySelector("svg.lucide-chevron-down");
-    expect(chevron).not.toBeNull();
-    expect(chevron?.getAttribute("class")).toContain(
-      "group-data-[collapsible=icon]:hidden",
-    );
-  });
-
-  // Windows click run 1018b, finding N11: the Themes and Screensavers
-  // sub-items rendered at 14 px while the calm rule sets nav entries at 13 px.
-  // The base sub-button class sets 14 px for md size, so the override must
-  // be important to win.
-  it("sets the Appearance sub-items at 13 px like the main nav entries", () => {
-    vi.stubGlobal("matchMedia", () => ({
-      matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
-    }));
-    render(
-      <TooltipProvider>
-        <ControlCenterShell activeTab="overview" onTabChange={vi.fn()}>
-          <div>Overview content</div>
-        </ControlCenterShell>
-      </TooltipProvider>,
-    );
-
-    const nav = screen.getByRole("navigation", { name: "Control Center" });
-    fireEvent.click(within(nav).getByRole("button", { name: "Appearance" }));
-    for (const label of ["Themes", "Screensavers"]) {
-      expect(within(nav).getByRole("button", { name: label }).className).toContain(
-        "text-[13px]!",
-      );
-    }
-  });
-
   // Codex review on f9c14aa7 (P2): the weak hover tint also applied to the
   // current page, so hovering it looked like an inactive entry. Only inactive
   // entries get the weak tint; the active entry keeps its full fill.
@@ -290,30 +230,25 @@ describe("ControlCenterShell", () => {
     expect(toggle.className).toContain("-m-1");
   });
 
-  // Windows click run 1018b, finding N9: the page title read "Appearance" and
-  // a second title "Themes" sat under it. The page title is the open
-  // sub-page; Theme Studio keeps its own header ("Appearance").
-  it("titles the Appearance page with the open sub-page name", () => {
+  // One Appearance page: the sidebar has one "Appearance" entry without a
+  // submenu, and the page title is "Appearance" (also in Theme Studio).
+  it("has one Appearance entry without a submenu and titles the page Appearance", () => {
     vi.stubGlobal("matchMedia", () => ({
       matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
     }));
-    const titleOf = (props: Partial<ComponentProps<typeof ControlCenterShell>>) => {
-      const { unmount } = render(
-        <TooltipProvider>
-          <ControlCenterShell activeTab="theme-library" onTabChange={vi.fn()} {...props}>
-            <div>Content</div>
-          </ControlCenterShell>
-        </TooltipProvider>,
-      );
-      const title = screen.getByRole("heading", { level: 1 }).textContent;
-      unmount();
-      return title;
-    };
+    render(
+      <TooltipProvider>
+        <ControlCenterShell activeTab="theme-library" onTabChange={vi.fn()}>
+          <div>Content</div>
+        </ControlCenterShell>
+      </TooltipProvider>,
+    );
 
-    expect(titleOf({ activeAppearanceSection: "themes" })).toBe("Themes");
-    expect(titleOf({ activeAppearanceSection: "screensavers" })).toBe("Screensavers");
-    expect(titleOf({ activeAppearanceSection: "themes", themeStudioOpen: true })).toBe("Appearance");
-    expect(titleOf({ activeTab: "overview" })).toBe("Overview");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Appearance");
+    const nav = screen.getByRole("navigation", { name: "Control Center" });
+    expect(within(nav).getByRole("button", { name: "Appearance" })).toBeTruthy();
+    expect(within(nav).queryByRole("button", { name: "Themes" })).toBeNull();
+    expect(within(nav).queryByRole("button", { name: "Screensavers" })).toBeNull();
   });
 
   // Build 2 QA: the open Studio drew a second row ("Appearance") above its

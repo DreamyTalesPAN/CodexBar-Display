@@ -211,6 +211,62 @@ describe("ThemeLibraryScreen Appearance sections", () => {
     );
   });
 
+  // 7197 review, point 7: "Installed" is a pill on the picture, not a row with a check mark.
+  it("shows Installed as a pill on the picture and has no Installed button", () => {
+    const livePath = "/themes/u/live-th-3-1a2b3c.json";
+    const html = renderToStaticMarkup(
+      <ThemeLibraryScreen
+        busyAction={null}
+        companionStatus="online"
+        // VibeTV shows another theme; this one is held by the last install.
+        device={{ ...device, ready: true, activeTheme: "other-theme" }}
+        lastInstall={{
+          activePath: livePath,
+          name: "Live Theme",
+          packId: "live-theme",
+          themeId: "live-theme",
+          themeRev: 1,
+        }}
+        onInstallCustomTheme={async () => false}
+        onInstallTheme={vi.fn()}
+        onOpenScreensaverSettings={vi.fn()}
+        onSelectTheme={vi.fn()}
+        selectedThemeId=""
+        storefrontConfigured={false}
+        themeInstallEnabled
+        themes={[{ ...themes[0], themeSpecPath: livePath }, themes[1]]}
+        usage="live"
+      />,
+    );
+    const pills = [...html.matchAll(/<span[^>]*data-testid="theme-status-pill"[^>]*>([^<]*)</g)];
+    expect(pills.map((match) => match[1])).toEqual(["Installed"]);
+    expect(pills[0][0]).toContain("bg-card");
+    expect(html).not.toMatch(/<button[^>]*>(?:<svg[\s\S]*?<\/svg>)?Installed</);
+  });
+
+  it("shows Active as a lime pill with black text on the picture of the theme VibeTV shows", () => {
+    const livePath = "/themes/u/live-th-3-1a2b3c.json";
+    const html = renderToStaticMarkup(
+      <ThemeLibraryScreen
+        busyAction={null}
+        companionStatus="online"
+        device={{ ...device, ready: true, activeTheme: "live-theme" }}
+        onInstallCustomTheme={async () => false}
+        onInstallTheme={vi.fn()}
+        onOpenScreensaverSettings={vi.fn()}
+        onSelectTheme={vi.fn()}
+        selectedThemeId="live-theme"
+        storefrontConfigured={false}
+        themeInstallEnabled
+        themes={[{ ...themes[0], themeSpecPath: livePath }, themes[1]]}
+        usage="live"
+      />,
+    );
+    const pill = html.match(/<span[^>]*data-testid="theme-status-pill"[^>]*>([^<]*)</);
+    expect(pill?.[1]).toBe("Active");
+    expect(pill?.[0]).toContain("bg-primary text-black");
+  });
+
   // An own theme and a later catalog theme shared the id `my-theme`. The
   // customer changed the own theme and saved it, which gave the saved copy
   // another id. The awake VibeTV still reports the id and holds the old file,
@@ -336,8 +392,11 @@ describe("ThemeLibraryScreen Appearance sections", () => {
       render("live", "/themes/u/mt-4-abcdef.json"),
       "Theme is already installed.",
     );
-    expect(current?.[1]).toBe("Installed");
-    expect(current?.[0]).toContain(' disabled=""');
+    // The current file is installed: a pill on the picture, no button.
+    expect(current).toBeNull();
+    expect(render("live", "/themes/u/mt-4-abcdef.json")).toContain(
+      'title="Theme is already installed."',
+    );
     // A VibeTV that cannot take an install keeps the word of the action.
     const notReady = render("live", earlier, false);
     expect(notReady).not.toContain("Theme is already installed.");
@@ -431,18 +490,18 @@ describe("ThemeLibraryScreen Appearance sections", () => {
       "Choose what appears when VibeTV enters standby after being idle.",
     );
     expect(html).toContain("Create screensaver");
-    // The switch is in Settings only (#643, variant 645-A).
+    // The switch is in Settings; the page has the one-line notice with a link.
     expect(html).not.toContain('aria-label="Show screensaver"');
-    expect(html).toContain("Screensaver is off.");
+    expect(html).toContain("Screensaver is off. Turn it on in");
+    expect(html).toMatch(/<a [^>]*href="#settings-screensaver"[^>]*>Settings<\/a>/);
     expect(html).toContain("Night Clock");
     expect(html).not.toContain("Live Theme");
-    // Switched off is a normal state, not an error (#548): one muted line.
-    const line = html.match(/<p [^>]*>(?=Screensaver is off\.)/)?.[0];
-    expect(line).toContain("text-muted-foreground");
-    expect(line).not.toContain("destructive");
+    // Switched off is a normal state, not an error (#548): plain muted text.
+    expect(html).not.toContain('data-slot="alert"');
+    expect(html).not.toContain("text-destructive");
   });
 
-  it("locks installs while the screensaver is off and links to its switch in Settings", () => {
+  it("greys the Install buttons while the screensaver is off", () => {
     const html = renderToStaticMarkup(
       <ThemeLibraryScreen
         busyAction={null}
@@ -471,9 +530,12 @@ describe("ThemeLibraryScreen Appearance sections", () => {
       />,
     );
 
-    // Sentence case, like every other button of the app.
-    expect(html).toContain(">Turn on first<");
-    expect(html).toContain(">Settings</a>");
+    // The same lime Install button, greyed: not a different word.
+    const install = html.match(/<button[^>]*title="Turn on Show screensaver first\."[^>]*>[^<]*<\/button>/)?.[0];
+    expect(install).toContain('disabled=""');
+    expect(install).toContain('data-variant="default"');
+    expect(install).toContain(">Install<");
+    expect(html).not.toContain("Turn on first");
     // The Design System link (dark ink, underline, olive on hover), not lime on grey.
     // Dark mode hovers in the light olive #A9C76A: #506600 has only 1.44:1 on the dark grey.
     const link = html.match(/<a class="([^"]*)"[^>]*>Settings<\/a>/)?.[1] ?? "";
@@ -495,7 +557,8 @@ describe("ThemeLibraryScreen Appearance sections", () => {
 
   // Issue #579: with Show screensaver off, the installed row still read
   // "Screensaver is ready on VibeTV." below the notice that it is turned off.
-  it("says only that the screensaver is installed while Show screensaver is off", () => {
+  // Paul's review of 7198: a finished install leaves no notice in the card.
+  it("leaves no notice in the card when an install is finished, also while Show screensaver is off", () => {
     const list = (enabled: boolean) =>
       renderToStaticMarkup(
         <ThemeLibraryScreen
@@ -522,9 +585,13 @@ describe("ThemeLibraryScreen Appearance sections", () => {
         />,
       );
 
-    expect(list(true)).toContain("Screensaver is ready on VibeTV.");
-    expect(list(false)).toContain("Night Clock is installed.");
-    expect(list(false)).not.toContain("Screensaver is ready on VibeTV.");
+    for (const enabled of [true, false]) {
+      const html = list(enabled);
+      expect(html).not.toContain("Screensaver is ready on VibeTV.");
+      expect(html).not.toContain("Night Clock is installed.");
+      expect(html).not.toContain('role="status"');
+      expect(html).not.toContain('role="progressbar"');
+    }
   });
 
   // Issue #558: the Screensavers list said "theme" in these lines of its own.
@@ -551,10 +618,7 @@ describe("ThemeLibraryScreen Appearance sections", () => {
       );
 
     expect(list()).toContain(`title="${noun} installs are not available right now."`);
-    // An install the page knows no line of yet.
-    expect(
-      list({ phase: "installing", themeId, title: "", startedAt: "", logs: [] }),
-    ).toContain(`Preparing ${noun.toLowerCase()} install.`);
+    // (The first step of a running install is worded in theme-library-screen.install-notice.test.tsx.)
   });
 
   // Issue #558: the reasons an Install button gives are written for themes.
