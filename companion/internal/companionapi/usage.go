@@ -344,9 +344,9 @@ func usageHasFreshSnapshotAfter(usage daemon.PersistedUsage, requestedAt time.Ti
 	}
 	hasFresh := false
 	for _, provider := range usage.Providers {
-		// The collector already marks failed providers stale. They stay
-		// unavailable, but cannot keep the working providers refreshing (#936).
-		if provider.Stale {
+		// Failed providers stay unavailable, but cannot keep working providers
+		// refreshing (#936). A failed first reading has a timestamp, too.
+		if provider.Stale || provider.NoReading || provider.Frame.UsageUnavailable {
 			continue
 		}
 		if provider.CollectedAt.IsZero() || provider.CollectedAt.Before(requestedAt) {
