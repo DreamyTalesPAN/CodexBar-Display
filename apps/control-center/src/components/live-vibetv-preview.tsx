@@ -152,6 +152,8 @@ export type ThemePrimitive = {
   f?: number;
   fit?: string;
   ft?: string;
+  keepName?: number;
+  kn?: number;
   color?: string;
   c?: string;
   bgColor?: string;
@@ -1958,13 +1960,14 @@ function displayedResetFooter(
       // A pair label ("Claude Weekly") is longer than the limit name ("Weekly").
       const limit = frame.provider.includes("+") ? window.label.replace(/^\S+ /, "") : window.label;
       const variants = [`${window.label} reset ${duration}`, `${limit} reset ${duration}`];
-      variants.push(`Reset ${duration}`);
       const maxWidth = primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
       const font = primitive.font || primitive.f || 1;
       const size = Math.max(1, primitive.fontSize || primitive.s || 1);
-      return variants.find(text => maxWidth <= 0 ||
-        (themeFirmwareTextMetrics(text, font, size)?.width ??
-          themeTextWidth(text, themeFontSize(font, size))) <= maxWidth) ?? variants.at(-1)!;
+      const width = (text: string) => themeFirmwareTextMetrics(text, font, size)?.width ?? themeTextWidth(text, themeFontSize(font, size));
+      // Pixel Battery (Paul 23.10.): kn keeps a limit name up to kn px wide and lets the theme's shrink-fit make the sentence smaller.
+      const keepName = primitive.keepName ?? primitive.kn ?? 0;
+      variants.push(keepName > 0 && width(variants[1]) <= keepName ? variants[1] : `Reset ${duration}`);
+      return variants.find(text => maxWidth <= 0 || width(text) <= maxWidth) ?? variants.at(-1)!;
     }
   }
   return sawAvailable && allIdle ? RESET_IDLE : RESET_UNAVAILABLE;

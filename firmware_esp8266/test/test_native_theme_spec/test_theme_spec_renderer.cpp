@@ -743,6 +743,46 @@ void testPairFooterNeverClips() {
   TEST_ASSERT_TRUE(sink.commands.back().fitShrink);
 }
 
+// Pixel Battery (Paul 23.10., question 6): a footer with "kn" keeps its limit name while the sentence is at most kn px wide and lets
+// the theme's shrink-fit make it smaller. A longer name, or a footer without "kn", drops the name and keeps the font (the tests above).
+void testFooterKeepsNameWhenAskedTo() {
+  FrameData frame;
+  frame.provider = "claude+codex";
+  frame.usageSlot1Label = "Claude Session";
+  frame.usageSlot1ResetSecs = 47 * 60;
+  frame.usageSlot1Available = true;
+  frame.usageSlot2Label = "Codex Weekly";
+  frame.usageSlot2ResetSecs = 586800;
+  frame.usageSlot2Available = true;
+  const char* keep = R"JSON({"v":1,"id":"footer","rev":1,"p":[
+    {"t":"tx","y":30,"sl":1,"v":"{usageSlot1Label}"},
+    {"t":"tx","y":30,"sl":2,"v":"{usageSlot2Label}"},
+    {"t":"tx","x":11,"y":198,"w":218,"f":2,"s":2,"ft":"shrink","kn":240,"sl":1,"v":"Reset in {usageSlot1Reset}"}
+  ]})JSON";
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(keep, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Session reset 47m", sink.commands.back().text.c_str());
+  TEST_ASSERT_TRUE(sink.commands.back().fitShrink);
+  // A name that fits at the declared font is drawn at that font, kn or not.
+  frame.usageSlot1Label = "Claude Day";
+  sink.commands.clear();
+  TEST_ASSERT_TRUE(renderSpec(keep, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Day reset 47m", sink.commands.back().text.c_str());
+  TEST_ASSERT_FALSE(sink.commands.back().fitShrink);
+  frame.usageSlot1Label = "Claude Fable only";
+  sink.commands.clear();
+  TEST_ASSERT_TRUE(renderSpec(keep, frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Reset 47m", sink.commands.back().text.c_str());
+  TEST_ASSERT_FALSE(sink.commands.back().fitShrink);
+  frame.usageSlot1Label = "Claude Session";
+  std::string plain = keep;
+  plain.erase(plain.find("\"kn\":240,"), 9);
+  sink.commands.clear();
+  TEST_ASSERT_TRUE(renderSpec(plain.c_str(), frame, sink));
+  TEST_ASSERT_EQUAL_STRING("Reset 47m", sink.commands.back().text.c_str());
+  TEST_ASSERT_FALSE(sink.commands.back().fitShrink);
+}
+
 void testIdleFooterStillShrinksToFit() {
   FrameData frame;
   frame.usageSlot1Label = "Session";
@@ -5525,6 +5565,7 @@ int main() {
   RUN_TEST(testFooterNamesLimitWithLargestUnit);
   RUN_TEST(testFooterKeepsOriginalFontSize);
   RUN_TEST(testPairFooterNeverClips);
+  RUN_TEST(testFooterKeepsNameWhenAskedTo);
   RUN_TEST(testIdleFooterStillShrinksToFit);
   RUN_TEST(testFooterWordingTable);
   RUN_TEST(testUsageFooterResetFollowsFooterWindow);

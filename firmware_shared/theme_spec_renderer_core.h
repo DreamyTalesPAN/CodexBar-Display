@@ -254,6 +254,7 @@ struct CompiledPrimitive {
   uint16_t deficitColor = 0xF800;  // pace bar: the hatch of a deficit
   bool hasBg = false;
   bool fitShrink = false;
+  int keepName = 0;  // reset footer: keep a limit name up to this many px wide and let fitShrink shrink the sentence
   uint8_t colorStopCount = 0;
   CompiledColorStop colorStops[kMaxCompiledColorStops];
   const char* text = "";
@@ -1579,6 +1580,7 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
     }
     const char* fit = JsonStringFor(primitive, "fit", "ft");
     out.fitShrink = fit != nullptr && std::strcmp(fit, "shrink") == 0;
+    out.keepName = JsonIntFor(primitive, "keepName", "kn", 0);
     out.height = JsonIntFor(primitive, "height", "h", 0);
     const char* align = JsonStringFor(primitive, "align", "al");
     if (align != nullptr && std::strcmp(align, "center") == 0) {
@@ -2277,8 +2279,12 @@ inline bool RenderDisplayedResetFooter(const CompiledThemeSpec& scene,
       std::snprintf(out, outSize, "%s reset %s", names[v], duration);
       if (ResetFooterFits(sink, primitive, out)) return true;
     }
-    // No name fits at the original font: the name goes, the font and the text stay whole.
-    std::snprintf(out, outSize, "Reset %s", duration);
+    // No name fits at the original font: the name goes, the font and the text stay whole. Pixel Battery
+    // (Paul 23.10.) keeps a name up to keepName px wide and lets the theme's shrink-fit make the sentence smaller.
+    std::snprintf(out, outSize, "%s reset %s", limit, duration);
+    if (primitive.keepName <= 0 || sink == nullptr || sink->MeasureText(out, primitive.font, primitive.size) > primitive.keepName) {
+      std::snprintf(out, outSize, "Reset %s", duration);
+    }
     return true;
   }
   if (!sawDisplayed) return false;

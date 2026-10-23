@@ -20465,3 +20465,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Nothing changes in the app: the guard test adds the Show choice (All, Themes, Screensavers) of the Appearance toolbar to the items it measures, and it passes without a change to the app.
 - Scope: selection-ring-clip.test.tsx only.
 - What's new: none — test only
+
+## 2026-10-23 — #7217: Pixel Battery keeps "Session reset 55m" with the limit's name and draws it one size smaller where it would touch the frame; the guard measures every reset value
+
+- User approval: approved by Paul in the communicator chat, 2026-10-23, question 6 (Pixel Battery footer "Session reset 10m–59m" on the frame line): "Pixel Battery: Name behalten, 'Session reset 55m' verkleinern (bewusste Ausnahme von nie-verkleinern, Paul-Entscheidung; Text muss trotzdem 3 px Abstand halten)."
+- Approved customer-visible result: On Pixel Battery the footer keeps the limit's name at every minute count and no longer touches the frame line of the background: "Session reset 47m" is drawn one size smaller (font 2, size 1 instead of 2) wherever the full-size sentence would come within 3 px of the frame line (10m to 59m and 10h to 23h), centred, with at least 3 px to the line on both sides. 1m to 9m, 1h to 9h, days and the Weekly footer stay at today's size. No other text of any theme is smaller or changes.
+- Scope: Pixel Battery 1.17.8 (spec rev 25: footer lane 218 px, keepName 228) with its built zip, render revision and catalog, the optional text field keepName / kn in firmware_shared/theme_spec_renderer_core.h and displayedResetFooter in the live preview (firmware without it shows "Reset 47m"), their tests, and the guard test: every reset value 1m to 59m, 1h to 23h, 1d to 6d in One and Two keeps 3 px to the frame line, the footer shrinks exactly where it would not, and the no-shrink guard allows only this footer.
+- What's new: none — theme layout only
