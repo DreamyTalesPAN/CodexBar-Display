@@ -169,6 +169,46 @@ func TestDashboardPaceDoesNotDependOnMatchingMeasurement(t *testing.T) {
 	}
 }
 
+// The snapshot carries no pace, so /usage's pace joins the snapshot window by
+// key alone. When the snapshot has rolled to a new window and /usage still
+// describes the old one, the old pace must not sit beside the new percent;
+// the window whose reset both answers agree on keeps its pace.
+func TestDashboardPaceIsWithheldAfterWindowRollover(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc(dashboardSnapshotPath, func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"schemaVersion":1,"providers":[{"id":"claude","windows":[
+			{"kind":"session","label":"Session","usedPercent":3,"resetAt":"2099-01-01T05:00:00Z"},
+			{"kind":"weekly","label":"Weekly","usedPercent":10,"resetAt":"2099-01-07T00:00:00Z"}]}]}`)
+	})
+	mux.HandleFunc(dashboardUsagePath, func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `[{"provider":"claude","usage":{
+			"primary":{"usedPercent":90,"resetsAt":"2099-01-01T00:00:00Z"},
+			"secondary":{"usedPercent":10,"resetsAt":"2099-01-07T00:00:00Z"}},
+			"pace":{
+				"primary":{"stage":"farAhead","deltaPercent":50,"expectedUsedPercent":40},
+				"secondary":{"stage":"behind","deltaPercent":-20,"expectedUsedPercent":30,"willLastToReset":true}}}]`)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	providers, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), time.Now())
+	if err != nil || len(providers) != 1 {
+		t.Fatalf("providers=%+v err=%v", providers, err)
+	}
+	got := providers[0]
+	if len(got.Frame.UsageWindows) != 2 {
+		t.Fatalf("windows=%+v", got.Frame.UsageWindows)
+	}
+	if session := got.Frame.UsageWindows[0]; session.Percent != 3 || session.Pace.State != "" {
+		t.Errorf("rolled-over session shows the old window's pace: %+v", session)
+	}
+	if weekly := got.Frame.UsageWindows[1]; !samePace(weekly.Pace, pace(-20, protocol.PaceReserve, true)) {
+		t.Errorf("weekly lost the pace both answers agree on: %+v", weekly.Pace)
+	}
+	if len(got.Meta.Pace) != 1 || got.Meta.Pace[0].Window != "secondary" {
+		t.Errorf("API pace must follow the device's: %+v", got.Meta.Pace)
+	}
+}
+
 func TestParsePacePercentagesStrictNumbers(t *testing.T) {
 	for _, field := range []string{"deltaPercent", "expectedUsedPercent"} {
 		for _, tc := range []struct {

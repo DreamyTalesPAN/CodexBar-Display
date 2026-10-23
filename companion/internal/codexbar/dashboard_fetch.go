@@ -180,11 +180,9 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 		usage, usageOK := dashboardusage.UsageForProvider(usageProviders, provider.ID)
 		id := strings.ToLower(strings.TrimSpace(provider.ID))
 		normalized := dashboardusage.NormalizeProvider(provider, usage)
-		// CodexBar's pace rides in the same usage item as the windows. Serve's
-		// answer is the only source on this path, so it is read here (#210, #412).
 		var pace []ProviderPace
 		if usageOK && !normalized.Unavailable {
-			pace = parseProviderPace(usageItems[id])
+			pace = sameWindowPace(normalized.Windows, usageItems[id])
 		}
 		parsed := parsedFrameFromDashboardProvider(
 			provider,
@@ -228,6 +226,33 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 	}
 	serveUsage.mu.Unlock()
 	return out, nil
+}
+
+// paceResetTolerance is CodexBar's own allowance for a window's reset to drift
+// between two reads (CostUsageTokenSnapshot.quotaWeekBoundaryTolerance, 0.75.0).
+// The recorded Claude resets differ by one second between the endpoints.
+const paceResetTolerance = 2 * time.Minute
+
+// sameWindowPace is the pace CodexBar's usage item states for the dashboard
+// windows. The snapshot carries no pace, and serve caches it apart from
+// /usage (#210, #412), so a window that rolled over in one answer and not in
+// the other would show the old pace beside the new percent. The window keeps
+// its pace only while both answers hold the same reset; otherwise it has none.
+func sameWindowPace(windows []dashboardusage.UsageWindow, usageItem map[string]any) []ProviderPace {
+	paces := parseProviderPace(usageItem)
+	var out []ProviderPace
+	for _, window := range windows {
+		pace, ok := PaceForWindow(paces, window.ID)
+		if !ok {
+			continue
+		}
+		path := "usage." + pace.Window + "."
+		reset := firstRFC3339AtPaths(usageItem, path+"resetsAt", path+"resetAt")
+		if window.ResetAt != nil && !reset.IsZero() && window.ResetAt.Sub(reset).Abs() <= paceResetTolerance {
+			out = append(out, pace)
+		}
+	}
+	return out
 }
 
 // dashboardRequestTimeout bounds the snapshot request to CodexBar's serve,
