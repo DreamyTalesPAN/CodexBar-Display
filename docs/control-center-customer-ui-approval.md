@@ -20395,3 +20395,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: When CodexBar's pace says on track, the line under the bar reads "On pace" in the quiet grey, without a run-out time and without red; a deficit keeps "N% deficit · runs out in …" in red, a reserve keeps "N% reserve" in green, and a window without pace keeps its red run-out line. The bar, the tick, the reset and every number look the same.
 - Scope: the Usage tab pace line (usage-pace.tsx PaceLine drops the run-out time unless the pace is a deficit or absent, and no longer forces red for a run-out time next to an on-track or reserve pace) and its test with the real Codex weekly read of build 7215.
 - What's new: none — one pace line of the Usage tab
+
+## 2026-10-23 — #7216: The Usage tab shows only the largest unit of a reset and of a run-out time, like the device
+
+- User approval: pending – Paul question 4: the Usage tab printed two units ("Reset in 2h 26m", "Reset in 4d 9h", "runs out in 21h 48m") while the device draws only the largest one
+- Approved customer-visible result: Every reset and run-out time on the Usage tab, and the reset in the setup's display-mode preview tiles, shows only the largest unit rounded down, like the device: "Reset in 2h", "Reset in 4d", "37% deficit · runs out in 21h". The percentages, bars, ticks and colours look the same.
+- Scope: usage-screen.tsx formatReset and runsOutText use the shared formatResetLargestUnit (the device's and preview's largest-unit helper); tests of the Usage tab, the pace line and the setup display-mode tiles expect one unit.
+- What's new: none — reset and run-out times of the Usage tab

@@ -39,7 +39,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { copyForHost } from "@/lib/customer-platform";
 import {
-  formatResetCountdown,
+  formatResetLargestUnit,
   remainingResetSecs,
 } from "@/lib/reset-countdown";
 import { isProviderItem, type ProviderItem } from "./provider-picker";
@@ -763,7 +763,7 @@ type UsageLine = {
 // Shown only when CodexBar says the window will not last to its reset.
 function runsOutText(window: UsageWindowInfo, etaLeft: number): string | null {
   return window.willLastToReset === false && etaLeft > 0
-    ? `Runs out in ${formatResetCountdown(etaLeft)}`
+    ? `Runs out in ${formatResetLargestUnit(etaLeft)}`
     : null;
 }
 
@@ -1281,7 +1281,7 @@ function usageModeShortLabel(mode?: string): string {
 /** Customer-facing reset wording, shared with the setup display-mode step. */
 export function formatReset(secondsLeft: number): string {
   return secondsLeft > 0
-    ? `Reset in ${formatResetCountdown(secondsLeft)}`
+    ? `Reset in ${formatResetLargestUnit(secondsLeft)}`
     : "Reset unknown";
 }
 

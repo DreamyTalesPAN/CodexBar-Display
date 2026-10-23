@@ -222,7 +222,7 @@ describe("pace in the lane bar", () => {
         },
       ],
     });
-    expect(getByText("54% deficit · runs out in 2d 15h").className).toContain("text-destructive");
+    expect(getByText("54% deficit · runs out in 2d").className).toContain("text-destructive");
   });
 
   // The real Codex weekly read of build 7215 (logs/abnahme-7215-usage.jsonl,

@@ -1040,9 +1040,9 @@ describe("UsageScreen", () => {
       />,
     );
 
-    const sessionReset = screen.getByText("Reset in 2h 37m");
+    const sessionReset = screen.getByText("Reset in 2h");
     const sessionRow = sessionReset.parentElement as HTMLElement;
-    expect(sessionRow.textContent).toBe("94% session remainingReset in 2h 37m");
+    expect(sessionRow.textContent).toBe("94% session remainingReset in 2h");
     expect(sessionRow.nextElementSibling?.querySelector("[role=progressbar]")?.getAttribute("aria-label")).toBe(
       "94% session remaining",
     );
@@ -1052,14 +1052,14 @@ describe("UsageScreen", () => {
         ?.textContent,
     ).toBe("Claude");
 
-    const weeklyReset = screen.getByText("Reset in 1d 2h");
+    const weeklyReset = screen.getByText("Reset in 1d");
     expect((weeklyReset.parentElement as HTMLElement).textContent).toBe(
-      "91% weekly remainingReset in 1d 2h",
+      "91% weekly remainingReset in 1d",
     );
 
-    const codexReset = screen.getByText("Reset in 5d 10h");
+    const codexReset = screen.getByText("Reset in 5d");
     expect((codexReset.parentElement as HTMLElement).textContent).toBe(
-      "71% weekly remainingReset in 5d 10h",
+      "71% weekly remainingReset in 5d",
     );
     expect(
       codexReset.closest('[data-slot="card"]')?.querySelector('[data-slot="card-header"]')
@@ -1115,7 +1115,7 @@ describe("UsageScreen", () => {
           },
         ],
       });
-      expect(html).toContain("Runs out in 2d 15h");
+      expect(html).toContain("Runs out in 2d<");
       expect(html).toContain('class="text-[13px] font-semibold text-destructive"');
     });
 
@@ -1208,9 +1208,9 @@ describe("UsageScreen", () => {
     );
     expect(html).toContain('data-testid="token-history-updating"');
     expect(html).not.toContain('aria-label="Updating"');
-    expect(html).toContain("Reset in 2h 37m");
-    expect(html).toContain("Reset in 1d 2h");
-    expect(html).toContain("Reset in 5d 10h");
+    expect(html).toContain("Reset in 2h<");
+    expect(html).toContain("Reset in 1d<");
+    expect(html).toContain("Reset in 5d<");
   });
 
   it("leaves an action tile blank even when stale numbers exist", () => {

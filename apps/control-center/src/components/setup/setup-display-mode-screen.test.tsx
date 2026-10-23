@@ -135,8 +135,8 @@ describe("SetupDisplayModeScreen", () => {
       resetSecs: 3600,
       usageWindows: [{ id: "weekly", label, percent: 63, resetSecs: 3600 }],
     });
-    expect(automatic).toContain("Reset in 1h 30m");
-    expect(manual).toContain("Reset in 1h 0m");
+    expect(automatic).toContain("Reset in 1h<");
+    expect(manual).toContain("Reset in 1h<");
     for (const tile of [automatic, manual]) {
       expect(tile).toContain(`${label}</span>`);
       expect(tile).not.toContain("more bytes");
