@@ -560,6 +560,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const providerPreferencesReadOpeningRef = useRef(0);
   const providerListShownRef = useRef(false);
   const quietUsageReadRef = useRef<Promise<void> | null>(null);
+  const usageReadRevisionRef = useRef(0);
   const providerPreferencesRevisionRef = useRef(0);
   const providerPreferenceWritesRef = useRef<Promise<void>>(Promise.resolve());
   const displayPreferencesRevisionRef = useRef(0);
@@ -3430,6 +3431,50 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     return true;
   }, [catalog.themes, device, firmwareUpdateStatus, installTheme]);
 
+  const disabledTabs: ActiveTab[] = hasEnteredControlCenter
+    ? []
+    : ["overview", "usage", "settings", "theme-library", "updates", "logs"];
+  const activeShellTab = disabledTabs.includes(activeTab)
+    ? "overview"
+    : activeTab;
+
+  // A usage read can land after the customer moved to another tab.
+  const activeShellTabRef = useRef(activeShellTab);
+  useEffect(() => {
+    activeShellTabRef.current = activeShellTab;
+  }, [activeShellTab]);
+
+  const refreshDisplayPreferences = useCallback(async () => {
+    // Start after the changes that are on their way: a read beside one finds
+    // the value from before it and may answer after it.
+    for (;;) {
+      const pendingWrites = displayPreferenceWritesRef.current;
+      await pendingWrites;
+      if (pendingWrites === displayPreferenceWritesRef.current) {
+        break;
+      }
+    }
+    const revision = displayPreferencesRevisionRef.current;
+    try {
+      const payload = await runCompanion<{ items: PreferenceDescriptor[] }>(
+        "/v1/preferences?section=display",
+        undefined,
+        { preserveLastError: true },
+      );
+      // A change made while this read was under way already shows the newer
+      // value; the answer describes the state before it.
+      if (revision !== displayPreferencesRevisionRef.current) {
+        return;
+      }
+      setDisplayPreferences(
+        (payload.items || []).filter((item) => item.section === "display"),
+      );
+    } catch {
+      // A Mac App without this section offers no such settings; the rows
+      // stay hidden.
+    }
+  }, [runCompanion]);
+
   const refreshUsage = useCallback(
     (options?: { quiet?: boolean }) => {
       const quiet = Boolean(options?.quiet);
@@ -3438,6 +3483,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       if (quiet && quietUsageReadRef.current) {
         return quietUsageReadRef.current;
       }
+      const revision = usageReadRevisionRef.current;
       const read = (async () => {
         if (!quiet) {
           setBusyAction("usage");
@@ -3448,9 +3494,18 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             undefined,
             { preserveLastError: quiet },
           );
+          if (revision !== usageReadRevisionRef.current) {
+            return;
+          }
           setUsage(payload);
           setUsageError(null);
           setCompanionStatus("online");
+          // #895: CodexBar owns Used / Remaining and this read may carry a new
+          // one (unknown on a fresh Mac, or changed in CodexBar itself); a
+          // read that lands in Settings asks the row again.
+          if (activeShellTabRef.current === "settings") {
+            void refreshDisplayPreferences();
+          }
           if (!quiet) {
             const refreshEvent = usageRefreshEvent(payload);
             addEvent({
@@ -3460,6 +3515,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             });
           }
         } catch (error) {
+          if (revision !== usageReadRevisionRef.current) {
+            return;
+          }
           const normalized = normalizeUsageError(
             normalizeCaughtError(error, "Usage needs attention."),
           );
@@ -3502,6 +3560,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       addEvent,
       markCompanionAccessBlocked,
       markCompanionUnavailable,
+      refreshDisplayPreferences,
       runCompanion,
     ],
   );
@@ -3640,37 +3699,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     [runCompanion],
   );
 
-  const refreshDisplayPreferences = useCallback(async () => {
-    // Start after the changes that are on their way: a read beside one finds
-    // the value from before it and may answer after it.
-    for (;;) {
-      const pendingWrites = displayPreferenceWritesRef.current;
-      await pendingWrites;
-      if (pendingWrites === displayPreferenceWritesRef.current) {
-        break;
-      }
-    }
-    const revision = displayPreferencesRevisionRef.current;
-    try {
-      const payload = await runCompanion<{ items: PreferenceDescriptor[] }>(
-        "/v1/preferences?section=display",
-        undefined,
-        { preserveLastError: true },
-      );
-      // A change made while this read was under way already shows the newer
-      // value; the answer describes the state before it.
-      if (revision !== displayPreferencesRevisionRef.current) {
-        return;
-      }
-      setDisplayPreferences(
-        (payload.items || []).filter((item) => item.section === "display"),
-      );
-    } catch {
-      // A Mac App without this section offers no such settings; the rows
-      // stay hidden.
-    }
-  }, [runCompanion]);
-
   // The control shows the stored value, so a refused write leaves it where it
   // was and the error says why. Writes go out one after the other: two quick
   // changes must reach the Mac App, and the control, in the order they were
@@ -3700,6 +3728,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
             }.`,
             tone: "ready",
           });
+          // A usage read started before a Used / Remaining save still carries
+          // the old display mode. Retire it and ask once with the stored
+          // preference; other saves leave a running manual refresh alone (#906).
+          if (item.id === "codexbar.usageBarsShowUsed") {
+            usageReadRevisionRef.current += 1;
+            quietUsageReadRef.current = null;
+          }
           void refreshUsage({ quiet: true });
         } catch (error) {
           const normalized = normalizeCaughtError(
@@ -4929,12 +4964,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
 
   const controlCenterAvailable =
     hasActiveDevice && !connectionRecoveryRequired && !recoveryPickerOpen;
-  const disabledTabs: ActiveTab[] = hasEnteredControlCenter
-    ? []
-    : ["overview", "usage", "settings", "theme-library", "updates", "logs"];
-  const activeShellTab = disabledTabs.includes(activeTab)
-    ? "overview"
-    : activeTab;
 
   const clearRuntimeRepairTimeout = useCallback(() => {
     if (runtimeRepairTimeout.current !== null) {

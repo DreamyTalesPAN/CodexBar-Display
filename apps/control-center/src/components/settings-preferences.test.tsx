@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildThemePack, createBlankThemeSpec } from "@/lib/theme-studio";
 import { writeUserThemes } from "@/lib/theme-studio-storage";
@@ -41,6 +41,20 @@ const rotation: PreferenceDescriptor = {
   writeStrategy: "vibetv_override",
 };
 
+const usageMode: PreferenceDescriptor = {
+  ...rotation,
+  id: "codexbar.usageBarsShowUsed",
+  label: "Show",
+  owner: "codexbar",
+  writeStrategy: "codexbar_command",
+  value: "true",
+  effectiveValue: "true",
+  options: [
+    { value: "true", label: "Used" },
+    { value: "false", label: "Remaining" },
+  ],
+};
+
 function props(overrides: Partial<SettingsScreenProps> = {}): SettingsScreenProps {
   return {
     brightness: 20,
@@ -77,6 +91,52 @@ function choose(option: string) {
 }
 
 describe("SettingsScreen display preferences", () => {
+  it.each(["automatic", "fixed"] as const)("offers CodexBar's mode under Display mode in %s", (mode) => {
+    const onChange = vi.fn();
+    const settings = props({ displayPreferences: [rotation, usageMode], onDisplayPreferenceChange: onChange });
+    settings.providerPicker.display = { mode, providerIds: [], configured: true, valid: true };
+    render(<SettingsScreen {...settings} />);
+    const control = screen.getByRole("combobox", { name: "Show" });
+    expect(control.closest("#settings-usage-mode")).not.toBeNull();
+    expect(control.textContent).toBe("Used");
+    expect(openSelect("Show")).toEqual(["Used", "Remaining"]);
+    choose("Remaining");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(usageMode, "false");
+  });
+
+  // Paul, 22.10.: Used / Remaining is its own section, Usage mode, right after
+  // Display mode; AI providers stays the last section.
+  it("gives Used / Remaining its own Usage mode section after Display mode", () => {
+    const { container } = render(<SettingsScreen {...props({ displayPreferences: [rotation, usageMode] })} />);
+    const titles = Array.from(container.querySelectorAll("section h2")).map((heading) => heading.textContent);
+    expect(titles.slice(titles.indexOf("Display mode"), titles.indexOf("Display mode") + 2)).toEqual(["Display mode", "Usage mode"]);
+    expect(titles.at(-1)).toBe("AI providers");
+    const section = document.getElementById("settings-usage-mode");
+    expect(section?.querySelector("h2")?.textContent).toBe("Usage mode");
+    expect(within(section as HTMLElement).getByRole("combobox", { name: "Show" })).toBeTruthy();
+    expect(within(document.getElementById("settings-display-mode") as HTMLElement).queryByRole("combobox", { name: "Show" })).toBeNull();
+  });
+
+  it("reads Remaining from the descriptor and offers Used", () => {
+    const descriptor = { ...usageMode, value: "false", effectiveValue: "false" };
+    const onChange = vi.fn();
+    render(<SettingsScreen {...props({ displayPreferences: [descriptor], onDisplayPreferenceChange: onChange })} />);
+    expect(screen.getByRole("combobox", { name: "Show" }).textContent).toBe("Remaining");
+    openSelect("Show");
+    choose("Used");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(descriptor, "true");
+  });
+
+  it("disables the choice when CodexBar's mode is overridden", () => {
+    render(<SettingsScreen {...props({ displayPreferences: [{ ...usageMode, writable: false }] })} />);
+    expect((screen.getByRole("combobox", { name: "Show" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it.each([false, true])("omits the choice when the companion does not list it (Windows: %s)", (windowsHost) => {
+    render(<SettingsScreen {...props({ windowsHost, displayPreferences: [rotation] })} />);
+    expect(screen.queryByRole("combobox", { name: "Show" })).toBeNull();
+  });
+
   // Issue #322: Automatic switches when activity changes unless the customer
   // picks one of three intervals.
   it("offers the three rotation intervals beside the activity rule", () => {

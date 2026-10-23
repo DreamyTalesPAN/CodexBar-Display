@@ -28,6 +28,10 @@ var runUsageCommandFn = runUsageCommand
 var runCostCommandFn = runUsageCommand
 var runVersionCommandFn = runUsageCommand
 var executablePathFn = os.Executable
+var usagePreferenceGOOS = runtime.GOOS
+var runUsagePreferenceCommandFn = func(ctx context.Context, bin string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, bin, args...).Output()
+}
 
 const usageModeEnvVar = "CODEXBAR_DISPLAY_USAGE_MODE"
 const appManagedCodexBarVersionEnvVar = "VIBETV_CODEXBAR_PINNED_VERSION"
@@ -194,27 +198,63 @@ func commandTimeout() time.Duration {
 	return time.Duration(n) * time.Second
 }
 
-// UsageBarsShowUsed reflects CodexBar's "used vs remaining" display mode.
-// It defaults to "used" when the preference is unavailable.
+// UsageBarsShowUsed projects the usage data using CodexBar's effective mode.
+// Existing display callers keep their used-data fallback when it is unknown;
+// editable settings must use ReadUsageBarsShowUsed to preserve that distinction.
 func UsageBarsShowUsed() bool {
-	if showUsed, ok := usageBarsShowUsedFromEnv(); ok {
-		return showUsed
-	}
-	if runtime.GOOS != "darwin" {
-		return true
-	}
+	showUsed, err := ReadUsageBarsShowUsed()
+	return err != nil || showUsed
+}
 
+// ReadUsageBarsShowUsed reads the saved choice, or CodexBar's effective choice
+// from the existing bounded serve reading when no defaults value can be read.
+func ReadUsageBarsShowUsed() (bool, error) {
+	if showUsed, ok := usageBarsShowUsedFromEnv(); ok {
+		return showUsed, nil
+	}
+	if usagePreferenceGOOS != "darwin" {
+		return true, nil
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
+	out, err := runUsagePreferenceCommandFn(ctx, "defaults", "read", "com.steipete.codexbar", "usageBarsShowUsed")
+	if err == nil {
+		if showUsed, ok := parseBoolPreference(out); ok {
+			return showUsed, nil
+		}
+	}
+	serveUsage.mu.Lock()
+	defer serveUsage.mu.Unlock()
+	if age := time.Since(serveUsage.at); age >= 0 && age <= serveUsage.maxAge && serveUsage.showUsed != nil {
+		return *serveUsage.showUsed, nil
+	}
+	return false, errors.New("CodexBar usage preference is unavailable")
+}
 
-	out, err := exec.CommandContext(ctx, "defaults", "read", "com.steipete.codexbar", "usageBarsShowUsed").Output()
-	if err != nil {
-		return true
+// UsageBarsShowUsedOverridden prevents a saved choice from being offered when
+// the process environment takes precedence over CodexBar's own preference.
+func UsageBarsShowUsedOverridden() bool {
+	return strings.TrimSpace(os.Getenv(usageModeEnvVar)) != ""
+}
+
+// SetUsageBarsShowUsed writes only CodexBar's preference. Existing usage reads
+// and display cycles pick it up without a VibeTV setting or cache.
+func SetUsageBarsShowUsed(parent context.Context, showUsed bool) error {
+	if usagePreferenceGOOS != "darwin" || UsageBarsShowUsedOverridden() {
+		return errors.New("CodexBar usage preference is not writable")
 	}
-	if showUsed, ok := parseBoolPreference(out); ok {
-		return showUsed
+	ctx, cancel := context.WithTimeout(parent, 1500*time.Millisecond)
+	defer cancel()
+	_, err := runUsagePreferenceCommandFn(ctx, "defaults", "write", "com.steipete.codexbar", "usageBarsShowUsed", "-bool", strconv.FormatBool(showUsed))
+	if err == nil {
+		// A pre-write serve answer cannot confirm the newly saved preference.
+		// Keep provider readings; only invalidate this field and fence older fetches.
+		serveUsage.mu.Lock()
+		serveUsage.showUsed = nil
+		serveUsage.forgotten++
+		serveUsage.mu.Unlock()
 	}
-	return true
+	return err
 }
 
 func runUsageCommand(parent context.Context, timeout time.Duration, bin string, args ...string) ([]byte, error) {

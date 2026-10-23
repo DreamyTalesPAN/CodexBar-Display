@@ -55,6 +55,15 @@ const rotation = {
   writeStrategy: "vibetv_override",
   writable: true,
 };
+const usageModePreference = {
+  ...rotation,
+  id: "codexbar.usageBarsShowUsed",
+  owner: "codexbar",
+  label: "Show",
+  value: "true",
+  effectiveValue: "true",
+  options: [{ value: "true", label: "Used" }, { value: "false", label: "Remaining" }],
+};
 const refused = {
   code: "preference_write_failed",
   message: "This setting could not be updated.",
@@ -92,6 +101,10 @@ function startWindow(themes: unknown[] = []) {
     // The VibeTV the Mac App is connected to.
     device: device as typeof device,
     stored: rotation,
+    usageMode: usageModePreference,
+    // A fresh Mac has no CodexBar value until the first serve snapshot arrives.
+    usageModeKnown: true,
+    holdUsageRead: null as Promise<void> | null,
     // What VibeTV reports about its screensaver slot, if it reports it.
     slot: undefined as { screensaverPath?: string } | undefined,
     settings: {
@@ -181,7 +194,10 @@ function startWindow(themes: unknown[] = []) {
       if (url.endsWith("/v1/preferences?section=display")) {
         const found = companion.stored;
         await companion.holdRead;
-        return jsonResponse({ ok: true, items: [found] });
+        const usageMode = companion.usageModeKnown
+          ? companion.usageMode
+          : { ...usageModePreference, value: null, effectiveValue: null, availability: { state: "unavailable" } };
+        return jsonResponse({ ok: true, items: [found, usageMode] });
       }
       if (url.includes("/v1/preferences?section=providers")) {
         return jsonResponse({ ok: true, items: companion.providers });
@@ -197,6 +213,11 @@ function startWindow(themes: unknown[] = []) {
         }
         companion.stored = { ...rotation, value, effectiveValue: value };
         return jsonResponse({ ok: true, item: companion.stored });
+      }
+      if (url.endsWith(`/v1/preferences/${usageModePreference.id}`) && method === "PATCH") {
+        const { value } = JSON.parse(String(init?.body));
+        companion.usageMode = { ...usageModePreference, value, effectiveValue: value };
+        return jsonResponse({ ok: true, item: companion.usageMode });
       }
       if (url.endsWith(`/v1/preferences/${claude.id}`) && method === "PATCH") {
         const { value } = JSON.parse(String(init?.body));
@@ -244,13 +265,21 @@ function startWindow(themes: unknown[] = []) {
         return jsonResponse({ ok: true, selection: companion.selection });
       }
       if (url.includes("/v1/usage")) {
-        return jsonResponse({
+        const mode = companion.usageMode.value === "true" ? "used" : "remaining";
+        const found = {
           ok: true,
-          usageMode: "used",
+          usageMode: mode,
+          tokenUsageReady: true,
           providers: companion.providers.map(({ providerId, label }) => ({
-            id: providerId, label, session: 12, weekly: 34, resetSecs: 0, usageMode: "used",
+            id: providerId, label, session: mode === "used" ? 12 : 88,
+            weekly: mode === "used" ? 34 : 66, resetSecs: 0, usageMode: mode,
           })),
-        });
+        };
+        const held = companion.holdUsageRead;
+        companion.holdUsageRead = null;
+        await held;
+        companion.usageModeKnown = true;
+        return jsonResponse(found);
       }
       return jsonResponse({ ok: false, error: { code: "HTTP_404" } }, 404);
     }),
@@ -1338,4 +1367,134 @@ it("does not send a queued Brightness change to another VibeTV", async () => {
   store();
   await window.wait(10);
   expect(window.settingsWrites()).toEqual([{ brightnessPercent: 21 }]);
+});
+
+// #877: a poll reads Used before PATCH, but answers after Remaining is saved.
+// Saving must issue a new read immediately and discard the older answer.
+it("refreshes usage after saving Remaining and ignores a pre-write usage answer", async () => {
+  const window = startWindow();
+  window.companion.providers = [claude];
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+
+  let answerOld = () => {};
+  window.companion.holdUsageRead = new Promise<void>((resolve) => { answerOld = resolve; });
+  const usageReads = () => window.companion.requests.filter((request) => /GET .*\/v1\/usage$/.test(request)).length;
+  const before = usageReads();
+  await window.wait(30);
+  expect(usageReads()).toBe(before + 1);
+
+  fireEvent.keyDown(screen.getByRole("combobox", { name: "Show" }), { key: "Enter" });
+  fireEvent.keyDown(screen.getByRole("option", { name: "Remaining" }), { key: "Enter" });
+  await window.wait(1);
+  expect(screen.getByRole("combobox", { name: "Show" }).textContent).toBe("Remaining");
+  expect(usageReads()).toBe(before + 2);
+
+  // Keep a navigation read pending too, so it cannot hide a stale overwrite.
+  let answerNavigation = () => {};
+  window.companion.holdUsageRead = new Promise<void>((resolve) => { answerNavigation = resolve; });
+  fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+  await window.wait(1);
+  expect(window.text()).toContain("88%");
+  answerOld();
+  await window.wait(1);
+  expect(window.text()).toContain("88%");
+  expect(window.text()).not.toContain("12%");
+  answerNavigation();
+  await window.wait(1);
+});
+
+// #895: a fresh Mac has no CodexBar value until the first serve snapshot. The
+// row stays unavailable, and the next usage poll must make it usable.
+it("shows CodexBar's mode once a usage poll delivers it, without reopening Settings", async () => {
+  const window = startWindow();
+  window.companion.providers = [claude];
+  await window.wait(10);
+  window.companion.usageModeKnown = false;
+  // The first serve read is the one that tells CodexBar's mode to VibeTV.
+  let serveAnswered = () => {};
+  window.companion.holdUsageRead = new Promise<void>((resolve) => { serveAnswered = resolve; });
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  expect((screen.getByRole("combobox", { name: "Show" }) as HTMLButtonElement).disabled).toBe(true);
+  serveAnswered();
+  await window.wait(10);
+  expect((screen.getByRole("combobox", { name: "Show" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.getByRole("combobox", { name: "Show" }).textContent).toBe("Used");
+});
+
+// #895: the poll that first delivers CodexBar's mode may start on Overview and
+// land after the customer opened Settings; the row asks again then.
+it("shows CodexBar's mode from a usage poll that started before Settings was opened", async () => {
+  const window = startWindow();
+  window.companion.providers = [claude];
+  await window.wait(10);
+  window.companion.usageModeKnown = false;
+  let serveAnswered = () => {};
+  window.companion.holdUsageRead = new Promise<void>((resolve) => { serveAnswered = resolve; });
+  await window.wait(30);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  expect((screen.getByRole("combobox", { name: "Show" }) as HTMLButtonElement).disabled).toBe(true);
+  serveAnswered();
+  await window.wait(1);
+  expect((screen.getByRole("combobox", { name: "Show" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+// #877: the customer changes Used / Remaining in CodexBar itself while Settings
+// stays open. The next usage poll brings the new mode; Show follows it.
+it("follows a change made in CodexBar itself while Settings stays open", async () => {
+  const window = startWindow();
+  window.companion.providers = [claude];
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  expect(screen.getByRole("combobox", { name: "Show" }).textContent).toBe("Used");
+  window.companion.usageMode = { ...usageModePreference, value: "false", effectiveValue: "false" };
+  await window.wait(70);
+  expect(screen.getByRole("combobox", { name: "Show" }).textContent).toBe("Remaining");
+});
+
+// #906: saving an unrelated Settings preference must not drop a manual usage
+// refresh that is still running. Only a Used / Remaining change retires it.
+it("keeps a running manual usage refresh when an unrelated preference is saved", async () => {
+  const window = startWindow();
+  window.companion.providers = [claude];
+  await window.wait(10);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+  await window.wait(1);
+  expect(window.text()).toContain("12%");
+
+  // CodexBar now shows Remaining; the manual refresh is the read that carries it.
+  // Every read from here on waits, so only the refresh can show Remaining.
+  const waiting = () => {
+    let answer = () => {};
+    window.companion.holdUsageRead = new Promise<void>((resolve) => { answer = resolve; });
+    return answer;
+  };
+  window.companion.usageMode = { ...usageModePreference, value: "false", effectiveValue: "false" };
+  const answerRefresh = waiting();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh token usage" }));
+  await window.wait(1);
+  const answerSettings = waiting();
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await window.wait(1);
+  const answerSave = waiting();
+  await window.choose("Every 30 seconds");
+  expect(window.rotation().textContent).toBe("Every 30 seconds");
+
+  answerRefresh();
+  await window.wait(1);
+  const answerNavigation = waiting();
+  fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+  await window.wait(1);
+  expect(window.text()).toContain("88%");
+  expect(window.text()).not.toContain("12%");
+  answerSettings();
+  answerSave();
+  answerNavigation();
+  await window.wait(1);
 });

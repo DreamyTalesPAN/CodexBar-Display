@@ -532,3 +532,29 @@ const usageProviderErrorUsageFixture = `[{
     "secondary": {"usedPercent": 0, "windowMinutes": 10080, "resetsAt": "2026-08-03T00:00:00Z"}
   }
 }]`
+
+func TestDecodeSnapshotHostPreference(t *testing.T) {
+	for _, tc := range []struct {
+		host string
+		want *bool
+	}{
+		{`"legacy-host"`, nil},
+		{`null`, nil},
+		{`{}`, nil},
+		{`{"usageBarsShowUsed":true}`, boolPointer(true)},
+		{`{"usageBarsShowUsed":false}`, boolPointer(false)},
+	} {
+		t.Run(tc.host, func(t *testing.T) {
+			snapshot, err := DecodeSnapshot([]byte(`{"schemaVersion":1,"host":` + tc.host + `}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := snapshot.Host.UsageBarsShowUsed
+			if (got == nil) != (tc.want == nil) || (got != nil && *got != *tc.want) {
+				t.Fatalf("preference = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func boolPointer(value bool) *bool { return &value }

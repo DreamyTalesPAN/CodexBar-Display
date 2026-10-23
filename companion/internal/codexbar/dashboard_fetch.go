@@ -30,9 +30,10 @@ var serveUsage struct {
 	// at and maxAge are the snapshot's own: when serve generated it and how
 	// long serve calls it current. A serve that still answers but no longer
 	// refreshes must not stand in for a probe.
-	at     time.Time
-	maxAge time.Duration
-	items  map[string]json.RawMessage
+	at       time.Time
+	maxAge   time.Duration
+	items    map[string]json.RawMessage
+	showUsed *bool
 	// forgotten counts forgetServeUsage, so that a read which began before a
 	// provider switch does not bring the earlier answer back after it.
 	forgotten int
@@ -95,7 +96,7 @@ func serveUsageAnswer(ctx context.Context, settings []ProviderSetting) ([]byte, 
 func forgetServeUsage() {
 	serveUsage.mu.Lock()
 	defer serveUsage.mu.Unlock()
-	serveUsage.at, serveUsage.items = time.Time{}, nil
+	serveUsage.at, serveUsage.items, serveUsage.showUsed = time.Time{}, nil, nil
 	serveUsage.forgotten++
 }
 
@@ -207,6 +208,7 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 		// Round(0) drops the monotonic reading: the age must count the time
 		// the computer slept.
 		serveUsage.at, serveUsage.maxAge, serveUsage.items = time.Now().Round(0), serveUsageMaxAge, readings
+		serveUsage.showUsed = snapshot.Host.UsageBarsShowUsed
 		if snapshot.GeneratedAt != nil {
 			serveUsage.at = *snapshot.GeneratedAt
 		}

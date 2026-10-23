@@ -9844,3 +9844,101 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #873 as in its own entries plus the entries merged with d2f3fade; nothing else changes.
 - Scope: the merge of d2f3fade and this approval record. Pull request branch #873 only, not merged, not released.
 - What's new: none — merge of d2f3fade, no customer-visible change of its own
+
+## 2026-10-21 — #877: Keep usage current after saving the display mode
+
+- User approval: no visible change – UI approval not needed (bug fix: reject usage responses started before the Used / Remaining save and read the saved mode immediately)
+- Approved customer-visible result: The existing Show choice and usage numbers stay in the same saved mode, including when an older poll finishes late.
+- Scope: Control Center usage read revision, post-write refresh, and regression test; no new controls or copy.
+- What's new: none — correction of stale usage after saving a display preference.
+
+## 2026-10-21 — #877: approval marker after merging main at 3dc0a15b
+
+- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #877; the own entries of #877 keep their approvals)
+- Approved customer-visible result: #877 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
+- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #877 only, not merged, not released.
+- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
+
+## 2026-10-21 — #877: Recent activity names a saved Used / Remaining change
+
+- User approval: pending — Recent activity gets an entry when Used / Remaining is changed
+- Approved customer-visible result: Recent activity gets one entry "Usage display saved" with the chosen mode (Used or Remaining) when the change is saved; a refused change keeps the existing "save needs attention" entry; nothing else changes.
+- Scope: Control Center Settings entry for the Show (Used / Remaining) preference and its regression test; not on Windows.
+- What's new: none — the notice waits until Paul approves this entry
+
+## 2026-10-21 — #877: Recent activity wording change reverted (#579 point 6 already fixed)
+
+- User approval: no visible change – UI approval not needed (revert of 11b7f9bf: the existing entry "Show saved – Show is set to Remaining." stays; the pending wording change above is withdrawn)
+- Approved customer-visible result: Recent activity keeps the existing "Show saved – Show is set to …" entry when Used / Remaining is changed; nothing else changes.
+- Scope: this approval record only; the code change of 11b7f9bf was reverted in 108ad227. Pull request branch #877 only, not merged, not released.
+- What's new: none — revert, no customer-visible change
+
+## 2026-10-22 — #877: lint fix for the Used / Remaining re-read (#895)
+
+- User approval: no visible change – UI approval not needed (typecheck-level fix: the re-read that #895 added runs in a timer instead of synchronously in the effect body, to satisfy react-hooks/set-state-in-effect; same reads, same timing for the customer)
+- Approved customer-visible result: none; Settings shows the same Used / Remaining state as before.
+- Scope: control-center-app.tsx effect for the unavailable usage mode; pull request branch #877 only.
+- What's new: none — lint fix, no customer-visible change
+
+## 2026-10-22 — #877: Used / Remaining re-read runs from the usage poll (no timer)
+
+- User approval: no visible change – UI approval not needed (lint-level restructuring: the #895 re-read that the timer in 99050316 delayed now runs from the usage poll result itself; same reads, same Settings state for the customer)
+- Approved customer-visible result: none; Settings shows the same Used / Remaining state as before.
+- Scope: control-center-app.tsx only (usage poll result, moved derivations); pull request branch #877 only.
+- What's new: none — lint fix, no customer-visible change
+
+## 2026-10-22 — #877: Show follows a Used / Remaining change made in CodexBar
+
+- User approval: no visible change – UI approval not needed (bug fix: Show no longer keeps a stale choice after CodexBar's own setting changed; no new text or layout)
+- Approved customer-visible result: none; Show shows the mode CodexBar delivers, as the percentages already did.
+- Scope: control-center-app.tsx (the usage poll in Settings re-reads the display settings) and its test; pull request branch #877 only.
+- What's new: none — bug fix, no customer-visible text or layout change
+
+## 2026-10-22 — #877: Used / Remaining gets its own Usage mode section
+
+- User approval: pending — Paul's test of build 7206 (22.10. ~09:30): Used / Remaining moves out of Display mode into its own "Usage mode" section right after it, label on the left, switch on the right
+- Approved customer-visible result: pending — Settings shows a "Usage mode" section after "Display mode" with the Used / Remaining switch (same control, same preference); Display mode no longer contains it; AI providers stays last.
+- Scope: settings-screen.tsx (section move only) and its test; pull request branch #877 only.
+- What's new: none — the existing Used / Remaining switch moved into its own section, nothing new to use
+
+## 2026-10-22 — #877: merge main after #784
+
+- User approval: no visible change – UI approval not needed (merge of main after #784 into #877)
+- Approved customer-visible result: Main redesign with this PR's Usage mode section and existing preference behavior.
+- Scope: apps/control-center/src/components/settings-screen.tsx and existing display preference integration; merge integration only.
+- What's new: none — merge integration only.
+
+## 2026-10-22 — #877: standalone approval marker for the merge of main
+
+- User approval: no visible change – UI approval not needed (standalone record for the merge of origin/main d2f3fade into #877; combined merge diff is not parsed by the current gate)
+- Approved customer-visible result: Same as the entries of #877 above; this commit changes documentation only.
+- Scope: Approval record for PR #877, no product changes.
+- What's new: none — standalone documentation marker for the completed main merge
+
+## 2026-10-22 — #877: Show follows a usage read that lands after Settings opened
+
+- User approval: no visible change – UI approval not needed (Codex review fix: the Show row asks again when the usage read lands in Settings, even if the read started on another tab)
+- Approved customer-visible result: Same as the entries of #877 above; the Show row no longer stays unavailable or stale in this narrow case.
+- Scope: Control Center usage read checks the current tab at completion; one regression test.
+- What's new: none — fixes a missed refresh of the Show row.
+
+## 2026-10-21 — Settings: Used / Remaining switch (writes CodexBar's own setting, Mac)
+
+- User approval: pending — Paul (21.10.): Settings gets a switch Used / Remaining (Mac; it is CodexBar's own setting, Usage and VibeTV follow it); not on Windows until Win-CodexBar has the setting (#874); Paul sees it in build 7203
+- Approved customer-visible result: Settings → Display mode has a Show row with Used and Remaining, using the existing preference control; it follows CodexBar's saved choice and is disabled when the usage-mode environment override is set.
+- Scope: CodexBar preference read/write adapter, display preference registration, Settings row, and focused tests; no VibeTV copy, usage conversion, or Windows setting.
+- What's new: none — customer notice waits for Paul's review of build 7203.
+
+## 2026-10-21 — #895: Settings reads CodexBar's Used / Remaining once the first usage read lands
+
+- User approval: no visible change – UI approval not needed (bug fix: Settings re-reads CodexBar's Used / Remaining while it is unavailable, so the first serve snapshot shows it without reopening Settings)
+- Approved customer-visible result: The Show row stays disabled until the first serve snapshot and then shows the saved mode without leaving Settings; nothing else changes.
+- Scope: Control Center Settings display-preference re-read on usage reads and its regression test; no new controls or copy.
+- What's new: none — the row fills in sooner after a fresh start.
+
+## 2026-10-22 — #906: Only a Used / Remaining change invalidates a running usage read
+
+- User approval: no visible change – UI approval not needed (bug fix: saving an unrelated Settings preference no longer drops a manual usage refresh that is still running; no new text or layout)
+- Approved customer-visible result: none; the refresh the customer asked for shows its result as before.
+- Scope: control-center-app.tsx (the save path of display preferences) and its test; pull request branch #877 only.
+- What's new: none — bug fix, no customer-visible text or layout change

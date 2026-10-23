@@ -11,11 +11,28 @@ import (
 var ErrUnexpectedPayload = errors.New("unexpected dashboard usage payload")
 
 type Snapshot struct {
-	SchemaVersion int        `json:"schemaVersion"`
-	GeneratedAt   *time.Time `json:"generatedAt"`
+	Host          SnapshotHost `json:"host"`
+	SchemaVersion int          `json:"schemaVersion"`
+	GeneratedAt   *time.Time   `json:"generatedAt"`
 	// StaleAfterSeconds is how long serve itself calls this snapshot current.
 	StaleAfterSeconds int                 `json:"staleAfterSeconds"`
 	Providers         []DashboardProvider `json:"providers"`
+}
+
+// Older schema-v1 snapshots identify the host with a string. Only newer
+// object-shaped hosts carry CodexBar's effective display preference.
+type SnapshotHost struct {
+	UsageBarsShowUsed *bool `json:"usageBarsShowUsed"`
+}
+
+func (h *SnapshotHost) UnmarshalJSON(raw []byte) error {
+	var legacy string
+	if json.Unmarshal(raw, &legacy) == nil {
+		*h = SnapshotHost{}
+		return nil
+	}
+	type objectHost SnapshotHost
+	return json.Unmarshal(raw, (*objectHost)(h))
 }
 
 type DashboardProvider struct {
