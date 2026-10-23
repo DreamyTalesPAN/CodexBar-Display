@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
@@ -369,8 +370,21 @@ func resolveVibeTVCandidatesForControl(
 	// be a claim about a device nobody spoke to and the open error is the
 	// answer. A device that did answer (foreign, old firmware) is still named.
 	var openErr error
-	for _, candidate := range candidates {
-		hello, err := readHello(candidate)
+	// Probe every port at once (#886): a silent adapter holds its read for the
+	// whole window, so one probed first would leave no time for the ports
+	// behind it.
+	type probe struct {
+		hello protocol.DeviceHello
+		err   error
+	}
+	probes := make([]probe, len(candidates))
+	var wg sync.WaitGroup
+	for i, candidate := range candidates {
+		wg.Go(func() { probes[i].hello, probes[i].err = readHello(candidate) })
+	}
+	wg.Wait()
+	for i, candidate := range candidates {
+		hello, err := probes[i].hello, probes[i].err
 		if err != nil {
 			if errcode.Of(err) == errcode.TransportSerialOpen {
 				openErr = err
@@ -378,7 +392,6 @@ func resolveVibeTVCandidatesForControl(
 			continue
 		}
 		hello = hello.Normalize()
-		mode := hello.Capabilities.Transport.Mode
 		if hello.Kind == "hello" && strings.TrimSpace(hello.Board) != "" &&
 			!isSupportedCableBoard(hello.Board) {
 			foreignDeviceAnswered = true
@@ -390,13 +403,7 @@ func resolveVibeTVCandidatesForControl(
 		if isLegacyCableHello(hello) {
 			legacy = legacy.remember(hello)
 		}
-		if hello.Kind != "hello" || !isSupportedCableBoard(hello.Board) ||
-			hello.DeviceID == "" ||
-			hello.Capabilities.Transport.Active != "usb" ||
-			(mode != "cable" && (!allowWiFiMode || (mode != "wifi" && mode != "legacy-wifi-only"))) {
-			continue
-		}
-		if expectedDeviceID != "" && !strings.EqualFold(hello.DeviceID, expectedDeviceID) {
+		if !controlMatch(hello, expectedDeviceID, allowWiFiMode) {
 			continue
 		}
 		matches = append(matches, candidate)
@@ -447,6 +454,17 @@ func resolveVibeTVCandidatesForControl(
 			fmt.Errorf("multiple matching VibeTVs: %s", strings.Join(matches, ", ")),
 		)
 	}
+}
+
+// controlMatch reports a normalized hello that is a supported VibeTV on USB
+// with an identity, and the expected one when expectedDeviceID is set.
+func controlMatch(hello protocol.DeviceHello, expectedDeviceID string, allowWiFiMode bool) bool {
+	mode := hello.Capabilities.Transport.Mode
+	return hello.Kind == "hello" && isSupportedCableBoard(hello.Board) &&
+		hello.DeviceID != "" &&
+		hello.Capabilities.Transport.Active == "usb" &&
+		(mode == "cable" || (allowWiFiMode && (mode == "wifi" || mode == "legacy-wifi-only"))) &&
+		(expectedDeviceID == "" || strings.EqualFold(hello.DeviceID, expectedDeviceID))
 }
 
 // isLegacyCableHello reports a supported VibeTV whose firmware predates the

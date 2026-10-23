@@ -2,18 +2,19 @@
   {
     "pace": {
       "primary": {
-        "deltaPercent": -39,
-        "expectedUsedPercent": 44,
+        "deltaPercent": -30,
+        "expectedUsedPercent": 79,
         "stage": "farBehind",
-        "summary": "39% in reserve | Expected 44% used | Lasts until reset",
+        "summary": "30% in reserve | Expected 79% used | Lasts until reset",
         "willLastToReset": true
       },
       "secondary": {
-        "deltaPercent": -2,
-        "expectedUsedPercent": 12,
-        "stage": "slightlyBehind",
-        "summary": "2% in reserve | Expected 12% used | Lasts until reset",
-        "willLastToReset": true
+        "deltaPercent": 45,
+        "etaSeconds": 40126,
+        "expectedUsedPercent": 41,
+        "stage": "farAhead",
+        "summary": "45% in deficit | Expected 41% used | Runs out in 11h 9m",
+        "willLastToReset": false
       }
     },
     "provider": "claude",
@@ -24,17 +25,8 @@
     "source": "web",
     "usage": {
       "accountEmail": "redacted@example.com",
-      "accountOrganization": "redacted@example.com's Organization",
+      "accountOrganization": "redacted",
       "details": [
-        {
-          "rows": [
-            {
-              "label": "Limit Reset Credits",
-              "secondaryValue": "Expires Oct 22 at 6:00 PM",
-              "value": "1 available"
-            }
-          ]
-        },
         {
           "rows": [
             {
@@ -57,7 +49,7 @@
           "id": "claude-weekly-scoped-fable",
           "title": "Fable only",
           "window": {
-            "resetsAt": "2026-10-20T11:00:00Z",
+            "resetsAt": "2026-10-27T11:00:00Z",
             "usedPercent": 0,
             "windowMinutes": 10080
           }
@@ -65,15 +57,15 @@
       ],
       "identity": {
         "accountEmail": "redacted@example.com",
-        "accountOrganization": "redacted@example.com's Organization",
+        "accountOrganization": "redacted",
         "loginMethod": "Claude Max 20x",
         "providerID": "claude"
       },
       "loginMethod": "Claude Max 20x",
       "primary": {
-        "resetDescription": "Oct 14 at 12:30PM",
-        "resetsAt": "2026-10-14T10:30:00Z",
-        "usedPercent": 5,
+        "resetDescription": "Oct 23 at 10:30AM",
+        "resetsAt": "2026-10-23T08:30:00Z",
+        "usedPercent": 49,
         "windowMinutes": 300
       },
       "providerCost": {
@@ -81,18 +73,18 @@
         "currencyCode": "EUR",
         "limit": 100,
         "period": "Monthly cap",
-        "updatedAt": "2026-10-14T07:41:43Z",
+        "updatedAt": "2026-10-23T07:28:04Z",
         "used": 0
       },
       "secondary": {
-        "resetDescription": "Oct 20 at 1:00PM",
-        "resetsAt": "2026-10-20T11:00:00Z",
-        "usedPercent": 10,
+        "resetDescription": "Oct 27 at 12:00PM",
+        "resetsAt": "2026-10-27T11:00:00Z",
+        "usedPercent": 86,
         "windowMinutes": 10080
       },
       "subscriptionRenewsAt": "2026-11-07T08:08:43Z",
       "tertiary": null,
-      "updatedAt": "2026-10-14T07:41:44Z"
+      "updatedAt": "2026-10-23T07:28:05Z"
     }
   }
 ]

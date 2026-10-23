@@ -9782,342 +9782,463 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 3babd786 and this approval record. Pull request #919 only, not merged, not released.
 - What's new: none — merge of 3babd786, no customer-visible change of its own
 
+## 2026-10-22 — #946: approval marker after merging main at 2d42c92f
+
+- User approval: no visible change – UI approval not needed (merge of main (2d42c92f, which holds #919 squashed) into #946; the #883 entry keeps Paul's approval; #946's own change (#940, when the tray hint shows) keeps its text and look)
+- Approved customer-visible result: #946 (#940 fix on top of #919, as in the #883 entry) plus the entries merged with 2d42c92f; nothing else changes.
+- Scope: the merge of 2d42c92f and this approval record. Pull request #946 only, not merged, not released.
+- What's new: none — merge of 2d42c92f, no customer-visible change of its own
+
+## 2026-10-22 — #943: plain message when VibeTV does not answer a theme install (#927)
+
+- User approval: Marcus 2026-10-22 (154a) approved exactly this wording without a click test, as an exception, because the case can only be triggered over WiFi and both test VibeTVs run on Cable
+- Approved customer-visible result: when VibeTV does not answer the first check of a WiFi theme or screensaver install, the install dialog says "VibeTV didn't answer." with the next step "Check that VibeTV is on and near your WiFi, then try again." instead of the engine's raw error and the command-line `--target` hint.
+- Scope: `companion/internal/companionapi/theme_install.go` (`themeInstallErrorPayload`, check-device failure only) and its test. Pull request #943 only, not merged, not released.
+- What's new: none — error wording only, nothing a customer would look for
+
+## 2026-10-22 — #943: Paul approves the "VibeTV didn't answer." wording
+
+- User approval: approved by Paul in the communicator chat, 2026-10-22 ~16:40 (relayed by the communicator: Paul releases the #943 text "VibeTV didn't answer." / "Check that VibeTV is on and near your WiFi, then try again."); text-only check, no screenshot (WiFi-only case).
+- Approved customer-visible result: as in the #943 entry above.
+- Scope: this approval record only. Pull request #943 only, not merged, not released.
+- What's new: none — approval record only
+
+## 2026-10-22 — #943: approval marker after merging main at 2d42c92f
+
+- User approval: no visible change – UI approval not needed (merge of main (2d42c92f) into #943; the #943 entries above keep Marcus' (154a) and Paul's approval of the wording)
+- Approved customer-visible result: #943 as in its entries above plus the entries merged with 2d42c92f; nothing else changes.
+- Scope: the merge of 2d42c92f and this approval record. Pull request #943 only, not merged, not released.
+- What's new: none — merge of 2d42c92f, no customer-visible change of its own
+
+## 2026-10-23 — #943: approval marker after merging main at ce62db41
+
+- User approval: no visible change – UI approval not needed (merge of main (ce62db41) into #943; the #943 entries above keep Marcus' (154a) and Paul's approval of the wording)
+- Approved customer-visible result: #943 as in its entries above plus the entries merged with ce62db41; nothing else changes.
+- Scope: the merge of ce62db41 and this approval record. Pull request #943 only, not merged, not released.
+- What's new: none — merge of ce62db41, no customer-visible change of its own
+
+## 2026-10-21 — #614: one job poller / fetch helper in the Control Center
+
+- User approval: no visible change – UI approval not needed (refactor: one shared job poller / fetch helper, same requests and texts)
+- Approved customer-visible result: unchanged requests, timing, error texts and job completion behavior; no screen changes.
+- Scope: shared Companion fetch transport and job polling in apps/control-center/src/lib, existing adapters in lib and components/update-jobs.ts, behavior tests and the #614 inventory.
+- What's new: none — internal refactor with unchanged customer behavior.
+
+## 2026-10-21 — #873: approval marker after merging main at 3dc0a15b
+
+- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #873; the own entries of #873 keep their approvals)
+- Approved customer-visible result: #873 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
+- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #873 only, not merged, not released.
+- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
+
+## 2026-10-22 — #873: approval marker after merging main at 242e4846
+
+- User approval: no visible change – UI approval not needed (merge of main (242e4846) into #873; the own entries of #873 keep their approvals)
+- Approved customer-visible result: #873 as in its own entries plus the entries merged with 242e4846; nothing else changes.
+- Scope: the merge of 242e4846 and this approval record. Pull request branch #873 only, not merged, not released.
+- What's new: none — merge of 242e4846, no customer-visible change of its own
+
+## 2026-10-22 — #873: approval marker after merging main at d2f3fade
+
+- User approval: no visible change – UI approval not needed (merge of main (d2f3fade) into #873; the own entries of #873 keep their approvals)
+- Approved customer-visible result: #873 as in its own entries plus the entries merged with d2f3fade; nothing else changes.
+- Scope: the merge of d2f3fade and this approval record. Pull request branch #873 only, not merged, not released.
+- What's new: none — merge of d2f3fade, no customer-visible change of its own
+
 ## 2026-10-19 — Calm Updates screen as drawn in the approved master, plus the states derived from the calm rules (#752)
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm Updates screen as drawn in the approved master, plus the states derived from the calm
 - Approved customer-visible result: none yet; waits for Paul's yes. Before: two cards "Mac App" and "VibeTV" with Installed / Available version chips, "Last checked <date, time with seconds>" per card, an "Alert" box for the Mac-App-first rule and the update progress, a heading "Up to date" with a "What's new" link, and one full-width lime button ("Check for updates" / "Update"). After: one headline with a dot ("Everything is up to date", "Update available", "Checking for updates", "Update check failed", "Updating VibeTV", "VibeTV is restarting"); one framed card with a row "Mac App" ("App" on Windows) and a row "VibeTV firmware", each with an icon, one version number (the installed one) and "Up to date"; "Checked today, 08:44" (or "yesterday" / the date) and an outline "Check for updates" button beside the page title; a grey "What's new in <version>" note card with the newest entry's title and "Read notes" (opens the existing What's new dialog). Update available: the row that has the update shows a lime "Update" button (Mac App: Sparkle updater or verified download; firmware: starts the update) and says "Version <x> is available"; the firmware row keeps "Update Mac App first" / "Checking Mac App" inside its row while the app comes first. Installing: a thin progress bar and one "> step" line (shared process steps) inside the firmware row. Update complete / attention: title and sentence inside the firmware row. Failed check: a dialog "Could not check for updates" with "Check the internet connection, then try again.", a lime "Try again" and "Close" (no X); the failed update dialog is unchanged.
 - Scope: `apps/control-center/src/components/updates-screen.tsx` (+ tests), `apps/control-center/src/components/process-steps.tsx` (+ test; identical to the file in the Theme Studio group, so the two merge without a conflict), and this approval record. Pull request branch only, stacked on #784; not merged, not released.
 - What's new: none — the Updates screen shows the entries that already exist
+
 ## 2026-10-19 — Calm Updates screen: test and selector fixes after CI, one visible detail (#752)
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm Updates screen: test and selector fixes after CI, one visible detail (#752)
 - Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entry above except: a Mac App migration that cannot start yet (no verified download) shows no closed "Update" button next to a firmware update that can start, so the one lime "Update" stays the firmware's (before: one closed and one open "Update"); the Mac App row says "Version <x> is available" from the release's version or tag.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, its tests, `control-center-app.update-check.test.tsx` and `control-center-app.whats-new.test.tsx` (new wording: "Checked <date>, <time>", "Read notes"), the customer-flow selectors in `apps/control-center/scripts/test-customer-flows.mjs`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new feature; the Updates screen shows the entries that already exist
+
 ## 2026-10-19 — Calm Updates screen: Codex review fixes (#752)
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm Updates screen: Codex review fixes (#752)
 - Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: the firmware "Update" stays closed while a check runs and after the Mac App check failed (as the old single button did); a theme-only update says "A theme update is available" instead of a firmware version; a firmware check that answered with neither "current" nor an update (no release for this board, not supported over this connection) shows its own message in the row and the headline "No update available" instead of "Up to date".
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new feature; the Updates screen shows the entries that already exist
+
 ## 2026-10-19 — Calm Updates screen: failed-check dialog waits for the notes and for a retry (#752)
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm Updates screen: failed-check dialog waits for the notes and for a retry (#752)
 - Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: the "Could not check for updates" dialog does not open while the "What's new" notice is open (it opens after the notice is closed), and not while a retry runs; a retry that succeeds leaves no dialog behind.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/control-center-app.tsx` (passes whether the notice is open), their tests, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new feature; the Updates screen shows the entries that already exist
+
 ## 2026-10-19 — Calm Updates screen: failed-check dialog waits for every other dialog (#752)
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm Updates screen: failed-check dialog waits for every other dialog (#752)
 - Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: the "Could not check for updates" dialog also waits while the usage-recovery or "system busy" dialog is open (before in this PR: only while the "What's new" notice was open), so two dialogs are never open together.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/control-center-app.tsx`, the Updates test, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new feature; the Updates screen shows the entries that already exist
+
 ## 2026-10-19 — Calm Updates screen: a closed failed-check dialog stays closed after another dialog (#752, Codex fix)
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm Updates screen: a closed failed-check dialog stays closed after another dialog (#752,
 - Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: after the customer closes "Could not check for updates", a What's new, usage-recovery or "system busy" dialog that opens and closes no longer brings the same failure back; only a newer failed check opens it again.
 - Scope: `apps/control-center/src/components/updates-screen.tsx` (dismissed failure kept in the screen, not in the dialog), `apps/control-center/src/components/updates-screen.calm.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new feature; the Updates screen shows the entries that already exist
+
 ## 2026-10-19 — Calm Updates screen: a retry that fails again always reopens the failed-check dialog (#752, Codex fix)
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm Updates screen: a retry that fails again always reopens the failed-check dialog (#752
 - Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: after "Try again" the dialog stays closed while the retry runs and opens again when that retry fails, also when its answer carries the same second as the failure before.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new feature; the Updates screen shows the entries that already exist
+
 ## 2026-10-19 — Calm Updates screen: any finished check lifts a closed failed-check dialog (#752, Codex fix)
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm Updates screen: any finished check lifts a closed failed-check dialog (#752, Codex fi
 - Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: a check started from the "Check for updates" button that fails again opens the dialog again, like "Try again", also when its answer carries the same second.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new feature; the Updates screen shows the entries that already exist
+
 ## 2026-10-19 — Calm Updates screen: a closed "Update failed" dialog no longer blocks the failed-check dialog (#752, Codex fix)
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm Updates screen: a closed "Update failed" dialog no longer blocks the failed-check dia
 - Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: after the customer closed "Update failed", a later failed update check opens "Could not check for updates" although the old job still reports its error.
 - Scope: `apps/control-center/src/components/updates-screen.tsx` (the closed update error is kept in the screen), `apps/control-center/src/components/updates-screen.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new feature; the Updates screen shows the entries that already exist
+
 ## 2026-10-19 — Calm Updates screen: the heading says "Checking for updates" while a started check runs (#752, Codex fix)
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Calm Updates screen: the heading says "Checking for updates" while a started check runs (#
 - Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: while a check the customer started runs, the headline reads "Checking for updates" (muted dot) instead of the old "Update check failed" / "Update available"; it matches the button "Checking updates".
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new feature; the Updates screen shows the entries that already exist
+
 ## 2026-10-19 — #798: approval marker after merging the calm redesign base (Updates)
 
 - User approval: no visible change – UI approval not needed (merge commit into #798; no visible change of its own; entry: #798: approval marker after merging the calm redesign base (Updates))
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
 ## 2026-10-19 — #798: Updates page matched to the template (build 2 QA)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #798: Updates page matched to the template (build 2 QA) — before → after: (1) the text on Updates is 14 px with 21 px lines (row names, descriptions, Up to date, Checked, What's new card) → before 13 px; (2) the headline (for example Everything is up to date) is 15 px → before 13 px; (3) Check for updates and Read notes are 14 px → before 13 px; the version numbers stay 13 px monospace; each row is 3 px taller, the page is a little taller.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/updates-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
 ## 2026-10-19 — #798: Codex fixes for Updates, merge of the calm redesign base
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #798: Codex fixes for Updates, merge of the calm redesign base — before → after: (1) "Checked today, 09:10" also counts a firmware answer without a release version (no release for this board, or current) → before only a firmware answer with a version; (2) a Mac App check that is disabled or has no asset to install no longer shows "Up to date" on its row → before the green "Up to date"; (3) the page headline reads "No update available" in that case → before "Everything is up to date".
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record; merge of origin/claude/group-calm-redesign (#784, 5d8f2885). Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
 ## 2026-10-19 — #798: Codex fix follow-up, test scope only
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #798: Codex fix follow-up, test scope only
 - Approved customer-visible result: none; no visible change.
 - Scope: `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
 ## 2026-10-19 — #798: Updates row "Control Center" as drawn in the template (build 2 decision)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #798: Updates row "Control Center" as drawn in the template (build 2 decision) — before → after: the first row on Updates is titled "Control Center" with the line "App on this Mac" (on Windows "App on this computer", the app's usual wording for "this Mac") → before the title "Mac App" (Windows: "App") with the line "Software on this Mac" (Windows: "Software on this computer").
 - Approved customer-visible result: the row looks as drawn in frame 10 of "Calm Redesign - alle Screens".
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.test.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx`, `apps/control-center/scripts/test-customer-flows.mjs` (three locators of the row title) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
 ## 2026-10-19 — #798: approval marker after merging the Control Center row branch (rv-tpl798)
 
 - User approval: no visible change – UI approval not needed (merge commit into #798; no visible change of its own; entry: #798: approval marker after merging the Control Center row branch (rv-tpl798))
 - Approved customer-visible result: as in the entry "Updates row \"Control Center\" as drawn in the template (build 2 decision)" above.
 - Scope: merge of origin/claude/calm-updates (380662fd) into this branch, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
 ## 2026-10-19 — #798: Codex fix, the headline's dot follows a failed check
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #798: Codex fix, the headline's dot follows a failed check — before → after: when a check failed and an update was found by the other check, the dot beside "Update check failed" is red → before the dot was ink, as for "Update available".
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
 ## 2026-10-19 — #798: Codex fix, the dot of an inconclusive Mac App check is muted
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #798: Codex fix, the dot of an inconclusive Mac App check is muted — before → after: when the Mac App check answers with a disabled or missing asset result and the firmware is current, the dot beside "No update available" is grey → before the dot was green, as for "Everything is up to date".
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
 ## 2026-10-19 — #798: Codex fix, the failed-check dialog waits while the native Mac App update prompt is offered
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #798: Codex fix, the failed-check dialog waits while the native Mac App update prompt is o — before → after: when the firmware check fails and a Mac App update is offered, the "Could not check for updates" dialog waits; the native update prompt is shown alone → before both could be on screen at once.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
 ## 2026-10-19 — #798: the failed-check dialog is shown again alongside the native Mac App prompt (as before)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #798: the failed-check dialog is shown again alongside the native Mac App prompt (as befor — before → after: when the firmware check fails and a Mac App update is offered, the "Could not check for updates" dialog shows again (as before this branch's deferral) → the deferral removed; the native update prompt does not tell this screen when it closes, so the failure dialog cannot wait for it.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/updates-screen.calm.test.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
 ## 2026-10-19 — #798: Codex fix, the failed-check retry waits while another action runs
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #798: Codex fix, the failed-check retry waits while another action runs — before → after: while an install or another action holds the Updates page, the retry "Try again" in the "Could not check for updates" dialog is disabled → before it was enabled and could start a second check.
 - Approved customer-visible result: none yet; waits for Paul's yes. See the entries above.
 - Scope: `apps/control-center/src/components/updates-screen.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
 ## 2026-10-19 — #798: merge of the #784 outage-dialog fix, no change of its own
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #798: merge of the #784 outage-dialog fix, no change of its own
 - Approved customer-visible result: none; no visible change.
 - Scope: merge of `origin/claude/group-calm-redesign` (`apps/control-center/src/components/setup/setup-recovery-dialogs.tsx`, its test, the flow comment) and this approval record. Pull request branch only, not merged, not released.
+
 ## 2026-10-20 — #798: merge of the #784 build 2b QA fixes, no change of its own
 
 - User approval: no visible change – UI approval not needed (merge commit into #798; no visible change of its own; entry: #798: merge of the #784 build 2b QA fixes, no change of its own)
 - Approved customer-visible result: none; no visible change.
 - Scope: merge of `origin/claude/group-calm-redesign` (`apps/control-center/src/components/vibetv-3d-preview.tsx`, `overview-screen.tsx`, `control-center-shell.tsx`, `setup/setup-device-dialogs.tsx` and their tests) and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new content
+
 ## 2026-10-20 — Calm Updates screen: a closed failure stays closed when only the other check reruns (#752, Codex fix)
 - User approval: pending — Paul reviews (Updates built as drawn in the approved master + derived states); Codex review fix, no visible change; not seen by Paul
 - Approved customer-visible result: none yet; waits for Paul's yes. Look unchanged from the entries above except: after the customer closed "Could not check for updates" for a failed Mac App check, a firmware-only refresh (e.g. after the VibeTV reported new firmware) no longer brings that dialog back; it opens again only when the failing check itself ran again.
 - Scope: `apps/control-center/src/components/updates-screen.tsx` (one dismissal per check), `apps/control-center/src/components/updates-screen.calm.test.tsx`, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no new feature; the Updates screen shows the entries that already exist
+
 ## 2026-10-20 — #798: approval marker after merging claude/group-calm-redesign
 
 - User approval: no visible change – UI approval not needed (merge commit into #798; no visible change of its own; entry: #798: approval marker after merging claude/group-calm-redesign)
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
 ## 2026-10-20 — #798: approval marker after merging claude/group-calm-redesign
 
 - User approval: no visible change – UI approval not needed (merge commit into #798; no visible change of its own; entry: #798: approval marker after merging claude/group-calm-redesign; occurrence 2)
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
 ## 2026-10-20 — #798: approval marker after merging claude/group-calm-redesign
 
 - User approval: no visible change – UI approval not needed (merge commit into #798; no visible change of its own; entry: #798: approval marker after merging claude/group-calm-redesign; occurrence 3)
 - Approved customer-visible result: as in this branch's entries (pending, Paul reviews) and in the merged entries; nothing else changes.
 - Scope: the merge and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — no customer-visible change of its own
+
 ## 2026-10-20 — #798: approval marker for the merge of claude/group-calm-redesign at 315b6e57 (gate fix)
 
 - User approval: no visible change – UI approval not needed (merge commit into #798; no visible change of its own; entry: #798: approval marker for the merge of claude/group-calm-redesign at 315b6e57 (gate fix))
 - Approved customer-visible result: #798 as in its own entries (pending, Paul reviews) plus the entries merged with 315b6e57; nothing else changes.
 - Scope: this approval record for the merge of 315b6e57. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of 315b6e57, no customer-visible change of its own
+
 ## 2026-10-20 — #798: approval marker after merging claude/group-calm-redesign at ece7b388
 
 - User approval: no visible change – UI approval not needed (merge commit into #798; no visible change of its own; entry: #798: approval marker after merging claude/group-calm-redesign at ece7b388)
 - Approved customer-visible result: #798 as in its own entries (pending, Paul reviews) plus the entries merged with ece7b388; nothing else changes.
 - Scope: the merge of ece7b388 and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of ece7b388, no customer-visible change of its own
+
 ## 2026-10-20 — #798: approval marker after merging claude/group-calm-redesign at fd754339
 
 - User approval: no visible change – UI approval not needed (merge commit into #798; no visible change of its own; entry: #798: approval marker after merging claude/group-calm-redesign at fd754339)
 - Approved customer-visible result: #798 as in its own entries (pending, Paul reviews) plus the entries of #784 (pending, Paul reviews).
 - Scope: the merge of fd754339 and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of fd754339, no customer-visible change of its own
+
 ## 2026-10-20 — #798: Updates without width limit, panel icon in the header, growing page margin (7197 template point 10)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #798: Updates without width limit, panel icon in the header, growing page margin (7197 tem — Before → after: #798 point 10: the Updates page was at most 760 px wide, drew no panel icon beside its title on a window wider than 768 px, and had the fixed side margin of the other tabs → #798 point 10: no width limit, the header shows the panel icon like the other tabs, and the page margin is as on Usage: 48 px, growing with the window (4 % of the page width) up to 96 px.
 - Approved customer-visible result: #798 point 10: Updates as in frame `#updates` of "Calm Redesign - alle Screens" (pictures 10 and 10b, right side), in a large and a small window.
 - Scope: #798 point 10: `apps/control-center/src/components/updates-screen.tsx`, `apps/control-center/src/components/control-center-shell.tsx` (the same margin and panel-icon change that #803 point 11 makes for Support, so the two merge cleanly), its test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #798 point 10: no new content, the same page with a wider layout
+
 ## 2026-10-20 — #798: Updates margin also grows on wide windows (fix of the 7197 point 10 entry)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #798: Updates margin also grows on wide windows (fix of the 7197 point 10 entry) — Before → after: #798 from a 1024 px wide window the old fixed 48 px margin (lg:px-12) won over the growing one → #798 the margin grows with the window up to 96 px at every width, as the entry above describes.
 - Approved customer-visible result: #798 Updates page margin as in the 7197 template points 10 and 11 at large windows.
 - Scope: #798 `apps/control-center/src/components/control-center-shell.tsx` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #798 margin fix not announced
+
 ## 2026-10-20 — #798: Updates never says "up to date" for a blocked migration (Codex fix)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #798: Updates never says "up to date" for a blocked migration (Codex fix) — Before → after: #798 a required Mac App migration with a missing or disabled download showed "Everything is up to date" beside a closed Update button → #798 the page says "No update available" in the quiet colour.
 - Approved customer-visible result: #798 Updates headline for a migration without a verified download is "No update available", never "Everything is up to date".
 - Scope: #798 `apps/control-center/src/components/updates-screen.tsx`, its calm test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #798 headline fix not announced
+
 ## 2026-10-20 — #798: a blocked Mac App migration never says "Update available" (Codex review)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: #798: a blocked Mac App migration never says "Update available" (Codex review) — Before → after: #798 a legacy Mac App outside /Applications whose required migration has no download (missing or disabled) said "Update available" with the ink dot beside a closed Update button when the release was newer → #798 it says "No update available" with the muted dot, as for the same case without a newer release; the firmware stays locked until the Mac App is updated.
 - Approved customer-visible result: #798 the Updates heading never offers an update the customer cannot take.
 - Scope: #798 `apps/control-center/src/components/updates-screen.tsx`, its calm test and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — #798 Codex fix not announced
+
 ## 2026-10-20 — #798: browser flow expects the headline the screen already shows for a blocked migration
 
 - User approval: no visible change – UI approval not needed (#798: browser test script only; the screen already reads "No update available" for a required migration without a verified download, the script still waited for "Everything is up to date")
 - Approved customer-visible result: #798 unchanged; this entry only records the test update.
 - Scope: `apps/control-center/scripts/test-customer-flows.mjs` and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — test-only change, no customer-visible change
+
 ## 2026-10-20 — #798: approval marker after merging claude/group-calm-redesign again
 
 - User approval: merge of claude/group-calm-redesign into #798 (approval record kept from both sides); no visible change of its own; not seen by Paul. The UI review gate cannot read a merge commit as approval marker.
 - Approved customer-visible result: #798 as in its own entries (pending, Paul reviews) plus the entries of the base branch.
 - Scope: the merge and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of the base branch, no customer-visible change of its own
+
 ## 2026-10-20 — #798: approval marker after merging claude/group-calm-redesign at ea818ad4
 
 - User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (ea818ad4) into #798; the own entries of #798 keep their approvals)
 - Approved customer-visible result: #798 as in its own entries plus the entries merged with ea818ad4; nothing else changes.
 - Scope: the merge of ea818ad4 and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of ea818ad4, no customer-visible change of its own
+
 ## 2026-10-20 — #798: Paul's approval of build 7198 recorded
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" — #798 approval record for build 7198 (everything except the Appearance cards #802); the #798 entries that were in build 7198 now carry it, merge markers are marked as no visible change, entries added after build 7198 stay pending.
 - Approved customer-visible result: #798 as described in its entries above, as seen in build 7198.
 - Scope: #798 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #798 approval record only
+
 ## 2026-10-21 — #798: approval marker after merging claude/group-calm-redesign at fb30d196
 
 - User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (fb30d196) into #798; the own entries of #798 keep their approvals)
 - Approved customer-visible result: #798 as in its own entries plus the entries merged with fb30d196; nothing else changes.
 - Scope: the merge of fb30d196 and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of fb30d196, no customer-visible change of its own
+
 ## 2026-10-21 — #798: approval marker after merging claude/group-calm-redesign at fd9e6fb3
 
 - User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (fd9e6fb3) into #798; the own entries of #798 keep their approvals)
 - Approved customer-visible result: #798 as in its own entries plus the entries merged with fd9e6fb3; nothing else changes.
 - Scope: the merge of fd9e6fb3 and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of fd9e6fb3, no customer-visible change of its own
+
 ## 2026-10-21 — #798: approval marker after merging claude/group-calm-redesign at 0a599c37
 
 - User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (0a599c37) into #798; the own entries of #798 keep their approvals)
 - Approved customer-visible result: #798 as in its own entries plus the entries merged with 0a599c37; nothing else changes.
 - Scope: the merge of 0a599c37 and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of 0a599c37, no customer-visible change of its own
+
 ## 2026-10-21 — #798: Updates title row stays below the page title until lg
 
 - User approval: approved by Paul in the communicator chat, 2026-10-21 12:28: "rest passt so" (build 7201 review) — entry: #798 Updates title row: stays below the page title until the window is wide enough (lg), so it no longer overlaps the title in narrow windows; wide windows unchanged
 - Approved customer-visible result: #798 Updates screen as in its own entries; in narrow windows (below lg) the checked timestamp and Check button sit below the page title instead of overlapping it; wide windows unchanged.
 - Scope: the Updates title row in apps/control-center/src/components/updates-screen.tsx and its class test. Pull request branch #798 only, not merged, not released.
 - What's new: none — layout fix of the Updates title row, no new feature
+
 ## 2026-10-21 — #798: approval marker after merging claude/group-calm-redesign at b095ff2d
 
 - User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (b095ff2d) into #798; the own entries of #798 keep their approvals)
 - Approved customer-visible result: #798 as in its own entries plus the entries merged with b095ff2d; nothing else changes.
 - Scope: the merge of b095ff2d and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of b095ff2d, no customer-visible change of its own
+
 ## 2026-10-21 — #798: approval marker after merging claude/group-calm-redesign at 2d217aa5
 
 - User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (2d217aa5) into #798; the own entries of #798 keep their approvals)
 - Approved customer-visible result: #798 as in its own entries plus the entries merged with 2d217aa5; nothing else changes.
 - Scope: the merge of 2d217aa5 and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of 2d217aa5, no customer-visible change of its own
+
 ## 2026-10-21 — #798: approval marker after merging claude/group-calm-redesign at ff601365
 
 - User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (ff601365) into #798; the own entries of #798 keep their approvals)
 - Approved customer-visible result: #798 as in its own entries plus the entries merged with ff601365; nothing else changes.
 - Scope: the merge of ff601365 and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of ff601365, no customer-visible change of its own
+
 ## 2026-10-21 — #798: Updates headline and Checked time for blocked and disabled answers (#849)
 
 - User approval: pending — #798 / #849: Updates headline no longer claims "Update available" when no update can be started, and the "Checked" time also counts a disabled release answer
 - Approved customer-visible result: the headline reads "No update available" instead of "Update available" when the only update cannot start; "Checked" also shows the time of a disabled Mac App answer.
 - Scope: apps/control-center/src/components/updates-screen.tsx and its two test files. Pull request branch #798 only, not merged, not released.
 - What's new: none — the headline and the Checked time are corrections of existing wording and times; no new notice
+
 ## 2026-10-21 — #798: Paul's approval of build 7201 recorded
 
 - User approval: approved by Paul in the communicator chat, 2026-10-21 12:28: "rest passt so" (build 7201 review) — #798 approval record for build 7201; only the 7201 point of #798 now carries it, everything else stays as it was.
 - Approved customer-visible result: #798 as described in that entry, as seen in build 7201.
 - Scope: #798 this approval record only. Pull request branch only, not merged, not released.
 - What's new: none — #798 approval record only
+
 ## 2026-10-21 — #798: approval marker after merging claude/group-calm-redesign at 3caaf211
 
 - User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (3caaf211) into #798; the own entries of #798 keep their approvals)
 - Approved customer-visible result: #798 as in its own entries plus the entries merged with 3caaf211; nothing else changes.
 - Scope: the merge of 3caaf211 and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of 3caaf211, no customer-visible change of its own
+
 ## 2026-10-21 — #798: approval marker after merging claude/group-calm-redesign at 4371975c
 
 - User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (4371975c) into #798; the own entries of #798 keep their approvals)
 - Approved customer-visible result: #798 as in its own entries plus the entries merged with 4371975c; nothing else changes.
 - Scope: the merge of 4371975c and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of 4371975c, no customer-visible change of its own
+
 ## 2026-10-21 — #798: Updates headline pinned for a firmware update that cannot start (#849)
 
 - User approval: no visible change – UI approval not needed (test only: pins #849, the Updates headline no longer says "Update available" for a firmware update whose Mac App download is missing or disabled; no code change)
 - Approved customer-visible result: #798 as in its own entries; nothing changes on screen.
 - Scope: updates-screen tests only. Pull request branch #798 only, not merged, not released.
 - What's new: none — test only, no customer-visible change
+
 ## 2026-10-21 — #798: approval marker after merging claude/group-calm-redesign at 260c4843
 
 - User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (260c4843) into #798; the own entries of #798 keep their approvals)
 - Approved customer-visible result: #798 as in its own entries plus the entries merged with 260c4843; nothing else changes.
 - Scope: the merge of 260c4843 and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of 260c4843, no customer-visible change of its own
+
 ## 2026-10-21 — #798: Mac App not 'up to date' without an installed version
 
 - User approval: no visible change – UI approval not needed (bug fix: a Mac App check that answers "available" without an installed version no longer shows the Mac App as up to date; the existing unknown state stays)
 - Approved customer-visible result: without a known installed version the Updates screen shows the unknown state ("No update available") instead of "Everything is up to date"; with a known version nothing changes.
 - Scope: `apps/control-center/src/components/updates-screen.tsx` and its test `updates-screen.calm.test.tsx`, plus this approval record. Pull request branch only, not merged, not released.
 - What's new: none — bug fix, not announced to customers
+
 ## 2026-10-21 — #798: Updates attempt key keeps milliseconds
 
 - User approval: no visible change – UI approval not needed (bug fix: two local VibeTV update failures within one second both open the "Update failed" dialog; the attempt key now keeps milliseconds, the time shown stays HH:mm:ss)
 - Approved customer-visible result: each failed local VibeTV update opens its "Update failed" dialog, also when a second one follows the closed one within the same second; nothing else changes.
 - Scope: `apps/control-center/src/components/control-center-app.tsx` (attempt start time), its test `updates-screen.test.tsx`, plus this approval record. Pull request branch only, not merged, not released.
 - What's new: none — bug fix, not announced to customers
+
 ## 2026-10-21 — #798: approval marker after merging claude/group-calm-redesign at 035ced04
 
 - User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (035ced04) into #798; the own entries of #798 keep their approvals)
 - Approved customer-visible result: #798 as in its own entries plus the entries merged with 035ced04; nothing else changes.
 - Scope: the merge of 035ced04 and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of 035ced04, no customer-visible change of its own
+
 ## 2026-10-21 — #798: Keep dismissed update notices closed across tabs
 
 - User approval: no visible change – UI approval not needed (bug fix: closed update notices stay closed after a tab switch until a new check or update attempt)
 - Approved customer-visible result: the existing Close decision survives navigation; a new check or failed update attempt may still open its existing notice.
 - Scope: UpdatesScreen dialog state, its ControlCenterApp owner, the Updates tests and this approval record.
 - What's new: none — bug fix, not announced to customers
+
 ## 2026-10-21 — #798: Keep unavailable update checks unknown
 
 - User approval: no visible change – UI approval not needed (bug fix: missing firmware data or an offline companion no longer claims everything is up to date)
 - Approved customer-visible result: unavailable checks use the existing unknown state and retained firmware checks lose their green status while the device or companion is disconnected; no new copy or layout.
 - Scope: UpdatesScreen availability checks, targeted regression tests and this approval record.
 - What's new: none — bug fix, not announced to customers
+
 ## 2026-10-21 — #798: Retain one firmware attempt key through local errors and polls
 
 - User approval: no visible change – UI approval not needed (bug fix: a closed firmware failure does not reopen when the same server job arrives after the local handler)
 - Approved customer-visible result: the existing failure notice stays closed for the same update attempt; a new failed attempt still opens it.
 - Scope: ControlCenterApp firmware job handling using firmwareUpdateStatusFromJob, the end-to-end component regression and this approval record.
 - What's new: none — bug fix, not announced to customers
+
 ## 2026-10-21 — #798: Restore compact update activity times
 
 - User approval: no visible change – UI approval not needed (bug fix: firmware and theme-only update activity uses the existing clock format instead of exposing the internal attempt key)
 - Approved customer-visible result: Recent activity keeps its HH:mm:ss timestamps; update attempt identity remains full precision internally.
 - Scope: remove the two update-start event timestamp overrides, exercise the rendered Support activity row, and append this approval record.
 - What's new: none — bug fix, not announced to customers
+
 ## 2026-10-21 — #798: approval marker after merging claude/group-calm-redesign at 52397ff8
 
 - User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (52397ff8) into #798; the own entries of #798 keep their approvals)
