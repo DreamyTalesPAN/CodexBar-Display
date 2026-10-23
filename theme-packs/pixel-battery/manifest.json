@@ -3,7 +3,7 @@
   "schemaVersion": 1,
   "id": "pixel-battery",
   "name": "Pixel Battery",
-  "version": "1.17.7",
+  "version": "1.17.8",
   "usage": "live",
   "minFirmware": "1.0.50",
   "requiredCapabilities": [
@@ -14,18 +14,25 @@
     "usage-pace-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/pba-24-613b62bb.json",
+    "path": "/themes/u/pba-25-2304b7f5.json",
     "file": "theme.json",
-    "bytes": 2197,
-    "sha256": "613b62bb8083537fe68ba876c8c365e1b0704dc96fe5f29cacb003e31c7d434b",
+    "bytes": 2272,
+    "sha256": "2304b7f559b62e4fd39cfbe5659bceb6531dba0656a5fbaa3123a745d9b2ec55",
     "contentType": "application/json"
   },
   "assets": [
     {
       "path": "/themes/u/pba-bg.cbi",
       "file": "assets/pba-bg.cbi",
-      "bytes": 4023,
-      "sha256": "2ab11b867debe36764f81a3b0da9615693620f9ff6aa68be8a41ef542f567384",
+      "bytes": 3543,
+      "sha256": "af1239d092a3a06a9c88b11d82d5e127b3f0b90549f6af002bec26158f34bd57",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/pba-b2.cbi",
+      "file": "assets/pba-b2.cbi",
+      "bytes": 544,
+      "sha256": "508712ab05a2d1c8b8bf943b6f4491f01bdd85049476b027d82e108982033f58",
       "contentType": "text/plain"
     },
     {

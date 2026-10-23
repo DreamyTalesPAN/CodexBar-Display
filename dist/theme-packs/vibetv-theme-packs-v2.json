@@ -46,9 +46,9 @@
       "id": "clippy",
       "title": "Clippy",
       "usage": "live",
-      "version": "1.2.8",
-      "themeRev": 14,
-      "themeSpecPath": "/themes/u/cp-14-34d85a79.json",
+      "version": "1.2.9",
+      "themeRev": 15,
+      "themeSpecPath": "/themes/u/cp-15-4c1fac65.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -61,9 +61,9 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-clippy-v1.2.8.zip",
-      "sha256": "c69ca894705251fc5bd91b2c4d5814b5efd7ae2e5889e649459a6b6445aa07fb",
-      "bytes": 18695,
+      "downloadAsset": "vibetv-theme-clippy-v1.2.9.zip",
+      "sha256": "593a69c6519c9c952116d0e5b23ae7146b1c52bf441a9e421dc47ca106ce155a",
+      "bytes": 18700,
       "earlierThemeSpecPaths": [
         "/themes/u/clippy-1-5d86bb.json",
         "/themes/u/clippy-1-bb9192.json",
@@ -78,6 +78,7 @@
         "/themes/u/cp-11-820d61d9.json",
         "/themes/u/cp-12-e681c449.json",
         "/themes/u/cp-13-b6a98b9f.json",
+        "/themes/u/cp-14-34d85a79.json",
         "/themes/u/cp-7-8e3b005e.json",
         "/themes/u/cp-8-e3fbe9a5.json",
         "/themes/u/cp-9-47bef231.json"
@@ -202,9 +203,9 @@
       "id": "pixel-battery",
       "title": "Pixel Battery",
       "usage": "live",
-      "version": "1.17.7",
-      "themeRev": 24,
-      "themeSpecPath": "/themes/u/pba-24-613b62bb.json",
+      "version": "1.17.8",
+      "themeRev": 25,
+      "themeSpecPath": "/themes/u/pba-25-2304b7f5.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -217,9 +218,9 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-pixel-battery-v1.17.7.zip",
-      "sha256": "daf69c67cfd6ac842a6786fb850919edb37be095e413d6d4993b8b0d6b4ce423",
-      "bytes": 2938,
+      "downloadAsset": "vibetv-theme-pixel-battery-v1.17.8.zip",
+      "sha256": "99e84e2d9cb319caa8c0669fca17fad8f83bb444fe6c679b1060248ea2058e55",
+      "bytes": 3217,
       "earlierThemeSpecPaths": [
         "/themes/u/pba-15-9e62e5.json",
         "/themes/u/pba-16-f46829.json",
@@ -229,7 +230,8 @@
         "/themes/u/pba-20-09a7a514.json",
         "/themes/u/pba-21-d20fb73b.json",
         "/themes/u/pba-22-a9d080fe.json",
-        "/themes/u/pba-23-78dfe69a.json"
+        "/themes/u/pba-23-78dfe69a.json",
+        "/themes/u/pba-24-613b62bb.json"
       ]
     },
     {
