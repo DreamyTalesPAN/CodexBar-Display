@@ -1095,6 +1095,52 @@ test_no_visible_change_corrected_to_paul_approval_covers_ui() {
   export GIT_COMMITTER_DATE="2026-10-18T07:00:00Z"
 }
 
+# A code fence closes only with a fence of the same character at least as long
+# as its opener (Codex review of #823 at 9e04e77e): a three-backtick line inside
+# a four-backtick example keeps it open.
+test_fence_closes_only_with_its_own_length() {
+  local repo="${TMP_ROOT}/fence-length"
+  setup_repo "$repo"
+  printf '\nExample of an entry:\n\n\x60\x60\x60\x60markdown\n\x60\x60\x60\nplaceholder\n\x60\x60\x60\x60\n' \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" commit -q -am "Add an example block with an inner fence line"
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
+  commit_file "$repo" "apps/control-center/src/components/overview-screen.tsx" \
+    "Unapproved visible UI change"
+  ENTRY="$(approval_entry "Fake after the inner fence line")" perl -0pi -e 's/placeholder\n/placeholder\n$ENV{ENTRY}\n/' \
+    "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" commit -q -am "Insert an entry after the inner fence line"
+  expect_gate_due "$repo"
+}
+
+# Only the Scope names the files an entry covers (Codex review of #823 at
+# 9e04e77e): a path in the result text does not cover it.
+test_path_outside_scope_does_not_cover_ui() {
+  local repo="${TMP_ROOT}/path-outside-scope"
+  local ui="apps/control-center/src/components/overview-screen.tsx"
+  setup_repo "$repo"
+  printf 'export const Changed = true;\n' >> "$repo/$ui"
+  printf '\n## Docs touch-up\n\n- User approval: approved by Paul in the communicator chat, 2026-10-21 08:00: "Ja (docs touch-up)."\n- Approved customer-visible result: The help text reads better; %s is untouched.\n- Scope: docs only and this approval record.\n%s\n' \
+    "$ui" "$WHATS_NEW_NONE" >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" add .
+  git -C "$repo" commit -q -m "Change UI with an entry whose Scope excludes it"
+  expect_gate_due "$repo"
+  assert_contains "$(run_gate "$repo")" "$ui"
+
+  repo="${TMP_ROOT}/no-visible-change-path-outside-scope"
+  setup_repo "$repo"
+  export GIT_COMMITTER_DATE="2026-10-23T07:00:00Z"
+  commit_file "$repo" "$ui" "Unapproved visible UI change"
+  commit_file "$repo" "companion/fix.go" "Companion fix"
+  printf '\n## Companion fix\n\n%s\n- Approved customer-visible result: No screen differs; %s stays as it is.\n- Scope: companion/fix.go and this approval record.\n%s\n' \
+    "$NO_CHANGE_LINE" "$ui" "$WHATS_NEW_NONE" \
+    >> "$repo/docs/control-center-customer-ui-approval.md"
+  git -C "$repo" commit -q -am "Record the companion fix"
+  expect_gate_due "$repo"
+  assert_contains "$(run_gate "$repo")" "$ui"
+  export GIT_COMMITTER_DATE="2026-10-18T07:00:00Z"
+}
+
 # An approval entry that a later commit removes again approves nothing (Codex
 # review of #823): the UI change before it is due again.
 test_removed_approval_entry_does_not_cover_ui() {
@@ -1405,6 +1451,8 @@ test_code_example_in_log_is_no_entry
 test_entry_inside_existing_code_block_is_no_entry
 test_removed_entry_with_duplicate_heading_does_not_cover_ui
 test_no_visible_change_corrected_to_paul_approval_covers_ui
+test_fence_closes_only_with_its_own_length
+test_path_outside_scope_does_not_cover_ui
 test_pending_and_draft_stay_due_next_to_the_new_forms
 test_unrecognized_approval_value_is_due
 test_every_added_entry_needs_all_four_fields

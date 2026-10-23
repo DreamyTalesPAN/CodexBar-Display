@@ -250,7 +250,7 @@ function uncoveredApprovalCommitUiFiles(commit) {
   if (!appliesPathRule(commit) || onBaseBranch(commit)) {
     return [];
   }
-  const entryText = addedApprovalText(commitDiff(commit));
+  const entryText = addedRuns(commitDiff(commit)).flatMap(entriesOf).map(scopeOf).join("\n");
   const mergedParent = tryGit(["rev-parse", "--verify", `${commit}^2`]);
   return approvalCommitChangedFiles(commit)
     .filter(isUiFile)
@@ -284,7 +284,7 @@ function noVisibleChangeUncoveredUiFiles(commit) {
   const branchFiles = forkPoint
     ? lines(tryGit(["diff", "--no-renames", "--name-only", forkPoint, parent]))
     : null;
-  const entryText = entriesAsTheyReadNow(commit).map(({ text }) => text).join("\n");
+  const entryText = entriesAsTheyReadNow(commit).map(({ text }) => scopeOf(text)).join("\n");
   return unique([
     ...changedFilesSince(previous, parent)
       .filter(isUiFile)
@@ -364,11 +364,25 @@ function namesPath(text, file) {
   return new RegExp(`(^|[^\\w./-])${escaped}(?![\\w/-]|\\.\\w)`).test(text);
 }
 
-// The text of the entries the diff adds: only "## " blocks name a path. Each
-// run of added lines is read on its own, so a line added under an older entry
-// further down does not join a new entry added above it.
-function addedApprovalText(diff) {
-  return addedRuns(diff).flatMap(entriesOf).join("\n");
+// The Scope of an entry with the lines that continue it, nested list items
+// included: only the Scope names the files an entry covers (Codex review of
+// #823), a path in the quote or the result does not. Each run of added lines
+// is read on its own, so a line added under an older entry further down does
+// not join a new entry added above it.
+function scopeOf(entry) {
+  const fields = [...APPROVAL_PREFIXES, "- Scope:", WHATS_NEW_PREFIX];
+  const scope = [];
+  let inScope = false;
+  for (const line of entry.split("\n")) {
+    const field = fields.find((prefix) => line.startsWith(prefix));
+    if (field || line.startsWith("## ")) {
+      inScope = field === "- Scope:";
+    }
+    if (inScope) {
+      scope.push(field ? line.slice(field.length) : line);
+    }
+  }
+  return scope.join("\n");
 }
 
 function changedFilesInWorkingTree() {
@@ -461,15 +475,9 @@ function addedRuns(diff) {
     }
     const raw = line.slice(1);
     const text = raw.trim();
-    const marker = /^(`{3,}|~{3,})/.exec(text);
-    if (fence) {
-      if (marker && marker[1][0] === fence) {
-        fence = "";
-      }
-      continue;
-    }
-    if (marker) {
-      fence = marker[1][0];
+    const step = nextFence(fence, text);
+    fence = step.fence;
+    if (step.fenced) {
       continue;
     }
     if (added && !(/^( {4}|\t)/.test(raw) && text.startsWith("#"))) {
@@ -478,6 +486,19 @@ function addedRuns(diff) {
   }
   endRun();
   return runs;
+}
+
+// Follows Markdown code fences line by line: the fence open after the line,
+// and whether the line belongs to a fence. A fence closes only with a line of
+// the same character at least as long as its opener and nothing after it
+// (Codex review of #823): a shorter fence line inside an example keeps it open.
+function nextFence(fence, text) {
+  const marker = /^(`{3,}|~{3,})(.*)$/.exec(text);
+  if (fence) {
+    const closes = Boolean(marker) && marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim();
+    return { fence: closes ? "" : fence, fenced: true };
+  }
+  return marker ? { fence: marker[1], fenced: true } : { fence: "", fenced: false };
 }
 
 // The trimmed lines of the log that can be part of an entry (Codex review of
@@ -490,15 +511,9 @@ function recordLines(rawLines) {
   let fence = "";
   for (const raw of rawLines) {
     const line = raw.trim();
-    const marker = /^(\x60{3,}|~{3,})/.exec(line);
-    if (fence) {
-      if (marker && marker[1][0] === fence) {
-        fence = "";
-      }
-      continue;
-    }
-    if (marker) {
-      fence = marker[1][0];
+    const step = nextFence(fence, line);
+    fence = step.fence;
+    if (step.fenced) {
       continue;
     }
     if (/^( {4}|\t)/.test(raw) && line.startsWith("#")) {
