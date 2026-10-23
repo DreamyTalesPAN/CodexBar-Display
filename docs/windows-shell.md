@@ -97,7 +97,7 @@ Companion for everything it needs.
   uninstall. The Companion's Windows sidecars are `codexbar-display.exe` (Go,
   built in CI) and `codexbar-cli.exe` (the unmodified pinned Win-CodexBar
   console CLI downloaded by `scripts/fetch-win-codexbar.ps1`, currently the
-  VibeTV fork release `v0.60.3-vibetv.12` with the Windows Claude probe fixes,
+  VibeTV fork release `v0.60.3-vibetv.13` with the Windows Claude probe fixes,
   Claude rate-limit and stale-token recovery, separate session and weekly rows
   from the Claude CLI source (#510), steady Claude percentages when the source
   changes between OAuth and the CLI (#531), one shared gate in front of the
@@ -105,8 +105,9 @@ Companion for everything it needs.
   questions of Claude Code 2.1.29x (#500), Auto asking Claude Code's login
   before the browser so a second claude.ai account in the browser cannot
   replace it (marcus7989/Win-CodexBar#10), Claude's local token history marked
-  complete after a finished scan (#820, marcus7989/Win-CodexBar#12), and a
-  statically linked C runtime;
+  complete after a finished scan (#820, marcus7989/Win-CodexBar#12),
+  `config providers --json` and `serve --request-timeout`
+  (marcus7989/Win-CodexBar#9, #11), and a statically linked C runtime;
   licence in `windows/THIRD_PARTY`). The Companion finds the CLI next to its own exe;
   `CODEXBAR_BIN` is not set.
 

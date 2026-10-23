@@ -76,12 +76,7 @@ func withoutDeadline(ctx context.Context) (context.Context, context.CancelFunc) 
 }
 
 // providerInventoryArgs is the CLI command for the provider inventory.
-// The pinned Win-CodexBar has no JSON inventory (#415), so Windows reads the
-// text form that parseProviderSettings also understands.
 func providerInventoryArgs() []string {
-	if runtime.GOOS == "windows" {
-		return []string{"config", "providers"}
-	}
 	return []string{"config", "providers", "--json"}
 }
 

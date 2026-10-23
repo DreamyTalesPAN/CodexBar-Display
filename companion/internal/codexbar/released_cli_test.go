@@ -37,25 +37,11 @@ func TestReleasedCLIContract(t *testing.T) {
 			t.Fatalf("unexpected text inventory: %s", raw)
 		}
 		raw, err = run("config", "providers", "--json")
-		if os.Getenv("CODEXBAR_CONTRACT_KNOWN_GAPS") == "1" {
-			if err == nil {
-				t.Fatal("inventory JSON now supported: drop the Windows text inventory (providerInventoryArgs) and tighten this contract")
-			}
-			// Windows reads the text inventory instead.
-			raw, err = run("config", "providers")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := parseProviderSettings(raw); err != nil {
-				t.Fatal(err)
-			}
-		} else {
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := parseProviderSettings(raw); err != nil {
-				t.Fatal(err)
-			}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := parseProviderSettings(raw); err != nil {
+			t.Fatal(err)
 		}
 	})
 	t.Run("usage", func(t *testing.T) {
@@ -77,13 +63,8 @@ func TestReleasedCLIContract(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		hasTimeout := strings.Contains(string(raw), "--request-timeout")
-		if os.Getenv("CODEXBAR_CONTRACT_KNOWN_GAPS") == "1" {
-			if hasTimeout {
-				t.Fatal("request-timeout now supported: pass it on Windows too (dashboard_serve.go) and re-evaluate #415")
-			}
-		} else if !hasTimeout {
-			t.Fatal("pinned Mac CLI lost request-timeout")
+		if !strings.Contains(string(raw), "--request-timeout") {
+			t.Fatal("pinned CLI lost request-timeout")
 		}
 	})
 }
