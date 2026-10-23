@@ -16094,6 +16094,51 @@ func TestStatusAndDiagnosticsCarrySystemBusy(t *testing.T) {
 	}
 }
 
+func TestUsageFlagsRetainedStaleLanesPerLane(t *testing.T) {
+	collected := time.Date(2026, 10, 17, 8, 0, 0, 0, time.UTC)
+	// A retained stale reading: a real 0% session next to a real 26% weekly,
+	// and one window that is real too.
+	retained, ok := usageProviderFromSnapshot(daemon.ProviderUsageSnapshot{
+		Provider:    "codex",
+		Frame:       protocol.Frame{Provider: "codex", Label: "Codex", Session: 0, Weekly: 26, UsageMode: "used"},
+		Meta:        codexbar.ProviderUsageMeta{Windows: []codexbar.UsageWindow{{ID: "weekly", Label: "Weekly", UsedPercent: 0}}},
+		CollectedAt: collected,
+		Stale:       true,
+	})
+	if !ok || !retained.SessionRetained || !retained.WeeklyRetained || !retained.WindowsRetained || len(retained.Windows) != 1 {
+		t.Fatalf("retained stale reading must flag each real lane, a real 0%% included: %+v", retained)
+	}
+	// A lane the source flagged unavailable is not retained, even when the
+	// same stale reading keeps its other lane.
+	partial, ok := usageProviderFromSnapshot(daemon.ProviderUsageSnapshot{
+		Provider:    "cursor",
+		Frame:       protocol.Frame{Provider: "cursor", Label: "Cursor", Weekly: 58, SessionUnavailable: true, UsageMode: "used"},
+		CollectedAt: collected,
+		Stale:       true,
+	})
+	if !ok || partial.SessionRetained || !partial.WeeklyRetained {
+		t.Fatalf("source-unavailable session must not be flagged retained: %+v", partial)
+	}
+}
+
+func TestUsageDoesNotFlagClearedStaleLanes(t *testing.T) {
+	collected := time.Date(2026, 10, 17, 8, 0, 0, 0, time.UTC)
+	// A cleared stale reading keeps only its Collected time; every lane is
+	// flagged unavailable and zeroed, so nothing is retained.
+	cleared, ok := usageProviderFromSnapshot(daemon.ProviderUsageSnapshot{
+		Provider: "claude",
+		Frame: protocol.Frame{
+			Provider: "claude", Label: "Claude", UsageMode: "used",
+			UsageUnavailable: true, SessionUnavailable: true, WeeklyUnavailable: true,
+		},
+		CollectedAt: collected,
+		Stale:       true,
+	})
+	if !ok || cleared.SessionRetained || cleared.WeeklyRetained {
+		t.Fatalf("cleared stale reading must not flag any lane as retained: %+v", cleared)
+	}
+}
+
 // An unchanged live picture may only stand in for a fresh, successful read:
 // when the last read fails (cable gone), the error must not qualify (Codex on #838).
 func TestDisplayRenderUnchangedOnlyFromAFreshRead(t *testing.T) {

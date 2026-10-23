@@ -31,7 +31,7 @@
   --input: #888888;
   --ring: #506600;
   --chart-1: #1B1B1B;
-  --chart-2: #506600;
+  --chart-2: #444933;
   --chart-3: #2F6473;
   --chart-4: #7A4F73;
   --chart-5: #9A651F;
@@ -93,6 +93,10 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  /* The one hero size: the 30-day total in Usage only. Calm rules allow no other size. */
+  --text-hero: 48px;
+  --text-hero--line-height: 1.05;
+  --text-hero--letter-spacing: -0.02em;
 }
 
 body {
@@ -132,6 +136,26 @@ body {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes vibetv-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Loading skeletons: flat grey under reduced motion, a soft glint that moves
+   right to left otherwise. */
+.vibetv-skeleton {
+  background: rgba(27, 27, 27, 0.09);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .vibetv-skeleton {
+    background: linear-gradient(90deg, rgba(27, 27, 27, 0.07), rgba(27, 27, 27, 0.15), rgba(27, 27, 27, 0.07));
+    background-size: 200% 100%;
+    animation: vibetv-shimmer 1.6s ease-in-out infinite;
   }
 }
 

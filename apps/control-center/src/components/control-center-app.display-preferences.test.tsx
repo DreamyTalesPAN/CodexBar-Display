@@ -397,12 +397,12 @@ it("changes a provider's row in Settings with the next read, without drawing the
 
   const row = screen.getByRole("switch", { name: "Claude" }).closest('[role="listitem"]');
   expect(row).not.toBeNull();
-  expect(screen.queryByRole("button", { name: "Show provider message for Claude" })).not.toBeNull();
+  expect(screen.queryByRole("button", { name: "Sign in needed for Claude" })).not.toBeNull();
 
   window.companion.providers = [claude];
   await window.wait(5);
 
-  expect(screen.queryByRole("button", { name: "Show provider message for Claude" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Sign in needed for Claude" })).toBeNull();
   expect(screen.getByRole("switch", { name: "Claude" }).closest('[role="listitem"]')).toBe(row);
   expect(window.companion.requests.some((request) => request.includes("/v1/providers/retry"))).toBe(false);
 

@@ -108,6 +108,9 @@ type providerCollector struct {
 	lastPersistedAt  time.Time
 	inventoryKnown   bool
 	inventoryEnabled map[string]struct{}
+	// inventoryLabels holds the display name CodexBar lists per provider, so a
+	// snapshot created before its first usage reading is named like the reading.
+	inventoryLabels map[string]string
 	// inventoryDisabled holds providers the inventory lists as switched off.
 	// A provider missing from the inventory is unknown, not off.
 	inventoryDisabled map[string]struct{}
@@ -691,9 +694,14 @@ func (c *providerCollector) applyProviderInventoryLocked(settings []codexbar.Pro
 	c.inventoryKnown = true
 	c.inventoryEnabled = enabled
 	c.inventoryDisabled = make(map[string]struct{}, len(settings))
+	c.inventoryLabels = make(map[string]string, len(settings))
 	for _, setting := range settings {
-		if key := normalizeProviderKey(setting.ID); key != "" && !setting.Enabled {
+		key := normalizeProviderKey(setting.ID)
+		if key != "" && !setting.Enabled {
 			c.inventoryDisabled[key] = struct{}{}
+		}
+		if key != "" && strings.TrimSpace(setting.Label) != "" {
+			c.inventoryLabels[key] = strings.TrimSpace(setting.Label)
 		}
 	}
 	updated := !equalProviderOrder(c.order, enabledOrder)
@@ -954,7 +962,6 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 				Provider: key,
 				Frame: protocol.Frame{
 					Provider:         key,
-					Label:            codexbar.HumanLabel(key),
 					UsageUnavailable: true,
 				},
 				Source: strings.TrimSpace(stats.Source),
@@ -964,8 +971,14 @@ func (c *providerCollector) collectTokenStatsOnce(parent context.Context) {
 		if strings.TrimSpace(frame.Provider) == "" {
 			frame.Provider = key
 		}
-		if strings.TrimSpace(frame.Label) == "" {
-			frame.Label = key
+		if label := strings.TrimSpace(frame.Label); label == "" || label == key || label == codexbar.HumanLabel(key) {
+			// Empty, or a placeholder an older build stored (the raw id or the
+			// readable name for it), takes the inventory name; without one, the
+			// readable name for the id (#682).
+			frame.Label = c.inventoryLabels[key]
+			if frame.Label == "" {
+				frame.Label = codexbar.HumanLabel(key)
+			}
 		}
 		frame.SessionTokens = stats.SessionTokens
 		frame.WeekTokens = stats.WeekTokens
@@ -1214,6 +1227,7 @@ func snapshotWithUsageCleared(snapshot providerSnapshot) providerSnapshot {
 	meta.Windows = nil
 	meta.Credits = nil
 	meta.ResetCredits = nil
+	meta.Spend = nil
 	meta.Pace = nil
 	meta.OverTime = nil
 	snapshot.Meta = meta

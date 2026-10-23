@@ -32,7 +32,6 @@ import {
 type SetupProvidersScreenProps = {
   aiFixPrompt?: () => string;
   onBack?: () => void;
-  onCheckAgain: (provider: ProviderItem) => void;
   onContinue: () => void;
   onCreateSupportReport?: () => Promise<SupportDiagnostics | null>;
   onOpenSignIn?: (provider: ProviderItem) => void;
@@ -197,9 +196,36 @@ export function setupProviderDialogSentence(
  */
 export const acknowledgedProviderIssues = new Map<string, string>();
 
+/**
+ * Forgets the closed message of every provider that is healthy or switched
+ * off. The app calls it on every preference read, so it also happens while the
+ * list is not shown: a later loss of the same permission opens its message.
+ */
+export function forgetResolvedProviderIssues(
+  providers: Pick<ProviderItem, "id" | "health" | "value">[],
+) {
+  for (const provider of providers) {
+    if (!provider.value || providerRowHealthState(provider.health) === "healthy") {
+      acknowledgedProviderIssues.delete(provider.id);
+    }
+  }
+}
+
+/**
+ * The enabled providers that are not healthy yet: a checking, stale, timeout or
+ * rate-limited read is no definitive answer, so a dismissed sign-in overlay
+ * stays closed through it. Only a healthy or switched-off provider ends it.
+ */
+export function providerUnresolvedIds(
+  providers: Pick<ProviderItem, "providerId" | "health" | "value">[],
+): string[] {
+  return providers
+    .filter((provider) => provider.value && providerRowHealthState(provider.health) !== "healthy")
+    .map((provider) => provider.providerId);
+}
+
 type ProviderListProps = {
   className?: string;
-  onCheckAgain: (provider: ProviderItem) => void;
   onOpenSignIn?: (provider: ProviderItem) => void;
   /** Present where the provider notice may link the setup guide. */
   onOpenSetupGuide?: () => void;
@@ -223,7 +249,6 @@ type ProviderListProps = {
  */
 export function ProviderList({
   className,
-  onCheckAgain,
   onOpenSignIn,
   onOpenSetupGuide,
   onToggle,
@@ -238,7 +263,21 @@ export function ProviderList({
   const [dismissedIssues, setDismissedIssues] = useState<Record<string, string>>(
     () => Object.fromEntries(acknowledgedProviderIssues),
   );
-  // The provider whose warning icon the customer clicked. Its message opens
+  // A provider that is healthy or switched off has no cause left: its closed
+  // message is due again when the cause comes back (closed stays closed until
+  // the cause was gone and comes back).
+  const definitiveIds = providers
+    .filter((provider) => !provider.value || providerRowHealthState(provider.health) === "healthy")
+    .map((provider) => provider.id);
+  const definitiveKey = definitiveIds.join("\n");
+  const [clearedFor, setClearedFor] = useState(definitiveKey);
+  if (clearedFor !== definitiveKey) {
+    setClearedFor(definitiveKey);
+    setDismissedIssues((current) =>
+      Object.fromEntries(Object.entries(current).filter(([id]) => !definitiveIds.includes(id))),
+    );
+  }
+  // The provider whose row action the customer clicked. Its message opens
   // whatever the rules below say about popups opening by themselves.
   const [requestedIssueId, setRequestedIssueId] = useState<string | null>(null);
   // Providers whose sign-in started less than PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS
@@ -281,10 +320,10 @@ export function ProviderList({
     // a popup on top of it hid that button behind a provider message
     // (bench Mac, 09.10.). Sign-in rows need no duplicate warning.
     if (offersSignIn(provider) || signingIn.has(provider.providerId)) return [];
-    // A stale row still shows its last reading and recovers by itself, e.g.
-    // while CodexBar starts after the runtime restarted. Nothing for the
-    // customer to do, so its message opens only from the row's warning icon.
-    if (provider.health.state === "stale" && dismissedIssues[provider.id] !== "") return [];
+    // Only the sign-in and access looks (3 and 4) open by themselves; a quiet
+    // error retries by itself and the other looks have nothing to decide.
+    const look = setupProviderRowVariant(providerRowHealthState(provider.health));
+    if (look !== "sign_in" && look !== "browser_sign_in" && look !== "permission") return [];
     return dismissedIssues[provider.id] !== message
       ? [{ provider, message, requested }] : [];
   });
@@ -393,11 +432,6 @@ export function ProviderList({
               resetIssue(provider);
               setRequestedIssueId(provider.id);
             }}
-            onCheckAgain={() => {
-              resetIssue(provider);
-              setRequestedIssueId(null);
-              onCheckAgain(provider);
-            }}
             onOpenSignIn={
               onOpenSignIn && setupProviderOffersSignIn(provider)
                 ? () => startSignIn(provider)
@@ -447,7 +481,6 @@ export function ProviderList({
 export function SetupProvidersScreen({
   aiFixPrompt,
   onBack,
-  onCheckAgain,
   onContinue,
   onCreateSupportReport,
   onOpenSignIn,
@@ -484,7 +517,6 @@ export function SetupProvidersScreen({
 
       <ProviderList
         className="mt-4"
-        onCheckAgain={onCheckAgain}
         onOpenSignIn={onOpenSignIn}
         onOpenSetupGuide={onOpenSetupGuide}
         onToggle={onToggle}

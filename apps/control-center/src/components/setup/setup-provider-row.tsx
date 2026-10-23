@@ -1,8 +1,6 @@
 "use client";
 
-import { ChevronRight, RefreshCw, TriangleAlert } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ArrowUpRight } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import {
   Item,
@@ -13,7 +11,6 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import type { PreferenceHealthState } from "../control-center-types";
-import { hideUsageEngineName } from "../customer-support-text";
 
 export type SetupProviderRowVariant =
   | "browser_sign_in"
@@ -90,7 +87,6 @@ type SetupProviderRowProps = {
   health: PreferenceHealthState;
   label: string;
   onShowIssue: () => void;
-  onCheckAgain: () => void;
   /**
    * Starts the provider's sign-in through the companion: the browser page
    * for "browser_sign_in_required", the tool's own login (or its install
@@ -109,29 +105,31 @@ type SetupProviderRowProps = {
   saving?: boolean;
 };
 
+/**
+ * The row's looks (Paul, 16.10., states overview 644): the switch stays at the
+ * right in every one. A red action where the customer must act; a muted
+ * spinner while CodexBar works or retries by itself; nothing else.
+ */
 export function SetupProviderRow({
   checking = false,
   enabled,
   health,
   label,
-  onCheckAgain,
   onShowIssue,
   onOpenSignIn,
   onToggle,
   saving = false,
 }: SetupProviderRowProps) {
   const variant = enabled ? setupProviderRowVariant(health) : "toggle";
-  const signIn = onOpenSignIn &&
-    (variant === "sign_in" || variant === "browser_sign_in");
-  const unusable =
-    variant === "no_usage" || variant === "outage" || variant === "unsupported";
-  const checkAgain = (
-    <SetupProviderRowAction
-      icon={RefreshCw}
-      label={`Check ${label} again`}
-      onClick={onCheckAgain}
-    />
-  );
+  const signInNeeded = variant === "sign_in" || variant === "browser_sign_in";
+  const action = signInNeeded ? "Sign in needed" : variant === "permission" ? "Allow access" : null;
+  // A sign-in the app can start; otherwise the provider's dialog says what to do.
+  const onAction = (signInNeeded && onOpenSignIn) || onShowIssue;
+  const noUsage = variant === "no_usage" || variant === "unsupported";
+  // The look 2 (CodexBar is fetching) and look 5 (quiet error, retries by itself).
+  const spinner =
+    enabled && !action && !noUsage &&
+    (checking || variant === "checking" || variant === "stale" || variant === "outage" || variant === "timed_out");
 
   return (
     <Item
@@ -140,42 +138,29 @@ export function SetupProviderRow({
       variant="outline"
     >
       <ItemContent>
-        <ItemTitle className={cn("text-[13px] font-semibold", unusable && "opacity-50")}>{label}</ItemTitle>
+        <ItemTitle className={cn("text-[13px] font-semibold", noUsage && "text-muted-foreground")}>{label}</ItemTitle>
       </ItemContent>
       <ItemActions>
-        {signIn ? (
-          <Button
-            className="h-9 gap-3 p-0 font-normal text-muted-foreground hover:bg-transparent dark:hover:bg-transparent"
-            onClick={onOpenSignIn}
+        {action ? (
+          <button
+            aria-label={`${action} for ${label}`}
+            className="inline-flex items-center gap-1 text-[13px] font-semibold text-destructive hover:underline"
+            onClick={onAction}
             type="button"
-            variant="ghost"
           >
-            <span>{`Sign in to ${label}`}</span>
-            <span className="flex size-9 items-center justify-center rounded-full border border-border text-foreground group-hover/button:bg-muted">
-              <ChevronRight aria-hidden />
-            </span>
-          </Button>
-        ) : (
-          variant === "checking" ? (
-            <Spinner />
-          ) : variant === "toggle" ? null : (
-            <>
-              <SetupProviderRowAction
-                icon={TriangleAlert}
-                label={`Show provider message for ${label}`}
-                onClick={onShowIssue}
-              />
-              {variant === "stale" || variant === "unsupported" ? null : checking ? (
-                <>
-                  <span className="sr-only">Checking {label}…</span>
-                  <Spinner />
-                </>
-              ) : (
-                checkAgain
-              )}
-            </>
-          )
-        )}
+            {action}
+            <ArrowUpRight aria-hidden className="size-3.5" />
+          </button>
+        ) : null}
+        {noUsage ? (
+          <span className="text-[13px] text-muted-foreground">No usage data</span>
+        ) : null}
+        {spinner ? (
+          <>
+            <span className="sr-only">Updating {label}</span>
+            <Spinner className="text-muted-foreground" />
+          </>
+        ) : null}
         {/* Always there, also beside a sign-in: a provider switched on by
             mistake must be switchable off without signing in first (#647). */}
         <Switch
@@ -186,74 +171,5 @@ export function SetupProviderRow({
         />
       </ItemActions>
     </Item>
-  );
-}
-
-/** Keep CodexBar's exact guidance in the shared popup, without provider rules. */
-export function setupProviderIssueMessage({
-  health, label, detail, nextAction, reportedMessage,
-}: {
-  health: PreferenceHealthState;
-  label: string;
-  detail?: string;
-  nextAction?: string;
-  reportedMessage?: string;
-}): string | null {
-  const variant = setupProviderRowVariant(health);
-  if (variant === "toggle" || variant === "checking") return null;
-  // A throttled check needs no repair, but CodexBar's sentence lists every
-  // source that failed beside the throttle and reads like a sign-in problem.
-  // The customer gets what happens next; the sentence stays one click away.
-  // A throttled provider with a saved reading is "stale" and carries the
-  // same guidance; a stale row without guidance keeps its generic text.
-  if (detail && (health === "rate_limited" || (health === "stale" && nextAction))) {
-    return [detail, nextAction].filter(Boolean).join(" ");
-  }
-  // Its own text: a generic engine message hides that an update fixes it.
-  const tooOld = health === "engine_incompatible";
-  const fallbackMessage =
-    tooOld
-      ? "The usage engine is too old. Repair the usage engine, then check again."
-      : variant === "sign_in"
-      ? `Sign in to ${label}`
-      : variant === "browser_sign_in"
-        ? `Sign in to ${label} in your browser, close the browser, then check again`
-      : variant === "permission"
-        ? "Allow access on this computer"
-        : variant === "unsupported"
-          ? "This provider no longer supports this account"
-        : variant === "no_usage"
-          ? "No usage data on this account"
-          : variant === "outage"
-            ? "Service outage — try again later"
-            : variant === "stale"
-              ? "Live usage is unavailable"
-            : "Check timed out";
-  // A browser sign-in is said in the app's own sentence. What the engine
-  // reported for it lists every source it tried and is only there to copy.
-  const reported = variant === "browser_sign_in" ? "" : reportedMessage;
-  return hideUsageEngineName(reported || detail || fallbackMessage);
-}
-
-function SetupProviderRowAction({
-  icon: Icon,
-  label,
-  onClick,
-}: {
-  icon: LucideIcon;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <Button
-      aria-label={label}
-      className="rounded-full"
-      onClick={onClick}
-      size="icon-sm"
-      type="button"
-      variant="outline"
-    >
-      <Icon aria-hidden />
-    </Button>
   );
 }

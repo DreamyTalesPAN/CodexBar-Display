@@ -442,6 +442,9 @@ export type UsageProviderInfo = {
   usageUnavailable?: boolean;
   sessionUnavailable?: boolean;
   weeklyUnavailable?: boolean;
+  sessionRetained?: boolean;
+  weeklyRetained?: boolean;
+  windowsRetained?: boolean;
   collectedAt?: string;
   activityObservedAt?: string;
   windows?: UsageWindowInfo[];
@@ -450,8 +453,18 @@ export type UsageProviderInfo = {
   resetCredits?: UsageResetCreditsInfo;
   cost?: UsageCostInfo;
   costSettled?: boolean;
+  plan?: string;
+  spend?: UsageSpendInfo;
   pace?: UsagePaceInfo[];
   usageOverTime?: UsageOverTimePoint[];
+};
+
+// CodexBar's extra-usage cap. Shown only when CodexBar sends one above zero.
+export type UsageSpendInfo = {
+  limit: number;
+  used: number;
+  currency: string;
+  period?: string;
 };
 
 export type UsageWindowInfo = {
@@ -460,6 +473,8 @@ export type UsageWindowInfo = {
   usedPercent: number;
   resetSecs?: number;
   windowMinutes?: number;
+  willLastToReset?: boolean;
+  etaSeconds?: number;
 };
 
 export type UsageStatusInfo = {

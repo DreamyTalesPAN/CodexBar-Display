@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWaitsForPageDialog } from "./announcement-gate";
 import { SetupDialog } from "./setup/setup-dialog";
 
@@ -26,6 +26,38 @@ export function useSystemBusyDismissal(
 ): [boolean, () => void] {
   const [dismissedSince, setDismissedSince] = useState<string | null>(null);
   return [since !== null && since === dismissedSince, () => setDismissedSince(since)];
+}
+
+function otherDialogOpen(ownTitles: string[]): boolean {
+  return (
+    typeof document !== "undefined" &&
+    Array.from(
+      document.querySelectorAll('[role="dialog"], [role="alertdialog"]'),
+    ).some((dialog) => !ownTitles.some((title) =>
+      title === systemBusyCopy.title
+        ? dialog.getAttribute("data-notice-kind") === "system-busy"
+        : dialog.querySelector('[data-slot="dialog-title"]')?.textContent === title,
+    ))
+  );
+}
+
+/**
+ * Whether a dialog other than the ones titled `ownTitles` is open. Only the
+ * provider overlay uses it: it waits for any page dialog but not for the busy
+ * notice, which waits for it (announcement-gate).
+ */
+export function useOtherDialogOpen(ownTitles: string[]): boolean {
+  const key = ownTitles.join("\n");
+  const [open, setOpen] = useState(() => otherDialogOpen(ownTitles));
+  useEffect(() => {
+    const titles = key.split("\n");
+    const check = () => setOpen(otherDialogOpen(titles));
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [key]);
+  return open;
 }
 
 /**

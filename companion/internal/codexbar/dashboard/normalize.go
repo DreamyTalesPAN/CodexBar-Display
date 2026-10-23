@@ -25,6 +25,11 @@ type DashboardProvider struct {
 	Windows   []DashboardWindow `json:"windows"`
 	Error     json.RawMessage   `json:"error"`
 	UpdatedAt *time.Time        `json:"updatedAt"`
+	Identity  DashboardIdentity `json:"identity"`
+}
+
+type DashboardIdentity struct {
+	Plan string `json:"plan"`
 }
 
 type DashboardWindow struct {

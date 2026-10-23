@@ -115,6 +115,20 @@ describe("ControlCenterShell", () => {
     expect(onTabChange).toHaveBeenCalledWith("theme-library");
   });
 
+  // 7197 review, point 3: only Usage has the page margin that grows with the window.
+  it("gives the Usage page a margin of 48 px that grows to 96 px with the window", () => {
+    const render = (activeTab: ActiveTab) =>
+      renderToStaticMarkup(
+        <TooltipProvider>
+          <ControlCenterShell activeTab={activeTab} onTabChange={vi.fn()}>
+            <div>Content</div>
+          </ControlCenterShell>
+        </TooltipProvider>,
+      );
+    expect(render("usage")).toContain("lg:px-[clamp(48px,4cqw,96px)]");
+    expect(render("settings")).not.toContain("clamp(48px,4cqw,96px)");
+  });
+
   it("does not duplicate transient device status in the header", () => {
     const html = renderToStaticMarkup(
       <TooltipProvider>

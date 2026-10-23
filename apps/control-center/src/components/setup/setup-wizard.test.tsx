@@ -77,7 +77,6 @@ function baseProps(overrides: Partial<SetupWizardProps>): SetupWizardProps {
     themeError: null,
     onDismissThemeError: vi.fn(),
     onRetryTheme: vi.fn(),
-    onProviderCheck: vi.fn(),
     onProviderToggle: vi.fn(),
     onProvidersContinue: vi.fn(),
     onDismissProviderError: vi.fn(),

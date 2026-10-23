@@ -47,7 +47,6 @@ function settings(device: DeviceInfo, busyAction: string | null, saved: StandbyS
         items: [],
         pendingCheckIds: new Set(),
         pendingPreferenceIds: new Set(),
-        onCheck: vi.fn(),
         onDisplayChange: vi.fn(),
         onPreferenceChange: vi.fn(),
       }}

@@ -34,6 +34,18 @@ type ProviderUsageMeta struct {
 	Cost         *ProviderCostUsage
 	Pace         []ProviderPace
 	OverTime     []UsageOverTimePoint
+	// Plan is the account plan name CodexBar reports, as it reports it.
+	Plan  string
+	Spend *ProviderSpend
+}
+
+// ProviderSpend is the spending cap CodexBar reports for extra usage
+// (usage.providerCost). Only a cap above zero is passed on.
+type ProviderSpend struct {
+	Limit    float64
+	Used     float64
+	Currency string
+	Period   string
 }
 
 type UsageWindow struct {

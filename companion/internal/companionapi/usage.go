@@ -71,6 +71,9 @@ type usageProviderInfo struct {
 	UsageUnavailable      bool                     `json:"usageUnavailable,omitempty"`
 	SessionUnavailable    bool                     `json:"sessionUnavailable,omitempty"`
 	WeeklyUnavailable     bool                     `json:"weeklyUnavailable,omitempty"`
+	SessionRetained       bool                     `json:"sessionRetained,omitempty"`
+	WeeklyRetained        bool                     `json:"weeklyRetained,omitempty"`
+	WindowsRetained       bool                     `json:"windowsRetained,omitempty"`
 	CollectedAt           string                   `json:"collectedAt,omitempty"`
 	ActivityObservedAt    string                   `json:"activityObservedAt,omitempty"`
 	Windows               []usageWindowInfo        `json:"windows,omitempty"`
@@ -79,6 +82,8 @@ type usageProviderInfo struct {
 	ResetCredits          *usageResetCreditsInfo   `json:"resetCredits,omitempty"`
 	Cost                  *usageCostInfo           `json:"cost,omitempty"`
 	CostSettled           bool                     `json:"costSettled,omitempty"`
+	Plan                  string                   `json:"plan,omitempty"`
+	Spend                 *usageSpendInfo          `json:"spend,omitempty"`
 	TokenUsageReady       bool                     `json:"-"`
 	TokenStatsCollectedAt time.Time                `json:"-"`
 	Pace                  []usagePaceInfo          `json:"pace,omitempty"`
@@ -95,6 +100,10 @@ type usageWindowInfo struct {
 	UsedPercent   int    `json:"usedPercent"`
 	ResetSec      int64  `json:"resetSecs,omitempty"`
 	WindowMinutes int    `json:"windowMinutes,omitempty"`
+	// Both come from CodexBar's pace for this window and are absent when it
+	// sends none. Nothing here is computed.
+	WillLastToReset *bool `json:"willLastToReset,omitempty"`
+	ETASeconds      int64 `json:"etaSeconds,omitempty"`
 }
 
 type usageStatusInfo struct {
@@ -126,6 +135,15 @@ type usageCostInfo struct {
 	Daily             []usageCostDayInfo `json:"daily,omitempty"`
 	// KnownZero: the engine finished a complete scan and found no usage.
 	KnownZero bool `json:"knownZero,omitempty"`
+}
+
+// usageSpendInfo is CodexBar's extra-usage cap for the provider, passed on as
+// CodexBar reports it. Period is CodexBar's own word for the cap.
+type usageSpendInfo struct {
+	Limit    float64 `json:"limit"`
+	Used     float64 `json:"used"`
+	Currency string  `json:"currency"`
+	Period   string  `json:"period,omitempty"`
 }
 
 type usageCostDayInfo struct {
@@ -541,6 +559,9 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 	if id == "" {
 		return usageProviderInfo{}, false
 	}
+	// A stale reading that still has its numbers: its lanes are real unless
+	// the source flagged them. A cleared or never-read reading is not retained.
+	retained := snapshot.Stale && !snapshot.NoReading && !snapshot.CollectedAt.IsZero() && !frame.UsageUnavailable
 	neverRead := snapshot.NoReading || snapshot.CollectedAt.IsZero()
 	return usageProviderInfo{
 		ID:                    id,
@@ -558,14 +579,19 @@ func usageProviderFromSnapshot(snapshot daemon.ProviderUsageSnapshot) (usageProv
 		UsageUnavailable:      snapshot.Stale || (frame.UsageUnavailable && len(snapshot.Meta.Windows) == 0),
 		SessionUnavailable:    snapshot.Stale || frame.UsageUnavailable || frame.SessionUnavailable,
 		WeeklyUnavailable:     snapshot.Stale || frame.UsageUnavailable || frame.WeeklyUnavailable,
+		SessionRetained:       retained && !frame.SessionUnavailable,
+		WeeklyRetained:        retained && !frame.WeeklyUnavailable,
 		CollectedAt:           formatOptionalTime(snapshot.CollectedAt),
 		ActivityObservedAt:    formatOptionalTime(snapshot.ActivityObservedAt),
 		Windows:               usageWindowsFromMeta(snapshot.Meta),
+		WindowsRetained:       retained,
 		Status:                usageStatusFromMeta(snapshot.Meta),
 		Credits:               usageCreditsFromMeta(snapshot.Meta),
 		ResetCredits:          usageResetCreditsFromMeta(snapshot.Meta),
 		Cost:                  usageCostFromMeta(snapshot.Meta),
 		CostSettled:           snapshot.TokenHistorySettled,
+		Plan:                  strings.TrimSpace(snapshot.Meta.Plan),
+		Spend:                 usageSpendFromMeta(snapshot.Meta),
 		TokenUsageReady:       !snapshot.TokenStatsCollectedAt.IsZero(),
 		TokenStatsCollectedAt: snapshot.TokenStatsCollectedAt,
 		Pace:                  usagePaceFromMeta(snapshot.Meta),
@@ -604,18 +630,43 @@ func usageWindowsFromMeta(meta codexbar.ProviderUsageMeta) []usageWindowInfo {
 		if id == "" || label == "" {
 			continue
 		}
-		out = append(out, usageWindowInfo{
+		info := usageWindowInfo{
 			ID:            id,
 			Label:         label,
 			UsedPercent:   clampUsagePercent(window.UsedPercent),
 			ResetSec:      window.ResetSec,
 			WindowMinutes: window.WindowMinutes,
-		})
+		}
+		if pace, ok := paceForWindow(meta.Pace, id); ok {
+			willLast := pace.WillLastToReset
+			info.WillLastToReset = &willLast
+			info.ETASeconds = pace.ETASeconds
+		}
+		out = append(out, info)
 	}
 	if len(out) == 0 {
 		return nil
 	}
 	return out
+}
+
+// CodexBar keys its pace by rate window: "primary" is the session window and
+// "secondary" the weekly one. The dashboard path names the same windows
+// "session" and "weekly".
+func paceForWindow(pace []codexbar.ProviderPace, windowID string) (codexbar.ProviderPace, bool) {
+	key := windowID
+	switch windowID {
+	case "session":
+		key = "primary"
+	case "weekly":
+		key = "secondary"
+	}
+	for _, item := range pace {
+		if item.Window == key {
+			return item, true
+		}
+	}
+	return codexbar.ProviderPace{}, false
 }
 
 func usageStatusFromMeta(meta codexbar.ProviderUsageMeta) *usageStatusInfo {
@@ -657,6 +708,18 @@ func usageResetCreditsFromMeta(meta codexbar.ProviderUsageMeta) *usageResetCredi
 		return nil
 	}
 	return &info
+}
+
+func usageSpendFromMeta(meta codexbar.ProviderUsageMeta) *usageSpendInfo {
+	if meta.Spend == nil {
+		return nil
+	}
+	return &usageSpendInfo{
+		Limit:    meta.Spend.Limit,
+		Used:     meta.Spend.Used,
+		Currency: meta.Spend.Currency,
+		Period:   meta.Spend.Period,
+	}
 }
 
 func usageCostFromMeta(meta codexbar.ProviderUsageMeta) *usageCostInfo {

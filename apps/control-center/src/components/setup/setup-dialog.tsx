@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import {
   Dialog,
   DialogContent,
@@ -51,6 +51,33 @@ type SetupDialogProps = {
   wide?: boolean;
 };
 
+const tabbable =
+  'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"]):not([data-radix-focus-guard])';
+
+/**
+ * Radix loops Tab inside every dialog, modal or not. A dialog that leaves the
+ * page behind usable hands Tab to that page at either end instead, so keyboard
+ * users can reach it while the dialog is open.
+ */
+function leaveByTab(event: KeyboardEvent<HTMLDivElement>) {
+  if (event.key !== "Tab" || event.altKey || event.ctrlKey || event.metaKey) return;
+  const dialog = event.currentTarget;
+  const inside = dialog.querySelectorAll<HTMLElement>(tabbable);
+  const first = inside[0];
+  const last = inside[inside.length - 1];
+  const forward = !event.shiftKey && document.activeElement === last;
+  const backward = event.shiftKey && document.activeElement === first;
+  if (!forward && !backward) return;
+  const page = Array.from(document.querySelectorAll<HTMLElement>(tabbable)).filter(
+    (element) => !dialog.contains(element),
+  );
+  const target = (forward ? page : page.reverse()).find((element) => {
+    element.focus();
+    return document.activeElement === element;
+  });
+  if (target) event.preventDefault();
+}
+
 /**
  * Every setup error is a dialog over the frozen screen behind it, never its own
  * screen and never an inline banner.
@@ -98,6 +125,7 @@ export function SetupDialog({
         className={wide ? "sm:max-w-[480px]" : undefined}
         style={{ animation: "none" }}
         onInteractOutside={(event) => event.preventDefault()}
+        onKeyDown={scrim ? undefined : leaveByTab}
         onOpenAutoFocus={onOpenAutoFocus}
       >
         <DialogHeader>

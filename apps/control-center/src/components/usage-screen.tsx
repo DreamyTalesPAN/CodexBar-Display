@@ -2,27 +2,26 @@
 
 import {
   AlertTriangle,
+  ArrowUpRight,
   BarChart3,
   Info,
+  Loader2,
   RefreshCw,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import type { XAxisTickContentProps, YAxisTickContentProps } from "recharts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardAction,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import {
   ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
@@ -35,6 +34,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { copyForHost } from "@/lib/customer-platform";
@@ -42,14 +42,35 @@ import {
   formatResetCountdown,
   remainingResetSecs,
 } from "@/lib/reset-countdown";
+import { isProviderItem, type ProviderItem } from "./provider-picker";
+import { SetupDialog } from "./setup/setup-dialog";
+import {
+  providerRowHealthState,
+  setupProviderOffersSignIn,
+} from "./setup/setup-providers-screen";
 import type {
   ApiError,
   CompanionStatus,
+  PreferenceDescriptor,
   UsageCostDay,
   UsageProviderInfo,
   UsageSnapshot,
   UsageWindowInfo,
+  UsageSpendInfo,
 } from "./control-center-types";
+
+/** A provider whose customer must act first; keyed by provider id. */
+export type UsageProviderAction = {
+  name: string;
+  /** The health state that asks for the action (after the setup row's rule). */
+  state: string;
+  /** The action opens Settings, so nothing is left to finish here. */
+  inSettings?: boolean;
+  label: string;
+  onAction: () => void;
+};
+
+type UsageActionView = Omit<UsageProviderAction, "state">;
 
 type UsageScreenProps = {
   busyAction?: string | null;
@@ -59,6 +80,17 @@ type UsageScreenProps = {
   onRefresh?: () => void;
   /** The app runs on Windows, where "Mac App" reads "app". */
   windowsHost?: boolean;
+  providerActions?: Record<string, UsageProviderAction>;
+  /** Providers that get no tile: switched off, unsupported, or without usage data. */
+  hiddenProviderIds?: string[];
+  /** The owner keeps the token history notice closed until it clears (see the dialog below). */
+  tokenHistoryDismissed?: boolean;
+  onDismissTokenHistory?: () => void;
+  /** The owner keeps the usage error closed until it clears (see the dialog below). */
+  usageErrorDismissed?: boolean;
+  onDismissUsageError?: () => void;
+  /** Another centred dialog is open: the notice and the error wait for it. */
+  centredDialogOpen?: boolean;
 };
 
 export function UsageScreen({
@@ -68,6 +100,13 @@ export function UsageScreen({
   usageError,
   onRefresh,
   windowsHost = false,
+  providerActions = {},
+  hiddenProviderIds = [],
+  tokenHistoryDismissed = false,
+  onDismissTokenHistory,
+  usageErrorDismissed = false,
+  onDismissUsageError,
+  centredDialogOpen = false,
 }: UsageScreenProps) {
   const refreshing = busyAction === "usage";
   const providers = filterVisibleProviders(
@@ -75,54 +114,74 @@ export function UsageScreen({
     usage?.currentProvider,
   );
   const hasProviders = providers.length > 0;
+  // Action tiles stand in for a provider's numbers; one with no usage entry
+  // still gets its tile, after the others. With no Companion there is no
+  // provider to act on, so the Mac App message stands alone.
+  const actions = companionStatus === "online" ? providerActions : {};
+  // Off, unsupported and without usage data: no tile, even with an entry.
+  const tiles = [
+    ...providers
+      .filter((provider) => !hiddenProviderIds.includes(provider.id))
+      .map((provider) => ({
+      id: provider.id,
+      node: actions[provider.id] ? (
+        <UsageActionTile {...actions[provider.id]} />
+      ) : (
+        <UsageProviderTile provider={provider} />
+      ),
+    })),
+    ...Object.entries(actions)
+      .filter(([id]) => !providers.some((provider) => provider.id === id))
+      .map(([id, action]) => ({
+        id,
+        node: <UsageActionTile {...action} />,
+      })),
+  ];
   const tokenUsageReady =
     usage?.tokenUsageReady === true || usageProvidersHaveTokenResult(providers);
   // The Mac App owns this decision; the browser does not re-derive freshness.
   const tokenUsageUpdating = usage?.tokenUsageUpdating === true;
-  const tokenHistoryUnavailable = usageTokenHistoryUnavailable(usage);
+  // The same providers as the tiles: a hidden one must not make the history look missing.
+  const shownProviders = providers.filter(
+    (provider) => !hiddenProviderIds.includes(provider.id),
+  );
+  const tokenHistoryUnavailable = usageTokenHistoryNotice(usage, hiddenProviderIds);
+  // A usage error is told first: the token history notice waits until it is closed.
+  const usageErrorDialogOpen =
+    Boolean(usageError) && !usageErrorDismissed && !centredDialogOpen;
+  const tokenHistoryDialogOpen =
+    tokenHistoryUnavailable &&
+    !tokenHistoryDismissed &&
+    !centredDialogOpen &&
+    !usageErrorDialogOpen;
   const hasUsableVisibleUsageContent =
     hasProviders || usageProvidersHaveTokenResult(providers);
+  // An action tile is content: no loading state beside it.
   const usageLoading =
-    companionStatus === "online" && !usageError && !usage && !hasProviders;
+    companionStatus === "online" &&
+    !usageError &&
+    !usage &&
+    !hasProviders &&
+    Object.keys(providerActions).length === 0;
   const tokenUsagePending =
     companionStatus === "online" &&
     !usageError &&
-    hasProviders &&
+    shownProviders.length > 0 &&
     !tokenUsageReady;
   // A requested refresh that still waits for its reading shows on the Refresh
   // button alone, so nothing above the token total appears or moves (#918).
   const refreshPending = usage?.refresh?.state === "refreshing";
+  // An action tile is content too: no "still loading" notice beside it.
   const refreshNotice = usageRefreshNotice(usage?.refresh, {
     companionStatus,
-    hasUsableVisibleUsageContent,
+    hasUsableVisibleUsageContent:
+      hasUsableVisibleUsageContent || Object.keys(providerActions).length > 0,
     usageError,
   });
 
   return (
-    <div className="mx-auto max-w-[1180px]">
-      <section className="py-10">
-        {usageError ? (
-          <Alert className="mb-6 bg-muted">
-            <AlertTriangle />
-            <AlertTitle>{usageError.message}</AlertTitle>
-            <AlertDescription className="grid justify-items-start gap-3">
-              <span>{usageError.nextAction}</span>
-              {onRefresh ? (
-                <Button
-                  aria-busy={refreshing}
-                  disabled={refreshing}
-                  onClick={onRefresh}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  {refreshing ? <Spinner /> : <RefreshCw aria-hidden />}
-                  {refreshing ? "Trying again" : "Try again"}
-                </Button>
-              ) : null}
-            </AlertDescription>
-          </Alert>
-        ) : null}
+    <div>
+      <section className="pt-4 pb-8">
         {refreshNotice ? (
           <Alert className="mb-6 bg-muted">
             {refreshNotice.tone === "attention" ? <AlertTriangle /> : <Info />}
@@ -137,68 +196,36 @@ export function UsageScreen({
             loading
             windowsHost={windowsHost}
           />
-        ) : tokenHistoryUnavailable ? (
-          <Alert className="mb-6 bg-muted">
-            <Info />
-            <AlertTitle>Token history is unavailable</AlertTitle>
-            <AlertDescription className="grid justify-items-start gap-3">
-              <span>
-                {/* With one provider on there is no "every" (issue #558). */}
-                {providers.length === 1
-                  ? copyForHost(
-                      `No token history was found for ${providers[0].label || providers[0].id} on this Mac. Your usage limits are shown below.`,
-                      windowsHost,
-                    )
-                  : "Complete local token history is not available for every selected provider. Available usage limits are shown below."}
-              </span>
-              {onRefresh ? (
-                <Button
-                  aria-label="Refresh token usage"
-                  aria-busy={refreshing || refreshPending}
-                  disabled={refreshing || refreshPending}
-                  onClick={onRefresh}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  {refreshing || refreshPending ? (
-                    <Spinner />
-                  ) : (
-                    <RefreshCw aria-hidden />
-                  )}
-                  {refreshing || refreshPending ? "Refreshing" : "Refresh"}
-                </Button>
-              ) : null}
-            </AlertDescription>
-          </Alert>
-        ) : tokenUsageReady && hasProviders ? (
+        ) : // The notice is a dialog over this page (below), not a box in it.
+        tokenHistoryUnavailable ? (
+          <div className="mb-6 flex justify-end">
+            <UsageRefreshButton onRefresh={onRefresh} refreshing={refreshing || refreshPending} />
+          </div>
+        ) : tokenUsageReady && shownProviders.length > 0 ? (
           <TokenUsageOverTimePanel
             onRefresh={onRefresh}
-            providers={providers}
+            providers={shownProviders}
             refreshing={refreshing || refreshPending}
-            updating={tokenUsageUpdating}
+            updating={tokenUsageUpdating && shownProviders.some(
+              (provider) => provider.cost != null && provider.costSettled !== true,
+            )}
           />
         ) : tokenUsagePending ? (
-          <Card
-            aria-live="polite"
-            className="mb-6 min-h-[294px] items-center justify-center"
-            data-testid="token-history-loading"
-            role="status"
-          >
-            <Spinner className="size-6" />
-            <span className="sr-only">Token history is loading</span>
-          </Card>
+          <TokenUsageSkeleton providerCount={shownProviders.length} />
         ) : null}
 
-        {hasProviders ? (
-          <ol className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
-            {providers.map((provider) => (
-              <li className="min-w-0" key={provider.id}>
-                <UsageProviderTile provider={provider} />
+        {tiles.length > 0 ? (
+          <ol
+            className="grid max-w-[1316px] justify-start gap-4"
+            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 428px), 428px))" }}
+          >
+            {tiles.map((tile) => (
+              <li className="min-w-0" key={tile.id}>
+                {tile.node}
               </li>
             ))}
           </ol>
-        ) : !usageLoading && !usageError ? (
+        ) : !usageLoading && (!usageError || usageErrorDismissed) ? (
           <UsageEmptyState
             companionStatus={companionStatus}
             loading={false}
@@ -206,7 +233,112 @@ export function UsageScreen({
           />
         ) : null}
       </section>
+      {/* A page's own dialogs, not announcements: they do not use data-announcement. */}
+      {usageErrorDialogOpen && usageError ? (
+        <SetupDialog
+          description={usageError.nextAction}
+          onOpenChange={(open) => {
+            if (!open) onDismissUsageError?.();
+          }}
+          open
+          primaryAction={{
+            label: "OK",
+            onSelect: () => onDismissUsageError?.(),
+          }}
+          secondaryAction={
+            onRefresh
+              ? {
+                  busy: refreshing,
+                  disabled: refreshing,
+                  label: refreshing ? "Trying again" : "Try again",
+                  onSelect: onRefresh,
+                }
+              : undefined
+          }
+          title={usageError.message}
+
+        />
+      ) : null}
+      {tokenHistoryDialogOpen ? (
+        <SetupDialog
+          description={
+            /* With one provider on there is no "every" (issue #558). */
+            shownProviders.length === 1
+              ? copyForHost(
+                  `No token history was found for ${shownProviders[0].label || shownProviders[0].id} on this Mac. Your usage limits are shown below.`,
+                  windowsHost,
+                )
+              : "Complete local token history is not available for every selected provider. Available usage limits are shown below."
+          }
+          onOpenChange={(open) => {
+            if (!open) onDismissTokenHistory?.();
+          }}
+          open
+          primaryAction={{
+            label: "OK",
+            onSelect: () => onDismissTokenHistory?.(),
+          }}
+          secondaryAction={
+            onRefresh
+              ? {
+                  busy: refreshing || refreshPending,
+                  disabled: refreshing || refreshPending,
+                  label: refreshing || refreshPending ? "Refreshing" : "Refresh",
+                  onSelect: onRefresh,
+                }
+              : undefined
+          }
+          title="Token history is unavailable"
+
+        />
+      ) : null}
     </div>
+  );
+}
+
+// The same looks as the provider rows (states overview 644): 3 sign in, 4 allow access.
+const usageActionLabels: Record<string, string> = {
+  auth_required: "Sign in needed",
+  browser_sign_in_required: "Sign in needed",
+  setup_required: "Sign in needed",
+  permission_required: "Allow access",
+};
+
+/** Action tiles for the enabled providers whose health needs the customer. */
+export function usageProviderActionsFor(
+  preferences: PreferenceDescriptor[] | null,
+  {
+    onOpenSettings,
+    onSignIn,
+  }: {
+    onOpenSettings: () => void;
+    /** Absent where the Companion cannot start a sign-in: every action opens Settings. */
+    onSignIn?: (item: PreferenceDescriptor) => void;
+  },
+): Record<string, UsageProviderAction> {
+  return Object.fromEntries(
+    (preferences || [])
+      .filter(isProviderItem)
+      .flatMap((item: ProviderItem): Array<[string, UsageProviderAction]> => {
+        const label = usageActionLabels[providerRowHealthState(item.health)];
+        if (!label || item.value !== true) {
+          return [];
+        }
+        // The setup row's own rule: a sign-in the Companion can start, else Settings.
+        const signIn = Boolean(onSignIn) && setupProviderOffersSignIn(item);
+        return [
+          [
+            item.providerId,
+            {
+              name: item.label,
+              state: providerRowHealthState(item.health),
+              inSettings: !signIn,
+              label,
+              onAction: signIn && onSignIn ? () => onSignIn(item) : onOpenSettings,
+            },
+          ],
+        ];
+      }),
   );
 }
 
@@ -242,6 +374,71 @@ function usageRefreshNotice(
   }
 }
 
+// Stands in for TokenUsageOverTimePanel while its token history loads (issue
+// #598): the same blocks at the same heights, grey and without figures, so the
+// tiles below do not move when the graph arrives. One legend chip per provider,
+// below the chart as the chart will show. Under reduced motion the blocks stand still.
+function TokenUsageSkeleton({ providerCount }: { providerCount: number }) {
+  return (
+    <div aria-live="polite" data-testid="token-history-loading" role="status">
+      {/* A heading keeps the provider tiles below in order for assistive tech. */}
+      <h2 className="sr-only">Token history is loading</h2>
+      <div aria-hidden>
+        <section>
+          <div className="flex h-8 items-center justify-between gap-4">
+            <Skeleton className="h-3.5 w-20" />
+            {/* The Refresh button's place. */}
+            <div className="size-8 shrink-0" />
+          </div>
+          <div className="mt-1.5">
+            {/* The hero size's line box: 48 px at line height 1.05. */}
+            <div className="flex h-[50.4px] items-center">
+              <Skeleton className="h-9 w-56 max-w-full" />
+            </div>
+            <div className="mt-1.5 flex h-[21.75px] items-center">
+              <Skeleton className="h-3.5 w-52 max-w-full" />
+            </div>
+          </div>
+        </section>
+        <div className="relative mt-12 min-h-56">
+          <Skeleton className="h-56 w-full" />
+        </div>
+        <div className="mt-1.5 mb-14 flex flex-wrap items-center gap-x-[18px] gap-y-1">
+          {/* Each chip reserves the legend's line box (21.75 px), so a wrapped row is as tall as the loaded one. */}
+          {Array.from({ length: providerCount }, (_, index) => (
+            <div className="flex h-[21.75px] items-center" key={index}>
+              <Skeleton className="h-3.5 w-14" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UsageRefreshButton({
+  onRefresh,
+  refreshing,
+}: {
+  onRefresh?: () => void;
+  refreshing: boolean;
+}) {
+  return (
+    <Button
+      aria-busy={refreshing}
+      aria-label="Refresh"
+      className="size-8 shrink-0 text-muted-foreground"
+      disabled={refreshing || !onRefresh}
+      onClick={() => onRefresh?.()}
+      size="icon"
+      type="button"
+      variant="ghost"
+    >
+      {refreshing ? <Spinner /> : <RefreshCw aria-hidden />}
+    </Button>
+  );
+}
+
 function TokenUsageOverTimePanel({
   onRefresh,
   providers,
@@ -268,182 +465,139 @@ function TokenUsageOverTimePanel({
 
   return (
     <>
-      <section
-        aria-labelledby="total-tokens-heading"
-        className="mb-6 px-4 text-center"
-      >
-        {updating ? (
-          <Badge
-            aria-live="polite"
-            className="mb-3"
-            data-testid="token-history-updating"
-            variant="secondary"
-          >
-            <Spinner className="size-3" data-icon="inline-start" />
-            Still counting
-          </Badge>
-        ) : null}
-        <h2
-          className="text-sm font-bold uppercase tracking-wide text-muted-foreground"
-          id="total-tokens-heading"
-        >
-          Total tokens in the last 30 days
-        </h2>
-        <p className="mt-2 break-words text-3xl font-black tracking-tight tabular-nums sm:text-5xl">
-          {formatFullTokenCount(last30DaysTokens)}
-        </p>
-        {last30DaysTokens !== null ? (
-          <p className="mx-auto mt-2 max-w-3xl text-sm font-semibold leading-relaxed text-muted-foreground">
-            {formatTokenCountInWords(last30DaysTokens)} tokens
-          </p>
-        ) : null}
-      </section>
-
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Tokens used over time</CardTitle>
-          <CardAction>
-            <Button
-              aria-busy={refreshing}
-              aria-label="Refresh token usage"
-              disabled={refreshing || !onRefresh}
-              onClick={() => onRefresh?.()}
-              size="sm"
-              type="button"
-              variant="outline"
+      <section aria-labelledby="total-tokens-heading">
+        <div className="flex h-8 items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <h2
+              className="text-[14.5px] font-normal text-muted-foreground"
+              id="total-tokens-heading"
             >
-              {refreshing ? (
-                <Spinner data-icon="inline-start" />
-              ) : (
-                <RefreshCw data-icon="inline-start" aria-hidden />
-              )}
-              {refreshing ? "Refreshing" : "Refresh"}
-            </Button>
-          </CardAction>
-        </CardHeader>
-
-        <CardContent>
-          <div className="relative min-h-52">
-            <ChartContainer
-              aria-hidden={!hasCurrentData}
-              aria-label={`Daily tokens used over time for ${providerNames.join(", ")}`}
-              className={cn(
-                "h-52 w-full overflow-hidden px-2 pt-3 transition-opacity",
-                !hasCurrentData && "pointer-events-none opacity-25 grayscale",
-              )}
-              config={chartConfig}
-              role="img"
-            >
-              <AreaChart
-                accessibilityLayer
-                data={chartData}
-                margin={{ top: 8, right: 10, bottom: 0, left: 10 }}
-              >
-                <CartesianGrid vertical={false} />
-                <XAxis
-                  axisLine={false}
-                  dataKey="day"
-                  interval="preserveStartEnd"
-                  minTickGap={28}
-                  tickFormatter={formatDayLabel}
-                  tickLine={false}
-                  tickMargin={8}
-                />
-                <YAxis
-                  axisLine={false}
-                  tickFormatter={formatTokenCount}
-                  tickLine={false}
-                  tickMargin={8}
-                  width={48}
-                />
-                <ChartTooltip
-                  content={
-                    <ChartTooltipContent
-                      labelFormatter={(value) => formatDayLabel(String(value))}
-                    />
-                  }
-                  cursor={false}
-                />
-                <ChartLegend
-                  content={
-                    <ChartLegendContent className="flex-wrap gap-x-4 gap-y-2 pb-1" />
-                  }
-                />
-                {series.map((item) => (
-                  <Area
-                    activeDot={{ r: 4 }}
-                    connectNulls={false}
-                    dataKey={item.dataKey}
-                    fill={`var(--color-${item.dataKey})`}
-                    fillOpacity={0.12}
-                    isAnimationActive={false}
-                    key={item.dataKey}
-                    stroke={`var(--color-${item.dataKey})`}
-                    strokeWidth={2}
-                    type="monotone"
-                  />
-                ))}
-              </AreaChart>
-            </ChartContainer>
-
-            {!hasCurrentData ? (
-              <Empty
+              Last 30 days
+            </h2>
+            {updating ? (
+              <Badge
                 aria-live="polite"
-                className="absolute inset-0 min-h-0 bg-transparent p-4"
-                role="status"
+                data-testid="token-history-updating"
+                variant="secondary"
               >
-                <EmptyHeader>
-                  <EmptyTitle>
-                    <Badge variant="secondary">No data</Badge>
-                  </EmptyTitle>
-                  <EmptyDescription>
-                    Token history is temporarily unavailable.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
+                <Spinner className="size-3" data-icon="inline-start" />
+                Still counting
+              </Badge>
             ) : null}
           </div>
-        </CardContent>
-      </Card>
-    </>
-  );
-}
+          <UsageRefreshButton onRefresh={onRefresh} refreshing={refreshing} />
+        </div>
+        <div className="mt-1.5">
+          <p className="text-hero break-words font-semibold text-foreground tabular-nums">
+            <span>{formatFullTokenCount(last30DaysTokens)}</span>
+            <span className="ml-2.5 text-[14.5px] font-normal tracking-normal text-muted-foreground">
+              tokens
+            </span>
+          </p>
+          <p className="mt-1.5 text-[14.5px] leading-normal text-muted-foreground">
+            {formatTokenCountInWords(last30DaysTokens)}
+          </p>
+        </div>
+      </section>
 
-function UsageProviderTile({
-  provider,
-}: {
-  provider: UsageProviderInfo;
-}) {
-  const tokenEvidence = providerHasTokenEvidence(provider);
-  const providerStale = provider.stale && !tokenEvidence;
-  return (
-    <Card
-      className={cn(
-        "h-full min-h-[248px] [--card-spacing:--spacing(5)]",
-        providerStale && "opacity-65",
-      )}
-    >
-      <CardHeader>
-        <CardTitle className="break-words text-xl font-black">
-          {provider.label || provider.id}
-        </CardTitle>
-        {providerStale || provider.status ? (
-          <CardDescription className="flex flex-wrap items-center gap-2">
-            {providerStale ? <StatusPill>Stale</StatusPill> : null}
-            {provider.status ? (
-              <StatusPill>{providerStatusLabel(provider.status.description)}</StatusPill>
-            ) : null}
-          </CardDescription>
+      <div className="relative mt-12 min-h-56">
+        <ChartContainer
+          aria-hidden={!hasCurrentData}
+          aria-label={`Daily tokens used over time for ${providerNames.join(", ")}`}
+          className={cn(
+            "h-56 w-full overflow-hidden transition-opacity",
+            !hasCurrentData && "pointer-events-none opacity-25 grayscale",
+          )}
+          config={chartConfig}
+          role="img"
+        >
+          <AreaChart
+            accessibilityLayer
+            data={chartData}
+            margin={{ top: 16, right: 0, bottom: 0, left: 0 }}
+          >
+            <CartesianGrid
+              stroke="var(--foreground)"
+              strokeOpacity={0.09}
+              vertical={false}
+            />
+            <XAxis
+              axisLine={{ stroke: "var(--foreground)", strokeOpacity: 0.22 }}
+              dataKey="day"
+              height={48}
+              interval={0}
+              ticks={weeklyDayTicks(chartData.map((row) => String(row.day)))}
+              tick={WeekTick}
+              tickLine={false}
+              tickMargin={5}
+            />
+            <YAxis
+              axisLine={false}
+              tick={ValueTick}
+              tickCount={3}
+              tickFormatter={formatTokenCount}
+              tickLine={false}
+              tickMargin={8}
+              width={44}
+            />
+            <ChartTooltip
+              content={
+                <ChartTooltipContent
+                  labelFormatter={(value) => formatDayLabel(String(value))}
+                />
+              }
+              cursor={false}
+            />
+            {series.map((item) => (
+              <Area
+                activeDot={{ r: 4 }}
+                connectNulls={false}
+                dataKey={item.dataKey}
+                fill={`var(--color-${item.dataKey})`}
+                fillOpacity={0.05}
+                isAnimationActive={false}
+                key={item.dataKey}
+                stroke={`var(--color-${item.dataKey})`}
+                strokeWidth={2.5}
+                type="monotone"
+              />
+            ))}
+          </AreaChart>
+        </ChartContainer>
+
+        {!hasCurrentData ? (
+          <Empty
+            aria-live="polite"
+            className="absolute inset-0 min-h-0 bg-transparent p-4"
+            role="status"
+          >
+            <EmptyHeader>
+              <EmptyTitle>
+                <Badge variant="secondary">No data</Badge>
+              </EmptyTitle>
+              <EmptyDescription>
+                Token history is temporarily unavailable.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : null}
-      </CardHeader>
-
-      <CardContent className="flex flex-1 flex-col">
-        <ProviderUsageBars provider={provider} />
-
-        <UsageMetaGrid provider={provider} />
-        <TokenRow provider={provider} />
-      </CardContent>
-    </Card>
+      </div>
+      <div
+        className="mt-1.5 mb-14 flex flex-wrap items-center gap-x-[18px] gap-y-1 text-[14.5px] text-muted-foreground"
+        data-testid="usage-legend"
+      >
+        {series.map((item) => (
+          <span className="inline-flex items-center" key={item.dataKey}>
+            <i
+              aria-hidden
+              className="mr-[7px] inline-block size-2 rounded-full"
+              style={{ background: item.color }}
+            />
+            {item.label}
+          </span>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -458,124 +612,316 @@ function useNow(intervalMs: number): Date {
   return now;
 }
 
-function ProviderUsageBars({ provider }: { provider: UsageProviderInfo }) {
-  const unavailableDetail = quotaUnavailableDetail(provider);
+// One tile per provider: the numbers the Mac App delivers, nothing computed here.
+function UsageProviderTile({ provider }: { provider: UsageProviderInfo }) {
   // The countdown shows whole minutes; its own tick moves it between usage polls.
   const now = useNow(RESET_COUNTDOWN_TICK_MS);
-  const resetSecsLeft = (resetSecs?: number) =>
-    remainingResetSecs(resetSecs, provider.collectedAt, now);
-  if (provider.windows?.length) {
-    return (
-      <div className="grid gap-4">
-        {provider.windows.map((window) => (
-          <UsageWindowBar
-            key={window.id}
-            mode={provider.usageMode}
-            resetSecs={resetSecsLeft(window.resetSecs)}
-            unavailable={provider.usageUnavailable}
-            unavailableDetail={unavailableDetail}
-            window={window}
-          />
-        ))}
-      </div>
-    );
-  }
-
+  // Stale or unavailable is decided by the Mac App; the tile only shows the flags.
+  const quiet = Boolean(provider.stale || provider.usageUnavailable);
+  const lines = usageLines(provider, now, quiet);
+  // The Updating spinner takes the place of the first line's reset, on that line.
+  const spinner = quiet ? (
+    <Loader2
+      aria-label="Updating"
+      className="size-3.5 animate-spin text-muted-foreground"
+      role="img"
+    />
+  ) : null;
   return (
-    <div className="grid gap-4">
-      <UsageBar
-        label="Session"
-        mode={provider.usageMode}
-        resetSecs={resetSecsLeft(provider.resetSecs)}
-        unavailable={
-          provider.usageUnavailable || provider.sessionUnavailable
-        }
-        unavailableDetail={unavailableDetail}
-        value={provider.session}
-      />
-      <UsageBar
-        label="Weekly"
-        mode={provider.usageMode}
-        resetSecs={resetSecsLeft(provider.resetSecs)}
-        unavailable={provider.usageUnavailable || provider.weeklyUnavailable}
-        unavailableDetail={unavailableDetail}
-        value={provider.weekly}
-      />
+    <UsageTileFrame name={provider.label || provider.id} plan={provider.plan}>
+      {usageHasNumbers(provider) ? (
+        <div className="grid gap-[22px]">
+          {lines.map((line, index) => (
+            <UsageLineView
+              index={index}
+              key={line.key}
+              line={line}
+              mode={provider.usageMode}
+              status={index === 0 ? spinner : null}
+            />
+          ))}
+        </div>
+      ) : (
+        <UsageSkeleton status={spinner} />
+      )}
+      <UsageMetaGrid provider={provider} />
+      <TokenRow provider={provider} />
+    </UsageTileFrame>
+  );
+}
+
+// The tile for a provider where the customer must act first. No numbers.
+function UsageActionTile({ label, name, onAction }: UsageActionView) {
+  return (
+    <UsageTileFrame
+      action={<UsageActionLink label={label} name={name} onAction={onAction} />}
+      name={name}
+    >
+      <UsageSkeleton />
+    </UsageTileFrame>
+  );
+}
+
+function UsageActionLink({ label, name, onAction }: UsageActionView) {
+  return (
+    <button
+      aria-label={`${label} for ${name}`}
+      className="inline-flex items-center gap-1 font-semibold text-destructive hover:underline"
+      onClick={onAction}
+      type="button"
+    >
+      {label}
+      <ArrowUpRight aria-hidden className="size-3.5" />
+    </button>
+  );
+}
+
+// A stale reading keeps its last good numbers. The Companion says which lanes
+// are such a retained reading, a real 0 included; a cleared or never-read lane
+// is not, so it never shows as "0% used".
+function usageRetainedNumbers(provider: UsageProviderInfo): boolean {
+  return Boolean(
+    provider.sessionRetained ||
+      provider.weeklyRetained ||
+      provider.windowsRetained,
+  );
+}
+
+function usageHasNumbers(provider: UsageProviderInfo): boolean {
+  return !provider.usageUnavailable || usageRetainedNumbers(provider);
+}
+
+function UsageTileFrame({
+  action,
+  children,
+  name,
+  plan,
+}: {
+  action?: ReactNode;
+  children: ReactNode;
+  name: string;
+  plan?: string;
+}) {
+  return (
+    <Card className="h-full min-h-[196px] [--card-spacing:22px]">
+      <CardHeader>
+        <CardTitle className="flex flex-wrap items-baseline gap-x-2 break-words text-[15px] font-semibold">
+          <span>
+            {name}
+            {plan ? (
+              <span className="font-normal text-muted-foreground">{` · ${plan}`}</span>
+            ) : null}
+          </span>
+          {action}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-1 flex-col gap-[22px]">{children}</CardContent>
+    </Card>
+  );
+}
+
+// Stands in for numbers that are not there. Shape only, no text.
+function UsageSkeleton({ status }: { status?: ReactNode }) {
+  return (
+    <div className="grid gap-3">
+      <div className="flex items-baseline justify-between gap-4">
+        <Skeleton aria-hidden className="h-7 w-24" />
+        {status}
+      </div>
+      <div aria-hidden className="grid gap-3">
+        <Skeleton className="h-3 w-full rounded-[4px]" />
+        <div className="flex justify-between">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-3 w-20" />
+        </div>
+        <Skeleton className="h-3 w-full rounded-[4px]" />
+        <Skeleton className="h-3 w-40" />
+      </div>
     </div>
   );
 }
 
-function UsageBar({
-  label,
-  mode,
-  resetSecs,
-  unavailable,
-  unavailableDetail,
-  value,
-}: {
+type UsageLine = {
+  key: string;
   label: string;
+  percent: number;
+  resetText: string | null;
+  runsOutText: string | null;
+  unavailable: boolean;
+};
+
+// Shown only when CodexBar says the window will not last to its reset.
+function runsOutText(window: UsageWindowInfo, etaLeft: number): string | null {
+  return window.willLastToReset === false && etaLeft > 0
+    ? `Runs out in ${formatResetCountdown(etaLeft)}`
+    : null;
+}
+
+// The two generic lanes keep their lowercase wording; any other window shows
+// the label CodexBar delivered, as it is ("Fable only" stays "Fable only").
+function windowLabel(label: string): string {
+  const generic = label.trim().toLowerCase();
+  return generic === "session" || generic === "weekly" ? generic : label;
+}
+
+function usageLines(
+  provider: UsageProviderInfo,
+  now: Date,
+  quiet: boolean,
+): UsageLine[] {
+  const resetText = (resetSecs?: number) => {
+    const left = remainingResetSecs(resetSecs, provider.collectedAt, now);
+    return !quiet && left ? formatReset(left) : null;
+  };
+  // A stale reading is flagged unavailable on every lane. Only a lane the
+  // Companion marks as retained shows its number; any other lane is a
+  // placeholder.
+  const laneUnavailable = (retained?: boolean, flag?: boolean) =>
+    provider.stale ? !retained : Boolean(flag);
+  if (provider.windows?.length) {
+    return provider.windows.map((window) => ({
+      key: window.id,
+      label: windowLabel(window.label),
+      percent: clampPercent(window.usedPercent),
+      resetText: resetText(window.resetSecs),
+      runsOutText: quiet
+        ? null
+        : runsOutText(
+            window,
+            remainingResetSecs(window.etaSeconds, provider.collectedAt, now),
+          ),
+      unavailable: laneUnavailable(provider.windowsRetained),
+    }));
+  }
+  const session = laneUnavailable(
+    provider.sessionRetained,
+    provider.sessionUnavailable,
+  );
+  const weekly = laneUnavailable(
+    provider.weeklyRetained,
+    provider.weeklyUnavailable,
+  );
+  return [
+    {
+      key: "session",
+      label: "session",
+      percent: clampPercent(provider.session),
+      resetText: session ? null : resetText(provider.resetSecs),
+      runsOutText: null,
+      unavailable: session,
+    },
+    {
+      key: "weekly",
+      label: "weekly",
+      percent: clampPercent(provider.weekly),
+      resetText: weekly ? null : resetText(provider.resetSecs),
+      runsOutText: null,
+      unavailable: weekly,
+    },
+  ];
+}
+
+// Each lane's reset sits right-aligned on its own line. The first line (the big
+// number) also takes the Updating spinner in that place while the tile is quiet.
+function UsageLineView({
+  index,
+  line,
+  mode,
+  status,
+}: {
+  index: number;
+  line: UsageLine;
   mode?: string;
-  resetSecs?: number;
-  unavailable?: boolean;
-  unavailableDetail?: string;
-  value: number;
+  status?: ReactNode;
 }) {
-  const percent = clampPercent(value);
-  const detail = unavailableDetail || "Usage limits unavailable.";
+  const right = line.resetText ? (
+    <span className="ml-auto shrink-0 text-muted-foreground">{line.resetText}</span>
+  ) : (
+    status
+  );
+  if (line.unavailable) {
+    return (
+      <div className="grid gap-2">
+        <div className="flex items-baseline justify-between gap-4">
+          <span className="sr-only">{`${line.label} usage unavailable`}</span>
+          <Skeleton aria-hidden className="h-3 w-24" />
+          {right}
+        </div>
+        <Skeleton aria-hidden className="h-3 w-full rounded-[4px]" />
+      </div>
+    );
+  }
+  const modeLabel = usageModeShortLabel(mode);
+  const text = `${line.percent}% ${line.label} ${modeLabel}`;
   return (
-    <div>
-      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
-        <span className="font-bold text-[#1B1B1B]">
-          {label}: {unavailable ? "??" : `${percent}% ${usageModeShortLabel(mode)}`}
-        </span>
-        {!unavailable && resetSecs ? (
-          <span className="ml-auto shrink-0 text-right font-semibold text-[#444933]">
-            {formatReset(resetSecs)}
+    <div className="grid gap-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-[14.5px] text-foreground">
+        {index === 0 ? (
+          <span className="whitespace-nowrap leading-none text-muted-foreground">
+            <span className="text-[32px] leading-none font-semibold text-foreground">
+              {line.percent}%
+            </span>{" "}
+            {line.label} {modeLabel}
           </span>
-        ) : null}
+        ) : (
+          <span className="whitespace-nowrap">
+            {line.percent}%{" "}
+            <span className="text-muted-foreground">
+              {line.label} {modeLabel}
+            </span>
+          </span>
+        )}
+        {right}
       </div>
       <Progress
-        aria-label={
-          unavailable
-            ? `${label}: ${detail}`
-            : `${label}: ${percent}% ${usageModeShortLabel(mode)}`
-        }
-        className="h-2"
-        value={unavailable ? null : percent}
+        aria-label={text}
+        className="h-3 rounded-[4px] [&_[data-slot=progress-indicator]]:rounded-[4px]"
+        value={line.percent}
       />
-      {unavailable ? (
-        <p className="mt-1 text-xs font-semibold text-[#6A5B00]">{detail}</p>
+      {line.runsOutText ? (
+        <p className="text-[13px] text-destructive">{line.runsOutText}</p>
       ) : null}
     </div>
   );
 }
 
-function TokenRow({ provider }: { provider: UsageProviderInfo }) {
-  const items = [
-    ["Session", provider.sessionTokens],
-    ["Week", provider.weekTokens],
-    ["Total", provider.totalTokens],
-  ].filter(([, value]) => typeof value === "number" && value > 0);
+// CodexBar's extra-usage cap in its own currency. Nothing without a usable cap.
+function spendText(spend: UsageSpendInfo | undefined): string | null {
+  if (
+    !spend ||
+    !finiteNumber(spend.limit) ||
+    spend.limit <= 0 ||
+    !finiteNumber(spend.used) ||
+    !/^[A-Za-z]{3}$/.test(spend.currency)
+  ) {
+    return null;
+  }
+  const money = (value: number) =>
+    new Intl.NumberFormat("en-US", {
+      currency: spend.currency,
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 0,
+      style: "currency",
+    }).format(value);
+  const period = /^monthly\b/i.test(spend.period ?? "") ? " this month" : "";
+  return `Extra usage ${money(spend.used)} of ${money(spend.limit)}${period}`;
+}
 
-  if (items.length === 0) {
+function TokenRow({ provider }: { provider: UsageProviderInfo }) {
+  const parts = [
+    provider.totalTokens ? `${formatTokenCount(provider.totalTokens)} total` : null,
+    provider.weekTokens ? `${formatTokenCount(provider.weekTokens)} this week` : null,
+  ].filter(Boolean);
+  const spend = spendText(provider.spend);
+
+  if (parts.length === 0 && !spend) {
     return null;
   }
 
   return (
-    <div className="mt-auto pt-5">
-      <h4 className="mb-3 text-sm font-bold text-foreground">Token usage</h4>
-      <dl className="grid gap-3 sm:grid-cols-3">
-        {items.map(([label, value]) => (
-          <div className="min-w-0" key={label}>
-            <dt className="text-xs font-bold uppercase text-[#506600]">
-              {label}
-            </dt>
-            <dd className="mt-1 break-words text-sm font-semibold text-[#1B1B1B]">
-              {formatTokenCount(value as number)}
-            </dd>
-          </div>
-        ))}
-      </dl>
+    <div className="mt-auto grid gap-1 text-[14.5px] text-muted-foreground">
+      {parts.length > 0 ? <p>Tokens: {parts.join(" · ")}</p> : null}
+      {spend ? <p>{spend}</p> : null}
     </div>
   );
 }
@@ -585,7 +931,6 @@ function UsageMetaGrid({ provider }: { provider: UsageProviderInfo }) {
     provider.status?.description
       ? ["Status", providerStatusLabel(provider.status.description)]
       : null,
-    provider.activity ? ["Activity", provider.activity] : null,
   ].filter(Boolean) as Array<[string, string]>;
 
   if (items.length === 0) {
@@ -593,61 +938,16 @@ function UsageMetaGrid({ provider }: { provider: UsageProviderInfo }) {
   }
 
   return (
-    <dl className="mt-5 grid gap-3 sm:grid-cols-3">
+    <dl className="grid gap-3 sm:grid-cols-3">
       {items.map(([label, value]) => (
         <div className="min-w-0" key={label}>
-          <dt className="text-xs font-bold uppercase text-[#506600]">
-            {label}
-          </dt>
-          <dd className="mt-1 break-words text-sm font-semibold text-[#1B1B1B]">
+          <dt className="text-[14.5px] text-muted-foreground">{label}</dt>
+          <dd className="mt-1 break-words text-[14.5px] text-muted-foreground">
             {value}
           </dd>
         </div>
       ))}
     </dl>
-  );
-}
-
-function UsageWindowBar({
-  mode,
-  resetSecs,
-  unavailable,
-  unavailableDetail,
-  window,
-}: {
-  mode?: string;
-  resetSecs: number;
-  unavailable?: boolean;
-  unavailableDetail?: string;
-  window: UsageWindowInfo;
-}) {
-  const percent = clampPercent(window.usedPercent);
-  const detail = unavailableDetail || "Usage limits unavailable.";
-  return (
-    <div>
-      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
-        <span className="font-bold text-[#1B1B1B]">
-          {window.label}: {unavailable ? "??" : `${percent}% ${usageModeShortLabel(mode)}`}
-        </span>
-        {!unavailable && resetSecs ? (
-          <span className="ml-auto shrink-0 text-right font-semibold text-[#444933]">
-            {formatReset(resetSecs)}
-          </span>
-        ) : null}
-      </div>
-      <Progress
-        aria-label={
-          unavailable
-            ? `${window.label}: ${detail}`
-            : `${window.label}: ${percent}% ${usageModeShortLabel(mode)}`
-        }
-        className="h-2"
-        value={unavailable ? null : percent}
-      />
-      {unavailable ? (
-        <p className="mt-1 text-xs font-semibold text-[#6A5B00]">{detail}</p>
-      ) : null}
-    </div>
   );
 }
 
@@ -706,6 +1006,22 @@ export function usageTokenHistoryUnavailable(usage: UsageSnapshot | null): boole
   );
 }
 
+// The Usage notice: a provider that is shown and has no token history. Hidden
+// providers do not count, so the notice and the tiles agree.
+export function usageTokenHistoryNotice(
+  usage: UsageSnapshot | null,
+  hiddenProviderIds: string[] = [],
+): boolean {
+  return usageTokenHistoryUnavailable(
+    usage && {
+      ...usage,
+      providers: usage.providers.filter(
+        (provider) => !hiddenProviderIds.includes(provider.id),
+      ),
+    },
+  );
+}
+
 // Themes asks for a theme that draws token numbers. VibeTV draws those of one
 // provider, so only that one counts; without one, all shown must have none.
 export function usageTokenHistoryUnavailableOnVibeTV(usage: UsageSnapshot | null): boolean {
@@ -740,12 +1056,18 @@ function shouldShowProvider(
   if (providerHasCost(provider)) {
     return true;
   }
+  if (providerHasPlanOrSpend(provider)) {
+    return true;
+  }
   return (provider.usageOverTime || []).some(
     (point) => point.totalCreditsUsed > 0,
   );
 }
 
 function providerHasUsage(provider: UsageProviderInfo): boolean {
+  if (usageRetainedNumbers(provider)) {
+    return true;
+  }
   if (provider.usageMode === "remaining") {
     return provider.session < 100 || provider.weekly < 100;
   }
@@ -784,14 +1106,8 @@ function providerHasCost(provider: UsageProviderInfo): boolean {
   );
 }
 
-function providerHasTokenEvidence(provider: UsageProviderInfo): boolean {
-  return providerHasTokens(provider) || providerHasCost(provider);
-}
-
-function quotaUnavailableDetail(provider: UsageProviderInfo): string {
-  return provider.stale
-    ? "Usage limits are stale."
-    : "Usage limits unavailable.";
+function providerHasPlanOrSpend(provider: UsageProviderInfo): boolean {
+  return Boolean(provider.plan?.trim()) || spendText(provider.spend) !== null;
 }
 
 function normalizeTokenHistory(days: UsageCostDay[]) {
@@ -851,14 +1167,23 @@ const usageProviderChartColors = [
   "var(--chart-5)",
 ] as const;
 
-function buildProviderTokenChart(
+export function buildProviderTokenChart(
   providerHistories: Array<{
     days: UsageCostDay[];
     provider: UsageProviderInfo;
   }>,
 ) {
+  // Claude keeps the ink and Codex the olive, whatever order the response lists them in.
+  // Any other provider takes one of the three colours left, so it never looks like them.
+  const colorById: Record<string, string> = {
+    claude: usageProviderChartColors[0],
+    codex: usageProviderChartColors[1],
+  };
+  const otherColors = usageProviderChartColors.slice(2);
+  let otherCount = 0;
   const series = providerHistories.map(({ provider }, index) => ({
-    color: usageProviderChartColors[index % usageProviderChartColors.length],
+    color:
+      colorById[provider.id] ?? otherColors[otherCount++ % otherColors.length],
     dataKey: `provider${index + 1}`,
     label: provider.label || provider.id,
   }));
@@ -873,9 +1198,18 @@ function buildProviderTokenChart(
     }
   });
 
-  const chartData = [...rowsByDay.values()].sort((a, b) =>
-    String(a.day).localeCompare(String(b.day)),
+  // Only a settled history establishes that a missing day had no tokens
+  // (#579). While counting, leave those days unknown, including internal gaps.
+  const settledZeros = Object.fromEntries(
+    providerHistories.flatMap(({ provider }, index) =>
+      provider.costSettled === true ? [[series[index].dataKey, 0]] : [],
+    ),
   );
+  const days = [...rowsByDay.keys()].sort();
+  const chartData = (calendarDays(days[0], days[days.length - 1]) ?? days).map((day) => ({
+    ...settledZeros,
+    ...(rowsByDay.get(day) || { day }),
+  }));
   const chartConfig: ChartConfig = Object.fromEntries(
     series.map((item) => [
       item.dataKey,
@@ -889,12 +1223,22 @@ function buildProviderTokenChart(
   return { chartConfig, chartData, series };
 }
 
-function StatusPill({ children }: { children: ReactNode }) {
-  return (
-    <Badge className="min-h-6 uppercase" variant="secondary">
-      {children}
-    </Badge>
-  );
+/**
+ * Every calendar day from first to last (`YYYY-MM-DD`), both included, or
+ * null when the days cannot be read or lie further apart than a history can
+ * hold; the chart then keeps the reported days as they are.
+ */
+function calendarDays(first: string | undefined, last: string | undefined): string[] | null {
+  const start = Date.parse(`${first}T00:00:00Z`);
+  const end = Date.parse(`${last}T00:00:00Z`);
+  if (Number.isNaN(start) || Number.isNaN(end) || end - start > 400 * 86_400_000) {
+    return null;
+  }
+  const days: string[] = [];
+  for (let time = start; time <= end; time += 86_400_000) {
+    days.push(new Date(time).toISOString().slice(0, 10));
+  }
+  return days;
 }
 
 function clampPercent(value: number): number {
@@ -1031,6 +1375,62 @@ function providerStatusLabel(description?: string): string {
     return "Status ready";
   }
   return value;
+}
+
+// The value labels start at the left edge of the chart, as in the master (the plot begins 44 px further right).
+function ValueTick({ payload, y }: YAxisTickContentProps) {
+  return (
+    <text dy="0.32em" fill="var(--muted-foreground)" fontSize={14.5} textAnchor="start" x={0} y={y}>
+      {formatTokenCount(Number(payload.value))}
+    </text>
+  );
+}
+
+// The first label starts at the axis and the last one ends at its right edge, as in the master.
+function WeekTick({
+  index,
+  payload,
+  visibleTicksCount,
+  x,
+  y,
+}: XAxisTickContentProps) {
+  return (
+    <text
+      dy="0.71em"
+      fill="var(--muted-foreground)"
+      fontSize={14.5}
+      textAnchor={
+        index === 0
+          ? "start"
+          : index === visibleTicksCount - 1
+            ? "end"
+            : "middle"
+      }
+      x={x}
+      y={y}
+    >
+      {formatDayLabel(String(payload.value))}
+    </text>
+  );
+}
+
+// The master's week axis: the first day, then every seventh day, and the last
+// day, left out only where it would crowd the last one.
+export function weeklyDayTicks(days: string[]): string[] {
+  const dayMs = 86_400_000;
+  const first = days[0];
+  const last = days[days.length - 1];
+  if (first === undefined || last === undefined) {
+    return [];
+  }
+  const start = Date.parse(`${first}T00:00:00Z`);
+  const end = Date.parse(`${last}T00:00:00Z`);
+  const weekly = days.filter((day) => {
+    const offset = (Date.parse(`${day}T00:00:00Z`) - start) / dayMs;
+    return day !== first && offset % 7 === 0 && (end - Date.parse(`${day}T00:00:00Z`)) / dayMs >= 4;
+  });
+  // The first day is always labelled, also in a short history; a set drops it twice when it is the last day too.
+  return [...new Set([first, ...weekly, last])];
 }
 
 function formatDayLabel(day: string): string {

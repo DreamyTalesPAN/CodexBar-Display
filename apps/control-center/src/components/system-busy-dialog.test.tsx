@@ -38,6 +38,16 @@ for (const role of ["dialog", "alertdialog"]) {
   });
 }
 
+// Build-2 decision (19.10.2026, frame 49): the grey backdrop like every other
+// dialog. As an announcement it is only a look: the page behind stays usable (#784).
+it("dims the screen behind the dialog without taking clicks", () => {
+  const { container } = render(page(null));
+  const scrim = container.querySelector('div[aria-hidden][class*="fixed"]');
+  expect(scrim?.className).toContain("bg-black/10");
+  expect(scrim?.className).toContain("opacity-100");
+  expect(scrim?.className).toContain("pointer-events-none");
+});
+
 // The status reply that starts the notice also opens the firmware failure on
 // Updates: both mount in one render.
 function sameRender(open: boolean) {

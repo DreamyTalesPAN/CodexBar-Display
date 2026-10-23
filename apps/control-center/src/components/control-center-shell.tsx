@@ -129,6 +129,10 @@ export function ControlCenterShell({
     }
     onTabChange(tab);
   };
+  // Usage: the page margin grows with the window, 48 px up to 96 px (7197
+  // template point 3, 4cqw of the page area; "@container" is on SidebarInset).
+  // Override the shell margins only on Usage.
+  const growingMargin = activeTab === "usage";
   return (
     <SidebarProvider
       className="control-center-shell overflow-x-hidden bg-background text-foreground"
@@ -164,12 +168,12 @@ export function ControlCenterShell({
           <SidebarRail />
         </Sidebar>
 
-        <SidebarInset className="control-center-shell control-center-shell__main min-w-0">
+        <SidebarInset className="@container control-center-shell control-center-shell__main min-w-0">
           {themeStudioOpen ? (
             // The Studio's own row (back arrow, design name, File, Save) is the header; the title stays for screen readers.
             <h1 className="sr-only">{pageTitle}</h1>
           ) : (
-            <header className="control-center-shell__header mt-9 flex h-10 items-center justify-between gap-4 bg-background px-5 sm:px-7 lg:px-12">
+            <header className={cn("control-center-shell__header mt-9 flex h-10 items-center justify-between gap-4 bg-background px-5 sm:px-7 lg:px-12", growingMargin && "md:px-[clamp(48px,4cqw,96px)] lg:px-[clamp(48px,4cqw,96px)]")}>
               <div className="flex min-w-0 items-center gap-3">
                 <SidebarTrigger
                   aria-label="Open navigation"
@@ -192,6 +196,7 @@ export function ControlCenterShell({
             className={cn(
               "control-center-shell__content px-5 sm:px-7 lg:px-12",
               themeStudioOpen ? "pt-9" : "py-0",
+              growingMargin && "md:px-[clamp(48px,4cqw,96px)] lg:px-[clamp(48px,4cqw,96px)]",
               // Overview fills the window's height: its numbers sit at the bottom (#784 point 1).
               activeTab === "overview" && !themeStudioOpen && "flex flex-1 flex-col",
             )}

@@ -598,9 +598,8 @@ export function SettingsScreen({
 
       <SettingsSection title="AI providers">
         <ProviderList
-          // The design's Settings list: 40 px search, 48 px rows, "Show more" at the left edge.
+          // Main layout, with the PR's provider actions instead of Check again.
           className="[&_[data-slot=item-group]]:mt-4 [&_[data-slot=item]]:h-12 [&_[data-slot=item]]:py-0 [&_input]:h-10 [&>button:last-child]:mt-4 [&>button:last-child]:self-start [&>button:last-child]:px-0"
-          onCheckAgain={(provider) => void providerPicker.onCheck(provider)}
           onOpenSignIn={
             providerPicker.onOpenSignIn
               ? (provider) => void providerPicker.onOpenSignIn?.(provider)
