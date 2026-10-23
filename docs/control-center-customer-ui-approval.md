@@ -20437,3 +20437,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: While the session reset is under one hour from 10 minutes on ("10m" to "59m"), Pixel Battery's footer reads "Reset 55m" without the limit name, centred, 49 px clear of both frame lines; from one hour on it reads as before ("Session reset 2h", "Weekly reset 6d"), and so do "Session reset 1m" to "Session reset 9m" and every weekly footer ("Weekly reset 47m"). In Two at once the same ("Reset 55m"). Every other state of every theme looks the same. No text gets smaller.
 - Scope: the theme pack Pixel Battery 1.17.9 (spec rev 26, on top of 1.17.8's own second battery sprite: the footer box 222 px wide and centred, x 6 to 9 and w 228 to 222, so the firmware's and the app preview's own fallback leaves the limit name out when "Session reset 10m" does not fit) and the layout guard test animation-layout.test.ts (the pending entry for the footer is removed; every minute count of both limits, in One provider and Two at once, keeps 3 px from the frame lines) and pace-themes.test.ts (the footer reads "Reset 10m" to "Reset 59m" and "Session reset 1m" to "Session reset 9m").
 - What's new: none — theme layout only
+
+## 2026-10-23 — #7217: The three prepared answers (Paul questions 13, 5 and 6) together on one branch: Pixel Battery 1.17.9 carries both of its answers
+
+- User approval: pending — Paul questions 13 (1), 5 (variant 1) and 6 (variant 1); each answer also stands as its own commit and is integrated only when Paul has answered it
+- Approved customer-visible result: Together the five packs read as the three entries above describe them. Pixel Battery is the only pack that two answers touch: 1.17.9 has the one battery without the empty second one (question 13) and the footer that reads "Reset 55m" from 10 minutes on (question 6); the 1.17.8 release of the first answer stays as it was built. Nothing else changes.
+- Scope: the approval record only (the merge of the three commits holds the packs; Pixel Battery 1.17.9, spec rev 26, is the one pack that exists in no single commit)
+- What's new: none — approval record only
