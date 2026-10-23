@@ -524,6 +524,17 @@ fn keep_inside(start: i32, area_start: i32, area_size: u32, size: u32) -> i32 {
     i64::from(start).clamp(i64::from(area_start), last) as i32
 }
 
+// The frame after the window was set to the remembered one. Only when the
+// minimum made it grow is it pulled back inside its monitor; otherwise it
+// stays as remembered, even across two monitors.
+fn after_growth(remembered: WindowRect, grown: WindowRect, area: WindowRect, min: (u32, u32)) -> WindowRect {
+    if (grown.width, grown.height) == (remembered.width, remembered.height) {
+        grown
+    } else {
+        fit_into(grown, area, min)
+    }
+}
+
 fn min_size_px(scale: f64) -> (u32, u32) {
     ((MIN_INNER.0 * scale).ceil() as u32, (MIN_INNER.1 * scale).ceil() as u32)
 }
@@ -706,7 +717,7 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
             {
                 let (area, min) = screen_of(&monitor);
                 let grown = WindowRect { x: at.x, y: at.y, width: outer.width, height: outer.height };
-                let fitted = fit_into(grown, area, min);
+                let fitted = after_growth(rect, grown, area, min);
                 let _ = window.set_position(PhysicalPosition::new(fitted.x, fitted.y));
             }
         }
@@ -1751,7 +1762,7 @@ fn show_message(message: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        choose_placement, clear_loaded_theme, close_stands, fit_into, inner_within,
+        after_growth, choose_placement, clear_loaded_theme, close_stands, fit_into, inner_within,
         label_for_generation, theme_id_from_deep_link, work_area_of_centre, Placement,
         WindowRect, remembered_after, remembered_for, store_if_newer, reported_rect, Change,
     };
@@ -1940,6 +1951,18 @@ mod tests {
         let area = rect(0, 0, 1920, 1032);
         assert_eq!(fit_into(rect(1900, 1000, 500, 300), area, MIN), rect(960, 392, 960, 640));
         assert_eq!(fit_into(rect(1900, 1000, 960, 640), area, MIN), rect(960, 392, 960, 640));
+    }
+
+    #[test]
+    fn a_window_that_did_not_grow_stays_where_it_was_remembered() {
+        let rect = |x, y, width, height| WindowRect { x, y, width, height };
+        // Spans two 1920 monitors; its centre monitor is the right one.
+        let right = rect(1920, 0, 1920, 1032);
+        let across = rect(1500, 100, 1000, 800);
+        assert_eq!(after_growth(across, across, right, MIN), across);
+        // Grown by the minimum: pulled back inside the monitor.
+        let small = rect(1900, 1000, 500, 300);
+        assert_eq!(after_growth(small, rect(1900, 1000, 960, 640), rect(0, 0, 1920, 1032), MIN), rect(960, 392, 960, 640));
     }
 
     #[test]
