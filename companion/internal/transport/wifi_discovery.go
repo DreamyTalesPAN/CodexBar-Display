@@ -134,7 +134,6 @@ func scanWiFiTargets(ctx context.Context, client *http.Client, targets []string,
 				}
 				select {
 				case results <- WiFiDiscoveryResult{Target: publicDiscoveryTarget(target), Hello: hello, Source: "network-scan"}:
-					cancel()
 				default:
 				}
 				return
@@ -153,17 +152,20 @@ func scanWiFiTargets(ctx context.Context, client *http.Client, targets []string,
 		}
 	}()
 
-	done := make(chan struct{})
 	go func() {
 		wg.Wait()
-		close(done)
+		close(results)
 	}()
 
 	select {
-	case result := <-results:
+	case result, found := <-results:
+		if !found {
+			if err := ctx.Err(); err != nil {
+				return WiFiDiscoveryResult{}, err
+			}
+			return WiFiDiscoveryResult{}, errors.New("no VibeTV device found on local network")
+		}
 		return result, nil
-	case <-done:
-		return WiFiDiscoveryResult{}, errors.New("no VibeTV device found on local network")
 	case <-ctx.Done():
 		return WiFiDiscoveryResult{}, ctx.Err()
 	}
