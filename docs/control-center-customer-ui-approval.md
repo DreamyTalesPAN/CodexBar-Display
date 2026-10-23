@@ -9844,3 +9844,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #873 as in its own entries plus the entries merged with d2f3fade; nothing else changes.
 - Scope: the merge of d2f3fade and this approval record. Pull request branch #873 only, not merged, not released.
 - What's new: none — merge of d2f3fade, no customer-visible change of its own
+
+## 2026-10-23 — #973: "VibeTV is busy right now." when firmware 1.0.45 answers a theme install without its capabilities (#953)
+
+- User approval: pending — wording proposed by W58 and accepted by the orchestrator (GO A, 2026-10-23); Marcus' approval of the text is asked before merge. No click test: the case needs firmware 1.0.45 at low heap over WiFi.
+- Approved customer-visible result: when the first check of a WiFi theme or screensaver install gets a /hello without its capabilities block (firmware 1.0.45 at low heap), the install dialog says "VibeTV is busy right now." with the next step "Unplug VibeTV for a few seconds, plug it back in, then try again." instead of "VibeTV didn't answer.". No answer at all keeps "VibeTV didn't answer."; a status answer such as 401 keeps its earlier wording.
+- Scope: `companion/internal/companionapi/theme_install.go` (`themeInstallErrorPayload`, check-device failure only) and its tests. Pull request #973 only, not merged, not released.
+- What's new: none — error wording only, nothing a customer would look for
