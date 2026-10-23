@@ -9851,3 +9851,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: when the first check of a WiFi theme or screensaver install gets a /hello without its capabilities block (firmware 1.0.45 at low heap), the install dialog says "VibeTV is busy right now." with the next step "Unplug VibeTV for a few seconds, plug it back in, then try again." instead of "VibeTV didn't answer.". No answer at all keeps "VibeTV didn't answer."; a status answer such as 401 keeps its earlier wording.
 - Scope: `companion/internal/companionapi/theme_install.go` (`themeInstallErrorPayload`, check-device failure only) and its tests. Pull request #973 only, not merged, not released.
 - What's new: none — error wording only, nothing a customer would look for
+
+## 2026-10-23 — #973: click test by Marcus comes before merge
+
+- User approval: pending — Marcus' click test of the #973 wording (rule from 2026-10-23: click test by Marcus before every merge question); shown with a local test stand on the Mac that answers like firmware 1.0.45 at low heap.
+- Approved customer-visible result: as in the #973 entry above; nothing else changes.
+- Scope: this approval record only. Pull request #973 only, not merged, not released.
+- What's new: none — approval record only
