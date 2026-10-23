@@ -9782,6 +9782,13 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 3babd786 and this approval record. Pull request #919 only, not merged, not released.
 - What's new: none — merge of 3babd786, no customer-visible change of its own
 
+## 2026-10-22 — #946: approval marker after merging main at 2d42c92f
+
+- User approval: no visible change – UI approval not needed (merge of main (2d42c92f, which holds #919 squashed) into #946; the #883 entry keeps Paul's approval; #946's own change (#940, when the tray hint shows) keeps its text and look)
+- Approved customer-visible result: #946 (#940 fix on top of #919, as in the #883 entry) plus the entries merged with 2d42c92f; nothing else changes.
+- Scope: the merge of 2d42c92f and this approval record. Pull request #946 only, not merged, not released.
+- What's new: none — merge of 2d42c92f, no customer-visible change of its own
+
 ## 2026-10-22 — #943: plain message when VibeTV does not answer a theme install (#927)
 
 - User approval: Marcus 2026-10-22 (154a) approved exactly this wording without a click test, as an exception, because the case can only be triggered over WiFi and both test VibeTVs run on Cable
@@ -9802,3 +9809,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #943 as in its entries above plus the entries merged with 2d42c92f; nothing else changes.
 - Scope: the merge of 2d42c92f and this approval record. Pull request #943 only, not merged, not released.
 - What's new: none — merge of 2d42c92f, no customer-visible change of its own
+
+## 2026-10-23 — #943: approval marker after merging main at ce62db41
+
+- User approval: no visible change – UI approval not needed (merge of main (ce62db41) into #943; the #943 entries above keep Marcus' (154a) and Paul's approval of the wording)
+- Approved customer-visible result: #943 as in its entries above plus the entries merged with ce62db41; nothing else changes.
+- Scope: the merge of ce62db41 and this approval record. Pull request #943 only, not merged, not released.
+- What's new: none — merge of ce62db41, no customer-visible change of its own

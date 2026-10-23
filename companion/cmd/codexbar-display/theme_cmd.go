@@ -416,7 +416,7 @@ func loadAndValidateThemeSpec(
 	caps, err := deviceTransport.DeviceCapabilities(resolvedTarget)
 	if err != nil {
 		if allowUnknown && errcode.Of(err) == errcode.ProtocolDeviceHelloUnavailable {
-			caps = fallbackThemeSpecCapabilities()
+			caps = themeinstall.FallbackThemeSpecCapabilities()
 			caps.ActiveTransport = deviceTransport.Name()
 			fmt.Printf("warning: device hello unavailable; using local fallback capabilities for validation on %s\n", resolvedTarget)
 		} else {
@@ -424,7 +424,7 @@ func loadAndValidateThemeSpec(
 		}
 	}
 	if allowUnknown && !caps.Known {
-		caps = fallbackThemeSpecCapabilities()
+		caps = themeinstall.FallbackThemeSpecCapabilities()
 		caps.ActiveTransport = deviceTransport.Name()
 		fmt.Printf("warning: capabilities unknown; using local fallback profile on %s\n", resolvedTarget)
 	}
@@ -444,8 +444,4 @@ func loadAndValidateThemeSpec(
 	}
 
 	return spec, raw, resolvedTarget, caps, nil
-}
-
-func fallbackThemeSpecCapabilities() protocol.DeviceCapabilities {
-	return themeinstall.FallbackThemeSpecCapabilities()
 }
