@@ -9493,8 +9493,12 @@ async function testFirmwareAttentionDoesNotOfferSecondFlash(browser, appUrl) {
     .getByText("Firmware current — attention needed")
     .waitFor({ timeout: 10_000 });
   await page
-    .getByText("Firmware is current, but the picture could not be verified.")
+    .getByText("Run setup again to reconnect VibeTV and check its picture.")
     .waitFor({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Run setup again", exact: true }).click();
+  const setupAgain = page.getByRole("dialog", { name: "Run setup again?" });
+  await setupAgain.waitFor();
+  await setupAgain.getByRole("button", { name: "Cancel", exact: true }).click();
   assert(
     (await page.getByRole("button", { name: "Try again" }).count()) === 0,
     "Attention after a verified firmware install must not offer a second flash",
