@@ -204,7 +204,7 @@ function rowGaps(items: Array<Rect & { name: string }>) {
 // hour or a new background; the test below fails the day the state is clear, so this entry cannot outlive the decision.
 const LAYOUT_PENDING = [{ theme: "pixel-battery", detail: /^text "Session reset \d+m" .* background art/ }];
 
-function layoutViolations(pack: ThemeRenderPack, themeId: string, pending = false): string[] {
+function layoutViolations(pack: ThemeRenderPack): string[] {
   const prims = pack.spec?.p ?? [];
   const animations = animationBoxes(pack);
   const artAt = staticArt(pack);
@@ -223,27 +223,13 @@ function layoutViolations(pack: ThemeRenderPack, themeId: string, pending = fals
         .map(({ text, p }) => ({ text, p, ...textInk(p, text) }));
       const bars = prims.filter((p) => p.t === "p" && primitiveUsageSlotVisible(p, frame)).map((p) => {
         const o = pace && (p.b ?? "").includes("Pace") ? PACE_TICK_OVERHANG : 0;
-        return { x: (p.x ?? 0) - o, y: (p.y ?? 0) - o, w: (p.w ?? 0) + 2 * o, h: (p.h ?? 0) + 2 * o, slot: slotOf(p), body: { x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 0, h: p.h ?? 0 }, ring: (p.progressStyle ?? p.ps) === "arc" ? themeProgressArc(p, 0) : null };
+        return { x: (p.x ?? 0) - o, y: (p.y ?? 0) - o, w: (p.w ?? 0) + 2 * o, h: (p.h ?? 0) + 2 * o, slot: slotOf(p), body: { x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 0, h: p.h ?? 0 } };
       });
       const note = (key: string, detail: string) => found.has(key) || found.set(key, `${detail} (first in: ${state})`);
       for (const a of animations) {
         for (const t of texts) if ((facingGap(a, t) ?? CLEAR) < CLEAR) note(`${a.name} x "${t.text}"`, `animation ${a.name} [${show(a)}] is under ${CLEAR} px from text "${t.text}" [${show(t)}]`);
         for (const b of bars) if ((facingGap(a, b) ?? CLEAR) < CLEAR) note(`${a.name} x bar ${show(b)}`, `animation ${a.name} [${show(a)}] is under ${CLEAR} px from a bar [${show(b)}]`);
         for (const d of dividers) if ((facingGap(a, d) ?? CLEAR) < CLEAR) note(`${a.name} x divider ${show(d)}`, `animation ${a.name} [${show(a)}] is under ${CLEAR} px from a divider [${show(d)}]`);
-      }
-      // A text keeps 3 px from every divider and from art painted into the background (frame line, stripe, battery outline):
-      // the descender of "On pace" 2 px above a divider and "Weekly reset" on the bottom frame line were both seen on a device.
-      for (const t of texts) {
-        for (const d of dividers) if ((facingGap(t, d) ?? CLEAR) < CLEAR) note(`"${t.text}" x divider ${show(d)}`, `text "${t.text}" [${show(t)}] is under ${CLEAR} px from a divider [${show(d)}]`);
-        const art = artNearText(t, artAt);
-        if (art) note(`"${t.text}" x art`, `text "${t.text}" [${show(t)}] is under ${CLEAR} px from background art ${art}`);
-      }
-      // A footer keeps 3 px from every bar and from a ring: Gauge's "Fable only reset 4d" stood 2 px beside the ends of its ring.
-      for (const t of texts.filter((q) => /Reset/.test(source(q.p)) && !/ResetFull/.test(source(q.p)))) {
-        for (const b of bars) {
-          const gap = b.ring ? ringGap(t, b.ring) : facingGap(t, b);
-          if ((gap ?? CLEAR) < CLEAR) note(`footer "${t.text}" x ${b.ring ? "ring" : `bar ${show(b)}`}`, `footer "${t.text}" [${show(t)}] is ${gap} px from ${b.ring ? "the ring" : "a bar"}, under ${CLEAR} px`);
-        }
       }
       // A glyph that starts on one flat band of the background and ends on another (a descender below the title bar);
       // the first and the last inked row are both looked at, no row of ink across an edge is tolerated.
@@ -292,7 +278,7 @@ function layoutViolations(pack: ThemeRenderPack, themeId: string, pending = fals
       }
     }
   }
-  return [...found.values()].filter((detail) => LAYOUT_PENDING.some((entry) => entry.theme === themeId && entry.detail.test(detail)) === pending);
+  return [...found.values()];
 }
 
 // Every text is drawn at the font and size its theme declares, whatever it says. Shrinking to fit makes "100% reserve" stand beside
@@ -313,7 +299,7 @@ const SHRINK_PENDING: Array<{ theme: string; source: RegExp; why: string }> = [
   { theme: "reset-countdown", source: /ResetFull/, why: "open decision: the countdown is declared at 4 and drawn at 2 (a widened box or a declared 2)" },
 ];
 
-// Every state a screen is asked to draw, shared by the size guard and the screen edge guard.
+// Every state a screen is asked to draw, shared by the size guard, the screen edge guard and the ink guard.
 const REACHABLE_FRAMES = (() => {
   const frames: Array<[string, FrameData]> = [];
   for (const two of [false, true]) for (const scenario of [...SCENARIOS, ...NAME_SCENARIOS].filter((s) => !two || s.pair)) for (const usageMode of ["used", "remaining"]) {
@@ -321,6 +307,10 @@ const REACHABLE_FRAMES = (() => {
       frames.push([`${two ? "Two at once" : "One provider"}, ${scenario.name}, ${usageMode}, pace ${pace ?? "off"}, footer ${footer ?? "off"} (${firstSecs}/${weeklySecs} s)`,
         frameFor(two, usageMode, pace, footer, undefined, weeklySecs, scenario, firstSecs)]);
     }
+  }
+  // Every number from 0% to 100% in both limits: "100%" is the widest, but each digit pair has its own ink.
+  for (const two of [false, true]) for (const pace of [undefined, "on pace" as const]) for (let percent = 0; percent <= 100; percent++) {
+    frames.push([`${two ? "Two at once" : "One provider"}, ${percent}%, pace ${pace ?? "off"}`, frameFor(two, "used", pace, undefined, [percent, percent])]);
   }
   for (const now of CLOCKS) for (const wideTokens of [false, true]) {
     frames.push([`${now.toTimeString().slice(0, 5)}, ${wideTokens ? "wide" : "normal"} token counts`, frameFor(false, "used", undefined, undefined, undefined, 424000, SCENARIOS[0], 9100, now, wideTokens)]);
@@ -364,6 +354,43 @@ function edgeHits(pack: ThemeRenderPack): string[] {
   return [...found.values()];
 }
 
+// No ink of any text comes within 3 px of ink that is not text: a divider, a frame line or battery outline painted into the background, a
+// bar or a ring (the pace tick is left out, it reaches 3 px beyond a bar at one column only). The descender of "On pace" 2 px above a
+// divider, "Weekly reset" on a frame line, "Fable only reset 4d" 2 px beside the ends of Gauge's ring and the "%" of Gauge's "100%" on
+// its ring were all seen on a device. Every reachable state counts: the long strings, every number, One and Two.
+function inkHits(pack: ThemeRenderPack, themeId: string, pending = false): string[] {
+  const prims = pack.spec?.p ?? [];
+  const artAt = staticArt(pack);
+  const dividers = [
+    ...prims.filter((p) => p.t === "r" && Math.min(p.w ?? 0, p.h ?? 0) <= 4).map((p) => ({ x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 0, h: p.h ?? 0 })),
+    ...bakedDividers(pack),
+  ];
+  const found = new Map<string, string>(), seen = new Set<string>();
+  for (const [state, frame] of REACHABLE_FRAMES) {
+    const bars = prims.filter((p) => p.t === "p" && primitiveUsageSlotVisible(p, frame));
+    for (const p of prims.filter((q) => q.t === "tx" && primitiveUsageSlotVisible(q, frame))) {
+      const text = renderTextPrimitive(p, frame, prims);
+      if (!text.trim()) continue;
+      const t = textInk(p, text);
+      // The same ink in the same place is judged once, not once per state.
+      const key = `${prims.indexOf(p)} ${text} ${bars.map((b) => prims.indexOf(b))}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const note = (what: string, detail: string) => found.has(`"${text}" x ${what}`) || found.set(`"${text}" x ${what}`, `${detail} (first in: ${state})`);
+      for (const d of dividers) if ((facingGap(t, d) ?? CLEAR) < CLEAR) note(`divider ${show(d)}`, `text "${text}" [${show(t)}] is under ${CLEAR} px from a divider [${show(d)}]`);
+      const art = artNearText(t, artAt);
+      if (art) note("art", `text "${text}" [${show(t)}] is under ${CLEAR} px from background art ${art}`);
+      for (const b of bars) {
+        const arc = (b.progressStyle ?? b.ps) === "arc" ? themeProgressArc(b, 0) : null;
+        const box = { x: b.x ?? 0, y: b.y ?? 0, w: b.w ?? 0, h: b.h ?? 0 };
+        const gap = arc ? ringGap(t, arc) : Math.max(box.x - (t.x + t.w), t.x - (box.x + box.w), box.y - (t.y + t.h), t.y - (box.y + box.h));
+        if (gap < CLEAR) note(arc ? "ring" : `bar ${show(box)}`, `text "${text}" [${show(t)}] is ${gap} px from ${arc ? "the ring" : `a bar [${show(box)}]`}, under ${CLEAR} px`);
+      }
+    }
+  }
+  return [...found.values()].filter((detail) => LAYOUT_PENDING.some((entry) => entry.theme === themeId && entry.detail.test(detail)) === pending);
+}
+
 describe("no text is drawn smaller than its theme declares", () => {
   it.each(catalogIds)("%s", (themeId) => {
     expect(shrunkTexts(themeId, loadPack(themeId))).toEqual([]);
@@ -380,17 +407,23 @@ describe("animations, dividers, bars and text of every catalog theme stay apart 
     expect(animated).toEqual(expect.arrayContaining(["claude-creature", "clippy", "mini-classic", "tiny-office", "token-fire"]));
   });
 
-  it.each(themeIds)("%s: 3 px clear of dividers, frames and animation, no glyph across a band edge, no 0 px gap beside a roomy one, pace beside its own bar, equal numbers", (themeId) => {
-    expect(layoutViolations(loadPack(themeId), themeId)).toEqual([]);
+  it.each(themeIds)("%s: 3 px clear of animation, no glyph across a band edge, no 0 px gap beside a roomy one, pace beside its own bar, equal numbers", (themeId) => {
+    expect(layoutViolations(loadPack(themeId))).toEqual([]);
   });
 
   it.each(LAYOUT_PENDING)("$theme still has a footer on its frame line (decision pending): drop the entry from LAYOUT_PENDING once fixed", (entry) => {
-    expect(layoutViolations(loadPack(entry.theme), entry.theme, true)).not.toEqual([]);
+    expect(inkHits(loadPack(entry.theme), entry.theme, true)).not.toEqual([]);
   });
 });
 
 describe("no text ink comes within 3 px of the screen edge", () => {
   it.each(catalogIds)("%s", (themeId) => {
     expect(edgeHits(loadPack(themeId))).toEqual([]);
+  });
+});
+
+describe("no text ink comes within 3 px of a divider, frame line, bar or ring", () => {
+  it.each(catalogIds)("%s", (themeId) => {
+    expect(inkHits(loadPack(themeId), themeId)).toEqual([]);
   });
 });
