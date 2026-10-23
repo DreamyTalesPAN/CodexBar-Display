@@ -9886,3 +9886,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Main redesign with this PR's setup completion destination.
 - Scope: apps/control-center/src/components/control-center-app.tsx and setup completion tests; merge integration only.
 - What's new: none — merge integration only.
+
+## 2026-10-23 — #893: restore the setup completion record
+
+- User approval: no visible change – UI approval not needed (restores the bug-fix record from 5db2e49f, lost in merge 6f18aa04, with the current setup destination rule; documentation only)
+- Approved customer-visible result: finishing setup leaves Updates for Overview after a firmware update, or returns to Settings when a Settings connection change opened setup; Settings and Appearance otherwise stay where they are.
+- Scope: the existing `control-center-app.tsx` setup completion rule and its regression tests, documented here without changing product code; update navigation outside setup is unchanged.
+- What's new: none — restore the missing record of the intended setup destination
