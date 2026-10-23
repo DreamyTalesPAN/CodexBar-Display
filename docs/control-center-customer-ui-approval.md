@@ -9865,3 +9865,38 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: pending Paul's visual acceptance; Support report, Diagnostics and Recent activity are proposed to use the available width inside the existing page padding instead of stopping at 760 px.
 - Scope: one class removed from the Support container and this approval record; own branch from fresh main, no changes to #803.
 - What's new: none — removes Support's 760 px width cap within the existing page padding; no new feature or action.
+
+## 2026-10-20 — #780: 3D VibeTV in the device list and on "Your VibeTV is live"
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 15:30: "top, die neue app passt so" (setup B pictures incl. the 3D VibeTV in the device list and on "Your VibeTV is live"; the earlier "rest passt" for the other setup B pictures applies too) — entry: #780: 3D VibeTV in the device list and on "Your VibeTV is live"
+- Approved customer-visible result: #780 pending — each VibeTV row of "Choose your VibeTV" shows a small 3D VibeTV (the one the app is connected to with its live screen), and "Your VibeTV is live" shows the 3D VibeTV with the live theme on its screen; without a hardware WebGL the photo and the flat case stay.
+- Scope: #780 Setup Wizard variant B only: the device rows and the live screen. The 3D component, its model and the flat preview's screen-only mode are the Overview's files, brought into #780 unchanged so the later merge with the calm redesign is trivial. Pull request branch only, not merged, not released.
+- What's new: none — #780 setup screens only
+
+## 2026-10-21 — #780: The flat VibeTV picture no longer flashes before the 3D model
+
+- User approval: approved by Paul in the communicator chat, 2026-10-21 14:42: "rest passt." (build 7202 review) — entry: #780 setup: the old flat VibeTV picture no longer flashes before the 3D model on "Your VibeTV is live" and in the chooser (Paul 21.10. 7201 feedback: "das komplett löschen einfach")
+- Approved customer-visible result: on "Your VibeTV is live" and in the first row of the chooser the flat VibeTV picture is gone; the area stays empty (same size) until the 3D model is on screen. Without hardware WebGL the flat picture stays as before; rows 2+ of the chooser keep their photo.
+- Scope: `apps/control-center/src/components/setup/setup-3d-preview.tsx`, `setup-device-card.tsx`, `setup-device-screen.tsx`, `setup-live-screen.tsx`, their tests, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #780: 3D support requires WebGL 2
+
+- User approval: no visible change – UI approval not needed (bug fix: a WebGL 1-only browser is no longer reported as 3D-capable; it keeps the photo fallback, as the pinned three renderer cannot run there)
+- Approved customer-visible result: on a WebGL 1-only machine the setup shows the photo fallback instead of a 3D model that cannot render; with WebGL 2 nothing changes.
+- Scope: `apps/control-center/src/components/vibetv-3d-support.ts` and its test `vibetv-3d-support.test.ts`, plus this approval record. Pull request branch only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-21 — #780: failed 3D loading restores the existing preview
+
+- User approval: no visible change – UI approval not needed (bug fix: a real 3D renderer or model-load failure restores the existing photo or live 2D fallback instead of leaving setup artwork blank)
+- Approved customer-visible result: a failed 3D preview behaves like unsupported 3D; the device photo or live 2D preview is visible. Normal 3D loading still shows no flat-picture flash, and the live-screen handover waits until its preview is visible.
+- Scope: `vibetv-3d-preview.tsx` and its test, `setup/setup-device-card.tsx`, `setup/setup-live-screen.tsx`, and `setup/setup-3d-preview.test.tsx` under `apps/control-center/src/components`, plus this approval record. Pull request #780 only, not merged, not released.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-23 — Isolated candidate: existing #780 live-screen 3D fix on #981
+
+- User approval: Paul explicitly requested via communicator msg_c1bf9c8bf634 that the existing 3D fix for "Your VibeTV is live" be included in this candidate; isolated integration authorized by O9 task task_0bab9c3c3547. Final rendered acceptance remains pending.
+- Approved customer-visible result: the real setup completion screen uses the existing Overview 3D VibeTV with its live screen; no old flat-picture flash while loading, and the existing flat preview returns when hardware WebGL 2 is unavailable or the renderer/model fails. The existing Support width fix remains unchanged.
+- Scope: only the live-screen portion and required shared failure/WebGL fixes from #780 head c77911298275b23e368f9501ca4d0f3796b2a31b, preserving #981 head 0f2523393d5aa3575137a1f6b74fe14fb5f6956c. Source approval blocks above are retained verbatim as provenance; their chooser scope is not integrated. The #780 calm title styling and other setup changes are not included. No merge, release, push or hardware approval is implied.
+- What's new: none — existing setup 3D fix integrated; Mac/Windows cold and warm rehearsal and independent real-screen review remain pending.
