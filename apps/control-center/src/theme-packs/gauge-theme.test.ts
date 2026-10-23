@@ -9,6 +9,7 @@ import {
   type ThemePrimitive, type ThemeRenderPack,
 } from "@/components/live-vibetv-preview";
 import { importThemeSpec, validateThemeSpec } from "@/lib/theme-studio";
+import { textInk } from "./text-ink";
 
 const root = path.resolve(process.cwd(), "../..");
 const pack = JSON.parse(readFileSync(path.join(root, "dist/theme-packs/render/gauge.json"), "utf8")) as ThemeRenderPack;
@@ -51,10 +52,10 @@ describe("Gauge 2.0 theme pack", () => {
     const validation = validateThemeSpec(importThemeSpec(JSON.parse(rawSpec)), {}, "live");
     expect(validation.errors).toEqual([]);
     expect(arc).toMatchObject({ ps: "arc", b: "usageSlot1Pace", sl: 1, as: 225, aw: 270, at: 18, rc: "#C9F26B", dc: "#E7A3AC" });
-    expect(manifest).toMatchObject({ usage: "live", assets: [], minFirmware: "1.0.50", version: "0.2.7" });
+    expect(manifest).toMatchObject({ usage: "live", assets: [], minFirmware: "1.0.50", version: "0.2.8" });
     expect(manifest.requiredCapabilities).toEqual(["usage-slots-v1", "color-stops-v1", "progress-arc-v1", "usage-pace-v1", "reset-footer-v1"]);
     // Two letters, so no theme a customer saves can share the file name.
-    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-17-[0-9a-f]{8}\.json$/);
+    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/ga-18-[0-9a-f]{8}\.json$/);
     expect(manifest.themeSpec.bytes).toBe(Buffer.byteLength(rawSpec));
     expect(pack.specPath).toBe(manifest.themeSpec.path);
   });
@@ -164,6 +165,15 @@ describe("Gauge 2.0 theme pack", () => {
     for (const updateNotice of ["Update available", "Open VibeTV Mac App"]) {
       expect(renderTextPrimitive(header, { ...paired, updateNotice })).toBe(updateNotice);
       expect(renderTextPrimitive(footer, { ...paired, updateNotice }, primitives)).toBe("Weekly reset 3d");
+    }
+  });
+
+  it("centres the big number in the ring for every percent", () => {
+    // The firmware pads a digit cell by a pixel or two, so a number may sit up to 2 px off the ring's centre.
+    const { cx } = themeProgressArc(arc, 0)!;
+    for (let percent = 0; percent <= 100; percent++) {
+      const ink = textInk(number, renderTextPrimitive(number, frame(percent), primitives));
+      expect(Math.abs(ink.x + ink.w / 2 - cx), `${percent}%`).toBeLessThanOrEqual(2);
     }
   });
 

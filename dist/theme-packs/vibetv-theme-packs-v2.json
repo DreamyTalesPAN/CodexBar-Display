@@ -87,9 +87,9 @@
       "id": "gauge",
       "title": "Gauge",
       "usage": "live",
-      "version": "0.2.7",
-      "themeRev": 17,
-      "themeSpecPath": "/themes/u/ga-17-e32877ec.json",
+      "version": "0.2.8",
+      "themeRev": 18,
+      "themeSpecPath": "/themes/u/ga-18-903b3274.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -101,9 +101,9 @@
       "tags": [
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-gauge-v0.2.7.zip",
-      "sha256": "b82091ce15453703ac7bb55b7b803ca6fbaf3e582374b3c3519f8cb3cdd449dc",
-      "bytes": 974,
+      "downloadAsset": "vibetv-theme-gauge-v0.2.8.zip",
+      "sha256": "339d05b354bf9095cde094b39bfa6e38f2b2f9a65a8cb4cff15525f1c0cc95e4",
+      "bytes": 975,
       "earlierThemeSpecPaths": [
         "/themes/u/ga-10-317f5a1b.json",
         "/themes/u/ga-11-a3246430.json",
@@ -112,6 +112,7 @@
         "/themes/u/ga-14-e0dae764.json",
         "/themes/u/ga-15-9cfc333b.json",
         "/themes/u/ga-16-1bfe0b10.json",
+        "/themes/u/ga-17-e32877ec.json",
         "/themes/u/ga-2-ad19500f.json"
       ]
     },
