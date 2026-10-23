@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
   buildFrameData, decodeSprite, paceBinding, primitiveUsageSlotVisible, renderTextPrimitive,
-  themeKeptNameFooter, themeProgressArc, themeTextFit,
+  themeKeptNameFooter, themeProgressArc, themeTextFit, themeSingleLimitPrimitive,
   type FrameData, type ThemePrimitive, type ThemeRenderPack,
 } from "@/components/live-vibetv-preview";
 import { cellHeight, textInk, type Rect } from "./text-ink";
@@ -47,9 +47,9 @@ function bakedDividers(pack: ThemeRenderPack): Rect[] {
 // The colour every pixel of the screen shows from the static sprites (CBI) of a theme, painted in spec order; a pixel no
 // sprite paints shows the spec background. A sprite row r covers the pixels floor(r*H/h) up to floor((r+1)*H/h), the way
 // the device scales a sprite.
-function staticArt(pack: ThemeRenderPack): (x: number, y: number) => string {
+function staticArt(pack: ThemeRenderPack, drawn: (p: ThemePrimitive) => boolean = () => true): (x: number, y: number) => string {
   const screen: string[] = new Array(240 * 240).fill(pack.spec?.bg ?? "#000000");
-  for (const p of pack.spec?.p ?? []) {
+  for (const p of (pack.spec?.p ?? []).filter(drawn)) {
     const asset = p.t === "sp" && p.a?.endsWith(".cbi") ? pack.assets?.[p.a] : undefined;
     const sprite = asset?.data.startsWith("CBI1") ? decodeSprite(asset.data) : null;
     if (!sprite) continue;
@@ -359,21 +359,29 @@ function edgeHits(pack: ThemeRenderPack): string[] {
 // divider, "Weekly reset" on a frame line, "Fable only reset 4d" 2 px beside the ends of Gauge's ring and the "%" of Gauge's "100%" on
 // its ring were all seen on a device. Every reachable state counts: the long strings, every number, One and Two.
 function inkHits(pack: ThemeRenderPack): string[] {
-  const prims = pack.spec?.p ?? [];
-  const artAt = staticArt(pack);
-  const dividers = [
-    ...prims.filter((p) => p.t === "r" && Math.min(p.w ?? 0, p.h ?? 0) <= 4).map((p) => ({ x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 0, h: p.h ?? 0 })),
-    ...bakedDividers(pack),
-  ];
+  const source = pack.spec?.p ?? [];
   const found = new Map<string, string>(), seen = new Set<string>();
+  const artCache = new Map<string, ReturnType<typeof staticArt>>();
+  const dividerCache = new Map<string, Rect[]>();
   for (const [state, frame] of REACHABLE_FRAMES) {
+    const prims = source.filter((p) => primitiveUsageSlotVisible(p, frame)).map((p) => themeSingleLimitPrimitive(p, frame));
+    const placed = { ...pack, spec: { ...pack.spec, p: prims } };
+    const artKey = prims.filter((p) => p.t === "sp").map((p) => `${p.a}:${p.y}`).join();
+    if (!artCache.has(artKey)) artCache.set(artKey, staticArt(placed));
+    const artAt = artCache.get(artKey)!;
+    const layoutKey = prims.map((p) => `${p.t}:${p.y}`).join();
+    if (!dividerCache.has(layoutKey)) dividerCache.set(layoutKey, [
+      ...prims.filter((p) => p.t === "r" && Math.min(p.w ?? 0, p.h ?? 0) <= 4).map((p) => ({ x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 0, h: p.h ?? 0 })),
+      ...bakedDividers(placed),
+    ]);
+    const dividers = dividerCache.get(layoutKey)!;
     const bars = prims.filter((p) => p.t === "p" && primitiveUsageSlotVisible(p, frame));
     for (const p of prims.filter((q) => q.t === "tx" && primitiveUsageSlotVisible(q, frame))) {
       const text = renderTextPrimitive(p, frame, prims);
       if (!text.trim()) continue;
       const t = textInk(p, text);
       // The same ink in the same place is judged once, not once per state.
-      const key = `${prims.indexOf(p)} ${text} ${bars.map((b) => prims.indexOf(b))}`;
+      const key = `${prims.indexOf(p)} ${t.y} ${text} ${bars.map((b) => `${prims.indexOf(b)}:${b.y}`)}`;
       if (seen.has(key)) continue;
       seen.add(key);
       const note = (what: string, detail: string) => found.has(`"${text}" x ${what}`) || found.set(`"${text}" x ${what}`, `${detail} (first in: ${state})`);
@@ -704,5 +712,67 @@ describe("a row of captions reads as one typeset line", () => {
 describe("the controls on a painted bar keep one width and one margin", () => {
   it.each(catalogIds)("%s", (themeId) => {
     expect(barControlHits(loadPack(themeId))).toEqual([]);
+  });
+});
+
+// Codex as the only provider has one window, so one limit. What stands for a second limit that is not there is not drawn: Clippy's etched
+// divider, Gauge's footer divider and Pixel Battery's second battery belong to slot 2 (7215: a divider over an empty lower half, an empty battery
+// without a name).
+describe("one window draws nothing of a second limit", () => {
+  const one = frameFor(false, "remaining", undefined, undefined, undefined, 424000, SCENARIOS[2]);
+  const two = frameFor(false, "remaining", undefined, undefined, undefined, 424000, SCENARIOS[0]);
+
+  it.each([["clippy", 2], ["gauge", 1]])("%s's divider is drawn between two limits only", (themeId, dividers) => {
+    const prims = loadPack(themeId).spec?.p ?? [];
+    const rects = (frame: FrameData) => prims.filter((p) => p.t === "r" && primitiveUsageSlotVisible(p, frame));
+    expect(rects(one)).toEqual([]);
+    expect(rects(two)).toHaveLength(dividers);
+  });
+
+  it.each(catalogIds)("%s: no slot-2 primitive is drawn", (themeId) => {
+    const prims = loadPack(themeId).spec?.p ?? [];
+    expect(prims.filter((p) => slotOf(p) === 2 && primitiveUsageSlotVisible(p, one))).toEqual([]);
+  });
+
+  it.each(catalogIds)("%s: no art around the second limit's bar", (themeId) => {
+    const pack = loadPack(themeId), prims = pack.spec?.p ?? [];
+    const artAt = staticArt(pack, (p) => primitiveUsageSlotVisible(p, one));
+    for (const bar of prims.filter((p) => p.t === "p" && slotOf(p) === 2)) {
+      const colours = new Set<string>();
+      for (let y = (bar.y ?? 0) - 4; y < (bar.y ?? 0) + (bar.h ?? 0) + 4; y++) for (let x = (bar.x ?? 0) - 4; x < (bar.x ?? 0) + (bar.w ?? 0) + 4; x++) colours.add(artAt(x, y));
+      expect([...colours]).toHaveLength(1);
+    }
+  });
+
+  it("Pixel Battery draws the second battery with two windows", () => {
+    const prims = loadPack("pixel-battery").spec?.p ?? [];
+    const second = (frame: FrameData) => prims.filter((p) => p.a === "/themes/u/pba-b2.cbi" && p.sl === 2 && primitiveUsageSlotVisible(p, frame));
+    expect(second(one)).toEqual([]);
+    expect(second(two)).toHaveLength(1);
+  });
+});
+
+// The free area starts below the header/art, and ends above a fixed footer or bottom frame.
+// Measure text ink, not its taller layout box. Gauge's open ring covers 270 degrees: its last pixels end above its box bottom.
+describe("one limit is centred in the free area", () => {
+  it.each([
+    ["pixel-battery", 40, 197], ["clippy", 101, 236], ["gauge", 16, 240],
+    ["pace-meter", 16, 240], ["synthwave", 101, 240],
+  ] as const)("%s is within 3 px of the vertical centre", (themeId, top, bottom) => {
+    const pack = loadPack(themeId), prims = pack.spec?.p ?? [];
+    for (const pace of [undefined, "reserve"] as const) {
+      const frame = frameFor(false, "remaining", pace, undefined, undefined, 424000, SCENARIOS[2]);
+      const boxes = prims.filter((p) => slotOf(p) === 1 && !/^Reset in /.test(p.v ?? ""))
+        .map((p) => themeSingleLimitPrimitive(p, frame)).flatMap((p) => {
+          if (p.t === "tx") {
+            const text = renderTextPrimitive(p, frame, prims);
+            return text ? [textInk(p, text)] : [];
+          }
+          if (p.ps === "arc") return [{ x: p.x!, y: p.y!, w: p.w!, h: p.h! / 2 * (1 + Math.SQRT1_2) }];
+          return [{ x: p.x!, y: p.y!, w: p.w!, h: p.h! }];
+        });
+      const centre = (Math.min(...boxes.map((b) => b.y)) + Math.max(...boxes.map((b) => b.y + b.h))) / 2;
+      expect(Math.abs(centre - (top + bottom) / 2), `${themeId} ${pace}: centre ${centre}`).toBeLessThanOrEqual(3);
+    }
   });
 });

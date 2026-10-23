@@ -5302,6 +5302,64 @@ void testTextFitStepsDownFromFont4ToFont2BeforeFont1() {
   TEST_ASSERT_EQUAL(1, fit.font);
 }
 
+// Alternate y is layout only: a known unavailable second window is still present.
+void testSingleLimitPositionAndRepaint() {
+  const char* spec = R"JSON({"p":[
+    {"t":"r","x":0,"y":20,"w":20,"h":10,"sl":1,"sly":100},
+    {"t":"sp","x":25,"y":20,"w":20,"h":10,"sl":1,"singleLimitY":[100,90],"a":"/battery.cbi"},
+    {"t":"r","x":0,"y":180,"w":20,"h":10,"sl":2},
+    {"t":"r","x":0,"y":220,"w":20,"h":10,"sl":1}
+  ]})JSON";
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
+  FrameData frame;
+  frame.provider = "any-provider";
+  frame.usageWindows[0].label = "Weekly";
+  frame.usageWindows[0].available = true;
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpec(scene, frame, sink));
+  TEST_ASSERT_EQUAL_INT(4, sink.commands.size()); // screen, first group, footer; no slot 2
+  TEST_ASSERT_EQUAL_INT(100, sink.commands[1].y);
+  TEST_ASSERT_EQUAL_INT(100, sink.commands[2].y);
+  TEST_ASSERT_EQUAL_INT(220, sink.commands[3].y); // fixed footer
+  Bounds bounds;
+  TEST_ASSERT_TRUE(CompiledPrimitiveBounds(scene, scene.primitives[0], frame, false, bounds));
+  TEST_ASSERT_EQUAL_INT(100, bounds.y);
+  // A partial repaint covers both positions, clearing the previous group in either direction.
+  TEST_ASSERT_TRUE(CompiledPrimitiveBounds(scene, scene.primitives[0], frame, true, bounds));
+  TEST_ASSERT_EQUAL_INT(20, bounds.y);
+  TEST_ASSERT_EQUAL_INT(90, bounds.height);
+  frame.usageWindows[0].resetSecs = 3600;
+  frame.usageWindows[0].pace.state = codexbar_display::usage_window_contract::kPaceReserve;
+  sink.commands.clear();
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpec(scene, frame, sink));
+  TEST_ASSERT_EQUAL_INT(90, sink.commands[2].y);
+  const auto use = codexbar_display::core::CompiledThemeSpecLiveUse(scene);
+  TEST_ASSERT_TRUE(use.UsesUsageWindowPace(0));
+  TEST_ASSERT_TRUE(use.UsesUsageWindow(2));
+  TEST_ASSERT_TRUE((scene.primitives[1].liveFields & codexbar_display::themespec::kThemeSpecFieldUsageWindowPace) != 0);
+  frame.usageWindows[0].resetSecs = 0;
+  sink.commands.clear();
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpec(scene, frame, sink));
+  TEST_ASSERT_EQUAL_INT(100, sink.commands[2].y);
+  frame.usageWindows[1].label = "Session";
+  sink.commands.clear();
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpec(scene, frame, sink));
+  TEST_ASSERT_EQUAL_INT(20, sink.commands[1].y);
+  frame.usageWindows[1].available = true;
+  sink.commands.clear();
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpec(scene, frame, sink));
+  TEST_ASSERT_EQUAL_INT(5, sink.commands.size());
+  TEST_ASSERT_EQUAL_INT(20, sink.commands[1].y);
+  frame.usageWindows[1] = {};
+  frame.usageWindows[2].id = "third-window";
+  sink.commands.clear();
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpec(scene, frame, sink));
+  TEST_ASSERT_EQUAL_INT(20, sink.commands[1].y);
+  ReleaseCompiledThemeSpec(scene);
+}
+
 void testKnownUnavailableUsageKeepsNameAndDashWithoutInventingValues() {
   FrameData frame;
   frame.provider = "claude+codex";
@@ -5741,6 +5799,7 @@ int main() {
   RUN_TEST(testProviderNameAndPaceFooterAroundTheNotice);
   RUN_TEST(testTextFitUsesSmallestFontAndTwoLinesWithinExistingHeight);
   RUN_TEST(testTextFitStepsDownFromFont4ToFont2BeforeFont1);
+  RUN_TEST(testSingleLimitPositionAndRepaint);
   RUN_TEST(testKnownUnavailableUsageKeepsNameAndDashWithoutInventingValues);
   RUN_TEST(testProviderNameRepaintsWithItsLabelOnly);
   RUN_TEST(testPaceRepaintsAfterTheCountdownRanOutAndTrustReturns);

@@ -20,6 +20,7 @@ import {
   themeFirmwareTextMetrics,
   themeGlyphPlacement,
   themeKeptNameFooter,
+  themeSingleLimitPrimitive,
   themeProgressArc,
   themeTextAlignedY,
   themeTextFittedSize,
@@ -1786,4 +1787,37 @@ describe("pace bar table", () => {
       });
     });
   }
+});
+
+describe("single-limit layout", () => {
+  it("uses the alternate position for every provider and keeps missing second limits present", () => {
+    const primitive: ThemePrimitive = { t: "r", sl: 1, x: 0, y: 20, w: 20, h: 10, sly: [100, 90] };
+    const now = new Date("2026-10-23T08:00:00Z");
+    for (const provider of ["codex", "claude", "future-provider"]) {
+      const one = buildFrameData(now.toISOString(), { provider, usageWindows: [{ id: "weekly", label: "Weekly", percent: 50, resetSecs: 3600 }] }, now);
+      expect(themeSingleLimitPrimitive(primitive, one).y).toBe(100);
+      const svg = renderToStaticMarkup(createElement(ThemeSpecPreview, { pack: { spec: { p: [primitive] } }, themeId: "single", frame: one, animate: false, status: "ready" }));
+      expect(svg).toContain('x="0" y="100"');
+      one.usageWindows[0].pace = { state: "reserve", delta: -5, lasts: true };
+      expect(themeSingleLimitPrimitive(primitive, one).y).toBe(90);
+      one.usageWindows[0].resetSecs = 0;
+      expect(themeSingleLimitPrimitive(primitive, one).y).toBe(100);
+      one.usageWindows.push({ ...one.usageWindows[0], id: "session", label: "Session", available: false });
+      expect(themeSingleLimitPrimitive(primitive, one)).toBe(primitive);
+      one.usageWindows[1].available = true;
+      expect(themeSingleLimitPrimitive(primitive, one)).toBe(primitive);
+      one.usageWindows = [];
+      one.usageSlot1Available = false;
+      one.usageSlot1Label = "";
+      expect(themeSingleLimitPrimitive(primitive, one)).toBe(primitive);
+    }
+  });
+
+  it("keeps unmarked headers and footers fixed and supports the long spelling", () => {
+    const now = new Date("2026-10-23T08:00:00Z");
+    const frame = buildFrameData(now.toISOString(), { usageWindows: [{ id: "weekly", label: "Weekly", percent: 50 }] }, now);
+    expect(themeSingleLimitPrimitive({ t: "r", y: 20, singleLimitY: 100 }, frame).y).toBe(20);
+    expect(themeSingleLimitPrimitive({ t: "r", ui: 0, y: 20, singleLimitY: 100 }, frame).y).toBe(100);
+    expect(themeSingleLimitPrimitive({ t: "r", sl: 1, y: 220 }, frame).y).toBe(220);
+  });
 });

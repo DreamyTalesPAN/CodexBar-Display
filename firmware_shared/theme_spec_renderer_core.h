@@ -254,6 +254,8 @@ struct CompiledPrimitive {
   uint16_t deficitColor = 0xF800;  // pace bar: the hatch of a deficit
   bool hasBg = false;
   bool fitShrink = false;
+  int singleLimitPaceY = -1;
+  int singleLimitY = -1;  // optional slot-1 position when exactly one limit is present
   int keepName = 0;  // reset footer: keep a limit name up to this many px wide; the sentence is then drawn at font 4 size 1
   uint8_t colorStopCount = 0;
   CompiledColorStop colorStops[kMaxCompiledColorStops];
@@ -1536,6 +1538,13 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
   out = CompiledPrimitive{};
   out.x = primitive["x"] | 0;
   out.y = primitive["y"] | 0;
+  out.singleLimitY = JsonIntFor(primitive, "singleLimitY", "sly", -1);
+  const JsonArrayConst singleY = JsonArrayFor(primitive, "singleLimitY", "sly");
+  if (singleY.size() == 2) {
+    out.singleLimitY = singleY[0] | -1;
+    out.singleLimitPaceY = singleY[1] | -1;
+    out.liveFields |= kThemeSpecFieldUsageWindowPace;
+  }
   const int usageIndex = JsonIntFor(primitive, "usageIndex", "ui", -1);
   if (usageIndex >= 0) {
     if (static_cast<size_t>(usageIndex) >= kMaxThemeSpecUsageWindows) {
@@ -2301,7 +2310,22 @@ inline bool RenderCompiledText(const CompiledThemeSpec& scene,
   return false;
 }
 
-inline bool CompiledPrimitiveBounds(
+// Presence includes known unavailable windows: losing freshness must not change the layout.
+inline int SingleLimitY(const CompiledPrimitive& primitive, const FrameData& frame) {
+  if (primitive.usageSlot != 1 || primitive.singleLimitY < 0) return primitive.y;
+  for (size_t i = 1; i < kMaxThemeSpecUsageWindows; ++i) {
+    const auto& window = frame.usageWindows[i];
+    if (window.available || SafeText(window.id)[0] || SafeText(window.label)[0] ||
+        LegacyUsageSlotAvailableFor(frame, i) || SafeText(LegacyUsageSlotFor(frame, i).label)[0]) return primitive.y;
+  }
+  const auto& first = frame.usageWindows[0];
+  const int y = primitive.singleLimitPaceY >= 0 && BoundPaceFor("usageSlot1Pace", frame) != nullptr
+      ? primitive.singleLimitPaceY : primitive.singleLimitY;
+  return first.available || SafeText(first.id)[0] || SafeText(first.label)[0] ||
+      frame.usageSlot1Available || SafeText(frame.usageSlot1Label)[0] ? y : primitive.y;
+}
+
+inline bool CompiledPrimitiveBoundsAtPosition(
     const CompiledThemeSpec& scene,
     const CompiledPrimitive& primitive,
     const FrameData& frame,
@@ -2367,6 +2391,24 @@ inline bool CompiledPrimitiveBounds(
   return false;
 }
 
+inline bool CompiledPrimitiveBounds(
+    const CompiledThemeSpec& scene, const CompiledPrimitive& source, const FrameData& frame,
+    bool requireStableTextBounds, Bounds& bounds) {
+  CompiledPrimitive primitive = source;
+  primitive.y = SingleLimitY(source, frame);
+  if (!CompiledPrimitiveBoundsAtPosition(scene, primitive, frame, requireStableTextBounds, bounds)) return false;
+  if (requireStableTextBounds && source.usageSlot == 1 && source.singleLimitY >= 0) {
+    // Clear both positions when switching between one and multiple limits.
+    for (const int y : {source.y, source.singleLimitY, source.singleLimitPaceY}) {
+      if (y < 0) continue;
+      primitive.y = y;
+      Bounds other;
+      if (CompiledPrimitiveBoundsAtPosition(scene, primitive, frame, true, other)) ExpandBounds(bounds, other);
+    }
+  }
+  return true;
+}
+
 // A known slot can be temporarily unavailable. Keep its identity visible,
 // without drawing a zero percent bar or a stale reset/pace.
 inline bool MissingUsageText(const CompiledPrimitive& primitive, const FrameData& frame, char* out, size_t outSize) {
@@ -2383,9 +2425,11 @@ inline bool MissingUsageText(const CompiledPrimitive& primitive, const FrameData
 
 inline bool DrawCompiledPrimitive(
     const CompiledThemeSpec& scene,
-    const CompiledPrimitive& primitive,
+    const CompiledPrimitive& source,
     const FrameData& frame,
     Sink& sink) {
+  CompiledPrimitive primitive = source;
+  primitive.y = SingleLimitY(source, frame);
   char text[128] = {0};
   const bool missing = MissingUsageText(primitive, frame, text, sizeof(text));
   if (primitive.usageSlot > 0 && !missing &&
@@ -2425,7 +2469,7 @@ inline bool DrawCompiledPrimitive(
     if (cmd.size <= 0) {
       return false;
     }
-    if (!missing && RenderCompiledText(scene, primitive, frame, text, sizeof(text), &sink) &&
+    if (!missing && RenderCompiledText(scene, source, frame, text, sizeof(text), &sink) &&
         IsResetCountdownText(text)) {
       if (ResetFooterFits(&sink, primitive, text)) {
         cmd.fitShrink = false;

@@ -640,6 +640,10 @@ inline ThemeSpecLiveUse CompiledThemeSpecLiveUse(const themespec::CompiledThemeS
     if (primitive.usageSlot > 0) {
       use.usageWindows |= static_cast<uint8_t>(1U << (primitive.usageSlot - 1));
     }
+    if (primitive.usageSlot == 1 && primitive.singleLimitY >= 0) {
+      use.usageWindows = 0xFF; // Any additional limit changes the single-limit layout.
+      if (primitive.singleLimitPaceY >= 0) use.usageWindowPaces |= 1U;
+    }
     if (primitive.providerSlot > 0) {
       use.providerSlots |= static_cast<uint8_t>(1U << (primitive.providerSlot - 1));
     }
