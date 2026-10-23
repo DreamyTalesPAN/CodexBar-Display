@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Item, ItemGroup } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { canReadBrowserSignIn } from "../control-center-runtime";
 import { SETUP_REVEAL } from "./setup-reveal";
 import type { ProviderItem } from "../provider-picker";
 import { SetupLog, type SetupLogLine } from "./setup-log";
@@ -197,6 +198,15 @@ export function setupProviderDialogSentence(
  */
 export const acknowledgedProviderIssues = new Map<string, string>();
 
+/**
+ * The popup after "Sign in to Claude" on the Mac did not get Claude working
+ * within the sign-in window: the app could not read the browser sign-in
+ * (Keychain declined, Chrome's folder not allowed, no claude.ai cookie). It
+ * names the ways that do not depend on that read (#965).
+ */
+const CLAUDE_BROWSER_READ_FAILED_SENTENCE =
+  "VibeTV could not read your Claude sign-in from the browser. Sign in to Claude Code on this Mac, or sign in to claude.ai in Firefox, then check again. Using Chrome? Allow VibeTV Control Center under System Settings > Privacy & Security > Files & Folders > Google Chrome.";
+
 type ProviderListProps = {
   className?: string;
   onCheckAgain: (provider: ProviderItem) => void;
@@ -245,6 +255,25 @@ export function ProviderList({
   // ago. Their row checks again by itself and passes through states such as
   // "stale" while the usage service restarts; none of that is news.
   const [signingIn, setSigningIn] = useState<Set<string>>(() => new Set());
+  // Providers whose sign-in window ran out. On the Mac the app read the
+  // browser sign-in for that whole window; a Claude row that still asks for a
+  // sign-in means the read did not work, and pressing the button again only
+  // opens the same browser (#965).
+  const [signInWindowEnded, setSignInWindowEnded] = useState<Set<string>>(() => new Set());
+  // The list as last rendered, for the window's timer: only a provider that
+  // still asks for a sign-in when the window ends counts as a failed read.
+  const providersRef = useRef(providers);
+  useEffect(() => {
+    providersRef.current = providers;
+  }, [providers]);
+  // A provider that works again, or was switched off, no longer has a failed
+  // read: a later sign-in problem is a new one (Codex review on #971). Set
+  // while rendering, the way React adjusts state to new props.
+  const stillFailing = [...signInWindowEnded].filter((id) => providers.some((provider) =>
+    provider.providerId === id && provider.value && setupProviderOffersSignIn(provider)));
+  if (stillFailing.length !== signInWindowEnded.size) {
+    setSignInWindowEnded(new Set(stillFailing));
+  }
   const signInTimers = useRef(new Map<string, number>());
   useEffect(() => {
     const timers = signInTimers.current;
@@ -264,15 +293,49 @@ export function ProviderList({
         next.delete(id);
         return next;
       });
+      const latest = providersRef.current.find((candidate) => candidate.providerId === id);
+      if (latest?.value && setupProviderOffersSignIn(latest)) {
+        setSignInWindowEnded((current) => new Set(current).add(id));
+      }
     }, PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS));
     setSigningIn((current) => new Set(current).add(id));
+    setSignInWindowEnded((current) => {
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
+    // A new sign-in may fail again; its popup must be able to open again.
+    if (acknowledgedProviderIssues.get(provider.id) === CLAUDE_BROWSER_READ_FAILED_SENTENCE) {
+      acknowledgedProviderIssues.delete(provider.id);
+    }
+    setDismissedIssues((current) => {
+      if (current[provider.id] !== CLAUDE_BROWSER_READ_FAILED_SENTENCE) return current;
+      const next = { ...current };
+      delete next[provider.id];
+      return next;
+    });
     setRequestedIssueId(null);
     onOpenSignIn?.(provider);
   };
-  type ProviderIssue = { provider: ProviderItem; message: string; requested: boolean };
+  type ProviderIssue = {
+    provider: ProviderItem;
+    message: string;
+    requested: boolean;
+    browserReadFailed?: boolean;
+  };
+  const browserReadFailed = (provider: ProviderItem) =>
+    provider.providerId.trim().toLowerCase() === "claude" &&
+    signInWindowEnded.has(provider.providerId) && offersSignIn(provider) &&
+    canReadBrowserSignIn("claude");
   const issues = providers.flatMap((provider): ProviderIssue[] => {
     if (!provider.value || pendingCheckIds.has(provider.providerId) ||
         pendingPreferenceIds.has(provider.id)) return [];
+    if (browserReadFailed(provider)) {
+      const message = CLAUDE_BROWSER_READ_FAILED_SENTENCE;
+      return dismissedIssues[provider.id] !== message
+        ? [{ provider, message, requested: requestedIssueId === provider.id, browserReadFailed: true }]
+        : [];
+    }
     const message = setupProviderDialogSentence(provider);
     if (!message) return [];
     const requested = requestedIssueId === provider.id;
@@ -312,7 +375,10 @@ export function ProviderList({
   const remaining = matching.length - visible.length;
   const setupGuide =
     issue && setupProviderNeedsOwnApp(issue.provider) ? onOpenSetupGuide : undefined;
-  const issueSignIn = issue && offersSignIn(issue.provider) ? issue.provider : null;
+  // After a failed browser read the sign-in button would only open the same
+  // browser again, so this popup offers the check instead.
+  const issueCheck = issue?.browserReadFailed ? issue.provider : null;
+  const issueSignIn = issue && !issueCheck && offersSignIn(issue.provider) ? issue.provider : null;
 
   return (
     <div className={cn("flex w-full flex-col", className)}>
@@ -333,7 +399,13 @@ export function ProviderList({
           }
           description={issue.message}
           onOpenChange={(open) => { if (!open) dismissIssue(); }}
-          primaryAction={issueSignIn ? {
+          primaryAction={issueCheck ? {
+            label: "Check again",
+            onSelect: () => {
+              dismissIssue();
+              onCheckAgain(issueCheck);
+            },
+          } : issueSignIn ? {
             label: `Sign in to ${issueSignIn.label}`,
             onSelect: () => {
               dismissIssue();
@@ -346,7 +418,7 @@ export function ProviderList({
               setupGuide();
             },
           } : { label: "OK", onSelect: dismissIssue }}
-          secondaryAction={issueSignIn
+          secondaryAction={issueSignIn || issueCheck
             ? { label: "Not now", onSelect: dismissIssue }
             : setupGuide ? { label: "Close", onSelect: dismissIssue } : undefined}
           // Close, Not now or OK is the way out here (Paul, 16.10.: at most two actions).

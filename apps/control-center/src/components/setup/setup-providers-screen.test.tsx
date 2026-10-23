@@ -163,6 +163,93 @@ describe("SetupProvidersScreen", () => {
     expect(screen.queryByRole("button", { name: "Sign in to Claude" })).toBeNull();
   });
 
+  // The Mac app could not read the claude.ai sign-in from the browser (#965):
+  // "Sign in to Claude" only opened the same browser again and the row stayed
+  // there. After the sign-in window the popup names the next step.
+  it("names the next step on the Mac when Claude still asks for a sign-in after the window (#965)", () => {
+    vi.useFakeTimers();
+    const userAgent = vi.spyOn(window.navigator, "userAgent", "get")
+      .mockReturnValue("VibeTVControlCenter/1.0.66+1");
+    const platform = vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
+    const sentence = "VibeTV could not read your Claude sign-in from the browser. Sign in to Claude Code on this Mac, or sign in to claude.ai in Firefox, then check again. Using Chrome? Allow VibeTV Control Center under System Settings > Privacy & Security > Files & Folders > Google Chrome.";
+    const signedOut = provider({ providerId: "claude", label: "Claude", health: "auth_required",
+      message: "Sign in to Claude so VibeTV can read its usage." });
+    const onOpenSignIn = vi.fn();
+    const onCheckAgain = vi.fn();
+    const props = { usage, providers: [signedOut], onOpenSignIn, onCheckAgain,
+      onToggle: vi.fn(), onContinue: vi.fn(),
+      pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
+    try {
+      renderDom(<SetupProvidersScreen {...props} />);
+      fireEvent.click(screen.getByRole("button", { name: "Sign in to Claude" }));
+      act(() => { vi.advanceTimersByTime(PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS - 1); });
+      expect(screen.queryByRole("dialog")).toBeNull();
+      act(() => { vi.advanceTimersByTime(1); });
+      const dialog = screen.getByRole("dialog");
+      expect(within(dialog).getByText(sentence)).toBeTruthy();
+      expect(within(dialog).queryByRole("button", { name: "Sign in to Claude" })).toBeNull();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Check again" }));
+      expect(onCheckAgain).toHaveBeenCalledWith(signedOut);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      // Dismissed, it stays closed; a new sign-in that fails again opens it again.
+      fireEvent.click(screen.getByRole("button", { name: "Sign in to Claude" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      act(() => { vi.advanceTimersByTime(PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS); });
+      fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Not now" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+    } finally {
+      userAgent.mockRestore();
+      platform.mockRestore();
+    }
+  });
+
+  it("does not blame a later sign-in problem on a read that worked (#965, Codex review on #971)", () => {
+    vi.useFakeTimers();
+    const userAgent = vi.spyOn(window.navigator, "userAgent", "get")
+      .mockReturnValue("VibeTVControlCenter/1.0.66+1");
+    const platform = vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
+    const signedOut = provider({ providerId: "claude", label: "Claude", health: "auth_required",
+      message: "Sign in to Claude so VibeTV can read its usage." });
+    const working = provider({ providerId: "claude", label: "Claude", health: "healthy", message: "Ready." });
+    const props = { usage, onOpenSignIn: vi.fn(), onCheckAgain: vi.fn(),
+      onToggle: vi.fn(), onContinue: vi.fn(),
+      pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
+    try {
+      // 1. Claude works again inside the window: its end is no failed read.
+      const { rerender } = renderDom(<SetupProvidersScreen {...props} providers={[signedOut]} />);
+      fireEvent.click(screen.getByRole("button", { name: "Sign in to Claude" }));
+      rerender(<SetupProvidersScreen {...props} providers={[working]} />);
+      act(() => { vi.advanceTimersByTime(PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS); });
+      rerender(<SetupProvidersScreen {...props} providers={[{ ...signedOut }]} />);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      // 2. Claude works again after the window ended: the marker goes too.
+      fireEvent.click(screen.getByRole("button", { name: "Sign in to Claude" }));
+      act(() => { vi.advanceTimersByTime(PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS); });
+      expect(screen.getByRole("dialog")).toBeTruthy();
+      rerender(<SetupProvidersScreen {...props} providers={[working]} />);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      rerender(<SetupProvidersScreen {...props} providers={[{ ...signedOut }]} />);
+      expect(screen.queryByRole("dialog")).toBeNull();
+    } finally {
+      userAgent.mockRestore();
+      platform.mockRestore();
+    }
+  });
+
+
+  it("keeps the plain sign-in row outside the Mac app after the window (#965)", () => {
+    vi.useFakeTimers();
+    const signedOut = provider({ providerId: "claude", label: "Claude", health: "auth_required",
+      message: "Sign in to Claude so VibeTV can read its usage." });
+    renderDom(<SetupProvidersScreen usage={usage} providers={[signedOut]} onOpenSignIn={vi.fn()}
+      onCheckAgain={vi.fn()} onToggle={vi.fn()} onContinue={vi.fn()}
+      pendingCheckIds={new Set()} pendingPreferenceIds={new Set()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign in to Claude" }));
+    act(() => { vi.advanceTimersByTime(PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("button", { name: "Sign in to Claude" })).toBeTruthy();
+  });
+
   it("shows one provider popup, keeps dismissal across polls, and reopens after retry", () => {
     const onCheckAgain = vi.fn();
     const onToggle = vi.fn();
