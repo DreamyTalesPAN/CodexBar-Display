@@ -462,6 +462,30 @@ func TestMacProviderSentencesOfferTheRowSignIn(t *testing.T) {
 	}
 }
 
+// Win-CodexBar 0.55.0's sentences for the providers whose sign-in the row
+// starts on Windows, signed out or without their program. Both checks must
+// land on a state that shows the button.
+func TestWindowsProviderSentencesOfferTheRowSignIn(t *testing.T) {
+	for detail, want := range map[string]struct {
+		readiness string
+		health    ProviderHealthState
+	}{
+		"No cookies available for web API":                                          {ProviderAuthRequired, ProviderHealthAuthRequired},
+		"Provider not installed: kiro-cli not found. Install from https://kiro.dev": {ProviderNotConfigured, ProviderHealthSetupRequired},
+		"Authentication required":                                                   {ProviderAuthRequired, ProviderHealthAuthRequired},
+		"Provider not installed: Kilo API key not found. Set KILO_API_KEY, store in keychain, or sign in with Kilo CLI.":            {ProviderAuthRequired, ProviderHealthAuthRequired},
+		"Provider not installed: gcloud CLI not found. Install from https://cloud.google.com/sdk":                                   {ProviderNotConfigured, ProviderHealthSetupRequired},
+		"Provider not installed: Windsurf database not found at C:\\Users\\redacted\\state.vscdb. Open Windsurf and sign in first.": {ProviderAuthRequired, ProviderHealthAuthRequired},
+	} {
+		if got := classifyProviderError(detail); got != want.readiness {
+			t.Fatalf("%q: exact check %s, want %s", detail, got, want.readiness)
+		}
+		if got := classifyProviderHealth(detail); got != want.health {
+			t.Fatalf("%q: health scan %s, want %s", detail, got, want.health)
+		}
+	}
+}
+
 // A sign-in failure may name the data it wanted to read. Telling that customer
 // to wait hides the sign-in they must repair, so the bare noun must not be
 // mistaken for throttling.

@@ -893,7 +893,10 @@ func classifyProviderError(detail string) string {
 		return ProviderNoUsageAvailable
 	// "not detected": "Antigravity language server not detected. Launch
 	// Antigravity and retry." The app has to run, which its row can start.
-	case strings.Contains(lower, "no available fetch strategy"), strings.Contains(lower, "no providers"), strings.Contains(lower, "not detected"):
+	// "cli not found": Win-CodexBar's "Provider not installed: kiro-cli not
+	// found" and "gcloud CLI not found". The program is missing, which the
+	// row's download page fixes; the health scan already reads it so.
+	case strings.Contains(lower, "no available fetch strategy"), strings.Contains(lower, "no providers"), strings.Contains(lower, "not detected"), strings.Contains(lower, "cli not found"):
 		return ProviderNotConfigured
 	default:
 		return ProviderEngineError
