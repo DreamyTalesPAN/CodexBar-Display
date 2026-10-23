@@ -9847,7 +9847,7 @@ issue scope, or release permission never implies UI permission.
 
 ## 2026-10-23 — Support uses the available content width
 
-- User approval: pending visual acceptance. O7 relays that Paul's "ok" authorized preparing a separate small fix PR only; it did not approve the rendered result. The original message is unavailable in the current communicator, so the approval time is unverified.
-- Approved customer-visible result: pending; the proposed result is that Support report, Diagnostics and Recent activity use the available width inside the existing page padding instead of stopping at 760 px. No visual acceptance by Paul is recorded.
+- User approval: pending visual acceptance. Paul replied "ok" to "Eigenen kleinen Fix-PR vorbereiten (empfohlen)", authorizing preparation of this small fix PR only. The original wording is evidenced; its timestamp is unverified. This scope approval does not approve the rendered result.
+- Approved customer-visible result: pending Paul's visual acceptance; Support report, Diagnostics and Recent activity are proposed to use the available width inside the existing page padding instead of stopping at 760 px.
 - Scope: one class removed from the Support container and this approval record; own branch from fresh main, no changes to #803.
-- What's new: none — layout width fix, nothing new to use.
+- What's new: none — removes Support's 760 px width cap within the existing page padding; no new feature or action.
