@@ -66,21 +66,20 @@ describe("Gauge 2.0 theme pack", () => {
     // No pace: a plain ring of the use, no piece, no tick.
     const plain = render(frame(91));
     expect(ring(plain)).toEqual([[arc.bg, 270], ["#EDEDED", 245]]);
-    expect(plain).not.toContain("<line");
+    expect(plain).not.toContain("#FFFFFF");
     expect(shown(plain)).toBe("Claude91%Session remainingSession reset 2hWeekly87%");
-    // 6% reserve: the ring fills to the plan (85 %) and the green piece runs to the use.
+    // 6% reserve: the ring fills to the plan (85 %) and the green piece runs to the use. The tick is
+    // the last, white stroke: 2 px of the ring, inside it.
     const reserve = render(frame(91, {}, paceSession));
-    expect(ring(reserve)).toEqual([[arc.bg, 270], ["#EDEDED", 229], ["#C9F26B", 16]]);
-    expect(reserve).toContain("<line");
+    expect(ring(reserve)).toEqual([[arc.bg, 270], ["#EDEDED", 229], ["#C9F26B", 16], ["#FFFFFF", 1]]);
     expect(shown(reserve)).toBe("Claude91%Session remaining6% reserveSession reset 2hWeekly87%35% reserve");
     // 14% deficit: the hatched piece runs from the use (38 %) to the plan (52 %).
     const deficit = render(frame(38, {}, { delta: 14, state: "deficit", lasts: false }));
-    expect(ring(deficit)).toEqual([[arc.bg, 270], ["#EDEDED", 102], [expect.stringMatching(/^url\(#hatch-/), 38]]);
+    expect(ring(deficit)).toEqual([[arc.bg, 270], ["#EDEDED", 102], [expect.stringMatching(/^url\(#hatch-/), 38], ["#FFFFFF", 1]]);
     expect(shown(deficit).replaceAll(" ", "")).toContain("14%deficitSessionreset2h");
     // On pace: the use itself and the tick, no piece.
     const onPace = render(frame(91, {}, { delta: 0, state: "on pace" }));
-    expect(ring(onPace)).toEqual([[arc.bg, 270], ["#EDEDED", 245]]);
-    expect(onPace).toContain("<line");
+    expect(ring(onPace)).toEqual([[arc.bg, 270], ["#EDEDED", 245], ["#FFFFFF", 1]]);
     expect(shown(onPace)).toContain("On pace");
   });
 

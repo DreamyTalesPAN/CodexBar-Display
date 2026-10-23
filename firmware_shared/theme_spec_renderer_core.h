@@ -2125,7 +2125,7 @@ inline bool ArcSweepContains(const ArcVector& start, const ArcVector& end, int s
 // and, from the start angle, the filled share of it. 0 % is track only, 100 %
 // is filled to the end. A pace bar adds the piece after the filled share, solid
 // or hatched (diagonal stripes, as on a bar), and a 2 px tick across the ring
-// at the plan, which reaches kPaceTickOverhang beyond it.
+// at the plan, inside the ring and its sweep.
 inline void DrawProgressArc(const CompiledPrimitive& primitive, const PaceBar& pace, uint16_t fillColor, Sink& sink) {
   const int start = primitive.segments;
   const int sweep = primitive.segmentGap;
@@ -2141,32 +2141,28 @@ inline void DrawProgressArc(const CompiledPrimitive& primitive, const PaceBar& p
   const ArcVector endEdge = ArcDirection(start + sweep);
   const bool hasTick = pace.planAt >= 0;
   const ArcVector planEdge = ArcDirection(start + sweep * pace.planAt / 100);
-  const int reach = hasTick ? kPaceTickOverhang : 0;
   const uint16_t hatchGap = PaceHatchGapColor(pace.pieceColor, primitive.bg);
   RectCommand run;
   run.height = 1;
-  for (int row = -reach; row < primitive.height + reach; ++row) {
+  for (int row = 0; row < primitive.height; ++row) {
     run.y = primitive.y + row;
     int kind = 0;  // 0 outside the arc, 1 track, 2 filled, 3 piece, 4 hatch stripe, 5 hatch gap, 6 tick
-    for (int col = -reach; col <= primitive.width + reach; ++col) {
+    for (int col = 0; col <= primitive.width; ++col) {
       const ArcVector pixel = {2 * col + 1 - primitive.width, 2 * row + 1 - primitive.height};
       const int distance = pixel.x * pixel.x + pixel.y * pixel.y;
       int next = 0;
-      if (col < primitive.width + reach) {
-        if (hasTick && distance <= (outer + 2 * reach) * (outer + 2 * reach) &&
-            (inner - 2 * reach <= 0 || distance >= (inner - 2 * reach) * (inner - 2 * reach)) &&
-            planEdge.x * pixel.x + planEdge.y * pixel.y > 0 &&
+      if (col < primitive.width && distance <= outer * outer && distance >= inner * inner) {
+        if (hasTick && planEdge.x * pixel.x + planEdge.y * pixel.y > 0 &&
             planEdge.x * pixel.y - planEdge.y * pixel.x <= 2 * 4096 &&
-            planEdge.y * pixel.x - planEdge.x * pixel.y <= 2 * 4096) {
+            planEdge.y * pixel.x - planEdge.x * pixel.y <= 2 * 4096 &&
+            ArcSweepContains(startEdge, endEdge, sweep, pixel)) {
           next = 6;
-        } else if (distance <= outer * outer && distance >= inner * inner) {
-          if (filled > 0 && ArcSweepContains(startEdge, filledEdge, filled, pixel)) {
-            next = 2;
-          } else if (pieceEnd > filled && ArcSweepContains(filledEdge, pieceEdge, pieceEnd - filled, pixel)) {
-            next = !pace.hatched ? 3 : ((primitive.x + col + primitive.y + row) & 3) < 2 ? 4 : 5;
-          } else if (ArcSweepContains(startEdge, endEdge, sweep, pixel)) {
-            next = 1;
-          }
+        } else if (filled > 0 && ArcSweepContains(startEdge, filledEdge, filled, pixel)) {
+          next = 2;
+        } else if (pieceEnd > filled && ArcSweepContains(filledEdge, pieceEdge, pieceEnd - filled, pixel)) {
+          next = !pace.hatched ? 3 : ((primitive.x + col + primitive.y + row) & 3) < 2 ? 4 : 5;
+        } else if (ArcSweepContains(startEdge, endEdge, sweep, pixel)) {
+          next = 1;
         }
       }
       if (next == kind) {
@@ -2317,13 +2313,10 @@ inline bool CompiledPrimitiveBounds(
     bounds.height = primitive.height;
     if (primitive.kind == PrimitiveKind::Progress && IsPaceBarBinding(primitive.binding) && bounds.width > 0 &&
         bounds.height > 0) {
-      // The plan tick reaches beyond the bar; repainting must clear it too.
-      const int right = bounds.x + bounds.width + kPaceTickOverhang;
-      const int bottom = bounds.y + bounds.height + kPaceTickOverhang;
-      bounds.x = bounds.x > kPaceTickOverhang ? bounds.x - kPaceTickOverhang : 0;
+      // The plan tick reaches above the bar; repainting must clear it too.
+      const int bottom = bounds.y + bounds.height;
       bounds.y = bounds.y > kPaceTickOverhang ? bounds.y - kPaceTickOverhang : 0;
-      bounds.width = (right < kThemeSpecCanvasSize ? right : kThemeSpecCanvasSize) - bounds.x;
-      bounds.height = (bottom < kThemeSpecCanvasSize ? bottom : kThemeSpecCanvasSize) - bounds.y;
+      bounds.height = bottom - bounds.y;
     }
     return bounds.width > 0 && bounds.height > 0;
   }

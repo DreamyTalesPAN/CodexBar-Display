@@ -1173,9 +1173,10 @@ function ThemeProgress({
   const style = primitive.progressStyle ?? primitive.ps ?? "";
   if (style === "arc") {
     const arc = themeProgressArc(primitive, marks.fillTo);
-    // Each stroke runs clockwise along the middle of the ring. A circle's
-    // outline starts at 3 o'clock, a quarter turn after 12 o'clock.
-    const stroke = (degrees: number, color: string) =>
+    // Each stroke runs clockwise along the middle of the ring, `degrees` long
+    // from `from` degrees after its start. A circle's outline starts at
+    // 3 o'clock, a quarter turn after 12 o'clock.
+    const stroke = (degrees: number, color: string, from = 0) =>
       arc && degrees > 0 ? (
         <circle
           cx={arc.cx}
@@ -1185,46 +1186,26 @@ function ThemeProgress({
           stroke={color}
           strokeDasharray={`${(arc.radius * degrees * Math.PI) / 180} ${arc.radius * 2 * Math.PI}`}
           strokeWidth={arc.thickness}
-          transform={`rotate(${arc.start - 90} ${arc.cx} ${arc.cy})`}
+          transform={`rotate(${arc.start + from - 90} ${arc.cx} ${arc.cy})`}
         />
       ) : null;
     // The piece runs from the end of the fill to its own end, and the tick
-    // crosses the ring at the plan, in whole degrees like DrawProgressArc.
+    // crosses the ring at the plan, in whole degrees like DrawProgressArc. The
+    // tick is 2 px wide, stays inside the ring and does not leave the sweep.
     const pieceDegrees = arc
       ? Math.floor((arc.sweep * marks.pieceTo) / 100) - arc.filled
       : 0;
-    const planAngle = arc
-      ? ((arc.start + Math.floor((arc.sweep * marks.planAt) / 100)) * Math.PI) / 180
-      : 0;
-    const inner = arc ? arc.radius - arc.thickness / 2 - PACE_TICK_OVERHANG : 0;
-    const outer = arc ? arc.radius + arc.thickness / 2 + PACE_TICK_OVERHANG : 0;
+    const planDegrees = arc ? Math.floor((arc.sweep * marks.planAt) / 100) : 0;
+    const tickHalf = arc ? 180 / Math.PI / arc.radius : 0;
+    const tickFrom = Math.max(0, planDegrees - tickHalf);
+    const tickTo = Math.min(arc?.sweep ?? 0, planDegrees + tickHalf);
     return (
       <g>
         {hatch}
         {stroke(arc?.sweep ?? 0, bgColor)}
         {stroke(arc?.filled ?? 0, fillColor)}
-        {arc && pieceDegrees > 0 ? (
-          <circle
-            cx={arc.cx}
-            cy={arc.cy}
-            fill="none"
-            r={arc.radius}
-            stroke={pieceFill}
-            strokeDasharray={`${(arc.radius * pieceDegrees * Math.PI) / 180} ${arc.radius * 2 * Math.PI}`}
-            strokeWidth={arc.thickness}
-            transform={`rotate(${arc.start + arc.filled - 90} ${arc.cx} ${arc.cy})`}
-          />
-        ) : null}
-        {arc && marks.planAt >= 0 ? (
-          <line
-            stroke="#FFFFFF"
-            strokeWidth={2}
-            x1={arc.cx + inner * Math.sin(planAngle)}
-            x2={arc.cx + outer * Math.sin(planAngle)}
-            y1={arc.cy - inner * Math.cos(planAngle)}
-            y2={arc.cy - outer * Math.cos(planAngle)}
-          />
-        ) : null}
+        {stroke(pieceDegrees, pieceFill, arc?.filled)}
+        {marks.planAt >= 0 ? stroke(tickTo - tickFrom, "#FFFFFF", tickFrom) : null}
       </g>
     );
   }
@@ -1320,7 +1301,7 @@ function ThemeProgress({
       {marks.planAt >= 0 ? (
         <rect
           fill="#FFFFFF"
-          height={y + height + PACE_TICK_OVERHANG - tickTop}
+          height={y + height - tickTop}
           width={2}
           x={tickX}
           y={tickTop}
@@ -2478,7 +2459,7 @@ function hatchGapColor(stripe: string, track: string): string {
   return `#${mixed.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
 }
 
-// The plan tick reaches this far beyond the bar or ring it marks.
+// The plan tick reaches this far above the bar it marks.
 const PACE_TICK_OVERHANG = 3;
 
 function resolveProgressFillColor(

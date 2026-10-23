@@ -4965,7 +4965,7 @@ void testUsagePaceColoursAndBarMarks() {
 }
 
 // A pace ring draws the piece, the hatch and the tick as FillRect runs: the
-// tick is white and reaches past the ring, the hatch alternates two colours.
+// tick is white and stays inside the ring, the hatch alternates two colours.
 void testUsagePaceArcDrawsPieceHatchAndTick() {
   const char* spec = R"JSON({"v":1,"id":"pace-arc","rev":1,"p":[
     {"t":"p","x":20,"y":20,"w":100,"h":100,"b":"usageSlot1Pace","ps":"arc","as":0,"aw":360,"at":16,"c":"#808080","bg":"#202020","rc":"#00FF00","dc":"#FF0000"}
@@ -4991,12 +4991,12 @@ void testUsagePaceArcDrawsPieceHatchAndTick() {
   };
   // The ring's centre is (70, 70). 40% left is 144 degrees clockwise from 12
   // o'clock, the plan at 60% is 216: lower left. Bottom (180 degrees) is in the
-  // piece, the tick stands at 216 degrees across the ring and 3 px beyond it.
+  // piece, the tick stands at 216 degrees across the ring and not beyond it.
   TEST_ASSERT_EQUAL_HEX16(0x8410, colourAt(110, 70));           // 90 degrees: filled
   TEST_ASSERT_TRUE(colourAt(70, 70 + 40) == 0xF800 || colourAt(70, 70 + 41) == 0xF800 ||
                    colourAt(71, 70 + 40) == 0xF800 || colourAt(69, 70 + 40) == 0xF800);  // hatch stripe
   TEST_ASSERT_EQUAL_HEX16(0xFFFF, colourAt(47, 102));            // the tick, inside the ring
-  TEST_ASSERT_EQUAL_HEX16(0xFFFF, colourAt(39, 112));            // the tick, beyond the ring (outer radius 50, tick to 53)
+  TEST_ASSERT_EQUAL_HEX16(0x0001, colourAt(39, 112));            // nothing beyond the ring (outer radius 50)
   TEST_ASSERT_EQUAL_HEX16(0x2104, colourAt(30, 70));             // 270 degrees: track
 }
 
@@ -5025,7 +5025,39 @@ void testPaceTickOnAFullyThickRingReachesTheCentre() {
   TEST_ASSERT_TRUE(white);
 }
 
-// A repaint of a pace bar must clear its tick, which reaches 3 px beyond it.
+// A ring that does not close keeps its tick inside the sweep, also where the plan
+// stands on an end of it (0 % and 100 %): the open part of the ring stays empty.
+void testPaceTickOnAnOpenRingStaysInsideItsSweep() {
+  const char* spec = R"JSON({"v":1,"id":"pace-open","rev":1,"p":[
+    {"t":"p","x":20,"y":20,"w":100,"h":100,"b":"usageSlot1Pace","ps":"arc","as":225,"aw":270,"at":10,"c":"#808080","bg":"#202020"}
+  ]})JSON";
+  using Pace = codexbar_display::usage_window_contract::Pace;
+  for (const Pace& pace : {Pace{-40, 1, 1}, Pace{60, 3, 1}}) {  // the plan at 0 % and at 100 % of the 40 % left
+    FrameData frame;
+    frame.usageMode = "remaining";
+    frame.usageSlot1Percent = frame.usageWindows[0].percent = 40;
+    frame.usageSlot1ResetSecs = frame.usageWindows[0].resetSecs = 12000;
+    frame.usageSlot1Available = frame.usageWindows[0].available = true;
+    frame.usageWindows[0].pace = pace;
+    RecordingSink sink;
+    TEST_ASSERT_TRUE(renderSpec(spec, frame, sink));
+    int white = 0;
+    for (const RecordedCommand& command : sink.commands) {
+      if (command.type != CommandType::FillRect || command.color != 0xFFFF) continue;
+      for (int x = command.x; x < command.x + command.width; ++x) {
+        for (int y = command.y; y < command.y + command.height; ++y) {
+          // Degrees clockwise from the start of the sweep (7:30) to this pixel's middle; the ring's centre is (70, 70).
+          const double turned = std::fmod(std::atan2(x + 0.5 - 70, 70 - (y + 0.5)) * 180.0 / 3.14159265358979323846 + 360.0 - 225.0, 360.0);
+          TEST_ASSERT_TRUE(turned <= 270.5 || turned >= 359.5);
+          ++white;
+        }
+      }
+    }
+    TEST_ASSERT_TRUE(white > 0);
+  }
+}
+
+// A repaint of a pace bar must clear its tick, which reaches 3 px above it.
 void testUsagePaceBarRepaintCoversItsTick() {
   const char* spec = R"JSON({"v":1,"id":"pace-bounds","rev":1,"p":[
     {"t":"p","x":14,"y":78,"w":212,"h":12,"b":"usageSlot1Pace"},
@@ -5036,10 +5068,10 @@ void testUsagePaceBarRepaintCoversItsTick() {
   TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
   Bounds bounds;
   TEST_ASSERT_TRUE(CompiledPrimitiveBounds(scene, scene.primitives[0], testFrame(), false, bounds));
-  TEST_ASSERT_EQUAL_INT(11, bounds.x);
+  TEST_ASSERT_EQUAL_INT(14, bounds.x);
   TEST_ASSERT_EQUAL_INT(75, bounds.y);
-  TEST_ASSERT_EQUAL_INT(218, bounds.width);
-  TEST_ASSERT_EQUAL_INT(18, bounds.height);
+  TEST_ASSERT_EQUAL_INT(212, bounds.width);
+  TEST_ASSERT_EQUAL_INT(15, bounds.height);
   TEST_ASSERT_TRUE(CompiledPrimitiveBounds(scene, scene.primitives[1], testFrame(), false, bounds));
   TEST_ASSERT_EQUAL_INT(2, bounds.x);
   TEST_ASSERT_EQUAL_INT(50, bounds.width);
@@ -5656,6 +5688,7 @@ int main() {
   RUN_TEST(testUsagePaceColoursAndBarMarks);
   RUN_TEST(testUsagePaceBarTable);
   RUN_TEST(testUsagePaceArcDrawsPieceHatchAndTick);
+  RUN_TEST(testPaceTickOnAnOpenRingStaysInsideItsSweep);
   RUN_TEST(testUsagePaceBarRepaintCoversItsTick);
   RUN_TEST(testPaceTickOnAFullyThickRingReachesTheCentre);
   RUN_TEST(testUsagePaceParsesAndRepaintsOnlyThemesThatShowIt);

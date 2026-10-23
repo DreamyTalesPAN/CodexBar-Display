@@ -30,7 +30,8 @@ inline const char* PaceState(uint8_t state) {
   return state <= kPaceDeficit ? kStates[state] : "";
 }
 
-// How far a pace bar's plan tick reaches beyond the bar or ring it marks.
+// How far a pace bar's plan tick reaches above the bar it marks. Below the bar and
+// on a ring the tick stays inside, where the text of a theme keeps its distance.
 constexpr int kPaceTickOverhang = 3;
 
 // What CodexBar projects for a window's quota; 0: nothing.

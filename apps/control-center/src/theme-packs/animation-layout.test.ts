@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
-  buildFrameData, decodeSprite, primitiveUsageSlotVisible, renderTextPrimitive,
+  buildFrameData, decodeSprite, paceBinding, primitiveUsageSlotVisible, renderTextPrimitive,
   themeProgressArc, themeTextFit,
   type FrameData, type ThemePrimitive, type ThemeRenderPack,
 } from "@/components/live-vibetv-preview";
@@ -223,7 +223,7 @@ function layoutViolations(pack: ThemeRenderPack): string[] {
         .map(({ text, p }) => ({ text, p, ...textInk(p, text) }));
       const bars = prims.filter((p) => p.t === "p" && primitiveUsageSlotVisible(p, frame)).map((p) => {
         const o = pace && (p.b ?? "").includes("Pace") ? PACE_TICK_OVERHANG : 0;
-        return { x: (p.x ?? 0) - o, y: (p.y ?? 0) - o, w: (p.w ?? 0) + 2 * o, h: (p.h ?? 0) + 2 * o, slot: slotOf(p), body: { x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 0, h: p.h ?? 0 } };
+        return { x: p.x ?? 0, y: (p.y ?? 0) - o, w: p.w ?? 0, h: (p.h ?? 0) + o, slot: slotOf(p), body: { x: p.x ?? 0, y: p.y ?? 0, w: p.w ?? 0, h: p.h ?? 0 } };
       });
       const note = (key: string, detail: string) => found.has(key) || found.set(key, `${detail} (first in: ${state})`);
       for (const a of animations) {
@@ -244,8 +244,8 @@ function layoutViolations(pack: ThemeRenderPack): string[] {
         if (hit(a, b)) note(`"${a.text}" x "${b.text}"`, `text "${a.text}" [${show(a)}] overlaps text "${b.text}" [${show(b)}]`);
       }));
       // Calm rhythm: two texts or a text and a bar that all but touch (under 3 px) while another gap of the screen is 8 to
-      // 40 px (not open picture) is the "0 px beside 10 px" look. The pace tick is left out, it only reaches 3 px beyond the
-      // bar at one column; a number beside its bar is part of the bar's row.
+      // 40 px (not open picture) is the "0 px beside 10 px" look. The pace tick is left out, it has its own check (tickHits);
+      // a number beside its bar is part of the bar's row.
       const beside = (t: { p: ThemePrimitive }) => /Percent/.test(source(t.p)) && bars.some((b) => b.slot === slotOf(t.p));
       const gaps = rowGaps([...texts.filter((t) => !beside(t)).map((t) => ({ ...t, name: `"${t.text}"` })), ...bars.map((b) => ({ ...b.body, name: "a bar" }))]);
       const roomy = gaps.find((g) => g.gap >= 8 && g.gap <= 40);
@@ -355,7 +355,7 @@ function edgeHits(pack: ThemeRenderPack): string[] {
 }
 
 // No ink of any text comes within 3 px of ink that is not text: a divider, a frame line or battery outline painted into the background, a
-// bar or a ring (the pace tick is left out, it reaches 3 px beyond a bar at one column only). The descender of "On pace" 2 px above a
+// bar or a ring (the pace tick is left out, tickHits measures it). The descender of "On pace" 2 px above a
 // divider, "Weekly reset" on a frame line, "Fable only reset 4d" 2 px beside the ends of Gauge's ring and the "%" of Gauge's "100%" on
 // its ring were all seen on a device. Every reachable state counts: the long strings, every number, One and Two.
 function inkHits(pack: ThemeRenderPack, themeId: string, pending = false): string[] {
@@ -389,6 +389,92 @@ function inkHits(pack: ThemeRenderPack, themeId: string, pending = false): strin
     }
   }
   return [...found.values()].filter((detail) => LAYOUT_PENDING.some((entry) => entry.theme === themeId && entry.detail.test(detail)) === pending);
+}
+
+// The pixels of the plan tick of a pace bar at every plan position 0..100, as the firmware draws it. On a bar (DrawPaceBar) the tick is a
+// column 2 px wide from PACE_TICK_OVERHANG above the bar down to its bottom edge. On a ring (DrawProgressArc) it is the strip 2 px wide
+// across the ring at the plan in whole degrees, inside the ring and inside its sweep, so it never stands on the open part of the ring.
+function planTicks(b: ThemePrimitive): Array<Array<[number, number]>> {
+  const arc = (b.progressStyle ?? b.ps) === "arc" ? themeProgressArc(b, 0) : null;
+  if (!arc) {
+    const x = b.x ?? 0, y = b.y ?? 0, h = b.h ?? 0, w = b.w ?? 0;
+    return Array.from({ length: 101 }, (_, plan) => {
+      const column = x + Math.floor(((w - 2) * plan) / 100);
+      return [column, column + 1].flatMap((cx) => Array.from({ length: h + Math.min(y, PACE_TICK_OVERHANG) }, (_, row): [number, number] => [cx, y - Math.min(y, PACE_TICK_OVERHANG) + row]));
+    });
+  }
+  const inner = arc.radius - arc.thickness / 2, outer = arc.radius + arc.thickness / 2;
+  const band: Array<{ x: number; y: number; dx: number; dy: number }> = [];
+  for (let y = Math.floor(arc.cy - outer); y <= Math.ceil(arc.cy + outer); y++) for (let x = Math.floor(arc.cx - outer); x <= Math.ceil(arc.cx + outer); x++) {
+    const dx = x + 0.5 - arc.cx, dy = y + 0.5 - arc.cy, radius = Math.hypot(dx, dy);
+    const turned = ((((Math.atan2(dx, -dy) * 180) / Math.PI - arc.start) % 360) + 360) % 360;
+    if (radius >= inner && radius <= outer && (turned <= arc.sweep + 1e-6 || turned >= 360 - 1e-6)) band.push({ x, y, dx, dy });
+  }
+  return Array.from({ length: 101 }, (_, plan) => {
+    const angle = ((arc.start + Math.floor((arc.sweep * plan) / 100)) * Math.PI) / 180, ux = Math.sin(angle), uy = -Math.cos(angle);
+    return band.filter((q) => q.dx * ux + q.dy * uy > 0 && Math.abs(ux * q.dy - uy * q.dx) <= 1 + 1e-9).map((q): [number, number] => [q.x, q.y]);
+  });
+}
+
+// Empty pixels between a text's ink and the nearest pixel of a tick (counted the Chebyshev way), -1 where they overlap.
+function tickGap(t: Rect, tick: Array<[number, number]>): number {
+  const x0 = Math.floor(t.x), y0 = Math.round(t.y), x1 = x0 + Math.round(t.w) - 1, y1 = y0 + Math.round(t.h) - 1;
+  return tick.reduce((best, [x, y]) => Math.min(best, Math.max(x0 - x, x - x1, y0 - y, y - y1, 0) - 1), Infinity);
+}
+
+type Pace = (typeof PACES)[keyof typeof PACES];
+// Every pace CodexBar sends: a reserve or a deficit of 1..100 %, and "on pace" (the use itself, a delta of at most 2 either way).
+const PACE_STEPS: Pace[] = Array.from({ length: 201 }, (_, i) => i - 100).flatMap((delta): Pace[] => [
+  { delta, state: delta < 0 ? "reserve" : delta > 0 ? "deficit" : "on pace", lasts: delta <= 0 },
+  ...(Math.abs(delta) === 1 || Math.abs(delta) === 2 ? [{ delta, state: "on pace", lasts: true }] : []),
+]);
+
+// No ink of any text comes within 3 px of the plan tick of a pace bar, wherever the plan stands. The plan is the percent moved by the pace
+// delta (against the use in "used", with it in "remaining") and cut to 0..100, so plan 54 is reached by 54% on pace, by 40% with a 14%
+// deficit and by 68% with a 14% reserve: every position comes with the percent and the pace sentence that lead to it, not with every
+// text. The tick of Gauge stood 1 px from the "%" of "100%" at plan 67, Clippy's reached the pace sentence, Synthwave's and Tiny Office's
+// the limit names.
+function tickHits(pack: ThemeRenderPack): string[] {
+  const prims = pack.spec?.p ?? [];
+  const ticks = new Map(prims.flatMap((p, i): Array<[number, ReturnType<typeof planTicks>]> => p.t === "p" && paceBinding(p.b ?? p.binding ?? "")?.field === "" ? [[i, planTicks(p)]] : []));
+  const found = new Map<number, { gap: number; plans: Set<number>; detail: string }>();
+  const rows = new Map<string, number[]>();
+  for (const two of [false, true]) for (const scenario of SCENARIOS.filter((q) => !two || q.pair)) for (const usageMode of ["used", "remaining"]) {
+    const frameAt = (percent: number, pace: Pace, [footer, weeklySecs, firstSecs]: (typeof FOOTERS)[number] = FOOTERS[0]): FrameData => {
+      const frame = frameFor(two, usageMode, undefined, footer, [percent, percent], weeklySecs, scenario, firstSecs);
+      return { ...frame, usageWindows: frame.usageWindows.map((w) => ({ ...w, pace })) };
+    };
+    const shown = (frame: FrameData) => prims.flatMap((p, i) => p.t === "tx" && primitiveUsageSlotVisible(p, frame) ? [{ i, text: renderTextPrimitive(p, frame, prims) }] : []).filter(({ text }) => text.trim());
+    const onPace = PACE_STEPS.find((pace) => pace.delta === 0)!;
+    const bars = [...ticks.keys()].filter((i) => primitiveUsageSlotVisible(prims[i], frameAt(50, onPace)));
+    // The gap of a text to the tick at each plan, the nearest of the bars on screen.
+    const row = ({ i, text }: { i: number; text: string }) => {
+      const key = `${bars} ${i} ${text}`, ink = textInk(prims[i], text);
+      if (!rows.has(key)) rows.set(key, Array.from({ length: 101 }, (_, plan) => Math.min(...bars.map((b) => tickGap(ink, ticks.get(b)![plan])))));
+      return { i, text, ink, gaps: rows.get(key)! };
+    };
+    // A text is either fixed in a state (names, footers), or follows the percent, or follows the pace.
+    const byPercent = Array.from({ length: 101 }, (_, percent) => shown(frameAt(percent, onPace)));
+    const byPace = PACE_STEPS.map((pace) => shown(frameAt(50, pace)));
+    const varies = (all: ReturnType<typeof shown>[], i: number) => new Set(all.map((texts) => texts.find((q) => q.i === i)?.text)).size > 1;
+    const followsPercent = prims.map((_, i) => varies(byPercent, i)), followsPace = prims.map((_, i) => varies(byPace, i));
+    const fixed = FOOTERS.flatMap((footers) => shown(frameAt(50, onPace, footers))).filter(({ i }) => !followsPercent[i] && !followsPace[i]).map(row);
+    const percentRows = byPercent.map((texts) => texts.filter(({ i }) => followsPercent[i]).map(row));
+    const paceRows = byPace.map((texts) => texts.filter(({ i }) => followsPace[i]).map(row));
+    PACE_STEPS.forEach((pace, k) => percentRows.forEach((own, percent) => {
+      const plan = Math.max(0, Math.min(100, percent + (usageMode === "used" ? -pace.delta : pace.delta)));
+      for (const q of [...fixed, ...own, ...paceRows[k]]) {
+        if (q.gaps[plan] >= CLEAR) continue;
+        // One line per text of the theme, with its nearest case.
+        const entry = found.get(q.i) ?? { gap: Infinity, plans: new Set<number>(), detail: "" };
+        if (q.gaps[plan] < entry.gap) entry.detail = `text "${q.text}" (${source(prims[q.i])}) [${show(q.ink)}] is ${q.gaps[plan]} px from the plan tick, under ${CLEAR} px (first in: ${two ? "Two at once" : "One provider"}, ${scenario.name}, ${usageMode}, ${percent}% with ${pace.state} ${pace.delta})`;
+        entry.gap = Math.min(entry.gap, q.gaps[plan]);
+        entry.plans.add(plan);
+        found.set(q.i, entry);
+      }
+    }));
+  }
+  return [...found.values()].map(({ plans, detail }) => `${detail}; the tick is that close at ${plans.size} plan positions, ${Math.min(...plans)} to ${Math.max(...plans)}`);
 }
 
 describe("no text is drawn smaller than its theme declares", () => {
@@ -425,5 +511,11 @@ describe("no text ink comes within 3 px of the screen edge", () => {
 describe("no text ink comes within 3 px of a divider, frame line, bar or ring", () => {
   it.each(catalogIds)("%s", (themeId) => {
     expect(inkHits(loadPack(themeId), themeId)).toEqual([]);
+  });
+});
+
+describe("no text ink comes within 3 px of the plan tick of a pace bar, at any plan position", () => {
+  it.each(catalogIds)("%s", (themeId) => {
+    expect(tickHits(loadPack(themeId))).toEqual([]);
   });
 });
