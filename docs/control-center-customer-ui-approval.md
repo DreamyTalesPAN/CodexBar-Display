@@ -9942,3 +9942,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: an installed legacy Mac App keeps its existing verified hosted DMG migration action. Installed non-legacy apps still use their runtime release result, so the initial firmware update remains available despite an unrelated hosted download failure; outside-installed and failed-runtime behavior remain unchanged.
 - Scope: exclude required legacy migration from the runtime-only condition in `control-center-app.tsx`, extend `control-center-app.mac-app-up-to-date.test.tsx` with the existing legacy download path, and this record. New-head CI, Codex and Mac/Windows cold/warm validation remain required; earlier hardware results remain historical.
 - What's new: none — preserves an existing migration action while retaining the firmware-check fix.
+
+## 2026-10-22 — #614: Control Center removes two unused theme-asset helpers
+
+- User approval: no visible change – UI approval not needed (removes `formatBytes`, `assetKind` and the type `ThemeStudioAssetKind` from theme-studio-assets.ts; nothing in the app calls them, only their own test did)
+- Approved customer-visible result: none; the app renders and behaves exactly as before.
+- Scope: `apps/control-center/src/lib/theme-studio-assets.ts` and its test. No component, no text, no layout.
+- What's new: none — dead code removed, no customer-visible change
+
+## 2026-10-22 — #908: approval marker after merging main at 242e4846
+
+- User approval: no visible change – UI approval not needed (merge of main (242e4846) into #908; the own entries of #908 keep their approvals)
+- Approved customer-visible result: #908 as in its own entries plus the entries merged with 242e4846; nothing else changes.
+- Scope: the merge of 242e4846 and this approval record. Pull request branch #908 only, not merged, not released.
+- What's new: none — merge of 242e4846, no customer-visible change of its own

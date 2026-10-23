@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  assetKind,
-  formatBytes,
   importedImageSize,
   spriteMetadata,
   themeAssetByteLength,
@@ -64,9 +62,7 @@ describe("Theme Studio asset helpers", () => {
     );
   });
 
-  it("reports asset kinds and encoded byte sizes", () => {
-    expect(assetKind("/themes/u/animation.gif")).toBe("gif");
-    expect(assetKind("/themes/u/sprite.cbi")).toBe("sprite");
+  it("reports encoded byte sizes", () => {
     expect(
       themeAssetByteLength({
         contentType: "application/octet-stream",
@@ -74,6 +70,5 @@ describe("Theme Studio asset helpers", () => {
         encoding: "base64",
       }),
     ).toBe(3);
-    expect(formatBytes(2048)).toBe("2 KB");
   });
 });
