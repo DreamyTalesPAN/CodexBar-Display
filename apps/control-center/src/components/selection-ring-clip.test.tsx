@@ -161,7 +161,7 @@ describe("selection and focus rings stay whole", { timeout: 60_000 }, () => {
       expect(await ringClips(browser, modes, { ...window, selector: '[aria-label="Cable"], [aria-label="WiFi"]' })).toEqual([]);
     });
 
-    it("keeps the focus ring of every Appearance card control whole", async () => {
+    it("keeps the focus ring of every Appearance card control and the Show choice whole", async () => {
       for (const usage of ["all", "live", "screensaver"] as const) {
         const html = renderToStaticMarkup(
           <ThemeLibraryScreen
@@ -179,7 +179,7 @@ describe("selection and focus rings stay whole", { timeout: 60_000 }, () => {
             usage={usage}
           />,
         );
-        expect(await ringClips(browser, html, { ...window, selector: '[role="listitem"] :is(button, a[href])' }), usage).toEqual([]);
+        expect(await ringClips(browser, html, { ...window, selector: '[role="listitem"] :is(button, a[href]), [aria-label="Show"] [data-state]' }), usage).toEqual([]);
       }
     });
 
