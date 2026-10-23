@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { describe, expect, it, vi } from "vitest";
 import {
   FINISH_CODEXBAR_RECOVERY_URL,
   isNativeControlCenterUserAgent,
   localThemeRenderPackUrl,
   nativeControlCenterAppBuild,
   nativeProviderShortcut,
+  onNativeMacAppUpdateFound,
   REPAIR_CODEXBAR_URL,
   REPAIR_CONTROL_CENTER_RUNTIME_URL,
   RESTART_CONTROL_CENTER_URL,
@@ -65,5 +67,19 @@ describe("native Control Center recovery", () => {
     expect(localThemeRenderPackUrl("synthwave")).toBe(
       "/theme-packs/render/synthwave.json",
     );
+  });
+
+  it("passes on only a late Mac App update event that carries a version string", () => {
+    const listener = vi.fn();
+    const stop = onNativeMacAppUpdateFound(listener);
+    for (const detail of [{ version: 42 }, { version: "" }, { version: null }, null]) {
+      window.dispatchEvent(new CustomEvent("vibetv:mac-app-update-found", { detail }));
+    }
+    expect(listener).not.toHaveBeenCalled();
+    window.dispatchEvent(
+      new CustomEvent("vibetv:mac-app-update-found", { detail: { version: "9.9.10" } }),
+    );
+    expect(listener).toHaveBeenCalledWith("9.9.10");
+    stop();
   });
 });

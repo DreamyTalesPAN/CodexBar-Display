@@ -9976,3 +9976,45 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: No visible change. The usage incident dialog stays hidden while the WiFi-waiting update dialog is open, as before.
 - Scope: `apps/control-center/src/components/setup/setup-wizard.test.tsx` (one new test, one async wait in the late-offer test) and this approval record. Pull request branch #822 only, not merged, not released.
 - What's new: none — test-only change, no new text
+
+## 2026-10-21 — #892: a late launch update reaches the page offer
+
+- User approval: no visible change – UI approval not needed (bug fix: #892 keeps an update that the Mac App's launch check finds after the start went on; the existing update offer then appears where a failed release check had hidden it)
+- Approved customer-visible result: no new UI or text; the existing "Update Mac App" offer is shown when the late launch check found an update.
+- Scope: control-center-runtime.ts listener and control-center-app.tsx offer state with its regression test; the Mac shell hands the version over through the existing window-event bridge.
+- What's new: none — the existing update offer learns a late update
+
+## 2026-10-21 — #892: a late launch update reaches a page that mounts late and clears when no longer pending
+
+- User approval: no visible change – UI approval not needed (bug fix: the late offer no longer depends on the page's listener timing and ends once the update is no longer pending)
+- Approved customer-visible result: none; the existing "Update Mac App" offer appears as before and no longer lingers after the update is installed or up to date.
+- Scope: control-center-runtime.ts listener reads the last late version, control-center-app.tsx derives the offer from companionInfo.update and the running version, and the Mac shell keeps and re-sends the version.
+- What's new: none — bug fix only, the offer shows as before
+
+## 2026-10-22 — #892: a late launch update stays offered while the Companion lags the appcast
+
+- User approval: no visible change – UI approval not needed (bug fix: the Companion's hosted "up to date" no longer hides the late offer that the Mac App's own launch check found; the running-version fallback is removed)
+- Approved customer-visible result: none new; the existing "Update Mac App" offer stays while the running Mac App is older than the offered version.
+- Scope: control-center-app.tsx late-offer derivation with its regression tests.
+- What's new: none — the existing update offer learns a late update
+
+## 2026-10-22 — #897: a late launch update is offered under its own version
+
+- User approval: no visible change – UI approval not needed (bug fix: when the Companion's cached release names an older version, the offer names the version the Mac App's launch check found, not the installed one)
+- Approved customer-visible result: none new; the existing "Update Mac App" offer shows the correct version number in that rare case.
+- Scope: control-center-app.tsx offered-version order, with its regression test.
+- What's new: none — the existing update offer names the right version
+
+## 2026-10-21 — #892: a slow launch update check also shows the existing update offer
+
+- User approval: pending — the existing "Update Mac App" offer now also appears after a slow launch update check (also during setup hold rules of #822 and on Updates); no new text
+- Approved customer-visible result: the existing "Update Mac App" offer appears when the launch update check finishes late and finds an update, including while the setup hold rules of #822 apply and on the Updates tab; no new text or layout.
+- Scope: control-center-runtime.ts listener and control-center-app.tsx offer state with its regression test; the Mac shell hands the late version over through the existing window-event bridge.
+- What's new: none — the existing update offer learns a late update
+
+## 2026-10-23 — #897: corrected scope of the pending #892 late update offer
+
+- User approval: pending — the existing "Update Mac App" offer also appears after a slow launch update check, subject to the setup hold rules of #822; the Updates tab does not consume the late result; no new text or layout
+- Approved customer-visible result: This corrects and supersedes the pending #892 description immediately above. The late result drives the existing setup offer, the post-setup native prompt, and the shell update badge. The Updates tab still uses only the Companion release result, so it can show a failed check or "Up to date" while the shell badge reports an update; the late result alone adds no manual Update action there.
+- Scope: Documentation correction after Marcus' review; no product code changes. The late version is replayed after page load and read when the listener mounts; the offer stays until the running Mac App reaches that version, even if the Companion reports "up to date".
+- What's new: none — documentation only; the customer-visible #892 behavior still awaits approval

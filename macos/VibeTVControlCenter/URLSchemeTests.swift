@@ -75,6 +75,12 @@ func runURLSchemeTests() {
             .contains("{\"fileName\":\"a\\\"}));alert('x')\\/\\/\\n\\\\.zip\",\"saved\":true}") == true,
         "a file name must reach the page as JSON text and never end the script's string"
     )
+    // Issue #892: a late launch update reaches the page with its version.
+    require(
+        macAppUpdateFoundEventScript(version: "1.2.3")
+            == "window.vibetvMacAppUpdateFound = {\"version\":\"1.2.3\"}; window.dispatchEvent(new CustomEvent('vibetv:mac-app-update-found', { detail: {\"version\":\"1.2.3\"} })); true",
+        "a late Mac App update must be reported to the page with its version"
+    )
     let fallbackEndpoint = RuntimeEndpoint(
         origin: "http://127.0.0.1:54321",
         pid: 83979
