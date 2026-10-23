@@ -9949,3 +9949,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: proposed, not yet accepted — Appearance → Screensavers offers `Orbit Pebbles`, three original glossy cyan, pink and gold pebbles orbiting on black in a four-second loop. It uses the existing screensaver slot and returns to the live theme through the unchanged standby system. The new notice reads `New screensaver: Orbit Pebbles` / `Three glossy pebbles orbit on a dark background. Choose it in Appearance → Screensavers.` The PR remains Draft until the visible result is accepted.
 - Scope: the new preset, deterministic asset generator, generated catalog/render/ZIP data, asset tests, the preview in `docs/orbit-pebbles-screensaver.md`, and this notice. No provider, firmware, renderer, or standby architecture changes. Native and hardware checks are separate from the decoded preview and remain required.
 - What's new: `screensaver-orbit-pebbles`
+
+## 2026-10-23 — #261: align the notice regression expectation
+
+- User approval: pending for the Orbit Pebbles proposal above. O19 message msg_c4374d71a65f authorizes the one-line test correction; it provides no new design acceptance.
+- Approved customer-visible result: unchanged from product commit 34402848. The existing notice test now expects the already proposed Orbit Pebbles heading alongside the existing entries; the preset, notice, UI and device behavior are byte-identical.
+- Scope: `apps/control-center/src/components/control-center-app.whats-new.test.tsx` and this required append-only record. All 43 targeted tests pass; exact-head CI, Codex and native checks remain required.
+- What's new: none — test expectation and evidence record only; the proposed notice is recorded in the preceding entry.
