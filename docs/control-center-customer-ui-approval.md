@@ -9782,6 +9782,69 @@ issue scope, or release permission never implies UI permission.
 - Scope: the merge of 3babd786 and this approval record. Pull request #919 only, not merged, not released.
 - What's new: none — merge of 3babd786, no customer-visible change of its own
 
+## 2026-10-22 — #946: approval marker after merging main at 2d42c92f
+
+- User approval: no visible change – UI approval not needed (merge of main (2d42c92f, which holds #919 squashed) into #946; the #883 entry keeps Paul's approval; #946's own change (#940, when the tray hint shows) keeps its text and look)
+- Approved customer-visible result: #946 (#940 fix on top of #919, as in the #883 entry) plus the entries merged with 2d42c92f; nothing else changes.
+- Scope: the merge of 2d42c92f and this approval record. Pull request #946 only, not merged, not released.
+- What's new: none — merge of 2d42c92f, no customer-visible change of its own
+
+## 2026-10-22 — #943: plain message when VibeTV does not answer a theme install (#927)
+
+- User approval: Marcus 2026-10-22 (154a) approved exactly this wording without a click test, as an exception, because the case can only be triggered over WiFi and both test VibeTVs run on Cable
+- Approved customer-visible result: when VibeTV does not answer the first check of a WiFi theme or screensaver install, the install dialog says "VibeTV didn't answer." with the next step "Check that VibeTV is on and near your WiFi, then try again." instead of the engine's raw error and the command-line `--target` hint.
+- Scope: `companion/internal/companionapi/theme_install.go` (`themeInstallErrorPayload`, check-device failure only) and its test. Pull request #943 only, not merged, not released.
+- What's new: none — error wording only, nothing a customer would look for
+
+## 2026-10-22 — #943: Paul approves the "VibeTV didn't answer." wording
+
+- User approval: approved by Paul in the communicator chat, 2026-10-22 ~16:40 (relayed by the communicator: Paul releases the #943 text "VibeTV didn't answer." / "Check that VibeTV is on and near your WiFi, then try again."); text-only check, no screenshot (WiFi-only case).
+- Approved customer-visible result: as in the #943 entry above.
+- Scope: this approval record only. Pull request #943 only, not merged, not released.
+- What's new: none — approval record only
+
+## 2026-10-22 — #943: approval marker after merging main at 2d42c92f
+
+- User approval: no visible change – UI approval not needed (merge of main (2d42c92f) into #943; the #943 entries above keep Marcus' (154a) and Paul's approval of the wording)
+- Approved customer-visible result: #943 as in its entries above plus the entries merged with 2d42c92f; nothing else changes.
+- Scope: the merge of 2d42c92f and this approval record. Pull request #943 only, not merged, not released.
+- What's new: none — merge of 2d42c92f, no customer-visible change of its own
+
+## 2026-10-23 — #943: approval marker after merging main at ce62db41
+
+- User approval: no visible change – UI approval not needed (merge of main (ce62db41) into #943; the #943 entries above keep Marcus' (154a) and Paul's approval of the wording)
+- Approved customer-visible result: #943 as in its entries above plus the entries merged with ce62db41; nothing else changes.
+- Scope: the merge of ce62db41 and this approval record. Pull request #943 only, not merged, not released.
+- What's new: none — merge of ce62db41, no customer-visible change of its own
+
+## 2026-10-21 — #614: one job poller / fetch helper in the Control Center
+
+- User approval: no visible change – UI approval not needed (refactor: one shared job poller / fetch helper, same requests and texts)
+- Approved customer-visible result: unchanged requests, timing, error texts and job completion behavior; no screen changes.
+- Scope: shared Companion fetch transport and job polling in apps/control-center/src/lib, existing adapters in lib and components/update-jobs.ts, behavior tests and the #614 inventory.
+- What's new: none — internal refactor with unchanged customer behavior.
+
+## 2026-10-21 — #873: approval marker after merging main at 3dc0a15b
+
+- User approval: no visible change – UI approval not needed (merge of main (3dc0a15b) into #873; the own entries of #873 keep their approvals)
+- Approved customer-visible result: #873 as in its own entries plus the entries merged with 3dc0a15b; nothing else changes.
+- Scope: the merge of 3dc0a15b and this approval record. Pull request branch #873 only, not merged, not released.
+- What's new: none — merge of 3dc0a15b, no customer-visible change of its own
+
+## 2026-10-22 — #873: approval marker after merging main at 242e4846
+
+- User approval: no visible change – UI approval not needed (merge of main (242e4846) into #873; the own entries of #873 keep their approvals)
+- Approved customer-visible result: #873 as in its own entries plus the entries merged with 242e4846; nothing else changes.
+- Scope: the merge of 242e4846 and this approval record. Pull request branch #873 only, not merged, not released.
+- What's new: none — merge of 242e4846, no customer-visible change of its own
+
+## 2026-10-22 — #873: approval marker after merging main at d2f3fade
+
+- User approval: no visible change – UI approval not needed (merge of main (d2f3fade) into #873; the own entries of #873 keep their approvals)
+- Approved customer-visible result: #873 as in its own entries plus the entries merged with d2f3fade; nothing else changes.
+- Scope: the merge of d2f3fade and this approval record. Pull request branch #873 only, not merged, not released.
+- What's new: none — merge of d2f3fade, no customer-visible change of its own
+
 ## 2026-10-17 — Process steps look like the Setup Wizard log
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 15:10: "rest passt" (build 7198 review; everything except the Appearance cards #802) — entry: Process steps look like the Setup Wizard log

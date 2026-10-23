@@ -1,4 +1,4 @@
-import { companionRequestUrl } from "@/components/control-center-runtime";
+import { fetchCompanionJson } from "./companion-request";
 import type { SceneMotionPlan } from "./ai-scene-motion";
 import { normalizeCompanionSheet } from "./ai-companion-sprites";
 import type { AIThemeLayoutPlan, layoutContext } from "./ai-theme-layout";
@@ -1017,11 +1017,8 @@ async function aiRequest<T = unknown>(
   path: string,
   init: RequestInit,
 ): Promise<T> {
-  const response = await fetch(companionRequestUrl(path), {
-    ...init,
-    cache: "no-store",
-  });
-  const payload = (await response.json().catch(() => null)) as
+  const { response, payload: body } = await fetchCompanionJson(path, init);
+  const payload = body as
     { error?: { code?: string; stage?: string; reason?: unknown; assessment?: boolean; providerStatus?: unknown; providerCode?: unknown; requestId?: unknown } } | T | null;
   if (!response.ok) {
     const detail =
