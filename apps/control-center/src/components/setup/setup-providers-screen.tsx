@@ -260,6 +260,20 @@ export function ProviderList({
   // sign-in means the read did not work, and pressing the button again only
   // opens the same browser (#965).
   const [signInWindowEnded, setSignInWindowEnded] = useState<Set<string>>(() => new Set());
+  // The list as last rendered, for the window's timer: only a provider that
+  // still asks for a sign-in when the window ends counts as a failed read.
+  const providersRef = useRef(providers);
+  useEffect(() => {
+    providersRef.current = providers;
+  }, [providers]);
+  // A provider that works again, or was switched off, no longer has a failed
+  // read: a later sign-in problem is a new one (Codex review on #971). Set
+  // while rendering, the way React adjusts state to new props.
+  const stillFailing = [...signInWindowEnded].filter((id) => providers.some((provider) =>
+    provider.providerId === id && provider.value && setupProviderOffersSignIn(provider)));
+  if (stillFailing.length !== signInWindowEnded.size) {
+    setSignInWindowEnded(new Set(stillFailing));
+  }
   const signInTimers = useRef(new Map<string, number>());
   useEffect(() => {
     const timers = signInTimers.current;
@@ -279,7 +293,10 @@ export function ProviderList({
         next.delete(id);
         return next;
       });
-      setSignInWindowEnded((current) => new Set(current).add(id));
+      const latest = providersRef.current.find((candidate) => candidate.providerId === id);
+      if (latest?.value && setupProviderOffersSignIn(latest)) {
+        setSignInWindowEnded((current) => new Set(current).add(id));
+      }
     }, PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS));
     setSigningIn((current) => new Set(current).add(id));
     setSignInWindowEnded((current) => {

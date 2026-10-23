@@ -9823,3 +9823,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: in the Mac app, when Claude still asks for a sign-in after the three-minute window that follows "Sign in to Claude" (setup and Settings › AI providers), a popup titled "Claude" opens once with "VibeTV could not read your Claude sign-in from the browser. Sign in to Claude Code on this Mac, or sign in to claude.ai in Firefox, then check again. Using Chrome? Allow VibeTV Control Center under System Settings > Privacy & Security > Files & Folders > Google Chrome." and the buttons "Check again" and "Not now". A new "Sign in to Claude" can open it again. Windows, the browser outside the app, Cursor and every other provider keep their current behaviour.
 - Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, and this approval record. Pull request branch only, not merged, not released.
 - What's new: none — a help popup for a failed sign-in, nothing a customer would look for
+
+## 2026-10-23 — #971: the Claude popup only follows a sign-in that really failed (Codex review)
+
+- User approval: pending — same approval as the #965 entry above; no new text or control
+- Approved customer-visible result: as in the #965 entry above. In addition, the popup no longer opens when Claude worked again during or after the three-minute window and later asks for a sign-in for another reason.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, and this approval record. Pull request #971 only, not merged, not released.
+- What's new: none — a fix inside the same help popup

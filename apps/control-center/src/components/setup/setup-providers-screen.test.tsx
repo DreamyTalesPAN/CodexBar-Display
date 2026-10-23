@@ -203,6 +203,40 @@ describe("SetupProvidersScreen", () => {
     }
   });
 
+  it("does not blame a later sign-in problem on a read that worked (#965, Codex review on #971)", () => {
+    vi.useFakeTimers();
+    const userAgent = vi.spyOn(window.navigator, "userAgent", "get")
+      .mockReturnValue("VibeTVControlCenter/1.0.66+1");
+    const platform = vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
+    const signedOut = provider({ providerId: "claude", label: "Claude", health: "auth_required",
+      message: "Sign in to Claude so VibeTV can read its usage." });
+    const working = provider({ providerId: "claude", label: "Claude", health: "healthy", message: "Ready." });
+    const props = { usage, onOpenSignIn: vi.fn(), onCheckAgain: vi.fn(),
+      onToggle: vi.fn(), onContinue: vi.fn(),
+      pendingCheckIds: new Set<string>(), pendingPreferenceIds: new Set<string>() };
+    try {
+      // 1. Claude works again inside the window: its end is no failed read.
+      const { rerender } = renderDom(<SetupProvidersScreen {...props} providers={[signedOut]} />);
+      fireEvent.click(screen.getByRole("button", { name: "Sign in to Claude" }));
+      rerender(<SetupProvidersScreen {...props} providers={[working]} />);
+      act(() => { vi.advanceTimersByTime(PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS); });
+      rerender(<SetupProvidersScreen {...props} providers={[{ ...signedOut }]} />);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      // 2. Claude works again after the window ended: the marker goes too.
+      fireEvent.click(screen.getByRole("button", { name: "Sign in to Claude" }));
+      act(() => { vi.advanceTimersByTime(PROVIDER_SIGN_IN_FOLLOW_UP_WINDOW_MS); });
+      expect(screen.getByRole("dialog")).toBeTruthy();
+      rerender(<SetupProvidersScreen {...props} providers={[working]} />);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      rerender(<SetupProvidersScreen {...props} providers={[{ ...signedOut }]} />);
+      expect(screen.queryByRole("dialog")).toBeNull();
+    } finally {
+      userAgent.mockRestore();
+      platform.mockRestore();
+    }
+  });
+
+
   it("keeps the plain sign-in row outside the Mac app after the window (#965)", () => {
     vi.useFakeTimers();
     const signedOut = provider({ providerId: "claude", label: "Claude", health: "auth_required",
