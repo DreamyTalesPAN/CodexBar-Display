@@ -2091,9 +2091,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var scheduledReload: Task<Void, Never>?
     private var pageKeepAlive: Task<Void, Never>?
     private var preparationTask: Task<Void, Never>?
-    private var closePreparationInFlight = false
+    private var closePreparationID: UUID?
     private var allowPreparedWindowClose = false
     private var scheduledCloseFallback: DispatchWorkItem?
+#if VIBETV_CONTROL_CENTER_TESTING
+    convenience init(testWindow: NSWindow, testWebView: WKWebView) {
+        self.init()
+        window = testWindow
+        webView = testWebView
+        installationReady = true
+    }
+
+    var pendingWindowCloseForTesting: DispatchWorkItem? { scheduledCloseFallback }
+#endif
     private var installationReady = false
     private var installationStatus: InstallationStatus?
     private var codexBarRepairRequired = false
@@ -2151,7 +2161,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     // #836: the app presses "Restart service" by itself once per launch.
     private var serviceRestartedAutomatically = false
     private var installationRequired: Bool {
+#if VIBETV_CONTROL_CENTER_TESTING
+        // The isolated delegate test executable is outside /Applications.
+        false
+#else
         requiresApplicationInstallation(Bundle.main.bundleURL)
+#endif
     }
     private var usesLocalPreviewRuntime: Bool {
         Bundle.main.object(
@@ -3400,6 +3415,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         guard !installationRequired, installationReady else {
             return
         }
+        cancelPendingWindowClose()
         if webView == nil {
             createWindow()
         }
@@ -3460,10 +3476,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         self.window = window
         self.webView = webView
         startPageKeepAliveIfNeeded()
-        closePreparationInFlight = false
-        allowPreparedWindowClose = false
-        scheduledCloseFallback?.cancel()
-        scheduledCloseFallback = nil
+        cancelPendingWindowClose()
         // The local server can keep the same URL across app updates. Always
         // fetch the freshly bundled UI instead of reviving an older cached
         // Control Center whose device-selection logic may be stale.
@@ -3925,10 +3938,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // A closed window has no page to keep running; createWindow starts a new one.
         pageKeepAlive?.cancel()
         pageKeepAlive = nil
-        closePreparationInFlight = false
-        allowPreparedWindowClose = false
-        scheduledCloseFallback?.cancel()
-        scheduledCloseFallback = nil
+        cancelPendingWindowClose()
         finishControlCenterCodexBarRecovery()
         activeNavigation = nil
         webView?.stopLoading()
@@ -3947,42 +3957,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             allowPreparedWindowClose = false
             return true
         }
-        if closePreparationInFlight {
+        if closePreparationID != nil {
             return false
         }
 
-        closePreparationInFlight = true
+        let requestID = UUID()
+        closePreparationID = requestID
         let fallback = DispatchWorkItem { [weak self, weak closingWindow] in
             guard let self, let closingWindow else {
                 return
             }
             NSLog("VibeTV Control Center timed out flushing browser state before closing")
-            self.finishPreparedWindowClose(closingWindow)
+            self.finishPreparedWindowClose(closingWindow, requestID: requestID)
         }
         scheduledCloseFallback = fallback
         DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: fallback)
         let script = "window.dispatchEvent(new Event('vibetv:native-window-will-close')); true"
         webView.evaluateJavaScript(script) { [weak self, weak closingWindow] _, error in
-            guard let self, let closingWindow, closingWindow === self.window else {
+            guard let self, let closingWindow, closingWindow === self.window,
+                  self.closePreparationID == requestID else {
                 return
             }
-            self.scheduledCloseFallback?.cancel()
-            self.scheduledCloseFallback = nil
             if let error {
                 NSLog("VibeTV Control Center could not flush browser state before closing: \(error.localizedDescription)")
             }
-            self.finishPreparedWindowClose(closingWindow)
+            self.finishPreparedWindowClose(closingWindow, requestID: requestID)
         }
         return false
     }
 
-    private func finishPreparedWindowClose(_ closingWindow: NSWindow) {
-        guard closingWindow === window, closePreparationInFlight else {
+    // A reopen supersedes the pending close, including a WebView reply that
+    // can still arrive after the fallback was cancelled (#989).
+    private func cancelPendingWindowClose() {
+        closePreparationID = nil
+        allowPreparedWindowClose = false
+        scheduledCloseFallback?.cancel()
+        scheduledCloseFallback = nil
+    }
+
+    private func finishPreparedWindowClose(_ closingWindow: NSWindow, requestID: UUID) {
+        guard closingWindow === window, closePreparationID == requestID else {
             return
         }
         scheduledCloseFallback?.cancel()
         scheduledCloseFallback = nil
-        closePreparationInFlight = false
+        closePreparationID = nil
         allowPreparedWindowClose = true
         closingWindow.performClose(nil)
     }

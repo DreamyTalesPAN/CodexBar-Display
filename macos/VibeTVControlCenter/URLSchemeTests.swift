@@ -1,5 +1,6 @@
 #if VIBETV_CONTROL_CENTER_TESTING
 import Foundation
+import Cocoa
 import WebKit
 
 private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
@@ -9,7 +10,69 @@ private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
     }
 }
 
+@MainActor private final class CloseTestWindow: NSWindow {
+    var closeRequests = 0
+    override func makeKeyAndOrderFront(_ sender: Any?) {}
+    override func performClose(_ sender: Any?) { closeRequests += 1 }
+}
+
+@MainActor private final class CloseTestWebView: WKWebView {
+    var completions: [@MainActor (Any?, Error?) -> Void] = []
+    override func evaluateJavaScript(
+        _ javaScriptString: String,
+        completionHandler: (@MainActor (Any?, Error?) -> Void)? = nil
+    ) {
+        if let completionHandler { completions.append(completionHandler) }
+    }
+}
+
+// Exercise the real AppDelegate with controlled WebView completions. No
+// window is shown, runtime is started, or device is accessed.
+@MainActor private func testWindowCloseReopen() {
+    _ = NSApplication.shared.setActivationPolicy(.prohibited)
+    let window = CloseTestWindow(
+        contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: true
+    )
+    let webView = CloseTestWebView(frame: .zero)
+    let app = AppDelegate(testWindow: window, testWebView: webView)
+    func reopen() {
+        require(
+            app.applicationShouldHandleReopen(NSApplication.shared, hasVisibleWindows: true),
+            "reopen must reach the installed app path"
+        )
+    }
+
+    require(!app.windowShouldClose(window), "close must wait for the page to save")
+    let firstFallback = app.pendingWindowCloseForTesting!
+    reopen()
+    firstFallback.perform()
+    webView.completions[0](true, nil)
+    require(window.closeRequests == 0, "reopen must cancel both delayed close completions")
+
+    require(!app.windowShouldClose(window), "another close must start a new save")
+    reopen()
+    require(!app.windowShouldClose(window), "a close after reopening must start its own save")
+    let currentFallback = app.pendingWindowCloseForTesting!
+    // The second WebView reply arrives only after the third close started.
+    webView.completions[1](true, nil)
+    require(window.closeRequests == 0, "an older reply must not finish a newer close")
+    require(!currentFallback.isCancelled, "an older reply must not cancel the newer fallback")
+    webView.completions[2](true, nil)
+    require(window.closeRequests == 1, "the current page reply must finish its close")
+    require(app.windowShouldClose(window), "the prepared close must be allowed")
+    currentFallback.perform()
+    require(window.closeRequests == 1, "the fallback must not close a second time")
+
+    require(!app.windowShouldClose(window), "a later close must still save before closing")
+    app.pendingWindowCloseForTesting!.perform()
+    require(window.closeRequests == 2, "a missing page reply must still use the fallback")
+    webView.completions[3](true, nil)
+    require(window.closeRequests == 2, "a reply after the fallback must not close again")
+    require(app.windowShouldClose(window), "the fallback-prepared close must be allowed")
+}
+
 func runURLSchemeTests() {
+    MainActor.assumeIsolated { testWindowCloseReopen() }
     let companionURL = URL(string: "http://127.0.0.1:54321/v1/status")!
     for (method, timeout) in [("GET", 5.0), ("GET", 20.0), ("POST", 5.0)] {
         let request = makeCompanionRequest(url: companionURL, method: method, timeout: timeout)

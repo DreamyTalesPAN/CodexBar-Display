@@ -9942,3 +9942,11 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: an installed legacy Mac App keeps its existing verified hosted DMG migration action. Installed non-legacy apps still use their runtime release result, so the initial firmware update remains available despite an unrelated hosted download failure; outside-installed and failed-runtime behavior remain unchanged.
 - Scope: exclude required legacy migration from the runtime-only condition in `control-center-app.tsx`, extend `control-center-app.mac-app-up-to-date.test.tsx` with the existing legacy download path, and this record. New-head CI, Codex and Mac/Windows cold/warm validation remain required; earlier hardware results remain historical.
 - What's new: none — preserves an existing migration action while retaining the firmware-check fix.
+
+
+## 2026-10-23 — Mac: reopening cancels a pending window close (#989)
+
+- User approval: pending — implementation of the narrow Close/Reopen fix was authorized through the overnight coordinator on 2026-10-23; personal visual acceptance of this build has not been given.
+- Approved customer-visible result: Proposed for review: reopening Control Center from the Dock or menu bar while its previous close is still saving browser state keeps the window open. A delayed callback from that close cannot close it or finish a later close request. Normal closing still saves browser state and keeps the existing one-second fallback. No new copy, controls, or device action.
+- Scope: `macos/VibeTVControlCenter/main.swift` and `URLSchemeTests.swift`; isolated AppDelegate regression passes, visible product-app regression remains unverified. Draft only; no merge or release approval.
+- What's new: none — fixes a close/reopen race without adding a customer-facing feature.
