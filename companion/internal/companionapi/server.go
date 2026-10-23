@@ -205,11 +205,8 @@ type Server struct {
 	repairFlights          map[string]*deviceRepairFlight
 	deviceSelectionMu      sync.Mutex
 	ambiguousDeviceSeen    bool
-	probeMu                sync.Mutex
-	helloProbeCache        map[string]helloProbeSnapshot
-	helloProbeFlights      map[string]*helloProbeFlight
-	healthProbeCache       map[string]healthProbeSnapshot
-	healthProbeFlights     map[string]*healthProbeFlight
+	helloProbes            *probeCache[protocol.DeviceHello]
+	healthProbes           *probeCache[deviceHealth]
 	probeCacheTime         time.Duration
 	weakWiFiMu             sync.Mutex
 	weakWiFi               weakWiFiRun
@@ -242,15 +239,11 @@ type Server struct {
 	preferenceAdapters     []preferenceAdapter
 	updateFirmware         func(context.Context, string, runtimeconfig.Config, firmwareUpdateRequest, io.Writer) error
 	fetchMacAppRelease     func(context.Context) (githubRelease, error)
-	installJobsMu          sync.Mutex
-	installJobs            map[string]*themeInstallJob
-	themeInstallActive     bool
-	nextInstallJob         uint64
+	installJobs            *jobStore[themeInstallJob]
+	themeInstallActive     atomic.Bool
 	themeInstallTailMu     sync.Mutex
 	themeInstallTail       chan struct{} // open while an Installed job still refreshes the stream (#911)
-	updateJobsMu           sync.Mutex
-	updateJobs             map[string]*firmwareUpdateJob
-	nextUpdateJob          uint64
+	updateJobs             *jobStore[firmwareUpdateJob]
 	macAppReleaseMu        sync.Mutex
 	macAppReleaseChecked   bool
 	macAppReleaseCheckedAt time.Time
@@ -389,10 +382,8 @@ func New(opts Options) (*Server, error) {
 		pairAttemptTimeout:   defaultPairAttemptTimeout,
 		pairRetryGap:         defaultPairRetryGap,
 		repairFlights:        make(map[string]*deviceRepairFlight),
-		helloProbeCache:      make(map[string]helloProbeSnapshot),
-		helloProbeFlights:    make(map[string]*helloProbeFlight),
-		healthProbeCache:     make(map[string]healthProbeSnapshot),
-		healthProbeFlights:   make(map[string]*healthProbeFlight),
+		helloProbes:          newProbeCache[protocol.DeviceHello](),
+		healthProbes:         newProbeCache[deviceHealth](),
 		probeCacheTime:       deviceProbeCacheTime,
 		connectionStates:     make(map[string]*configuredDeviceConnection),
 		now:                  time.Now,
@@ -411,8 +402,8 @@ func New(opts Options) (*Server, error) {
 		},
 		updateFirmware:     firmwareUpdateCommandRunner(opts.PauseDisplayStream != nil),
 		fetchMacAppRelease: fetchLatestMacAppRelease,
-		installJobs:        make(map[string]*themeInstallJob),
-		updateJobs:         make(map[string]*firmwareUpdateJob),
+		installJobs:        newJobStore(cloneThemeInstallJob, func(job *themeInstallJob) time.Time { return job.StartedAt }),
+		updateJobs:         newJobStore(cloneFirmwareUpdateJob, func(job *firmwareUpdateJob) time.Time { return job.StartedAt }),
 	}
 	return server, nil
 }
