@@ -89,6 +89,7 @@ function SetupAddressDialogForm({
       <Field data-invalid={error ? true : undefined}>
         <FieldLabel htmlFor="setup-device-address">IP address</FieldLabel>
         <Input
+          aria-describedby={error ? "setup-device-address-error" : undefined}
           aria-invalid={error ? true : undefined}
           autoComplete="off"
           className="font-mono"
@@ -107,7 +108,7 @@ function SetupAddressDialogForm({
           placeholder={DEVICE_TARGET_PLACEHOLDER}
           value={value}
         />
-        {error ? <FieldError>{error}</FieldError> : null}
+        {error ? <FieldError id="setup-device-address-error">{error}</FieldError> : null}
       </Field>
     </SetupDialog>
   );

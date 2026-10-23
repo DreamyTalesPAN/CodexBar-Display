@@ -139,7 +139,6 @@ export function OpenAIKeyForm({
             disabled={!enabled || connecting}
             onChange={(e) => setPassword(e.target.value)}
             placeholder={configured ? "Paste a new key to replace it" : "Paste your key here"}
-            aria-invalid={Boolean(connectionError)}
             aria-describedby={connectionError ? "key-error" : undefined}
           />
         </label>

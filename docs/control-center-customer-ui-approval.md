@@ -9942,3 +9942,38 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: an installed legacy Mac App keeps its existing verified hosted DMG migration action. Installed non-legacy apps still use their runtime release result, so the initial firmware update remains available despite an unrelated hosted download failure; outside-installed and failed-runtime behavior remain unchanged.
 - Scope: exclude required legacy migration from the runtime-only condition in `control-center-app.tsx`, extend `control-center-app.mac-app-up-to-date.test.tsx` with the existing legacy download path, and this record. New-head CI, Codex and Mac/Windows cold/warm validation remain required; earlier hardware results remain historical.
 - What's new: none — preserves an existing migration action while retaining the firmware-check fix.
+
+## 2026-10-21 — #887: link the setup IP address to its existing error
+
+- User approval: no visible change – UI approval not needed (#887 item 2 associates the setup IP address with its existing FieldError for assistive technology)
+- Approved customer-visible result: the existing IP address error is also the input's accessible description while present; typing clears the error and its association. Text, layout and styling stay unchanged.
+- Scope: `setup-device-dialogs.tsx` and its regression tests; issue #887 item 2 only, not merged, not released.
+- What's new: none — accessibility association for an existing error
+
+## 2026-10-21 — #888: append-only full-path scope record
+
+- User approval: no visible change – UI approval not needed (scope record: lists the full paths changed by #888)
+- Approved customer-visible result: none from this documentation correction. The entry “2026-10-21 — #887: stop marking an unchecked replacement OpenAI key invalid” remains pending; this addendum does not approve its visible result.
+- Scope: docs/control-center-customer-ui-approval.md only; the existing #888 records cover `apps/control-center/src/components/setup/setup-device-dialogs.test.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/theme-studio/openai-key-form.test.tsx`, `apps/control-center/src/components/theme-studio/openai-key-form.tsx` at 5b4747bf70f86a066acc9a3b6f96638b7277082e. These full paths supplement the existing scope; all original entries are preserved.
+- What's new: none — documentation-only scope correction; no product change or announcement.
+
+## 2026-10-22 — #887: no new error text for an invalid Theme Studio color (item 3 out of scope)
+
+- User approval: no visible change – UI approval not needed (bug fix: removes the unapproved item-3 error text added earlier on this branch; the Theme Studio color field shows nothing new)
+- Approved customer-visible result: none; the Theme Studio color field is as before this PR and shows no new text for an invalid value.
+- Scope: theme-studio/editor-fields.tsx restored and its new test removed; issue #887 item 3 is not in this PR.
+- What's new: none — removes an unapproved change, no announcement
+
+## 2026-10-22 — #888: approval log reduced to its own entries
+
+- User approval: no visible change – UI approval not needed (documentation-only: removes the #784 history copied into this branch's approval log; the pending #887 entry stays the newest block)
+- Approved customer-visible result: none; the “2026-10-21 — #887: stop marking an unchecked replacement OpenAI key invalid” entry below remains pending and is not approved by this record.
+- Scope: docs/control-center-customer-ui-approval.md only; #888 entries kept, the entries of #784 and the merge markers removed. Pull request #888 only, not merged, not released.
+- What's new: none — documentation-only cleanup, no product change or announcement
+
+## 2026-10-21 — #887: stop marking an unchecked replacement OpenAI key invalid
+
+- User approval: pending — #887 item 1 removes the wrong red invalid ring from the replacement OpenAI key input after a failed connection or disconnect, including while typing a new unchecked key
+- Approved customer-visible result: a connection or disconnect failure keeps its existing message in the existing position, but no longer marks the cleared or replacement key input invalid. No new text or layout is introduced.
+- Scope: `openai-key-form.tsx` and its regression tests; remove the operation-error-to-field-invalid mapping because no current field validation result is available and connection attempts clear the input. Issue #887 item 1 only; item 3 remains untouched, not merged, not released.
+- What's new: none — correct a misleading invalid-field indicator
