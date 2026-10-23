@@ -135,9 +135,9 @@ String themeCapabilitiesJSON(bool enabled, bool compact = false) {
   String out;
   out.reserve(compact ? 352 : 432);
   if (!enabled) {
-    return "{\"supportsThemeSpecV1\":false,\"supportsUsageSlotsV1\":false,\"supportsUsageWindowsV1\":false,\"supportsProviderSlotsV1\":false,\"supportsProviderAssetsV1\":false,\"supportsColorStopsV1\":false,\"supportsTextValignV1\":false,\"supportsProgressArcV1\":false,\"maxUsageWindows\":0,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
+    return "{\"supportsThemeSpecV1\":false,\"supportsUsageSlotsV1\":false,\"supportsUsageWindowsV1\":false,\"supportsProviderSlotsV1\":false,\"supportsProviderAssetsV1\":false,\"supportsColorStopsV1\":false,\"supportsTextValignV1\":false,\"supportsProgressArcV1\":false,\"supportsProgressNeedleV1\":false,\"maxUsageWindows\":0,\"maxThemeSpecBytes\":0,\"maxThemePrimitives\":0}";
   }
-  out += "{\"supportsThemeSpecV1\":true,\"supportsUsageSlotsV1\":true,\"supportsUsageWindowsV1\":true,\"supportsProviderSlotsV1\":true,\"supportsProviderAssetsV1\":true,\"supportsColorStopsV1\":true,\"supportsTextValignV1\":true,\"supportsProgressArcV1\":true,\"maxUsageWindows\":";
+  out += "{\"supportsThemeSpecV1\":true,\"supportsUsageSlotsV1\":true,\"supportsUsageWindowsV1\":true,\"supportsProviderSlotsV1\":true,\"supportsProviderAssetsV1\":true,\"supportsColorStopsV1\":true,\"supportsTextValignV1\":true,\"supportsProgressArcV1\":true,\"supportsProgressNeedleV1\":true,\"maxUsageWindows\":";
   out += String(codexbar_display::core::kAdvertisedMaxUsageWindows);
   out += ",\"maxThemeSpecBytes\":2048,\"maxThemePrimitives\":";
   out += codexbar_display::themespec::kMaxCompiledThemeSpecPrimitives;

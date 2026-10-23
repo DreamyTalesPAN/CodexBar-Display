@@ -176,8 +176,11 @@ struct SpriteCommand {
   bool hasBg = false;
 };
 
+struct CompiledPrimitive;
+
 // The theme's needle sprite, turned clockwise from its authored "up".
 struct NeedleCommand {
+  const CompiledPrimitive* primitive = nullptr;
   const char* assetPath = "";
   int x = 0;
   int y = 0;
@@ -1144,7 +1147,12 @@ inline bool AssetPathLooksCbi(const char* path) {
     return false;
   }
   const size_t len = std::strlen(path);
-  return len >= 4 && std::strcmp(path + len - 4, ".cbi") == 0;
+  if (len < 4) {
+    return false;
+  }
+  const char* suffix = path + len - 4;
+  return suffix[0] == '.' && (suffix[1] == 'c' || suffix[1] == 'C') &&
+         (suffix[2] == 'b' || suffix[2] == 'B') && (suffix[3] == 'i' || suffix[3] == 'I');
 }
 
 inline bool AssetPathLooksGif(const char* path) {
@@ -2198,6 +2206,7 @@ inline bool DrawCompiledPrimitive(
     if (primitive.style == kProgressStyleNeedle) {
       const int percent = CompiledProgressPercentFor(primitive, frame);
       NeedleCommand cmd;
+      cmd.primitive = &primitive;
       cmd.assetPath = primitive.assetPath == nullptr ? "" : primitive.assetPath;
       cmd.x = primitive.x;
       cmd.y = primitive.y;

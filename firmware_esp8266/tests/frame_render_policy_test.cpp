@@ -268,7 +268,11 @@ bool testHelloAdvertisesEscapedUsageWindowCapacity(const std::string& source) {
   const std::string capabilities = source.substr(capabilitiesStart, capabilitiesEnd - capabilitiesStart);
   return expect(
       capabilities.find("String(codexbar_display::core::kAdvertisedMaxUsageWindows)") != std::string::npos,
-      "hello must advertise escaped JSON-safe usage window capacity");
+      "hello must advertise escaped JSON-safe usage window capacity") &&
+      expect(capabilities.find(R"(\"supportsProgressNeedleV1\":true)") != std::string::npos,
+             "enabled theme capability block must advertise needle support to Control Center") &&
+      expect(capabilities.find(R"(\"supportsProgressNeedleV1\":false)") != std::string::npos,
+             "disabled theme capability block must not advertise needle support");
 }
 
 bool testSharedSerialHelloAdvertisesStandby(const std::string& source) {

@@ -2,6 +2,7 @@
 #include "../../../firmware_shared/codexbar_display_core.h"
 #include "../../../firmware_shared/update_notice_policy.h"
 #include "../../src/theme_spec_runtime_policy.h"
+#include "../../src/theme_spec_needle_tracking.h"
 
 #include <cmath>
 #include <string>
@@ -3450,6 +3451,134 @@ void testNeedleEraseBoxIsFixedBeforeTheLogoRedraws() {
   TEST_ASSERT_TRUE(sawOldAndNew);
 }
 
+// Rasterize commands while using the production firmware tracking policy.
+class NeedleFramebufferSink final : public Sink {
+ public:
+  std::vector<uint16_t> pixels = std::vector<uint16_t>(240 * 240, 0);
+  uint8_t index[8 * 8];
+  codexbar_display::esp8266::ThemeSpecNeedleTracking tracking;
+
+  NeedleFramebufferSink() {
+    std::memset(index, 0xFF, sizeof(index));
+    for (int row = 0; row < 4; ++row) {
+      index[row * 8 + 3] = 0;
+    }
+  }
+  void BeginClip(int x, int y, int width, int height) override {
+    clip_ = {x, y, width, height};
+  }
+  void EndClip() override { clip_ = {0, 0, 240, 240}; }
+  void FillScreen(uint16_t color) override {
+    for (uint16_t& pixel : pixels) {
+      pixel = color;
+    }
+  }
+  void FillRect(const RectCommand& command) override {
+    for (int y = command.y; y < command.y + command.height; ++y) {
+      for (int x = command.x; x < command.x + command.width; ++x) {
+        Paint(x, y, command.color);
+      }
+    }
+  }
+  void DrawNeedle(const NeedleCommand& command) override {
+    for (int y = 0; y < command.height; ++y) {
+      for (int x = 0; x < command.width; ++x) {
+        int sourceX = 0;
+        int sourceY = 0;
+        if (NeedleSourcePixel(x, y, command.width, command.height, 8, 8,
+                              command.angle, sourceX, sourceY) &&
+            index[sourceY * 8 + sourceX] != 0xFF) {
+          Paint(command.x + x, command.y + y, 0xFFFF);
+        }
+      }
+    }
+    tracking.Remember(command);
+  }
+  void DrawText(const TextCommand&) override {}
+  void DrawProgress(const ProgressCommand&) override {}
+  void DrawGif(const GifCommand&) override {}
+  void DrawSprite(const SpriteCommand&) override {}
+  void DrawPixels(const PixelsCommand&) override {}
+
+ private:
+  Bounds clip_{0, 0, 240, 240};
+  void Paint(int x, int y, uint16_t color) {
+    if (x >= 0 && y >= 0 && x < 240 && y < 240 && x >= clip_.x && y >= clip_.y &&
+        x < clip_.x + clip_.width && y < clip_.y + clip_.height) {
+      pixels[y * 240 + x] = color;
+    }
+  }
+};
+
+bool framebufferNeedleDirtyBounds(
+    const codexbar_display::themespec::CompiledPrimitive& primitive,
+    const FrameData& frame, Bounds& bounds, void* context) {
+  auto& sink = *static_cast<NeedleFramebufferSink*>(context);
+  return sink.tracking.DirtyBounds(primitive, frame, sink.index, 8, 8, bounds);
+}
+
+void testNeedleTrackingSeparatesPrimitivesWithTheSameSpriteAndBox() {
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(
+      R"JSON({"v":1,"id":"hands","rev":1,"p":[{"t":"p","x":0,"y":0,"w":64,"h":64,"sl":1,"b":"us1p","ps":"needle","as":0,"aw":360,"a":"/themes/u/n.cbi"},{"t":"p","x":0,"y":0,"w":64,"h":64,"sl":2,"b":"us2p","ps":"needle","as":0,"aw":360,"a":"/themes/u/n.cbi"}]})JSON",
+      doc, scene));
+  FrameData frame = testFrame();
+  frame.usageSlot1Available = frame.usageSlot2Available = true;
+  frame.usageSlot1Percent = 0;
+  frame.usageSlot2Percent = 25;
+  NeedleFramebufferSink partial;
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpec(scene, frame, partial));
+  frame.usageSlot1Percent = frame.usageSlot2Percent = 50;
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpecChangedPrimitives(
+      scene, frame, kThemeSpecFieldUsageWindows, partial, nullptr, nullptr,
+      framebufferNeedleDirtyBounds, &partial));
+  NeedleFramebufferSink full;
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpec(scene, frame, full));
+  TEST_ASSERT_EQUAL_UINT16_ARRAY(full.pixels.data(), partial.pixels.data(), full.pixels.size());
+  ReleaseCompiledThemeSpec(scene);
+}
+
+void testNeedleTrackingInvalidatesBoundsWhenTheDrawnPrimitiveChanges() {
+  using codexbar_display::themespec::CompiledPrimitive;
+  using codexbar_display::themespec::PrimitiveKind;
+  using codexbar_display::themespec::kProgressStyleNeedle;
+  CompiledPrimitive first;
+  first.kind = PrimitiveKind::Progress;
+  first.style = kProgressStyleNeedle;
+  first.width = first.height = 64;
+  first.segmentGap = 360;
+  CompiledPrimitive second = first;
+  second.x = second.y = 100;
+  NeedleFramebufferSink sink;
+  FrameData frame = testFrame();
+  NeedleCommand command;
+  command.primitive = &first;
+  sink.tracking.Remember(command);
+  Bounds firstBounds;
+  TEST_ASSERT_TRUE(sink.tracking.DirtyBounds(first, frame, sink.index, 8, 8, firstBounds));
+  command.primitive = &second;
+  sink.tracking.Remember(command);
+  Bounds secondBounds;
+  TEST_ASSERT_TRUE(sink.tracking.DirtyBounds(second, frame, sink.index, 8, 8, secondBounds));
+  TEST_ASSERT_EQUAL_INT(firstBounds.x + 100, secondBounds.x);
+  TEST_ASSERT_EQUAL_INT(firstBounds.y + 100, secondBounds.y);
+  TEST_ASSERT_FALSE(sink.tracking.DirtyBounds(first, frame, sink.index, 8, 8, firstBounds));
+  sink.tracking.Reset();
+  TEST_ASSERT_FALSE(sink.tracking.DirtyBounds(second, frame, sink.index, 8, 8, secondBounds));
+}
+
+void testNeedleAcceptsUppercaseCbiExtension() {
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  TEST_ASSERT_TRUE(CompileThemeSpec(
+      R"JSON({"v":1,"id":"caps","rev":1,"p":[{"t":"p","x":0,"y":0,"w":64,"h":64,"ps":"needle","as":0,"aw":180,"a":"/themes/u/n.CBI"}]})JSON",
+      doc, scene));
+  TEST_ASSERT_EQUAL_UINT32(1, scene.primitiveCount);
+  TEST_ASSERT_EQUAL_STRING("/themes/u/n.CBI", scene.primitives[0].assetPath);
+  ReleaseCompiledThemeSpec(scene);
+}
+
 void testNeedleWithoutACbiSpriteIsSkipped() {
   for (const char* spec : {
            R"JSON({"v":1,"id":"fuel","rev":1,"p":[{"t":"p","x":0,"y":0,"w":64,"h":64,"ps":"needle","as":300,"aw":120},{"t":"tx","x":0,"y":0,"s":1,"v":"ok"}]})JSON",
@@ -4836,6 +4965,9 @@ int main() {
   RUN_TEST(testNeedleOpaqueBoundsCoverEveryDrawnPixel);
   RUN_TEST(testNeedlePartialRepaintStaysOffTheRestOfTheDial);
   RUN_TEST(testNeedleEraseBoxIsFixedBeforeTheLogoRedraws);
+  RUN_TEST(testNeedleTrackingSeparatesPrimitivesWithTheSameSpriteAndBox);
+  RUN_TEST(testNeedleTrackingInvalidatesBoundsWhenTheDrawnPrimitiveChanges);
+  RUN_TEST(testNeedleAcceptsUppercaseCbiExtension);
   RUN_TEST(testNeedleWithoutACbiSpriteIsSkipped);
   RUN_TEST(testProgressArcOutsideItsLimitsIsSkipped);
   RUN_TEST(testValignDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont);

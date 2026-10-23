@@ -15,6 +15,7 @@
 
 #include "../../firmware_shared/theme_spec_renderer_core.h"
 #include "theme_spec_runtime_policy.h"
+#include "theme_spec_needle_tracking.h"
 
 namespace codexbar_display {
 namespace esp8266 {
@@ -1064,27 +1065,8 @@ struct DecodedNeedle {
   bool valid = false;
 };
 
-struct NeedleStamp {
-  char path[32] = {0};
-  int x = 0;
-  int y = 0;
-  int width = 0;
-  int height = 0;
-  int angle = 0;
-  bool valid = false;
-};
-
 DecodedNeedle decodedNeedle;
-NeedleStamp needleStamp;
-
-struct NeedleBoundsCache {
-  int angle = 0;
-  int stampAngle = -1;
-  themespec::Bounds bounds;
-  bool valid = false;
-};
-
-NeedleBoundsCache needleBoundsCache;
+ThemeSpecNeedleTracking needleTracking;
 
 void copyNeedlePath(char* dest, const char* src) {
   if (src == nullptr) {
@@ -1097,8 +1079,7 @@ void copyNeedlePath(char* dest, const char* src) {
 
 void resetNeedleTracking() {
   decodedNeedle = DecodedNeedle{};
-  needleStamp = NeedleStamp{};
-  needleBoundsCache = NeedleBoundsCache{};
+  needleTracking.Reset();
 }
 
 bool decodeNeedleRow(const String& row, uint8_t* dest, int width, int paletteSize) {
@@ -1247,72 +1228,17 @@ bool drawNeedleAsset(
   return true;
 }
 
-void rememberNeedleStamp(const char* assetPath, int x, int y, int width, int height, int angle) {
-  copyNeedlePath(needleStamp.path, assetPath);
-  needleStamp.x = x;
-  needleStamp.y = y;
-  needleStamp.width = width;
-  needleStamp.height = height;
-  needleStamp.angle = angle;
-  needleStamp.valid = true;
-}
-
 bool needleDirtyBounds(
     const themespec::CompiledPrimitive& primitive,
     const themespec::FrameData& frame,
     themespec::Bounds& bounds,
     void*) {
-  if (primitive.kind != themespec::PrimitiveKind::Progress ||
-      primitive.style != themespec::kProgressStyleNeedle ||
-      primitive.assetPath == nullptr || !needleStamp.valid || !decodedNeedle.valid) {
+  if (!decodedNeedle.valid || primitive.assetPath == nullptr ||
+      std::strcmp(decodedNeedle.path, primitive.assetPath) != 0) {
     return false;
   }
-  if (std::strcmp(needleStamp.path, primitive.assetPath) != 0 ||
-      std::strcmp(decodedNeedle.path, primitive.assetPath) != 0 ||
-      needleStamp.x != primitive.x || needleStamp.y != primitive.y ||
-      needleStamp.width != primitive.width || needleStamp.height != primitive.height) {
-    return false;
-  }
-  const int percent = themespec::CompiledProgressPercentFor(primitive, frame);
-  const int angle = themespec::NeedleAngleDegrees(primitive.segments, primitive.segmentGap, percent);
-  if (needleBoundsCache.valid && needleBoundsCache.angle == angle &&
-      needleBoundsCache.stampAngle == needleStamp.angle) {
-    bounds = needleBoundsCache.bounds;
-    return true;
-  }
-  themespec::Bounds current;
-  themespec::Bounds previous;
-  if (!themespec::NeedleOpaqueBounds(
-          needleIndex,
-          decodedNeedle.width,
-          decodedNeedle.height,
-          primitive.x,
-          primitive.y,
-          primitive.width,
-          primitive.height,
-          angle,
-          0xFF,
-          current) ||
-      !themespec::NeedleOpaqueBounds(
-          needleIndex,
-          decodedNeedle.width,
-          decodedNeedle.height,
-          primitive.x,
-          primitive.y,
-          primitive.width,
-          primitive.height,
-          needleStamp.angle,
-          0xFF,
-          previous)) {
-    return false;
-  }
-  themespec::ExpandBounds(current, previous);
-  needleBoundsCache.angle = angle;
-  needleBoundsCache.stampAngle = needleStamp.angle;
-  needleBoundsCache.bounds = current;
-  needleBoundsCache.valid = true;
-  bounds = current;
-  return true;
+  return needleTracking.DirtyBounds(
+      primitive, frame, needleIndex, decodedNeedle.width, decodedNeedle.height, bounds);
 }
 
 class ThemeSpecSink final : public themespec::Sink {
@@ -1464,7 +1390,7 @@ class ThemeSpecSink final : public themespec::Sink {
     if (!drawNeedleAsset(cmd.assetPath, cmd.x, cmd.y, cmd.width, cmd.height, cmd.angle)) {
       return;
     }
-    rememberNeedleStamp(cmd.assetPath, cmd.x, cmd.y, cmd.width, cmd.height, cmd.angle);
+    needleTracking.Remember(cmd);
   }
 
   void DrawSprite(const themespec::SpriteCommand& cmd) override {
