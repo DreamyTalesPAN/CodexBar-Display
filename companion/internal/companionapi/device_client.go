@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/protocol"
@@ -29,28 +30,66 @@ func (e *deviceHTTPError) Error() string {
 	return fmt.Sprintf("device status=%d body=%q", e.statusCode, e.body)
 }
 
-type helloProbeSnapshot struct {
-	at    time.Time
-	hello protocol.DeviceHello
-	err   error
+// probeCache serves one device reading to every caller inside the TTL and
+// lets concurrent callers share a single in-flight probe that outlives the
+// first caller's cancellation.
+type probeCache[T any] struct {
+	mu      sync.Mutex
+	results map[string]probeResult[T]
+	flights map[string]*probeFlight[T]
 }
 
-type helloProbeFlight struct {
-	done  chan struct{}
-	hello protocol.DeviceHello
-	err   error
+type probeResult[T any] struct {
+	at  time.Time
+	val T
+	err error
 }
 
-type healthProbeSnapshot struct {
-	at     time.Time
-	health deviceHealth
-	err    error
+type probeFlight[T any] struct {
+	done chan struct{}
+	val  T
+	err  error
 }
 
-type healthProbeFlight struct {
-	done   chan struct{}
-	health deviceHealth
-	err    error
+func newProbeCache[T any]() *probeCache[T] {
+	return &probeCache[T]{results: make(map[string]probeResult[T]), flights: make(map[string]*probeFlight[T])}
+}
+
+func (c *probeCache[T]) clear() {
+	c.mu.Lock()
+	clear(c.results)
+	c.mu.Unlock()
+}
+
+func (c *probeCache[T]) do(ctx context.Context, key string, ttl time.Duration, now func() time.Time, probe func() (T, error)) (T, error) {
+	var zero T
+	started := now()
+	c.mu.Lock()
+	if cached, ok := c.results[key]; ok && started.Sub(cached.at) < ttl {
+		c.mu.Unlock()
+		return cached.val, cached.err
+	}
+	flight := c.flights[key]
+	if flight == nil {
+		flight = &probeFlight[T]{done: make(chan struct{})}
+		c.flights[key] = flight
+		go func() {
+			val, err := probe()
+			c.mu.Lock()
+			flight.val, flight.err = val, err
+			c.results[key] = probeResult[T]{at: now(), val: val, err: err}
+			delete(c.flights, key)
+			close(flight.done)
+			c.mu.Unlock()
+		}()
+	}
+	c.mu.Unlock()
+	select {
+	case <-flight.done:
+		return flight.val, flight.err
+	case <-ctx.Done():
+		return zero, ctx.Err()
+	}
 }
 
 func (s *Server) requireDevice(w http.ResponseWriter, r *http.Request) (runtimeconfig.Config, protocol.DeviceHello, bool) {
@@ -120,49 +159,9 @@ func (s *Server) getHelloProbe(ctx context.Context, target, token string, timeou
 	if timeout <= 0 || s.probeCacheTime <= 0 {
 		return s.getHelloProbeDirect(ctx, target, token, timeout)
 	}
-	key := deviceProbeKey(target, token)
-	now := s.currentTime()
-	s.probeMu.Lock()
-	if cached, ok := s.helloProbeCache[key]; ok && now.Sub(cached.at) < s.probeCacheTime {
-		s.probeMu.Unlock()
-		return cached.hello, cached.err
-	}
-	if flight := s.helloProbeFlights[key]; flight != nil {
-		s.probeMu.Unlock()
-		select {
-		case <-flight.done:
-			return flight.hello, flight.err
-		case <-ctx.Done():
-			return protocol.DeviceHello{}, ctx.Err()
-		}
-	}
-	flight := &helloProbeFlight{done: make(chan struct{})}
-	s.helloProbeFlights[key] = flight
-	s.probeMu.Unlock()
-	go s.runHelloProbeFlight(key, target, token, timeout, flight)
-	select {
-	case <-flight.done:
-		return flight.hello, flight.err
-	case <-ctx.Done():
-		return protocol.DeviceHello{}, ctx.Err()
-	}
-}
-
-func (s *Server) runHelloProbeFlight(
-	key string,
-	target string,
-	token string,
-	timeout time.Duration,
-	flight *helloProbeFlight,
-) {
-	hello, err := s.getHelloProbeDirect(context.Background(), target, token, timeout)
-	s.probeMu.Lock()
-	flight.hello = hello
-	flight.err = err
-	s.helloProbeCache[key] = helloProbeSnapshot{at: s.currentTime(), hello: hello, err: err}
-	delete(s.helloProbeFlights, key)
-	close(flight.done)
-	s.probeMu.Unlock()
+	return s.helloProbes.do(ctx, deviceProbeKey(target, token), s.probeCacheTime, s.currentTime, func() (protocol.DeviceHello, error) {
+		return s.getHelloProbeDirect(context.Background(), target, token, timeout)
+	})
 }
 
 func (s *Server) getHelloProbeDirect(ctx context.Context, target, token string, timeout time.Duration) (protocol.DeviceHello, error) {
@@ -243,49 +242,9 @@ func (s *Server) getHealthProbe(ctx context.Context, target, token string, timeo
 	if timeout <= 0 || s.probeCacheTime <= 0 {
 		return s.getHealthProbeDirect(ctx, target, token, timeout)
 	}
-	key := deviceProbeKey(target, token)
-	now := s.currentTime()
-	s.probeMu.Lock()
-	if cached, ok := s.healthProbeCache[key]; ok && now.Sub(cached.at) < s.probeCacheTime {
-		s.probeMu.Unlock()
-		return cached.health, cached.err
-	}
-	if flight := s.healthProbeFlights[key]; flight != nil {
-		s.probeMu.Unlock()
-		select {
-		case <-flight.done:
-			return flight.health, flight.err
-		case <-ctx.Done():
-			return deviceHealth{}, ctx.Err()
-		}
-	}
-	flight := &healthProbeFlight{done: make(chan struct{})}
-	s.healthProbeFlights[key] = flight
-	s.probeMu.Unlock()
-	go s.runHealthProbeFlight(key, target, token, timeout, flight)
-	select {
-	case <-flight.done:
-		return flight.health, flight.err
-	case <-ctx.Done():
-		return deviceHealth{}, ctx.Err()
-	}
-}
-
-func (s *Server) runHealthProbeFlight(
-	key string,
-	target string,
-	token string,
-	timeout time.Duration,
-	flight *healthProbeFlight,
-) {
-	health, err := s.getHealthProbeDirect(context.Background(), target, token, timeout)
-	s.probeMu.Lock()
-	flight.health = health
-	flight.err = err
-	s.healthProbeCache[key] = healthProbeSnapshot{at: s.currentTime(), health: health, err: err}
-	delete(s.healthProbeFlights, key)
-	close(flight.done)
-	s.probeMu.Unlock()
+	return s.healthProbes.do(ctx, deviceProbeKey(target, token), s.probeCacheTime, s.currentTime, func() (deviceHealth, error) {
+		return s.getHealthProbeDirect(context.Background(), target, token, timeout)
+	})
 }
 
 func (s *Server) getHealthProbeDirect(ctx context.Context, target, token string, timeout time.Duration) (deviceHealth, error) {

@@ -711,6 +711,10 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
                     let replaced = shell.windows_created.load(Ordering::SeqCst) != created_before;
                     if presented + 1 != released_at && !replaced {
                         prepare_and_load(handle);
+                    } else {
+                        // Issue #940: decided here, where it is known whether
+                        // the window came back, and not at the destroy call.
+                        show_tray_hint_once(&handle, released_at, presented, replaced);
                     }
                 });
             }
@@ -941,7 +945,6 @@ fn hide_after_flush(app: &AppHandle) {
             // (count 0) is still told apart from "no release".
             shell.released_at.store(presented + 1, Ordering::SeqCst);
             let _ = window.destroy();
-            show_tray_hint_once(&handle);
         } else {
             // Reopened from the tray or a second launch meanwhile: keep it open.
             shell.closes.fetch_sub(1, Ordering::SeqCst);
@@ -956,19 +959,12 @@ fn close_stands(presented_at_request: u64, presented_after_flush: u64) -> bool {
 
 // Issue #883: the tray icon often sits behind the ^ next to the clock, so a
 // customer who closed the window may think VibeTV quit. The first close says
-// where it went, once: the marker is written before the box shows, and a
-// marker that cannot be written means no box (better silent than every time).
-fn show_tray_hint_once(app: &AppHandle) {
+// where it went, once. Called once the released window is gone.
+fn show_tray_hint_once(app: &AppHandle, released_at: u64, presented: u64, replaced: bool) {
     let Ok(folder) = app.path().app_local_data_dir() else {
         return;
     };
-    let _ = std::fs::create_dir_all(&folder);
-    let first = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(folder.join(TRAY_HINT_MARKER))
-        .is_ok();
-    if !first {
+    if !claim_tray_hint(&folder, released_at, presented, replaced) {
         return;
     }
     #[cfg(windows)]
@@ -993,6 +989,24 @@ fn show_tray_hint_once(app: &AppHandle) {
             );
         }
     }
+}
+
+// Issue #940: the hint is only for a window that stayed closed. A tray click
+// or second launch between hide_after_flush's check and the destroy brings it
+// back (the presentation count moved on, or a present built a replacement);
+// then the marker stays unwritten and the next real close shows the hint.
+// The marker is written before the box shows, and a marker that cannot be
+// written means no box (better silent than every time).
+fn claim_tray_hint(folder: &Path, released_at: u64, presented: u64, replaced: bool) -> bool {
+    if presented + 1 != released_at || replaced {
+        return false;
+    }
+    let _ = std::fs::create_dir_all(folder);
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(folder.join(TRAY_HINT_MARKER))
+        .is_ok()
 }
 
 // Issue #424: Ctrl+Alt+Shift+P shows the next provider on VibeTV from any app.
@@ -1739,9 +1753,9 @@ fn show_message(message: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        choose_placement, clear_loaded_theme, close_stands, fit_into, inner_within,
+        choose_placement, claim_tray_hint, clear_loaded_theme, close_stands, fit_into, inner_within,
         label_for_generation, theme_id_from_deep_link, work_area_of_centre, Placement,
-        WindowRect, remembered_after, remembered_for, store_if_newer,
+        WindowRect, remembered_after, remembered_for, store_if_newer, TRAY_HINT_MARKER,
     };
     use url::Url;
 
@@ -1810,6 +1824,23 @@ mod tests {
     fn a_close_is_cancelled_by_any_present_after_the_request() {
         assert!(close_stands(3, 3));
         assert!(!close_stands(3, 4));
+    }
+
+    #[test]
+    fn the_tray_hint_waits_for_a_close_that_leaves_the_window_closed() {
+        let folder = std::env::temp_dir().join(format!("vibetv-tray-hint-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        // Released at presentation 3 (stored as 4). A tray click or second
+        // launch between the check and the destroy moved the count on ...
+        assert!(!claim_tray_hint(&folder, 4, 4, false));
+        // ... or already built a replacement window: no hint, no marker.
+        assert!(!claim_tray_hint(&folder, 4, 3, true));
+        assert!(!folder.join(TRAY_HINT_MARKER).exists());
+        // The next close that leaves the window closed shows it, once.
+        assert!(claim_tray_hint(&folder, 6, 5, false));
+        assert!(folder.join(TRAY_HINT_MARKER).exists());
+        assert!(!claim_tray_hint(&folder, 8, 7, false));
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]
