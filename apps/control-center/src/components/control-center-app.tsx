@@ -5930,6 +5930,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 id: item.providerId,
                 label: item.label,
               }))}
+              confirmingTheme={busyAction === "install"}
               installingTheme={themeInstallStatus?.phase === "installing"}
               themeError={errorForHost(setupThemeError, windowsHost)}
               themeErrorDismissible={themeInstallStatus?.phase === "error"}
