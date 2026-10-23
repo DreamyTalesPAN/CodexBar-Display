@@ -238,10 +238,46 @@ func TestDashboardServeSupervisorRestartReplacesTheRunningChild(t *testing.T) {
 	if first.StartedAt.IsZero() || !third.StartedAt.After(second.StartedAt) || !second.StartedAt.After(first.StartedAt) {
 		t.Fatalf("StartedAt must follow each replacement: %v %v %v", first.StartedAt, second.StartedAt, third.StartedAt)
 	}
-	// The collector reads ReplaceStartedAt to tell the gap until the new
-	// child answers from an outage (#918).
-	if second.ReplaceStartedAt.IsZero() || !third.ReplaceStartedAt.After(second.ReplaceStartedAt) || third.ReplaceStartedAt.After(third.StartedAt) {
-		t.Fatalf("ReplaceStartedAt must mark each replacement before its child starts: %v %v (started %v)", second.ReplaceStartedAt, third.ReplaceStartedAt, third.StartedAt)
+	// The replacement answered, so its gap is over (#950).
+	if !second.ReplaceStartedAt.IsZero() || !third.ReplaceStartedAt.IsZero() {
+		t.Fatalf("an answering replacement must end the replace grace: %v %v", second.ReplaceStartedAt, third.ReplaceStartedAt)
+	}
+	// Replace marks the gap before the new child answers.
+	stopped, cancelStopped := context.WithCancel(context.Background())
+	cancelStopped()
+	if err := supervisor.Replace(stopped); !errors.Is(err, context.Canceled) {
+		t.Fatalf("replace with a canceled context: %v", err)
+	}
+	if supervisor.Info().ReplaceStartedAt.IsZero() {
+		t.Fatal("Replace must mark the gap until the new child answers")
+	}
+}
+
+// The collector reads ReplaceStartedAt to tell the gap until the new child
+// answers from an outage (#918). Once it has answered, a later silence is an
+// outage again, not the replacement (#950).
+func TestDashboardServeSupervisorEndsTheReplaceGraceOnTheFirstAnswer(t *testing.T) {
+	supervisor := newTestDashboardServeSupervisor(t, "serve", t.TempDir()+"/dashboard-helper.jsonl", time.Minute)
+	supervisor.info.ReplaceStartedAt = time.Now().UTC()
+	supervisor.setStarted("http://127.0.0.1:1", &os.Process{Pid: 1}, dashboardConfig{})
+	if supervisor.Info().ReplaceStartedAt.IsZero() {
+		t.Fatal("the grace must hold until the new child answers")
+	}
+	supervisor.setHealth(false, errors.New("not yet"))
+	if supervisor.Info().ReplaceStartedAt.IsZero() {
+		t.Fatal("a failed health check is no answer")
+	}
+	// A check of the child being replaced can still be answered after Replace
+	// stopped it; that is not the replacement's answer.
+	supervisor.restart = true
+	supervisor.setHealth(true, nil)
+	if supervisor.Info().ReplaceStartedAt.IsZero() {
+		t.Fatal("the replaced child's late answer must not end the grace")
+	}
+	supervisor.restart = false
+	supervisor.setHealth(true, nil)
+	if started := supervisor.Info().ReplaceStartedAt; !started.IsZero() {
+		t.Fatalf("the first answer must end the grace, got %v", started)
 	}
 }
 
