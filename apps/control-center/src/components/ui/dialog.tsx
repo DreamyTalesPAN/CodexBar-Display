@@ -22,6 +22,9 @@ function openedWithKeyboard(opener: Element | null): boolean {
 
 const TEXT_ENTRY = "input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]), textarea"
 
+// Each dialog owns its return target, including across a queued handoff.
+const dialogOpeners = new WeakMap<EventTarget, Element | null>()
+
 /**
  * A dialog that opens shows no focus ring until the user uses the keyboard.
  * Radix would focus the first control, and its ring then shows after a mouse
@@ -100,7 +103,6 @@ function DialogContent({
   // from state. Without this, closing one drops focus to the top of the window.
   // Only then: focus that is already in the next dialog or in a field the
   // customer clicked meanwhile stays where it is.
-  const opener = React.useRef<Element | null>(null)
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -111,20 +113,39 @@ function DialogContent({
           className
         )}
         onOpenAutoFocus={(event) => {
-          opener.current = document.activeElement
+          const opener = document.activeElement
+          if (event.currentTarget) dialogOpeners.set(event.currentTarget, opener)
           onOpenAutoFocus?.(event)
-          focusDialogOnOpen(event, opener.current)
+          focusDialogOnOpen(event, opener)
         }}
         onCloseAutoFocus={(event) => {
           onCloseAutoFocus?.(event)
+          const closing = event.currentTarget
+          const opener = closing ? dialogOpeners.get(closing) : null
+          if (closing) dialogOpeners.delete(closing)
+          if (event.defaultPrevented) return
+          // A queued announcement may deliberately skip autofocus. Hand it
+          // the vacated focus before returning to the page that opened us.
+          const next = document.querySelector<HTMLElement>(
+            '[data-slot="dialog-content"][data-state="open"]'
+          )
+          const nextOpener = next ? dialogOpeners.get(next) : null
+          // The next dialog may have opened after our element was removed.
+          // Keep the page return target for when the last queued dialog closes.
+          if (next && (
+            nextOpener === document.body ||
+            (closing instanceof Node && nextOpener && closing.contains(nextOpener))
+          )) {
+            dialogOpeners.set(next, opener ?? null)
+          }
+          const target = next ?? opener
           if (
-            !event.defaultPrevented &&
             document.activeElement === document.body &&
-            opener.current instanceof HTMLElement &&
-            opener.current.isConnected
+            target instanceof HTMLElement &&
+            target.isConnected
           ) {
             event.preventDefault()
-            opener.current.focus()
+            target.focus()
           }
         }}
         {...props}
