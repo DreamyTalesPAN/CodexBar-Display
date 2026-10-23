@@ -20416,3 +20416,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: On "Choose your theme", from the finished install until setup moves on to "Display mode", the button keeps its installing look (spinner, "Installing", not clickable) next to the line "Theme is active on VibeTV."; when VibeTV does not confirm the theme, the button returns to "Install" as soon as the app has asked once, so the customer can try again. No text changes.
 - Scope: SetupWizard (new confirmingTheme prop, set while the app's install action runs) and its test.
 - What's new: none — setup button state only
+
+## 2026-10-23 — #7216: setup "Choose your theme" really keeps the installing look of the Install button until VibeTV confirms the theme
+
+- User approval: pending — 7216 device acceptance, 23.10.2026 (FAIL 4.10): in the running app the button read "Install" again, enabled, for 1.0 s (1440×900) to 1.6 s (1280×800) after "Theme is active on VibeTV." until "Display mode" appeared, because the settings read after the install ended the app's busy state
+- Approved customer-visible result: On "Choose your theme", from "Theme is active on VibeTV." until setup moves on to "Display mode", the button stays in its installing look (spinner, "Installing", not clickable) in the running app; when VibeTV does not confirm the theme, it returns to "Install" once the app's reads are done. No text changes.
+- Scope: ControlCenterApp (the settings read no longer takes the busy state from a running action or ends it) and control-center-app.setup-theme-confirmation.test.tsx (install, settings read and VibeTV read through the mocked Mac App, in both outcomes).
+- What's new: none — setup button state only
