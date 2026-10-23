@@ -199,11 +199,6 @@ function rowGaps(items: Array<Rect & { name: string }>) {
   return rows.slice(1).map((row, i) => ({ gap: row.top - rows[i].bottom, above: rows[i].names.join(" + "), below: row.names.join(" + ") }));
 }
 
-// Open with Paul: Pixel Battery names the limit in its footer at every minute count (pace-themes.test.ts), and "Session reset 47m" then fills
-// the 224 px between the frame lines of its background to the pixel (7 px to 230 px). Staying 3 px clear means "Reset 47m" in that last
-// hour or a new background; the test below fails the day the state is clear, so this entry cannot outlive the decision.
-const LAYOUT_PENDING = [{ theme: "pixel-battery", detail: /^text "Session reset \d+m" .* background art/ }];
-
 function layoutViolations(pack: ThemeRenderPack): string[] {
   const prims = pack.spec?.p ?? [];
   const animations = animationBoxes(pack);
@@ -299,6 +294,12 @@ const SHRINK_PENDING: Array<{ theme: string; source: RegExp; why: string }> = [
   { theme: "reset-countdown", source: /ResetFull/, why: "open decision: the countdown is declared at 4 and drawn at 2 (a widened box or a declared 2)" },
 ];
 
+// Paul's decision, 23.10.2026 (question 6): "Pixel Battery: Name behalten, 'Session reset 55m' verkleinern (bewusste Ausnahme von
+// nie-verkleinern, Paul-Entscheidung; Text muss trotzdem 3 px Abstand halten)." The one text that may be drawn smaller than its pack
+// declares is Pixel Battery's footer sentence with a two-digit count ("Session reset 55m"); it keeps the limit's name (kn) and
+// the guard below measures the 3 px to the frame line at every reset value.
+const SHRINK_DECIDED = { theme: "pixel-battery", source: /^Reset in /, text: /^Session reset \d\d[mh]$/ };
+
 // Every state a screen is asked to draw, shared by the size guard, the screen edge guard and the ink guard.
 const REACHABLE_FRAMES = (() => {
   const frames: Array<[string, FrameData]> = [];
@@ -326,6 +327,7 @@ function shrunkTexts(themeId: string, pack: ThemeRenderPack, pending = false): s
     for (const p of prims.filter((q) => q.t === "tx" && primitiveUsageSlotVisible(q, frame) && open(q) === pending)) {
       const text = renderTextPrimitive(p, frame, prims);
       if (!text.trim()) continue;
+      if (themeId === SHRINK_DECIDED.theme && SHRINK_DECIDED.source.test(source(p)) && SHRINK_DECIDED.text.test(text)) continue;
       const fit = themeTextFit(text, p.f ?? 1, p.s ?? 1, p.w ?? 0, p.ft === "shrink", p.h ?? 0);
       if (fit.font !== (p.f ?? 1) || fit.size !== (p.s ?? 1)) {
         found.set(`${source(p)} ${text}`, `"${text}" (${source(p)}) is drawn at font ${fit.font} size ${fit.size}, declared font ${p.f ?? 1} size ${p.s ?? 1} (first in: ${state})`);
@@ -358,7 +360,7 @@ function edgeHits(pack: ThemeRenderPack): string[] {
 // bar or a ring (the pace tick is left out, tickHits measures it). The descender of "On pace" 2 px above a
 // divider, "Weekly reset" on a frame line, "Fable only reset 4d" 2 px beside the ends of Gauge's ring and the "%" of Gauge's "100%" on
 // its ring were all seen on a device. Every reachable state counts: the long strings, every number, One and Two.
-function inkHits(pack: ThemeRenderPack, themeId: string, pending = false): string[] {
+function inkHits(pack: ThemeRenderPack): string[] {
   const prims = pack.spec?.p ?? [];
   const artAt = staticArt(pack);
   const dividers = [
@@ -388,7 +390,7 @@ function inkHits(pack: ThemeRenderPack, themeId: string, pending = false): strin
       }
     }
   }
-  return [...found.values()].filter((detail) => LAYOUT_PENDING.some((entry) => entry.theme === themeId && entry.detail.test(detail)) === pending);
+  return [...found.values()];
 }
 
 // The pixels of the plan tick of a pace bar at every plan position 0..100, as the firmware draws it. On a bar (DrawPaceBar) the tick is a
@@ -604,10 +606,6 @@ describe("animations, dividers, bars and text of every catalog theme stay apart 
   it.each(themeIds)("%s: 3 px clear of animation, no glyph across a band edge, no 0 px gap beside a roomy one, pace beside its own bar, equal numbers", (themeId) => {
     expect(layoutViolations(loadPack(themeId))).toEqual([]);
   });
-
-  it.each(LAYOUT_PENDING)("$theme still has a footer on its frame line (decision pending): drop the entry from LAYOUT_PENDING once fixed", (entry) => {
-    expect(inkHits(loadPack(entry.theme), entry.theme, true)).not.toEqual([]);
-  });
 });
 
 describe("no text ink comes within 3 px of the screen edge", () => {
@@ -618,7 +616,35 @@ describe("no text ink comes within 3 px of the screen edge", () => {
 
 describe("no text ink comes within 3 px of a divider, frame line, bar or ring", () => {
   it.each(catalogIds)("%s", (themeId) => {
-    expect(inkHits(loadPack(themeId), themeId)).toEqual([]);
+    expect(inkHits(loadPack(themeId))).toEqual([]);
+  });
+});
+
+// Paul decision 23.10.2026 (question 6): "Pixel Battery: Name behalten, 'Session reset 55m' verkleinern (bewusste Ausnahme von
+// nie-verkleinern, Paul-Entscheidung; Text muss trotzdem 3 px Abstand halten)." The footer of Pixel Battery keeps the limit's name
+// and is drawn one size smaller exactly where its full-size sentence would come within 3 px of the frame line of the background.
+// Every other footer, and every other text, stays at its declared size (shrunkTexts).
+describe("the Pixel Battery footer keeps 3 px from the frame line at every reset value and shrinks only where it has to", () => {
+  const resets: Array<[string, number]> = [
+    ...Array.from({ length: 59 }, (_, i): [string, number] => [`${i + 1}m`, (i + 1) * 60]),
+    ...Array.from({ length: 23 }, (_, i): [string, number] => [`${i + 1}h`, (i + 1) * 3600]),
+    ...Array.from({ length: 6 }, (_, i): [string, number] => [`${i + 1}d`, (i + 1) * 86400]),
+  ];
+  it.each([false, true])("Two at once: %s", (two) => {
+    const pack = loadPack("pixel-battery"), prims = pack.spec?.p ?? [], artAt = staticArt(pack);
+    const footer = prims.find((p) => p.t === "tx" && /^Resets? in /.test(p.v ?? ""))!;
+    const tooClose: string[] = [], shrunk: string[] = [], wouldBeTooClose: string[] = [];
+    for (const [label, secs] of resets) {
+      const frame = frameFor(two, "remaining", undefined, 0, undefined, 424000, SCENARIOS[0], secs);
+      const text = renderTextPrimitive(footer, frame, prims);
+      expect(text, label).toBe(`Session reset ${label}`);
+      if (artNearText(textInk(footer, text), artAt)) tooClose.push(label);
+      if (artNearText(textInk({ ...footer, ft: undefined }, text), artAt)) wouldBeTooClose.push(label);
+      if (themeTextFit(text, footer.f ?? 1, footer.s ?? 1, footer.w ?? 0, true, footer.h ?? 0).size < (footer.s ?? 1)) shrunk.push(label);
+    }
+    expect(tooClose).toEqual([]);
+    expect(shrunk).toEqual(wouldBeTooClose);
+    expect(wouldBeTooClose.length).toBeGreaterThan(0);
   });
 });
 
