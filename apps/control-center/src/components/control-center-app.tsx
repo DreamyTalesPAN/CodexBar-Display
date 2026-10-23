@@ -4630,7 +4630,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     runtimeRelease &&
     runtimeRelease.status !== "check_failed" &&
     companionInfo?.app?.installedInApplications
-      ? { ...(hostedCompanionRelease ?? {}), ...runtimeRelease }
+      ? runtimeRelease
       : hostedCompanionRelease?.status === "check_failed" && runtimeRelease
         ? { ...runtimeRelease, ...hostedCompanionRelease }
         : hostedCompanionRelease || runtimeRelease || null;

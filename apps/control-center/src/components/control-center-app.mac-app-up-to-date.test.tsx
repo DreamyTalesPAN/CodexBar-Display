@@ -4,7 +4,7 @@
 // Mac App version, it still answers "available" with no update. Overview then
 // said "Up to date" although nothing was compared. Only a known installed
 // version may show that line.
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -33,9 +33,19 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 // A Companion that reports no app version, or 9.9.9 installed in Applications.
-// The hosted release check answers "available" without an update either way;
-// it only echoes the installed version when the request sent one.
-async function openOverview({ installedVersion }: { installedVersion?: string }) {
+// The default hosted check only echoes a version when the request sent one.
+// Failure cases reproduce an independent hosted download check beside the runtime.
+async function openOverview({
+  installedVersion,
+  hostedFailure = false,
+  installedInApplications = true,
+  runtimeFailure = false,
+}: {
+  installedVersion?: string;
+  hostedFailure?: boolean;
+  installedInApplications?: boolean;
+  runtimeFailure?: boolean;
+}) {
   markWhatsNewSeen();
   rememberCompletedSetup(device.deviceId);
   vi.useFakeTimers();
@@ -62,13 +72,25 @@ async function openOverview({ installedVersion }: { installedVersion?: string })
           companion: {
             installationMode: "dmg",
             ...(installedVersion
-              ? { version: installedVersion, app: { version: installedVersion, installedInApplications: true } }
+              ? {
+                  version: installedVersion,
+                  app: { version: installedVersion, installedInApplications },
+                  ...(hostedFailure ? { update: {
+                    checkedAt: "2026-10-21T08:00:00Z",
+                    status: runtimeFailure ? "check_failed" : "available",
+                    latestVersion: installedVersion,
+                    installedVersion,
+                    updateAvailable: false,
+                    message: runtimeFailure ? "Mac App check failed." : "Mac App is up to date.",
+                  } } : {}),
+                }
               : {}),
           },
           device,
         });
       }
       if (url.includes("/api/companion/latest")) {
+        if (hostedFailure) return jsonResponse({ checkedAt: "2026-10-21T08:00:00Z", status: "check_failed", dmgDownloadStatus: "check_failed", updateAvailable: false, message: "Mac App check failed." });
         return jsonResponse({
           checkedAt: "2026-10-21T08:00:00Z",
           status: "available",
@@ -78,7 +100,11 @@ async function openOverview({ installedVersion }: { installedVersion?: string })
           message: "Mac App is up to date.",
         });
       }
-      if (url.includes("/api/firmware/latest")) {
+      if (url.includes("/v1/updates/install")) {
+        return jsonResponse({ ok: true, job: { id: "test-update", phase: "complete", message: "Update complete.", logs: [] } });
+      }
+      if (url.includes("/api/firmware/latest") || url.includes("/v1/updates/latest")) {
+        if (hostedFailure) return jsonResponse({ checkedAt: "2026-10-21T08:00:00Z", status: "update_available", installedFirmware: device.firmware, latestFirmware: "9999.0.525", updateAvailable: true });
         return jsonResponse({ checkedAt: "2026-10-21T08:00:00Z", status: "check_failed", updateAvailable: false });
       }
       if (url.endsWith("/v1/display-frame/latest")) {
@@ -119,4 +145,28 @@ it("does not call the Mac App up to date when no installed version was compared"
 it("calls the Mac App up to date when its installed version was compared", async () => {
   await openOverview({ installedVersion: "9.9.9" });
   expect(document.body.textContent).toContain("Up to date");
+});
+
+
+it("starts the firmware update from the healthy installed runtime even when the hosted DMG check fails", async () => {
+  await openOverview({ installedVersion: "9.9.9", hostedFailure: true });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Updates" })); });
+  expect(document.body.textContent).not.toContain("Update check failed");
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Update" })); });
+  expect(vi.mocked(fetch).mock.calls.some(([url, init]) => String(url).includes("/v1/updates/install") && init?.method === "POST")).toBe(true);
+});
+
+it("keeps the hosted download failure blocking outside the installed runtime path", async () => {
+  await openOverview({ installedVersion: "9.9.9", hostedFailure: true, installedInApplications: false });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Updates" })); });
+  expect(document.body.textContent).toContain("Update check failed");
+  expect(vi.mocked(fetch).mock.calls.some(([url, init]) => String(url).includes("/v1/updates/install") && init?.method === "POST")).toBe(false);
+});
+
+
+it("keeps a failed installed runtime check blocking the firmware update", async () => {
+  await openOverview({ installedVersion: "9.9.9", hostedFailure: true, runtimeFailure: true });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Updates" })); });
+  expect(document.body.textContent).toContain("Update check failed");
+  expect(vi.mocked(fetch).mock.calls.some(([url, init]) => String(url).includes("/v1/updates/install") && init?.method === "POST")).toBe(false);
 });
