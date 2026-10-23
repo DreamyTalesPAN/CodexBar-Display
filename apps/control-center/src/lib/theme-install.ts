@@ -1,8 +1,8 @@
-import { companionRequestUrl } from "@/components/control-center-runtime";
 import type { ApiError } from "@/components/control-center-types";
 import type { ThemeStudioDocument } from "@/components/theme-studio/theme-studio-editor-state";
 import { buildThemePack } from "./theme-studio";
 import { flattenCompanionSprites } from "./ai-theme-document";
+import { fetchCompanionJson, pollCompanionJob, type RunCompanion } from "./companion-request";
 
 // Editor, library and ZIP export all send the same device-ready copy. Keep
 // transparent originals in the editable document so later edits stay correct.
@@ -20,27 +20,22 @@ export async function pollThemeInstallJob<Job extends { phase: string }>({
   applyInstallJob: (job: Job) => void;
   jobId: string;
   noun?: string;
-  runCompanion: <T>(path: string, init?: RequestInit, options?: { preserveLastError?: boolean }) => Promise<T>;
+  runCompanion: RunCompanion;
 }): Promise<Job> {
   // The server may spend the full five-minute budget waiting for the first
   // fresh display frame after it has already installed the theme.
-  for (let attempt = 0; attempt < 900; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const payload = await runCompanion<{ job: Job }>(
-      `/v1/themes/install/status?jobId=${encodeURIComponent(jobId)}`,
-      undefined,
-      { preserveLastError: true },
-    );
-    applyInstallJob(payload.job);
-    if (payload.job.phase === "complete" || payload.job.phase === "error") {
-      return payload.job;
-    }
-  }
-  throw {
-    code: "theme_install_timeout",
-    message: `${noun} install is taking longer than expected.`,
-    nextAction: `Keep VibeTV powered on, then check the ${noun.toLowerCase()} again.`,
-  } satisfies ApiError;
+  return pollCompanionJob({
+    path: `/v1/themes/install/status?jobId=${encodeURIComponent(jobId)}`,
+    runCompanion,
+    applyJob: applyInstallJob,
+    isFinished: (job) => job.phase === "complete" || job.phase === "error",
+    attempts: 900,
+    timeoutError: {
+      code: "theme_install_timeout",
+      message: `${noun} install is taking longer than expected.`,
+      nextAction: `Keep VibeTV powered on, then check the ${noun.toLowerCase()} again.`,
+    },
+  });
 }
 
 type InstallJob = {
@@ -53,10 +48,9 @@ type InstallJob = {
 
 export async function sendThemeToVibeTV(document: ThemeStudioDocument, onStatus: (message: string) => void, pendingJob: string | null, onJob: (id: string | null) => void) {
   const runCompanion = async <T>(path: string, init?: RequestInit): Promise<T> => {
-    const response = await fetch(companionRequestUrl(path), {
-      ...init, cache: "no-store", signal: AbortSignal.timeout(30_000),
+    const { response, payload } = await fetchCompanionJson(path, {
+      ...init, signal: AbortSignal.timeout(30_000),
     });
-    const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || payload.ok === false) {
       throw Object.assign(new Error(payload?.error?.nextAction || payload?.error?.message || "Open the VibeTV Mac App and connect your display."), { code: payload?.error?.code });
     }
