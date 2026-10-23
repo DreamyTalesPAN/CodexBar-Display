@@ -89,16 +89,10 @@ type ROMFlashOptions struct {
 	OnChipIdentified func(chip string) error
 }
 
-// FlashESP8266AppImage writes an ESP8266 app image at offset 0 through the ROM
-// loader on path and resets the chip into it. Settings, themes, and WiFi
-// credentials live above the sketch area and are not touched. progress, when
-// set, receives the written share in steps of ten percent.
-func FlashESP8266AppImage(ctx context.Context, path string, image []byte, progress func(percent int)) error {
-	return FlashESP8266AppImageWithOptions(ctx, path, image, ROMFlashOptions{Progress: progress})
-}
-
-// FlashESP8266AppImageWithOptions is FlashESP8266AppImage with a choice of
-// baud rate and a hook for the moment the old firmware is erased.
+// FlashESP8266AppImageWithOptions writes an ESP8266 app image at offset 0
+// through the ROM loader on path and resets the chip into it. Settings, themes,
+// and WiFi credentials live above the sketch area and are not touched. opts
+// chooses the baud rate and hooks the moment the old firmware is erased.
 func FlashESP8266AppImageWithOptions(ctx context.Context, path string, image []byte, opts ROMFlashOptions) error {
 	if len(image) == 0 || image[0] != 0xe9 || len(image) > romMaxAppImageSize {
 		return ErrNotESP8266AppImage

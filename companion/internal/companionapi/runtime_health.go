@@ -78,12 +78,9 @@ func (s *Server) updateHoldActive() bool {
 }
 
 // Callers must hold firmwareUpdateStartMu, so that asking this and granting a
-// hold are one step. Lock order is firmwareUpdateStartMu -> installJobsMu
-// everywhere; tryStartThemeInstall takes the same two in the same order.
+// hold are one step.
 func (s *Server) themeInstallInFlight() bool {
-	s.installJobsMu.Lock()
-	defer s.installJobsMu.Unlock()
-	return s.themeInstallActive
+	return s.themeInstallActive.Load()
 }
 
 // Callers hold firmwareUpdateStartMu so checking the accepted theme job and
