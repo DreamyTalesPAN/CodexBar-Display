@@ -4629,7 +4629,8 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const companionRelease =
     runtimeRelease &&
     runtimeRelease.status !== "check_failed" &&
-    companionInfo?.app?.installedInApplications
+    companionInfo?.app?.installedInApplications &&
+    !requiresMacAppMigration
       ? runtimeRelease
       : hostedCompanionRelease?.status === "check_failed" && runtimeRelease
         ? { ...runtimeRelease, ...hostedCompanionRelease }

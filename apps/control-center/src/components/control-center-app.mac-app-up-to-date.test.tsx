@@ -40,11 +40,13 @@ async function openOverview({
   hostedFailure = false,
   installedInApplications = true,
   runtimeFailure = false,
+  legacyMigration = false,
 }: {
   installedVersion?: string;
   hostedFailure?: boolean;
   installedInApplications?: boolean;
   runtimeFailure?: boolean;
+  legacyMigration?: boolean;
 }) {
   markWhatsNewSeen();
   rememberCompletedSetup(device.deviceId);
@@ -70,12 +72,12 @@ async function openOverview({
         return jsonResponse({
           ok: true,
           companion: {
-            installationMode: "dmg",
+            installationMode: legacyMigration ? "legacy" : "dmg",
             ...(installedVersion
               ? {
                   version: installedVersion,
                   app: { version: installedVersion, installedInApplications },
-                  ...(hostedFailure ? { update: {
+                  ...(hostedFailure || legacyMigration ? { update: {
                     checkedAt: "2026-10-21T08:00:00Z",
                     status: runtimeFailure ? "check_failed" : "available",
                     latestVersion: installedVersion,
@@ -98,6 +100,7 @@ async function openOverview({
           installedVersion,
           updateAvailable: false,
           message: "Mac App is up to date.",
+          ...(legacyMigration ? { dmgDownloadStatus: "available", dmgDownloadUrl: "https://vibetv.shop/migration.dmg" } : {}),
         });
       }
       if (url.includes("/v1/updates/install")) {
@@ -105,7 +108,7 @@ async function openOverview({
       }
       if (url.includes("/api/firmware/latest") || url.includes("/v1/updates/latest")) {
         if (hostedFailure) return jsonResponse({ checkedAt: "2026-10-21T08:00:00Z", status: "update_available", installedFirmware: device.firmware, latestFirmware: "9999.0.525", updateAvailable: true });
-        return jsonResponse({ checkedAt: "2026-10-21T08:00:00Z", status: "check_failed", updateAvailable: false });
+        return jsonResponse({ checkedAt: "2026-10-21T08:00:00Z", status: "check_failed", installedFirmware: device.firmware, updateAvailable: false });
       }
       if (url.endsWith("/v1/display-frame/latest")) {
         return jsonResponse({ ok: true, deviceId: device.deviceId, frame: { v: 2, provider: "codex", label: "Codex", usageSlots: [] } });
@@ -169,4 +172,10 @@ it("keeps a failed installed runtime check blocking the firmware update", async 
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Updates" })); });
   expect(document.body.textContent).toContain("Update check failed");
   expect(vi.mocked(fetch).mock.calls.some(([url, init]) => String(url).includes("/v1/updates/install") && init?.method === "POST")).toBe(false);
+});
+
+it("keeps the verified hosted DMG migration available for an installed legacy app", async () => {
+  await openOverview({ installedVersion: "9.9.9", legacyMigration: true });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Updates" })); });
+  expect(screen.getByRole("link", { name: "Update" }).getAttribute("href")).toBe("https://vibetv.shop/migration.dmg");
 });
