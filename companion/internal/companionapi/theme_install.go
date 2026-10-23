@@ -1019,6 +1019,11 @@ func themeInstallErrorPayload(slot string, err error) (int, apiError) {
 	if errors.As(err, &installErr) && installErr.Op == "theme-pack/check-device" &&
 		!strings.Contains(err.Error(), "get device hello: status=") {
 		code, message, next = "device_unreachable", "VibeTV didn't answer.", "Check that VibeTV is on and near your WiFi, then try again."
+		// Issue #953: firmware 1.0.45 at low heap answers /hello without its
+		// capabilities. VibeTV did answer; a restart frees its memory.
+		if _, incomplete := protocol.HelloIdentity(err); incomplete {
+			code, message, next = "device_busy", "VibeTV is busy right now.", "Unplug VibeTV for a few seconds, plug it back in, then try again."
+		}
 	}
 	return http.StatusBadGateway, apiError{
 		Code:       code,
