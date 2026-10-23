@@ -94,7 +94,7 @@ func runCableFirmwareUpdateWithFrameAfter(t *testing.T, frameAfter time.Duration
 	}
 	var job firmwareUpdateJob
 	for attempt := 0; attempt < 1000; attempt++ {
-		job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+		job, _ = server.updateJobs.snapshot(started.Job.ID)
 		if job.FinishedAt != nil {
 			break
 		}
@@ -157,7 +157,7 @@ func TestFirmwareUpdateEventDoesNotEndTheJob(t *testing.T) {
 	job := server.createFirmwareUpdateJob()
 	for _, phase := range []string{"complete", "attention", "error"} {
 		server.applyFirmwareUpdateEvent(job.ID, firmwareUpdateEvent{Stage: "verifying_health", Phase: phase, Outcome: "already_current"})
-		got, _ := server.firmwareUpdateJobSnapshot(job.ID)
+		got, _ := server.updateJobs.snapshot(job.ID)
 		if got.Phase != "installing" {
 			t.Fatalf("an updater event with phase %q ended the job: phase=%q", phase, got.Phase)
 		}
@@ -166,7 +166,7 @@ func TestFirmwareUpdateEventDoesNotEndTheJob(t *testing.T) {
 		}
 	}
 	server.applyFirmwareUpdateEvent(job.ID, firmwareUpdateEvent{Stage: "uploading", Phase: "installing"})
-	if got, _ := server.firmwareUpdateJobSnapshot(job.ID); got.Phase != "installing" || got.Stage != "uploading" {
+	if got, _ := server.updateJobs.snapshot(job.ID); got.Phase != "installing" || got.Stage != "uploading" {
 		t.Fatalf("a running event must still move the job: %+v", got)
 	}
 }
