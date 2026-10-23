@@ -18,6 +18,7 @@ import {
   THEME_CATALOG_PREVIEW_FRAME,
   ThemeSpecPreview,
   themeFirmwareTextMetrics,
+  themeGlyphPlacement,
   themeProgressArc,
   themeTextAlignedY,
   themeTextFittedSize,
@@ -30,6 +31,8 @@ import {
   type ThemePrimitive,
 } from "./live-vibetv-preview";
 
+// The preview's font-size of font 2 text at size 2 (the test environment has no canvas, so the system font's tall glyphs count as 0.76 em).
+const UNSHRUNK_SIZE_2_FONT = themeGlyphPlacement(2, 2, 0.76)!.fontSize;
 const lane1: ThemePrimitive = { t: "r", x: 0, y: 0, w: 10, h: 10, sl: 1 };
 const lane2: ThemePrimitive = { t: "r", x: 0, y: 0, w: 10, h: 10, sl: 2 };
 
@@ -1009,10 +1012,10 @@ describe("firmware-compatible ThemeSpec text layout", () => {
     expect(markup).not.toContain('dominant-baseline="text-before-edge"');
     expect(markup).not.toContain('dominant-baseline="hanging"');
     expect(markup).toMatch(
-      /<text[^>]*y="58\.8"[^>]*text-anchor="start"[^>]*x="145">/,
+      /<text[^>]*y="59"[^>]*text-anchor="start"[^>]*x="145">/,
     );
     expect(markup).toMatch(
-      /<text[^>]*y="22\.8"[^>]*text-anchor="start"[^>]*x="10">/,
+      /<text[^>]*y="23"[^>]*text-anchor="start"[^>]*x="10">/,
     );
     expect(markup).toContain('lengthAdjust="spacingAndGlyphs"');
   });
@@ -1490,7 +1493,7 @@ describe("displayed-limit reset footer", () => {
       pack: { themeId: "mini-classic", spec: mini, assets: {} },
       status: "ready", themeId: "mini-classic", frame,
     }));
-    expect([...markup.matchAll(/<text[^>]*font-size="(\d+)"/g)].at(-1)?.[1]).toBe("32");
+    expect(Number([...markup.matchAll(/<text[^>]*font-size="([\d.]+)"/g)].at(-1)?.[1])).toBeCloseTo(UNSHRUNK_SIZE_2_FONT);
     expect(markup.replace(/<[^>]+>/g, "")).toContain("Weekly reset 3d");
     // Cozy Meadow really has only one displayed limit, so Weekly stays hidden.
     expect(renderTextPrimitive(cozy.p.at(-1), frame, cozy.p)).toBe("No active session");
@@ -1546,7 +1549,7 @@ describe("displayed-limit reset footer", () => {
       pack: { themeId: "mini-classic", spec: { p: [lane1, lane2, tiny] }, assets: {} },
       status: "ready", themeId: "mini-classic", frame: pair,
     }));
-    expect(Number([...markup.matchAll(/<text[^>]*font-size="([\d.]+)"/g)].at(-1)?.[1])).toBeLessThan(32);
+    expect(Number([...markup.matchAll(/<text[^>]*font-size="([\d.]+)"/g)].at(-1)?.[1])).toBeLessThan(UNSHRUNK_SIZE_2_FONT);
   });
   it("shrinks an idle footer without a countdown to fit its width", () => {
     const fontSize = (spec: ThemePrimitive[]) => {
