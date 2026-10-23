@@ -711,7 +711,7 @@ const (
 // readings in a row, the second at least themeNotDrawnConfirmTime after the
 // first. One low reading can be a passing dip, a better reading ends the run,
 // and another VibeTV starts it over. The threshold is always negative, so
-// firmware that reports no signal strength, which leaves 0, is never weak.
+// firmware that reports no signal strength, which leaves 0, adds no observation.
 func (s *Server) wifiSignalState(target string, rssi int) (weak, recovered bool) {
 	threshold := wifiSignalWeakDBm
 	if dbm, err := strconv.Atoi(strings.TrimSpace(os.Getenv(wifiSignalWeakEnvVar))); err == nil && dbm < 0 {
@@ -722,6 +722,9 @@ func (s *Server) wifiSignalState(target string, rssi int) (weak, recovered bool)
 	s.weakWiFiMu.Lock()
 	defer s.weakWiFiMu.Unlock()
 	sameRun := s.weakWiFi.target == target && now.Sub(s.weakWiFi.last) <= wifiSignalRunForget
+	if rssi == 0 {
+		return sameRun && s.weakWiFi.named, false
+	}
 	if sameRun && s.weakWiFi.named {
 		threshold += wifiSignalRecoverDB
 	}

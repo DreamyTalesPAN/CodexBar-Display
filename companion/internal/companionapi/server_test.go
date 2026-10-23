@@ -7733,6 +7733,9 @@ func TestStatusNamesAWeakWiFiSignalOnTheSecondReading(t *testing.T) {
 		t.Fatal("a VibeTV that reports no signal strength must not be named weak")
 	}
 
+	// End the old run with a real reading before testing a new threshold.
+	wifi = `,"wifi":{"rssi":-30}`
+	nextPoll()
 	// The bench VibeTV sits next to its router; the override reaches it there.
 	t.Setenv(wifiSignalWeakEnvVar, "-40")
 	wifi = `,"wifi":{"rssi":-48}`
@@ -7791,10 +7794,14 @@ func TestWiFiRecoveryDistinguishesUnconfirmedLowReadings(t *testing.T) {
 				server.now = func() time.Time { return now }
 			case "missing RSSI":
 				rssi = 0
-				reading(false, false)
+				reading(true, false)
+				rssi = -78
+				reading(true, false) // Missing RSSI must preserve the recovery threshold.
 				rssi = -85
 			}
-			reading(false, false)
+			if transition != "missing RSSI" {
+				reading(false, false)
+			}
 			reading(true, false)
 			rssi = -78
 			reading(true, false) // Hysteresis still belongs to the Companion.
@@ -7809,6 +7816,35 @@ func TestWiFiRecoveryDistinguishesUnconfirmedLowReadings(t *testing.T) {
 			rssi = -36
 			reading(false, true)
 		})
+	}
+}
+
+// An absent reading neither carries another device's warning nor refreshes its age.
+func TestMissingRSSIPreservesRunWithoutExtendingItsLifetime(t *testing.T) {
+	server := newTestServer(t, runtimeconfig.Config{})
+	now := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+	server.now = func() time.Time { return now }
+	server.wifiSignalState("http://vibetv-a", -85)
+	now = now.Add(themeNotDrawnConfirmTime)
+	server.wifiSignalState("http://vibetv-a", -85)
+	run := server.weakWiFi
+	for _, tc := range []struct {
+		target string
+		age    time.Duration
+		weak   bool
+	}{
+		{"http://vibetv-a", time.Minute, true},
+		{"http://vibetv-b", time.Minute, false},
+		{"http://vibetv-a", wifiSignalRunForget + time.Second, false},
+	} {
+		now = run.last.Add(tc.age)
+		weak, recovered := server.wifiSignalState(tc.target, 0)
+		if weak != tc.weak || recovered || server.weakWiFi != run {
+			t.Fatalf("target=%s age=%s: weak=%v recovered=%v run=%+v", tc.target, tc.age, weak, recovered, server.weakWiFi)
+		}
+	}
+	if weak, recovered := server.wifiSignalState("http://vibetv-a", -85); weak || recovered {
+		t.Fatal("missing readings must not keep an expired run alive")
 	}
 }
 
