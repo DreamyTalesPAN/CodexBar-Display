@@ -342,53 +342,10 @@ func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-
-	type result struct {
-		target string
-		hello  protocol.DeviceHello
-		err    error
-	}
-	jobs := make(chan string)
-	results := make(chan result, len(candidates))
-	workers := subnetProbeLimit
-	if len(candidates) < workers {
-		workers = len(candidates)
-	}
-
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for candidate := range jobs {
-				hello, err := s.getHelloProbe(ctx, candidate, cfg.DeviceToken, subnetProbeTime)
-				select {
-				case results <- result{target: candidate, hello: hello, err: err}:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}()
-	}
-
-	go func() {
-		defer close(jobs)
-		for _, candidate := range candidates {
-			select {
-			case jobs <- candidate:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
+	results := s.probeCandidates(ctx, candidates, cfg.DeviceToken)
 
 	var lastErr error
-	var matches []result
+	var matches []candidateProbeResult
 	for res := range results {
 		if res.err == nil {
 			res.target = normalizeTarget(res.target)
@@ -417,6 +374,56 @@ func (s *Server) discoverSubnet(ctx context.Context, cfg runtimeconfig.Config) (
 		lastErr = errors.New("subnet discovery found no device")
 	}
 	return "", protocol.DeviceHello{}, lastErr
+}
+
+type candidateProbeResult struct {
+	target  string
+	hello   protocol.DeviceHello
+	err     error
+	elapsed time.Duration
+}
+
+// probeCandidates probes every candidate through GET /hello with at most
+// subnetProbeLimit probes in flight. The channel closes once all probes are
+// done or ctx is cancelled; the caller owns ctx and cancels it to stop early.
+func (s *Server) probeCandidates(ctx context.Context, candidates []string, token string) <-chan candidateProbeResult {
+	workers := subnetProbeLimit
+	if len(candidates) < workers {
+		workers = len(candidates)
+	}
+	jobs := make(chan string)
+	results := make(chan candidateProbeResult, len(candidates))
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for candidate := range jobs {
+				started := time.Now()
+				hello, err := s.getHelloProbe(ctx, candidate, token, subnetProbeTime)
+				select {
+				case results <- candidateProbeResult{target: candidate, hello: hello, err: err, elapsed: time.Since(started)}:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+	go func() {
+		defer close(jobs)
+		for _, candidate := range candidates {
+			select {
+			case jobs <- candidate:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+	return results
 }
 
 func (s *Server) searchDevices(ctx context.Context, cfg runtimeconfig.Config, explicitTarget string) ([]deviceSearchEntry, error) {
@@ -551,53 +558,7 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 		return []deviceSearchEntry{}, nil
 	}
 
-	type result struct {
-		target  string
-		hello   protocol.DeviceHello
-		err     error
-		elapsed time.Duration
-	}
-	workers := subnetProbeLimit
-	if len(candidates) < workers {
-		workers = len(candidates)
-	}
-	jobs := make(chan string)
-	results := make(chan result, len(candidates))
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for candidate := range jobs {
-				started := time.Now()
-				hello, err := s.getHelloProbe(ctx, candidate, "", subnetProbeTime)
-				select {
-				case results <- result{
-					target:  normalizeTarget(candidate),
-					hello:   hello.Normalize(),
-					err:     err,
-					elapsed: time.Since(started),
-				}:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}()
-	}
-	go func() {
-		defer close(jobs)
-		for _, candidate := range candidates {
-			select {
-			case jobs <- candidate:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
+	results := s.probeCandidates(ctx, candidates, "")
 
 	byIdentity := make(map[string]deviceSearchEntry)
 	probeResults := 0
@@ -617,16 +578,16 @@ func (s *Server) searchDevicesOnce(ctx context.Context, cfg runtimeconfig.Config
 			}
 			continue
 		}
-		hello := found.hello
+		hello := found.hello.Normalize()
 		if hello.NetworkMode == "setup" {
 			continue
 		}
 		key := strings.ToLower(strings.TrimSpace(hello.DeviceID))
 		if key == "" {
-			key = strings.ToLower(publicTarget(found.target))
+			key = strings.ToLower(publicTarget(normalizeTarget(found.target)))
 		}
 		entry := deviceSearchEntry{
-			Target:      publicTarget(found.target),
+			Target:      publicTarget(normalizeTarget(found.target)),
 			Transport:   "wifi",
 			DeviceID:    hello.DeviceID,
 			Board:       hello.Board,
