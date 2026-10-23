@@ -10216,3 +10216,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Draft for review: when current firmware still needs attention, Updates says “VibeTV needs attention” and offers “Run setup again” with “Run setup again to reconnect VibeTV and check its picture.” This opens the existing setup confirmation, preserving its explanation and Cancel action. A failed theme install instead keeps its existing “Try again” action with “Try again to finish updating your theme.” Unresolved catalog/support outcomes instruct the customer to keep VibeTV powered on and create a report, without offering a speculative repair. Create report is secondary.
 - Scope: `apps/control-center/src/components/updates-screen.tsx`, its focused tests and customer-flow assertion, and the existing setup-confirmation callback in `control-center-app.tsx`; no new repair, reset, device or provider implementation.
 - What's new: none — makes existing recovery actions clear after an update that needs attention.
+
+## 2026-10-23 — Paul question 11: browser regression for the pending draft
+
+- User approval: pending — Paul question 11, new draft after his rejection 23.10.
+- Approved customer-visible result: The same pending recovery draft above; its browser regression now checks the setup instruction and existing confirmation instead of the superseded warning text.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs`; no further customer-visible change.
+- What's new: none — verification of the pending repair-action draft.
