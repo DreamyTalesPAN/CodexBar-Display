@@ -2025,18 +2025,6 @@ inline int NeedleAngleDegrees(int start, int sweep, int percent) {
   return angle;
 }
 
-inline int DivRound(int num, int den) {
-  if (den <= 0) {
-    return 0;
-  }
-  const long long n = num;
-  const long long d = den;
-  if (n >= 0) {
-    return static_cast<int>((n + d / 2) / d);
-  }
-  return static_cast<int>(-((-n + d / 2) / d));
-}
-
 // The source pixel a destination pixel shows, after the sprite is scaled
 // uniformly into the box and turned clockwise around the box centre. The
 // sprite's centre is the pivot and its up is angle 0.
@@ -2062,18 +2050,26 @@ inline bool NeedleSourcePixel(
   const int cosine = ArcSin4096(angle + 90);
   const int relX = 2 * destCol + 1 - destW;
   const int relY = 2 * destRow + 1 - destH;
-  const int srcRelX = DivRound(relX * cosine + relY * sine, 4096);
-  const int srcRelY = DivRound(-relX * sine + relY * cosine, 4096);
   const int fit = destW < destH ? destW : destH;
   const int srcSide = srcW > srcH ? srcW : srcH;
   if (fit <= 0 || srcSide <= 0) {
     return false;
   }
-  const int srcHalfX = DivRound(srcRelX * srcSide, fit);
-  const int srcHalfY = DivRound(srcRelY * srcSide, fit);
-  srcCol = (srcHalfX + srcW - 1) / 2;
-  srcRow = (srcHalfY + srcH - 1) / 2;
-  return srcCol >= 0 && srcRow >= 0 && srcCol < srcW && srcRow < srcH;
+  // Keep pixel centers exact until the final division. Reject negative
+  // coordinates first so integer truncation cannot pull an outside pixel in.
+  const long long unit = static_cast<long long>(fit) * 4096;
+  const long long denominator = 2 * unit;
+  const long long sourceX =
+      static_cast<long long>(relX * cosine + relY * sine) * srcSide + srcW * unit;
+  const long long sourceY =
+      static_cast<long long>(-relX * sine + relY * cosine) * srcSide + srcH * unit;
+  if (sourceX < 0 || sourceY < 0 ||
+      sourceX >= srcW * denominator || sourceY >= srcH * denominator) {
+    return false;
+  }
+  srcCol = static_cast<int>(sourceX / denominator);
+  srcRow = static_cast<int>(sourceY / denominator);
+  return true;
 }
 
 // Axis-aligned box of the pixels DrawNeedle will paint. The scan uses the

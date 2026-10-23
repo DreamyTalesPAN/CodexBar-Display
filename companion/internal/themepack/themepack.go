@@ -588,7 +588,8 @@ func validateReferencedAssets(spec themespec.Spec, assets []File) error {
 		available[asset.Entry.Path] = struct{}{}
 	}
 	for index, primitive := range spec.Primitives {
-		if primitive.Type != "gif" && primitive.Type != "sprite" && primitive.Type != "image" {
+		isNeedle := primitive.Type == "progress" && primitive.ProgressStyle == "needle"
+		if primitive.Type != "gif" && primitive.Type != "sprite" && primitive.Type != "image" && !isNeedle {
 			continue
 		}
 		if primitive.AssetPath != "" {

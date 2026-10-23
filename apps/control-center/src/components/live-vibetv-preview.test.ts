@@ -1148,6 +1148,34 @@ describe("needle progress", () => {
     );
     expect(markup).toContain('transform="rotate(0 120 124)"');
   });
+
+  it("clips rotated opaque corners to the unrotated needle box", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ThemeSpecPreview, {
+        animate: false,
+        frame: frameAt(50),
+        pack: {
+          ok: true,
+          themeId: "fuel",
+          spec: { p: [{ ...needle, as: 0, aw: 90 }] },
+          assets: {
+            "/themes/u/fu-n.cbi": {
+              contentType: "text/plain",
+              data: "CBI1\n2 2\n1\n#E2B84A\naa\naa\n",
+              encoding: "text",
+            },
+          },
+        },
+        status: "ready",
+        themeId: "fuel",
+      }),
+    );
+    // The clip belongs to an unrotated parent, so it stays at the firmware's
+    // destination bounds while the full, opaque square turns inside it.
+    const clip = markup.match(/<g clip-path="url\(#([^)]*)\)"><defs><clipPath id="([^"]*)"><rect x="36" y="40" width="168" height="168"><\/rect><\/clipPath><\/defs><g transform="rotate\(45 120 124\)">/);
+    expect(clip).not.toBeNull();
+    expect(clip?.[1]).toBe(clip?.[2]);
+  });
 });
 
 describe("live VibeTV partial usage", () => {

@@ -9781,3 +9781,11 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #919 as in its #883 entry plus the entries merged with 3babd786; nothing else changes.
 - Scope: the merge of 3babd786 and this approval record. Pull request #919 only, not merged, not released.
 - What's new: none — merge of 3babd786, no customer-visible change of its own
+
+
+## 2026-10-23 — #963: theme-supplied progress needles and preview corrections
+
+- User approval: pending — Florian requested the code review and fixes in this Codex chat on 2026-10-23. The exact visible result still requires Paul's review before merge. This entry records the proposed result, not a completed visual approval.
+- Approved customer-visible result: Proposed, pending review: a theme can show its own needle graphic following the usage value across its configured sweep. The preview clips the rotated graphic to the same rectangle as VibeTV. Exported themes retain that graphic. The 3D preview housing is neutral white and its display rim black. A theme that needs newer needle support keeps the existing firmware-update handling.
+- Scope: PR #963 Control Center theme serialization, capability handling, active-theme upgrade checks, 2D and 3D previews, their tests, and this approval record. No merge, release, or hardware write is authorized by this entry.
+- What's new: none — this draft corrects theme rendering, export, and previews; it adds no catalog theme or new customer control.

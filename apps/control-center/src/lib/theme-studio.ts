@@ -995,6 +995,9 @@ function validatePrimitive(
       errors.push(`${prefix}: progress style must be solid, segments, arc or needle.`);
     }
     if (primitive.progressStyle === "needle") {
+      if (primitive.assetPath) {
+        validateThemeAssetPath(primitive.assetPath, prefix, errors);
+      }
       const arcStart = primitive.arcStart ?? 0;
       const arcSweep = primitive.arcSweep ?? 0;
       if (!Number.isInteger(arcStart) || arcStart < 0 || arcStart > 359) {
@@ -1291,6 +1294,9 @@ function validateThemeAssetPaths(
 }
 
 function primitiveAssetPaths(primitive: ThemeStudioPrimitive): string[] {
+  if (primitive.type === "progress" && primitive.progressStyle === "needle") {
+    return primitive.assetPath ? [primitive.assetPath] : [];
+  }
   if (primitive.type !== "gif" && primitive.type !== "sprite") {
     return [];
   }

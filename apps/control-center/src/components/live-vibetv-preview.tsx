@@ -1040,6 +1040,7 @@ function ThemeProgress({
   frame: FrameData;
   primitive: ThemePrimitive;
 }) {
+  const clipPathId = `theme-progress-${useId().replaceAll(":", "")}`;
   const x = primitive.x || 0;
   const y = primitive.y || 0;
   const width = primitive.width || primitive.w || 0;
@@ -1077,15 +1078,22 @@ function ThemeProgress({
     const cx = x + width / 2;
     const cy = y + height / 2;
     return (
-      <g transform={`rotate(${angle} ${cx} ${cy})`}>
-        <ThemeSpriteImage
-          animate={false}
-          height={spriteHeight}
-          raw={raw}
-          width={spriteWidth}
-          x={cx - spriteWidth / 2}
-          y={cy - spriteHeight / 2}
-        />
+      <g clipPath={`url(#${clipPathId})`}>
+        <defs>
+          <clipPath id={clipPathId}>
+            <rect x={x} y={y} width={width} height={height} />
+          </clipPath>
+        </defs>
+        <g transform={`rotate(${angle} ${cx} ${cy})`}>
+          <ThemeSpriteImage
+            animate={false}
+            height={spriteHeight}
+            raw={raw}
+            width={spriteWidth}
+            x={cx - spriteWidth / 2}
+            y={cy - spriteHeight / 2}
+          />
+        </g>
       </g>
     );
   }

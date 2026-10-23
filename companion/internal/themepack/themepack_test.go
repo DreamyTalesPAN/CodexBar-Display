@@ -232,6 +232,23 @@ func TestLoadRejectsMissingReferencedAsset(t *testing.T) {
 	}
 }
 
+func TestLoadRequiresNeedleSpriteAsset(t *testing.T) {
+	spec := `{"v":1,"id":"cozy-meadow","rev":1,"p":[{"t":"p","x":0,"y":0,"w":64,"h":64,"ps":"needle","as":300,"aw":120,"a":"/themes/u/cm.cbi"}]}`
+	_, err := Load(writeThemePackWithSpec(t, spec, nil))
+	if err == nil || !strings.Contains(err.Error(), "manifest assets do not include") {
+		t.Fatalf("expected missing needle asset error, got %v", err)
+	}
+	pack, err := Load(writeThemePackWithSpec(t, spec, []themePackTestAsset{
+		{path: "/themes/u/cm.cbi", file: "assets/cm.cbi", data: "CBI1\n1 1\n1\n#FFFFFF\na\n"},
+	}))
+	if err != nil {
+		t.Fatalf("load needle pack: %v", err)
+	}
+	if len(pack.Assets) != 1 || pack.Assets[0].Entry.Path != "/themes/u/cm.cbi" {
+		t.Fatalf("needle asset not loaded: %+v", pack.Assets)
+	}
+}
+
 func TestLoadDirectoryThemePackWithStateAssets(t *testing.T) {
 	spec := `{"v":1,"id":"cozy-meadow","rev":1,"fb":"mini","p":[{"t":"sp","x":0,"y":0,"w":24,"h":24,"sa":{"idle":"/themes/u/idle.cbi","coding":"/themes/u/code.cbi"}}]}`
 	dir := writeThemePackWithSpec(t, spec, []themePackTestAsset{

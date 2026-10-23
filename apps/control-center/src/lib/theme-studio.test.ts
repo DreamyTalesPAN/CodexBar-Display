@@ -6,6 +6,7 @@ import {
   deviceThemeSpecJson,
   importThemeSpec,
   normalizeThemeSpec,
+  referencedThemeAssetPaths,
   validateThemeSpec,
   type ThemeStudioSpec,
 } from "./theme-studio";
@@ -684,11 +685,37 @@ describe("needle progress", () => {
       "progress-needle-v1",
     ]);
     expect(pack.manifest.minFirmware).toBe("1.0.42");
+    expect(referencedThemeAssetPaths(imported)).toEqual([needlePath]);
+    expect(pack.manifest.assets).toEqual([
+      expect.objectContaining({ path: needlePath, bytes: new TextEncoder().encode(needleCbi).length }),
+    ]);
+    const entries = new Map<string, string>();
+    const zip = new DataView(pack.zipBytes.buffer, pack.zipBytes.byteOffset, pack.zipBytes.byteLength);
+    const decoder = new TextDecoder();
+    for (let offset = 0; zip.getUint32(offset, true) === 0x04034b50;) {
+      expect(zip.getUint16(offset + 8, true)).toBe(0); // Stored, uncompressed entry.
+      const size = zip.getUint32(offset + 18, true);
+      const nameLength = zip.getUint16(offset + 26, true);
+      const extraLength = zip.getUint16(offset + 28, true);
+      const dataStart = offset + 30 + nameLength + extraLength;
+      const name = decoder.decode(pack.zipBytes.subarray(offset + 30, offset + 30 + nameLength));
+      entries.set(name, decoder.decode(pack.zipBytes.subarray(dataStart, dataStart + size)));
+      offset = dataStart + size;
+    }
+    expect(entries.get(pack.manifest.assets[0].file)).toBe(needleCbi);
   });
 
   it("refuses a needle without its sprite", () => {
     const spec = specWith({ ...needle, a: undefined });
     expect(validateThemeSpec(spec).errors[0]).toContain("needle requires a .cbi sprite");
+  });
+
+  it("applies device asset-path limits to a needle sprite", () => {
+    const path = "/themes/u/../needle.cbi";
+    const spec = specWith({ ...needle, a: path });
+    expect(validateThemeSpec(spec, { [path]: needleAsset }).errors).toContain(
+      "Element 1: asset path must be under /themes/.",
+    );
   });
 });
 

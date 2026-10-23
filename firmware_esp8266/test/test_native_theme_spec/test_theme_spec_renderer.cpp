@@ -3242,6 +3242,37 @@ void testNeedleSourcePixelTurnsClockwise() {
   TEST_ASSERT_TRUE(foundX > foundY);
 }
 
+void testNeedleSourcePixelKeepsIntegerScalingCentered() {
+  for (const int angle : {0, 90, 180, 270}) {
+    for (int y = 0; y < 64; ++y) {
+      for (int x = 0; x < 64; ++x) {
+        int col = -1;
+        int row = -1;
+        TEST_ASSERT_TRUE(NeedleSourcePixel(x, y, 64, 64, 8, 8, angle, col, row));
+        const int expectedCol = angle == 0 ? x / 8 : angle == 90 ? y / 8 : angle == 180 ? 7 - x / 8 : 7 - y / 8;
+        const int expectedRow = angle == 0 ? y / 8 : angle == 90 ? 7 - x / 8 : angle == 180 ? 7 - y / 8 : x / 8;
+        TEST_ASSERT_EQUAL_INT(expectedCol, col);
+        TEST_ASSERT_EQUAL_INT(expectedRow, row);
+      }
+    }
+  }
+}
+
+void testNeedleSourcePixelRejectsOutsideCenteredRectangularSprite() {
+  for (int y = 0; y < 64; ++y) {
+    for (int x = 0; x < 64; ++x) {
+      int col = -1;
+      int row = -1;
+      const bool sampled = NeedleSourcePixel(x, y, 64, 64, 2, 8, 0, col, row);
+      TEST_ASSERT_EQUAL(x >= 24 && x < 40, sampled);
+      if (sampled) {
+        TEST_ASSERT_EQUAL_INT((x - 24) / 8, col);
+        TEST_ASSERT_EQUAL_INT(y / 8, row);
+      }
+    }
+  }
+}
+
 void testNeedleProgressAsksForTheThemeSpriteAtThePercentAngle() {
   FrameData frame = testFrame();
   frame.usageSlot1Available = true;
@@ -4799,6 +4830,8 @@ int main() {
   RUN_TEST(testProgressArcDrawsAFullRingAndAFullDisc);
   RUN_TEST(testNeedleAngleFollowsTheSweepFromTwelve);
   RUN_TEST(testNeedleSourcePixelTurnsClockwise);
+  RUN_TEST(testNeedleSourcePixelKeepsIntegerScalingCentered);
+  RUN_TEST(testNeedleSourcePixelRejectsOutsideCenteredRectangularSprite);
   RUN_TEST(testNeedleProgressAsksForTheThemeSpriteAtThePercentAngle);
   RUN_TEST(testNeedleOpaqueBoundsCoverEveryDrawnPixel);
   RUN_TEST(testNeedlePartialRepaintStaysOffTheRestOfTheDial);
