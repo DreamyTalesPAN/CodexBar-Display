@@ -53,6 +53,38 @@ job_block() {
   ' "$workflow"
 }
 
+# Run only the read-only Runtime section, with process probes replaced by fixtures.
+assert_bench_listener_port() (
+  source "$ROOT/scripts/lib/vibetv-bench-api.sh"
+  local runtime_section API BUNDLE_ID port expected output
+  runtime_section="$(sed -n '/^say "== Runtime"$/,/^say "== Companion"$/p' "$ROOT/scripts/vibetv-bench-state.sh")"
+  [[ -n "$runtime_section" ]] || die "bench Runtime section was not found"
+  BUNDLE_ID=shop.vibetv.control-center
+  say() { printf '%s\n' "$*"; }
+  warn() { printf '  !! %s\n' "$*"; }
+  launchctl() { return 0; }
+  lsof() {
+    case " $* " in
+      *" -iTCP@127.0.0.1:$port "*) printf '%s' "$expected" ;;
+      *) printf 'p999\n' ;; # A foreign process owns the unselected port.
+    esac
+  }
+  for port in 47832 49152; do
+    API="http://127.0.0.1:$port"
+    expected=$'p42\n'
+    output="$(eval "$runtime_section")"
+    [[ "$output" == *"listeners on $port: 42 "* ]] \
+      || die "bench must report the listener on the resolved API port $port"
+    [[ "$output" != *"more than one listener"* ]] || die "one listener must not warn"
+    expected=$'p42\np43\n'
+    output="$(eval "$runtime_section")"
+    [[ "$output" == *"more than one listener"* ]] || die "multiple listeners must warn"
+    expected=""
+    output="$(eval "$runtime_section")"
+    [[ "$output" == *"listeners on $port: none"* ]] || die "missing listener must say none"
+  done
+)
+
 assert_safe_app_extractor() {
   local work
   work="$(mktemp -d "${TMPDIR:-/tmp}/vibetv-hosted-gate.XXXXXX")"
@@ -447,6 +479,7 @@ main() {
   assert_not_contains "$GUEST_TEST" '--once --api-addr' \
     'one-shot candidate daemon must not keep a companion API server alive'
 
+  assert_bench_listener_port
   assert_safe_app_extractor
   bash "$ROOT/scripts/test-vibetv-runtime-listener-wait.sh"
   printf 'PASS: hosted VibeTV merge and release-candidate gate contracts\n'
