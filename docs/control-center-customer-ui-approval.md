@@ -20388,3 +20388,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: In Gauge the pace sentence of the second limit ("On pace", "14% reserve", "100% deficit") stands 3 px higher, so "On pace" keeps 3 px to the bottom edge of the screen and every sentence keeps 3 px to the percentage above it; the limit name, the percentage, the ring, the footer and every other theme look the same. No text gets smaller.
 - Scope: the theme pack Gauge 0.2.7 (spec rev 17, pace text of the second limit y 224 to 221) and the layout guard test animation-layout.test.ts (the ink of every text of every catalog theme and screensaver, in One provider and Two at once with every pace sentence up to "100% reserve", the long provider names and the update notice, fails when it comes within 3 px of the screen edge).
 - What's new: none — theme layout only
+
+## 2026-10-23 — #7216: The Usage tab says only "On pace" when CodexBar says on track, in its quiet grey, never with "runs out" in red
+
+- User approval: pending — 7215 visual review, 23.10.2026 (B5b): under Codex "95% weekly remaining" the Usage tab printed "On pace · runs out in 6d 6h" in dark red, which contradicts itself and signals an error, while the device shows only "On pace" for the same pace
+- Approved customer-visible result: When CodexBar's pace says on track, the line under the bar reads "On pace" in the quiet grey, without a run-out time and without red; a deficit keeps "N% deficit · runs out in …" in red, a reserve keeps "N% reserve" in green, and a window without pace keeps its red run-out line. The bar, the tick, the reset and every number look the same.
+- Scope: the Usage tab pace line (usage-pace.tsx PaceLine drops the run-out time unless the pace is a deficit or absent, and no longer forces red for a run-out time next to an on-track or reserve pace) and its test with the real Codex weekly read of build 7215.
+- What's new: none — one pace line of the Usage tab

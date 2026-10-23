@@ -225,6 +225,33 @@ describe("pace in the lane bar", () => {
     expect(getByText("54% deficit · runs out in 2d 15h").className).toContain("text-destructive");
   });
 
+  // The real Codex weekly read of build 7215 (logs/abnahme-7215-usage.jsonl,
+  // 03:04:40): CodexBar's stage says onTrack (delta 0) while the same pace still
+  // carries a run-out time. "On pace" is the verdict, as on the device.
+  it("says only 'On pace', quietly, for CodexBar's onTrack stage even with a run-out time", () => {
+    const { container, getByText } = renderProvider({
+      usageMode: "remaining",
+      windows: [
+        {
+          id: "weekly",
+          label: "Weekly",
+          usedPercent: 95,
+          resetSecs: 576368,
+          willLastToReset: false,
+          etaSeconds: 540791,
+          stage: "onTrack",
+          deltaPercent: 0,
+          expectedUsedPercent: 95,
+        },
+      ],
+    });
+    const line = getByText("On pace");
+    expect(line.className).toContain("text-muted-foreground");
+    expect(line.className).not.toContain("text-destructive");
+    expect(container.textContent).not.toMatch(/runs out/i);
+    expect(ticks(container)).toHaveLength(1);
+  });
+
   it("draws no pace for a lane CodexBar sent no pace for", () => {
     const { container } = renderProvider({
       windows: [{ id: "weekly", label: "Weekly", usedPercent: 54, willLastToReset: true }],
