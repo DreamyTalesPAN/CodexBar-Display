@@ -20416,3 +20416,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: On "Choose your theme", from the finished install until setup moves on to "Display mode", the button keeps its installing look (spinner, "Installing", not clickable) next to the line "Theme is active on VibeTV."; when VibeTV does not confirm the theme, the button returns to "Install" as soon as the app has asked once, so the customer can try again. No text changes.
 - Scope: SetupWizard (new confirmingTheme prop, set while the app's install action runs) and its test.
 - What's new: none — setup button state only
+
+## 2026-10-23 — #7216: The pace tick keeps 3 px from every text at every plan position: it reaches only above a bar and stays inside a ring; Synthwave 1.2.8 and Tiny Office 0.7.9 give their bars the room; the guard test measures it at plan 0 to 100
+
+- User approval: pending — 7216 device acceptance, 23.10.2026 (FAIL 2.32–2.36): the plan tick stood 0 to 2 px from text — Gauge beside the "%" of "100%" and the Two header "remaining", Clippy in "3% reserve" and "On pace", Synthwave and Tiny Office beside the limit names
+- Approved customer-visible result: The plan tick on a bar reaches 3 px above the bar and ends at its bottom edge, so it no longer runs into the pace sentence below; on Gauge's ring it stays inside the ring and inside the sweep, so it no longer touches the number or the titles. It is still the same white 2 px marker, clearly visible on every bar and ring. On Synthwave the first block sits 2 px lower with its limit name 1 px higher, the second limit name 3 px higher; on Tiny Office both bars sit 2 px lower, so the limit names keep 3 px from the tick at every plan position. No text is smaller, no text changes.
+- Scope: shared firmware renderer and the app preview (bar tick above the bar only, ring tick inside the ring and its sweep), Synthwave 1.2.8 and Tiny Office 0.7.9, and the text-vs-ink guard test (the tick measured at every plan position 0 to 100 in One and Two for every pace theme) with their tests.
+- What's new: none — theme layout and tick geometry only

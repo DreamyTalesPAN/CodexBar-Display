@@ -1352,6 +1352,32 @@ describe("usage pace", () => {
     expect(render(paced(91, { delta: -6, state: "reserve" }), { ...rounded, br: 0 })).not.toContain("<clipPath");
   });
 
+  it("stands the plan tick 3 px above its bar and inside its ring and sweep, as the device draws it", () => {
+    const render = (primitive: ThemePrimitive, frame: ReturnType<typeof paced>) =>
+      renderToStaticMarkup(
+        createElement(ThemeSpecPreview, { pack: { spec: { p: [primitive] } }, status: "ready", themeId: "x", animate: false, frame }),
+      );
+    // 40 % left with 20 % deficit: the plan at 60 %. A white column 2 px wide from 3 px above the bar to the bar's bottom edge.
+    expect(render({ ...bar, x: 10, y: 20 }, paced(40, { delta: 20, state: "deficit" })))
+      .toContain('<rect fill="#FFFFFF" height="13" width="2" x="68" y="17"></rect>');
+    // A ring (100 px box, 10 px ring, 270 degrees from 225): the tick is a white stroke as thick as the ring, 2 px long on its middle,
+    // and where the plan stands on an end of the sweep (0 % and 100 %) only the half inside the sweep is left.
+    const arc: ThemePrimitive = { ...bar, x: 20, y: 30, w: 100, h: 100, ps: "arc", as: 225, aw: 270, at: 10, c: "#00FF00", bg: "#333333", rc: "#00AA00", dc: "#AA0000" };
+    const tick = (delta: number, state: string) => {
+      const circle = render(arc, paced(40, { delta, state })).match(/<circle[^>]*stroke="#FFFFFF"[^>]*>/g)?.at(-1);
+      return { length: Number(/stroke-dasharray="([\d.]+) /.exec(circle ?? "")?.[1]), from: Number(/rotate\(([\d.-]+) /.exec(circle ?? "")?.[1]) + 90, circle };
+    };
+    const half = 180 / Math.PI / 45;
+    expect(tick(20, "deficit").circle).toContain('r="45" stroke="#FFFFFF"');
+    expect(tick(20, "deficit").circle).toContain('stroke-width="10"');
+    expect(tick(20, "deficit").length).toBeCloseTo(2, 2);
+    expect(tick(20, "deficit").from).toBeCloseTo(225 + 162 - half, 2);
+    expect(tick(-40, "reserve").length).toBeCloseTo(1, 2);
+    expect(tick(-40, "reserve").from).toBeCloseTo(225, 2);
+    expect(tick(60, "deficit").length).toBeCloseTo(1, 2);
+    expect(tick(60, "deficit").from).toBeCloseTo(225 + 270 - half, 2);
+  });
+
   it("says the mode itself, remaining or used", () => {
     expect(boundValue("usageModeShort", paced(91, undefined))).toBe("remaining");
     expect(boundValue("usageModeShort", paced(9, undefined, { usageMode: "used" }))).toBe("used");

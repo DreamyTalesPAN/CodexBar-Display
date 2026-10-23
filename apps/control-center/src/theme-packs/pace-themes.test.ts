@@ -80,7 +80,7 @@ describe("the Pace themes", () => {
   });
 
   it.each(HAS_BAR)("%s draws the plan tick, the piece and the hatch only with a pace", (id) => {
-    const tick = (svg: string) => (svg.match(/fill="#FFFFFF"[^>]*width="2"|width="2"[^>]*fill="#FFFFFF"|stroke="#FFFFFF"[^>]*stroke-width="2"/g) || []).length;
+    const tick = (svg: string) => (svg.match(/fill="#FFFFFF"[^>]*width="2"|width="2"[^>]*fill="#FFFFFF"|stroke="#FFFFFF"[^>]*stroke-dasharray/g) || []).length;
     expect(tick(renderPack(id, null).svg)).toBe(0);
     // One tick per bar; Gauge has the ring of the session only.
     const ticks = id === "gauge" ? 1 : 2;

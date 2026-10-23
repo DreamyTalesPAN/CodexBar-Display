@@ -175,11 +175,10 @@ class ESP8266PrimitiveSink final : public primitive::Sink {
                     filled == innerW ? ClampDrawRadius(innerRadius, filled, innerH) : 0);
     }
     if (cmd.planAt >= 0) {
-      // The plan tick, 2 px wide, reaching past the bar like the ring's.
+      // The plan tick, 2 px wide, reaching above the bar.
       const int tickX = cmd.x + 1 + (innerW * min(cmd.planAt, 100)) / 100 - 1;
-      const int overhang = codexbar_display::usage_window_contract::kPaceTickOverhang;
-      const int tickY = max(0, cmd.y - overhang);
-      tft.fillRect(max(cmd.x, tickX), tickY, 2, cmd.y + cmd.height + overhang - tickY, 0xFFFF);
+      const int tickY = max(0, cmd.y - codexbar_display::usage_window_contract::kPaceTickOverhang);
+      tft.fillRect(max(cmd.x, tickX), tickY, 2, cmd.y + cmd.height - tickY, 0xFFFF);
     }
   }
 };
