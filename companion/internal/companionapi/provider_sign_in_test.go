@@ -257,6 +257,74 @@ func TestPlanProviderSignIn(t *testing.T) {
 	if _, ok := planProviderSignIn("copilot", "windows", home, none, exists()); ok {
 		t.Fatal("copilot has no plan")
 	}
+	if _, ok := planProviderSignIn("gemini", "windows", home, none, exists()); ok {
+		t.Fatal("gemini has no plan: its login needs a terminal (171a)")
+	}
+}
+
+// The providers with their own login program (#967): each one's login when
+// installed, at its known install location when PATH misses it, and its
+// install page otherwise. Windsurf signs in inside its app.
+func TestPlanProviderSignInOwnLoginPrograms(t *testing.T) {
+	none := func(string) (string, error) { return "", errNotFound }
+	exists := func(paths ...string) func(string) bool {
+		return func(path string) bool {
+			for _, candidate := range paths {
+				if candidate == path {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	home := filepath.Join("home", "erwin")
+	logins := []struct {
+		id, installed, args, download string
+	}{
+		{"grok", filepath.Join(home, ".grok", "bin", "grok.exe"), "login", "https://docs.x.ai/build/overview"},
+		{"kiro", filepath.Join(home, "AppData", "Local", "Kiro-Cli", "kiro-cli.exe"), "login", "https://kiro.dev/cli/"},
+		{"augment", filepath.Join(home, "AppData", "Roaming", "npm", "auggie.cmd"), "login --headless", "https://docs.augmentcode.com/cli/setup-auggie/install-auggie-cli"},
+		{"kilo", filepath.Join(home, "AppData", "Roaming", "npm", "kilo.cmd"), "auth login --provider kilo", "https://kilo.ai/cli"},
+		{"vertexai", filepath.Join(home, "AppData", "Local", "Google", "Cloud SDK", "google-cloud-sdk", "bin", "gcloud.cmd"), "auth application-default login", "https://cloud.google.com/sdk/docs/install"},
+	}
+	for _, login := range logins {
+		plan, ok := planProviderSignIn(login.id, "windows", home, none, exists(login.installed))
+		if !ok || plan.Action != providerSignInActionCLILogin || plan.Path != login.installed || strings.Join(plan.Args, " ") != login.args {
+			t.Fatalf("%s installed: %#v ok=%v", login.id, plan, ok)
+		}
+		plan, _ = planProviderSignIn(login.id, "windows", home, none, exists())
+		if plan.Action != providerSignInActionDownload || plan.URL != login.download {
+			t.Fatalf("%s missing: %#v", login.id, plan)
+		}
+	}
+	onPath := func(name string) (string, error) {
+		if name == "grok" {
+			return "/usr/local/bin/grok", nil
+		}
+		return "", errNotFound
+	}
+	plan, _ := planProviderSignIn("grok", "darwin", "/Users/x", onPath, exists())
+	if plan.Action != providerSignInActionCLILogin || plan.Path != "/usr/local/bin/grok" || strings.Join(plan.Args, " ") != "login" {
+		t.Fatalf("grok on PATH on macOS: %#v", plan)
+	}
+	grokInstalled := filepath.Join("/Users/x", ".grok", "bin", "grok")
+	plan, _ = planProviderSignIn("grok", "darwin", "/Users/x", none, exists(grokInstalled))
+	if plan.Action != providerSignInActionCLILogin || plan.Path != grokInstalled {
+		t.Fatalf("grok from its installer on macOS: %#v", plan)
+	}
+	windsurf := filepath.Join(home, "AppData", "Local", "Programs", "Windsurf", "Windsurf.exe")
+	plan, _ = planProviderSignIn("windsurf", "windows", home, none, exists(windsurf))
+	if plan.Action != providerSignInActionApp || plan.Path != windsurf {
+		t.Fatalf("windsurf installed: %#v", plan)
+	}
+	plan, _ = planProviderSignIn("windsurf", "darwin", "/Users/x", none, exists("/Applications/Windsurf.app"))
+	if plan.Action != providerSignInActionApp || plan.Path != "/Applications/Windsurf.app" {
+		t.Fatalf("windsurf on macOS: %#v", plan)
+	}
+	plan, _ = planProviderSignIn("windsurf", "windows", home, none, exists())
+	if plan.Action != providerSignInActionDownload || plan.URL != "https://windsurf.com/download" {
+		t.Fatalf("windsurf missing: %#v", plan)
+	}
 }
 
 var errNotFound = errors.New("not found")

@@ -893,7 +893,13 @@ func classifyProviderError(detail string) string {
 		return ProviderNoUsageAvailable
 	// "not detected": "Antigravity language server not detected. Launch
 	// Antigravity and retry." The app has to run, which its row can start.
-	case strings.Contains(lower, "no available fetch strategy"), strings.Contains(lower, "no providers"), strings.Contains(lower, "not detected"):
+	// "cli not found": Win-CodexBar's "Provider not installed: kiro-cli not
+	// found" and "gcloud CLI not found". The program is missing, which the
+	// row's download page fixes; the health scan already reads it so.
+	// "database not found": "Windsurf database not found ... Ensure Windsurf
+	// is installed and has been launched at least once." Opening the app
+	// creates it.
+	case strings.Contains(lower, "no available fetch strategy"), strings.Contains(lower, "no providers"), strings.Contains(lower, "not detected"), strings.Contains(lower, "cli not found"), strings.Contains(lower, "database not found"):
 		return ProviderNotConfigured
 	default:
 		return ProviderEngineError
@@ -942,7 +948,7 @@ var providerCopyGOOS = runtime.GOOS
 // itself (companionapi/provider_sign_in_launch.go; a test there pins the list).
 // Their signed-out sentence offers the sign-in, every other provider's says
 // the app has to be signed in on this computer.
-var signInStartableProviders = []string{"codex", "claude", "cursor", "antigravity"}
+var signInStartableProviders = []string{"codex", "claude", "cursor", "antigravity", "grok", "kiro", "augment", "kilo", "vertexai", "windsurf"}
 
 // SignInStartableProviderIDs lists the providers in signInStartableProviders.
 func SignInStartableProviderIDs() []string {

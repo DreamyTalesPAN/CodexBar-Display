@@ -410,14 +410,20 @@ describe("SetupProvidersScreen", () => {
     expect(within(screen.getByRole("dialog")).getByText("GitHub Copilot needs a GitHub sign-in")).toBeTruthy();
   });
 
-  // The Companion can start the sign-in of these four only; every other
+  // The Companion can start the sign-in of these providers only; every other
   // provider is listed without a sign-in button.
-  it("starts a sign-in only for Codex, Claude, Cursor and Antigravity", () => {
+  it("starts a sign-in only for the providers whose login the Companion can start", () => {
     expect(SIGN_IN_PROVIDER_IDS).toEqual([
       "codex",
       "claude",
       "cursor",
       "antigravity",
+      "grok",
+      "kiro",
+      "augment",
+      "kilo",
+      "vertexai",
+      "windsurf",
     ]);
   });
 

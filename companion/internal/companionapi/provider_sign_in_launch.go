@@ -69,6 +69,52 @@ var providerSignInLaunches = map[string]providerSignInLaunch{
 		appDarwin:   []string{"/Applications/Antigravity.app"},
 		downloadURL: "https://antigravity.google/download",
 	},
+	// The logins below open the browser themselves and need no terminal:
+	// Grok's default is the browser sign-in, Kiro picks the method in the
+	// browser, Augment's --headless ends after the browser sign-in, Kilo's
+	// --provider skips the provider menu and its link carries the device
+	// code, and gcloud stores the credentials Vertex AI reads.
+	"grok": {
+		cliNames:    []string{"grok"},
+		cliWindows:  []string{".grok/bin/grok.exe"},
+		cliDarwin:   []string{".grok/bin/grok"},
+		loginArgs:   []string{"login"},
+		downloadURL: "https://docs.x.ai/build/overview",
+	},
+	"kiro": {
+		cliNames: []string{"kiro-cli"},
+		// The official MSI installs into LocalAppDataFolder\Kiro-Cli.
+		cliWindows:  []string{"AppData/Local/Kiro-Cli/kiro-cli.exe"},
+		cliDarwin:   []string{".local/bin/kiro-cli", "/opt/homebrew/bin/kiro-cli", "/usr/local/bin/kiro-cli"},
+		loginArgs:   []string{"login"},
+		downloadURL: "https://kiro.dev/cli/",
+	},
+	"augment": {
+		cliNames:    []string{"auggie"},
+		cliWindows:  []string{"AppData/Roaming/npm/auggie.cmd"},
+		cliDarwin:   []string{"/opt/homebrew/bin/auggie", "/usr/local/bin/auggie"},
+		loginArgs:   []string{"login", "--headless"},
+		downloadURL: "https://docs.augmentcode.com/cli/setup-auggie/install-auggie-cli",
+	},
+	"kilo": {
+		cliNames:    []string{"kilo"},
+		cliWindows:  []string{"AppData/Roaming/npm/kilo.cmd"},
+		cliDarwin:   []string{"/opt/homebrew/bin/kilo", "/usr/local/bin/kilo"},
+		loginArgs:   []string{"auth", "login", "--provider", "kilo"},
+		downloadURL: "https://kilo.ai/cli",
+	},
+	"vertexai": {
+		cliNames:    []string{"gcloud"},
+		cliWindows:  []string{"AppData/Local/Google/Cloud SDK/google-cloud-sdk/bin/gcloud.cmd"},
+		cliDarwin:   []string{"/opt/homebrew/bin/gcloud", "/usr/local/bin/gcloud", "google-cloud-sdk/bin/gcloud"},
+		loginArgs:   []string{"auth", "application-default", "login"},
+		downloadURL: "https://cloud.google.com/sdk/docs/install",
+	},
+	"windsurf": {
+		appWindows:  []string{"AppData/Local/Programs/Windsurf/Windsurf.exe"},
+		appDarwin:   []string{"/Applications/Windsurf.app"},
+		downloadURL: "https://windsurf.com/download",
+	},
 }
 
 // providerSignInPlan is the resolved action for one provider on this machine.
@@ -162,7 +208,17 @@ var launchProviderSignInFn = func(plan providerSignInPlan) error {
 // and on the Mac alike: a terminal box the customer cannot close looks broken
 // in a packaged app. The login opens the browser itself.
 func startCLILogin(path string, args []string) error {
-	cmd := childproc.Hide(exec.Command(path, args...))
+	name := path
+	// npm installs Augment and Kilo, and Google installs gcloud, as .cmd
+	// files; Windows runs those only through the command interpreter.
+	if runtime.GOOS == "windows" {
+		switch strings.ToLower(filepath.Ext(path)) {
+		case ".cmd", ".bat":
+			name = "cmd.exe"
+			args = append([]string{"/c", path}, args...)
+		}
+	}
+	cmd := childproc.Hide(exec.Command(name, args...))
 	// The login keeps printing while it waits for the browser, so its
 	// output must go somewhere; a full pipe buffer would stall it.
 	cmd.Stdout = io.Discard

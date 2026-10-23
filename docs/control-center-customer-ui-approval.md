@@ -5,6 +5,13 @@ Control Center changes. Every visible UI change needs a new entry that records
 the user's explicit approval and the exact visible result. Technical work,
 issue scope, or release permission never implies UI permission.
 
+## 2026-10-23 — "Sign in to <Provider>" for Grok, Kiro, Augment, Kilo, Vertex AI and Windsurf (#967)
+
+- User approval: Marcus, 23.10.2026, channel Abstimmungschat (question 170, answer "a": the same "Sign in to <Provider>" button for Kiro, Vertex AI, Windsurf, Augment, Kilo and Grok; if the Grok program is missing, the button opens the download page). Question 171a: Gemini gets no button until Win-CodexBar has its own sign-in command; the app opens no terminal.
+- Approved customer-visible result: When Grok, Kiro, Augment, Kilo, Vertex AI or Windsurf is switched on and signed out, its row in "Choose AI providers" (setup) and in Settings › AI providers shows the existing "Sign in to <Provider>" button, and its popup says the existing "Sign in to <Provider> so VibeTV can read its usage." instead of "VibeTV can't read <Provider> until the <Provider> app is installed and running.". The button starts the provider's own sign-in without a terminal window, which opens the browser (Grok, Kiro, Augment, Kilo, Vertex AI through Google Cloud's gcloud) or opens the Windsurf app. When the program is not installed, the button opens its official install page. No new texts; the provider names are CodexBar's.
+- Scope: `companion/internal/companionapi/provider_sign_in_launch.go`, `companion/internal/codexbar/provider_setup.go`, `apps/control-center/src/components/setup/setup-providers-screen.tsx`, their tests, and this approval record. Pull request branch only, not merge or release.
+- What's new: none — the existing sign-in button on six more provider rows, found where the customer already looks.
+
 ## 2026-10-20 — Mac: a background service blocked by macOS sends the customer to a new download (#626)
 
 - User approval: approved by Paul in the communicator chat, 2026-10-20 11:43: "ja" (to "Passt das so für dich? Mit „#827 ja“ wird es nach den Tests gemergt.", picture heute-vs-pr827.png); text and buttons before that by Marcus 75a, 20.10.2026 (question 75).
