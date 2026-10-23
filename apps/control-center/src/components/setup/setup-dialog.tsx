@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useWaitsForDialog, type DialogRank } from "@/components/dialog-stack";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
@@ -23,8 +24,8 @@ export type SetupDialogAction = {
 type SetupDialogProps = {
   children?: ReactNode;
   description?: ReactNode;
-  announcement?: boolean;
-  noticeKind?: "system-busy" | "theme-library";
+  /** The rank this dialog holds while open; it waits for every earlier rank (see dialog-stack). */
+  rank?: DialogRank;
   onOpenChange: (open: boolean) => void;
   /** Lets an announcement leave focus where it is (#632). */
   onOpenAutoFocus?: (event: Event) => void;
@@ -63,8 +64,7 @@ type SetupDialogProps = {
 export function SetupDialog({
   children,
   description,
-  announcement,
-  noticeKind,
+  rank = "question",
   onOpenChange,
   onOpenAutoFocus,
   open,
@@ -75,6 +75,9 @@ export function SetupDialog({
   title,
   wide = false,
 }: SetupDialogProps) {
+  if (useWaitsForDialog(rank)) {
+    return null;
+  }
   return (
     <Dialog modal={false} onOpenChange={onOpenChange} open={open}>
       {/*
@@ -93,8 +96,7 @@ export function SetupDialog({
         )}
       />
       <DialogContent
-        data-announcement={announcement ? "" : undefined}
-        data-notice-kind={noticeKind}
+        rank={rank}
         className={wide ? "sm:max-w-[480px]" : undefined}
         style={{ animation: "none" }}
         onInteractOutside={(event) => event.preventDefault()}
