@@ -2,18 +2,22 @@
 //
 // Issue #566: nothing tested the automatic Mac App update prompt. In the native
 // Mac App, a newer Mac App version opens the app's own update dialog once per
-// offered version, also during setup, and never while a firmware update runs,
+// offered version, only after setup, and never while a firmware update runs,
 // in a normal browser, or in the hosted setup shell.
 import { act, cleanup, render } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { rememberCompletedSetup } from "@/lib/completed-setup-devices";
 import { markWhatsNewSeen } from "@/lib/whats-new";
 import { ControlCenterApp } from "./control-center-app";
 import { openMacAppUpdatePrompt } from "./control-center-runtime";
 
-const runtime = vi.hoisted(() => ({ hostedShell: false }));
+const runtime = vi.hoisted(() => ({
+  hostedShell: false,
+  wizardProps: null as null | { macAppUpdate?: { onUpdate: () => void; onDismiss?: () => void } },
+}));
 
 vi.mock("./control-center-runtime", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./control-center-runtime")>();
@@ -22,6 +26,18 @@ vi.mock("./control-center-runtime", async (importOriginal) => {
     openMacAppUpdatePrompt: vi.fn(),
     shouldUseHostedSetupShell: () =>
       runtime.hostedShell || actual.shouldUseHostedSetupShell(),
+  };
+});
+
+// The real wizard renders; the test keeps its props to press its update offer.
+vi.mock("./setup/setup-wizard", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./setup/setup-wizard")>();
+  return {
+    ...actual,
+    SetupWizard: (props: Parameters<typeof actual.SetupWizard>[0]) => {
+      runtime.wizardProps = props;
+      return createElement(actual.SetupWizard, props);
+    },
   };
 });
 
@@ -63,18 +79,27 @@ async function openApp({
   userAgent,
   setupFinished = true,
   firmwareUpdate,
+  windows = false,
 }: {
   userAgent?: string;
   setupFinished?: boolean;
   firmwareUpdate?: typeof installing;
+  windows?: boolean;
 } = {}) {
   const companion = {
     device: setupFinished ? device : notSetUp,
     latestVersion: "9.9.10",
+    releaseCheckFailed: false,
+    hostedReleaseChecks: 0,
     firmwareUpdate: firmwareUpdate as typeof installing | undefined,
   };
   // A customer who has read "What's new"; it would lie over Overview.
   markWhatsNewSeen();
+  // A customer who finished setup for this VibeTV once goes straight on to the
+  // Control Center; without it the wizard still shows its closing screen.
+  if (setupFinished) {
+    rememberCompletedSetup(device.deviceId);
+  }
   vi.useFakeTimers();
   if (userAgent) {
     vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue(userAgent);
@@ -103,12 +128,13 @@ async function openApp({
             version: "9.9.9",
             installationMode: "dmg",
             app: { version: "9.9.9", installedInApplications: true },
+            runtime: windows ? { os: "windows" } : undefined,
             update: {
               checkedAt: "2026-10-13T08:00:00Z",
-              status: "available",
+              status: companion.releaseCheckFailed ? "check_failed" : "available",
               latestVersion: companion.latestVersion,
               installedVersion: "9.9.9",
-              updateAvailable: true,
+              updateAvailable: !companion.releaseCheckFailed,
               message: "A newer Mac App is available.",
             },
           },
@@ -118,6 +144,7 @@ async function openApp({
       }
       // The release check the hosted shell uses instead of the Companion status.
       if (url.includes("/api/companion/latest")) {
+        companion.hostedReleaseChecks += 1;
         return jsonResponse({
           checkedAt: "2026-10-13T08:00:00Z",
           status: "available",
@@ -184,17 +211,42 @@ async function openApp({
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
   vi.mocked(openMacAppUpdatePrompt).mockClear();
   runtime.hostedShell = false;
+  runtime.wizardProps = null;
 });
 
-it("opens the Mac App update prompt once when a newer Mac App is offered, during setup", async () => {
+it("does not open the native prompt while setup owns the screen", async () => {
   const app = await openApp({ userAgent: nativeUserAgent, setupFinished: false });
 
+  // The wizard offers the update in its own calm dialog and starts the visible
+  // check from its button; Sparkle's dialog must not come first.
   expect(app.text()).toContain("Welcome to");
+  expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
+  await app.wait(20);
+  expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
+});
+
+it("opens the prompt once setup has handed the screen to the Control Center", async () => {
+  const app = await openApp({ userAgent: nativeUserAgent, setupFinished: false });
+  expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
+
+  // The VibeTV is found and was set up before: the wizard hands the screen over.
+  rememberCompletedSetup(device.deviceId);
+  app.companion.device = device;
+  await app.wait(20);
+  expect(app.text()).not.toContain("Welcome to");
+  expect(openMacAppUpdatePrompt).toHaveBeenCalledTimes(1);
+});
+
+it("opens the prompt in the Control Center of a customer who finished setup", async () => {
+  const app = await openApp({ userAgent: nativeUserAgent });
+
+  expect(app.text()).not.toContain("Welcome to");
   expect(openMacAppUpdatePrompt).toHaveBeenCalledTimes(1);
 });
 
@@ -234,4 +286,64 @@ it("does not open the prompt in the hosted setup shell", async () => {
   await openApp({ userAgent: nativeUserAgent });
 
   expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
+});
+
+it("does not open the prompt again when setup ends after the wizard's own update check", async () => {
+  const app = await openApp({ userAgent: nativeUserAgent, setupFinished: false });
+  const location = { href: "http://localhost/" };
+  vi.stubGlobal("location", location);
+
+  // "Update Mac App" in the wizard starts the visible check; Sparkle is cancelled.
+  await act(async () => {
+    runtime.wizardProps?.macAppUpdate?.onUpdate();
+  });
+  expect(location.href).toBe("vibetv://check-for-updates");
+
+  // Setup then finishes with the same VibeTV: the same version must not prompt again.
+  rememberCompletedSetup(device.deviceId);
+  app.companion.device = device;
+  await app.wait(20);
+  expect(app.text()).not.toContain("Welcome to");
+  expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
+});
+
+
+it("withdraws the setup offer when the runtime check fails after a hosted success", async () => {
+  const app = await openApp({ userAgent: nativeUserAgent, setupFinished: false });
+  expect(runtime.wizardProps?.macAppUpdate).toBeDefined();
+  expect(app.companion.hostedReleaseChecks).toBeGreaterThan(0);
+  const hostedChecks = app.companion.hostedReleaseChecks;
+
+  // The runtime has a new failed check; the hosted answer is still the old
+  // successful check. It must not bring the offer back while offline.
+  app.companion.releaseCheckFailed = true;
+  await app.wait(10);
+  expect(app.companion.hostedReleaseChecks).toBe(hostedChecks);
+  expect(runtime.wizardProps?.macAppUpdate).toBeUndefined();
+  expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
+
+  rememberCompletedSetup(device.deviceId);
+  app.companion.device = device;
+  await app.wait(20);
+  expect(app.text()).not.toContain("Welcome to");
+  expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
+
+  app.companion.releaseCheckFailed = false;
+  await app.wait(10);
+  expect(openMacAppUpdatePrompt).toHaveBeenCalledTimes(1);
+});
+
+it("keeps a dismissed setup offer dismissed after setup finishes, but offers a newer version", async () => {
+  const app = await openApp({ userAgent: nativeUserAgent, setupFinished: false });
+  await act(async () => {
+    runtime.wizardProps?.macAppUpdate?.onDismiss?.();
+  });
+  rememberCompletedSetup(device.deviceId);
+  app.companion.device = device;
+  await app.wait(20);
+  expect(app.text()).not.toContain("Welcome to");
+  expect(openMacAppUpdatePrompt).not.toHaveBeenCalled();
+  app.companion.latestVersion = "9.9.11";
+  await app.wait(10);
+  expect(openMacAppUpdatePrompt).toHaveBeenCalledTimes(1);
 });

@@ -117,9 +117,9 @@ function SetupAddressDialogForm({
 export type MacAppUpdateOffer = { onUpdate: () => void; version: string };
 
 /**
- * #561, design 1d: when no VibeTV was found and a newer Mac App exists, setup
- * offers that update first, in its own dialog. "Scan again" and the close
- * button lead on to the usual not-found help, which then carries no hint.
+ * #561: when no VibeTV was found and a newer Mac App exists, setup offers that
+ * update first, in its own dialog. There is no close X: "Scan again" is the
+ * way out and leads on to the usual not-found help, which then carries no hint.
  */
 export function SetupMacAppUpdateDialog({
   offer,
@@ -132,21 +132,9 @@ export function SetupMacAppUpdateDialog({
 }) {
   return (
     <SetupDialog
-      description={
-        <>
-          We couldn&apos;t find your VibeTV.{" "}
-          {offer.version ? (
-            <>
-              Version <span className="font-mono text-xs">{offer.version}</span>{" "}
-              is out
-            </>
-          ) : (
-            "A newer version is out"
-          )}
-          , and an older app may not find it. Setup scans again after the
-          update.
-        </>
-      }
+      description={`We couldn't find your VibeTV. ${
+        offer.version ? `Version ${offer.version} is out` : "A newer version is out"
+      }, and an older app may not find it. Setup scans again after the update.`}
       onOpenChange={(open) => {
         if (!open) {
           onDismiss();

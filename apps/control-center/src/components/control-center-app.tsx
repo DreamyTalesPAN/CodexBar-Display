@@ -4620,7 +4620,9 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       : screensaverUpgrade;
   // In the installed native app the runtime's release check is authoritative:
   // it honors the release-feed override and Sparkle is always an actionable
-  // update path — the 2026-08-09 rehearsal entered the firmware-ahead mixed
+  // update path. A failed runtime check also wins over an older hosted
+  // success, so an offline check cannot keep offering a stale update.
+  // The 2026-08-09 rehearsal entered the firmware-ahead mixed
   // state because the hosted browser check shadowed the runtime's pending
   // update. Outside the native app the hosted check keeps priority: it owns
   // DMG asset verification, and an update without a verified DMG must stay
@@ -4628,7 +4630,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
   const runtimeRelease = companionInfo?.update;
   const companionRelease =
     runtimeRelease &&
-    runtimeRelease.status !== "check_failed" &&
     companionInfo?.app?.installedInApplications
       ? { ...(hostedCompanionRelease ?? {}), ...runtimeRelease }
       : hostedCompanionRelease?.status === "check_failed" && runtimeRelease
@@ -4730,15 +4731,24 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     companionStatus === "online" &&
     !themeSetupComplete &&
     (themeSetupEntryRequired || themeSetupSessionMatches);
+  // Once setup has admitted the customer to the Control Center, it never owns
+  // the window again. Theme and screensaver installs can temporarily make the
+  // device unready; that is install progress, not a new customer setup.
+  const setupOwnsScreen = Boolean(settingsWiFiSetup) || !hasEnteredControlCenter;
   const macAppUpdatePromptedFor = useRef("");
   // Mac only: there vibetv://check-for-updates opens Sparkle's dialog, which
   // asks the customer. The Windows App installs the update behind the same
   // link without a question, so it installs at launch only (#565) and
   // otherwise when the customer clicks Update or the tray item.
   useEffect(() => {
+    // While setup owns the screen the wizard offers the update itself in its
+    // calm dialog and starts the visible check from its button. The native
+    // Sparkle dialog must not come first. The offer returns here once setup
+    // has finished.
     if (
       hostedSetup ||
       windowsHost ||
+      setupOwnsScreen ||
       !macAppUpdateAvailable ||
       !macAppUpdateOfferedVersion ||
       firmwareUpdateInProgress ||
@@ -4754,6 +4764,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
     hostedSetup,
     macAppUpdateAvailable,
     macAppUpdateOfferedVersion,
+    setupOwnsScreen,
     windowsHost,
   ]);
   const displaySessionActive = Boolean(
@@ -5269,10 +5280,6 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
       void refreshProviderPreferences({ quiet: true });
     }
   }, [providerListVisible, refreshProviderPreferences]);
-  // Once setup has admitted the customer to the Control Center, it never owns
-  // the window again. Theme and screensaver installs can temporarily make the
-  // device unready; that is install progress, not a new customer setup.
-  const setupOwnsScreen = Boolean(settingsWiFiSetup) || !hasEnteredControlCenter;
   // A VibeTV lost after setup is searched for once. The saved one found again
   // reconnects on its own; any other answer, or that reconnect failing, is the
   // customer's choice over the current screen.
@@ -5681,7 +5688,13 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
                 macAppUpdateAvailable && isNativeControlCenterApp() && !windowsHost
                   ? {
                       version: macAppUpdateOfferedVersion,
+                      onDismiss: () => {
+                        macAppUpdatePromptedFor.current = macAppUpdateOfferedVersion;
+                      },
                       onUpdate: () => {
+                        // The wizard's own check counts as this version's prompt:
+                        // setup ending later must not open Sparkle's dialog again.
+                        macAppUpdatePromptedFor.current = macAppUpdateOfferedVersion;
                         window.location.href = "vibetv://check-for-updates";
                       },
                     }

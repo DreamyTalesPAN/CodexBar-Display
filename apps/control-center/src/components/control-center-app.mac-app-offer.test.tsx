@@ -10,9 +10,11 @@ import { afterEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ControlCenterApp } from "./control-center-app";
 
-const wizardProps = vi.hoisted(() => [] as Array<{ macAppUpdate?: unknown }>);
+const wizardProps = vi.hoisted(
+  () => [] as Array<{ macAppUpdate?: { onUpdate: () => void } }>,
+);
 vi.mock("./setup/setup-wizard", () => ({
-  SetupWizard: (props: { macAppUpdate?: unknown }) => {
+  SetupWizard: (props: { macAppUpdate?: { onUpdate: () => void } }) => {
     wizardProps.push(props);
     return null;
   },
@@ -89,4 +91,14 @@ it("offers no Mac App update on a Windows computer", async () => {
   const props = await setupWindowOn("windows");
   expect(props).toBeTruthy();
   expect(props?.macAppUpdate).toBeUndefined();
+});
+
+it("starts the visible update check from the offer button, not on its own", async () => {
+  const props = await setupWindowOn("darwin");
+  const location = { href: "http://localhost/" };
+  vi.stubGlobal("location", location);
+
+  props?.macAppUpdate?.onUpdate();
+
+  expect(location.href).toBe("vibetv://check-for-updates");
 });

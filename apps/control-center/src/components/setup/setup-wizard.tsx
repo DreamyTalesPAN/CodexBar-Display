@@ -73,7 +73,7 @@ export type SetupWizardProps = {
   /** The app runs on Windows, where "this Mac" reads "this computer". */
   windowsHost?: boolean;
   /** A newer Mac App exists; offered on the "VibeTV not found" pages (#561). */
-  macAppUpdate?: MacAppUpdateOffer;
+  macAppUpdate?: MacAppUpdateOffer & { onDismiss?: () => void };
   automaticPreviews: SetupDisplayModePreview[];
   connectSteps: SetupConnectSteps;
   connectionMode: string;
@@ -204,8 +204,17 @@ export function SetupWizard(props: SetupWizardProps) {
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
   const [notFoundDismissed, setNotFoundDismissed] = useState(false);
   // Offered once: after "Scan again" or closing it, not-found shows its usual help (#561).
-  const [macAppUpdateDismissed, setMacAppUpdateDismissed] = useState(false);
-  const pendingMacAppUpdate = macAppUpdateDismissed ? undefined : props.macAppUpdate;
+  // Dismissed per version (Codex on #822): a newer release that arrives while
+  // setup stays open is offered again, once.
+  const [dismissedMacAppVersion, setDismissedMacAppVersion] = useState<string | null>(null);
+  const pendingMacAppUpdate =
+    props.macAppUpdate && props.macAppUpdate.version !== dismissedMacAppVersion
+      ? props.macAppUpdate
+      : undefined;
+  const dismissMacAppUpdate = () => {
+    setDismissedMacAppVersion(props.macAppUpdate?.version ?? null);
+    props.macAppUpdate?.onDismiss?.();
+  };
   // The completion this step asked for is still on its way. Held here rather
   // than passed in: the wizard is what awaits it.
   const [providersContinuing, setProvidersContinuing] = useState(false);
@@ -357,12 +366,18 @@ export function SetupWizard(props: SetupWizardProps) {
     );
   }, [connect.state, selectedTarget, visibleCandidates]);
 
-  const searchFailed =
+  const searchFoundNoMatch =
     connectionDecision.kind === "not-found" &&
     // A completed combined scan may find only the other transport. That is
     // still no result for the saved mode, not a search that is still running.
     (deviceSearchState === "not-found" || deviceSearchState === "multiple") &&
-    !notFoundDismissed && !wifiError;
+    !wifiError;
+  const searchFailed = searchFoundNoMatch && !notFoundDismissed;
+  // The manual address dialog owns the screen until it closes, and a connect
+  // that is running or has failed owns it after that, so the offer waits for both.
+  const macAppUpdateAfterSearch = searchFoundNoMatch && deviceCandidates.length === 0 && !addressDialogOpen && connect.state.phase === "idle"
+    ? pendingMacAppUpdate
+    : undefined;
   // "idle" is before the first scan was started, so like "searching" it has no
   // result to report. Claiming a count there told the customer none were found
   // while the scan that would find them had not answered, or not even run.
@@ -509,8 +524,11 @@ export function SetupWizard(props: SetupWizardProps) {
     }
   });
 
+  const wifiUpdateOfferOpen = Boolean(
+    step === "device" && !wifiSetup?.viaCable && macAppUpdateAfterSearch,
+  );
   useEffect(() => {
-    if (wifiSetup?.phase !== "waiting") return;
+    if (wifiSetup?.phase !== "waiting" || wifiUpdateOfferOpen) return;
     const retry = window.setInterval(() => searchWhileWaitingForWiFi(), 1500);
     const deadline = window.setTimeout(() => {
       setWiFiSetup((current) => current?.viaCable
@@ -523,7 +541,7 @@ export function SetupWizard(props: SetupWizardProps) {
       window.clearInterval(retry);
       window.clearTimeout(deadline);
     };
-  }, [wifiSetup?.phase]);
+  }, [wifiSetup?.phase, wifiUpdateOfferOpen]);
 
   useEffect(() => {
     if (
@@ -738,8 +756,8 @@ export function SetupWizard(props: SetupWizardProps) {
           connecting={connecting}
           connectPhase={connect.state.phase}
           logLines={connectLogLines(connect.state, props.firmwareWrittenPercent)}
-          macAppUpdate={pendingMacAppUpdate}
-          onDismissMacAppUpdate={() => setMacAppUpdateDismissed(true)}
+          macAppUpdate={macAppUpdateAfterSearch}
+          onDismissMacAppUpdate={dismissMacAppUpdate}
           onConnect={startConnect}
           onBack={
             connect.state.phase === "idle" &&
@@ -797,12 +815,12 @@ export function SetupWizard(props: SetupWizardProps) {
             showCloseButton={false}
           />
         ) : null}
-        {searchFailed && !wifiSetup && pendingMacAppUpdate ? (
+        {!wifiSetup && macAppUpdateAfterSearch ? (
           <SetupMacAppUpdateDialog
-            offer={pendingMacAppUpdate}
-            onDismiss={() => setMacAppUpdateDismissed(true)}
+            offer={macAppUpdateAfterSearch}
+            onDismiss={dismissMacAppUpdate}
             onScanAgain={() => {
-              setMacAppUpdateDismissed(true);
+              dismissMacAppUpdate();
               searchAgain();
             }}
           />
@@ -915,6 +933,7 @@ export function SetupWizard(props: SetupWizardProps) {
         connect.failure ||
         wifiError ||
         searchFailed ||
+        (!wifiSetup && macAppUpdateAfterSearch) ||
         (props.searchError && !searchErrorDismissed) ||
         addressDialogOpen
           ? null

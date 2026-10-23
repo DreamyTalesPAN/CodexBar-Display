@@ -9844,3 +9844,227 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #873 as in its own entries plus the entries merged with d2f3fade; nothing else changes.
 - Scope: the merge of d2f3fade and this approval record. Pull request branch #873 only, not merged, not released.
 - What's new: none — merge of d2f3fade, no customer-visible change of its own
+
+## 2026-10-20 — #561 update offer: the Mac App update is offered in its own calm dialog when no VibeTV is found
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 08:55: "Ja" (to "Soll das so rein?" about the picture ui/561-update-hint/01-no-vibetv-found-newer-app.png, in the new dialog style) — entry: #561 update offer: the Mac App update is offered in its own calm dialog when no VibeTV is  — Before → after: #561 update offer: when no VibeTV was found, setup showed only the usual not-found help, even if the Mac App was older than the newest release and an old app can be the reason → #561 update offer: on a Mac, when the Mac App is older than the newest release and no VibeTV is found, the dialog "Update the Mac App first" appears first.
+- Approved customer-visible result: #561 update offer: the dialog reads "We couldn't find your VibeTV. Version <version> is out, and an older app may not find it. Setup scans again after the update." with the version in the normal font, no close X, the secondary button "Scan again" and the lime button "Update Mac App" (opens the Mac App's update check); #561 update offer: it is offered once per version, only in the Mac App, never on Windows, and "Scan again" leads on to the usual not-found help; #561 update offer: it looks like the other calm setup dialogs (size, spacing, type, no focus ring at open).
+- Scope: #561 update offer: `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/setup/setup-device-dialogs.tsx`, `apps/control-center/src/components/setup/setup-device-screen.tsx`, `apps/control-center/src/components/setup/setup-dialog.tsx`, `apps/control-center/src/components/setup/setup-wizard.tsx`, their tests and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #561 update offer: the dialog appears only while a problem is being solved, nothing a customer needs to learn
+
+## 2026-10-20 — #822 Sparkle order: during setup the Mac App's own update dialog no longer comes before the calm "Update the Mac App first" dialog
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 08:55: "Ja" (to "Soll das so rein?" about the picture ui/561-update-hint/01-no-vibetv-found-newer-app.png, in the new dialog style) — entry: #822 Sparkle order: during setup the Mac App's own update dialog no longer comes before th — Before → after: #822 Sparkle order: during setup, a newer Mac App opened the Mac App's own update dialog as soon as it was found, and the calm dialog came only after canceling it → #822 Sparkle order: during setup the calm dialog "Update the Mac App first" is the only offer, and its "Update Mac App" button opens the Mac App's update check.
+- Approved customer-visible result: #822 Sparkle order: while setup is on screen no native update dialog opens on its own; #822 Sparkle order: once setup has handed over to the Control Center, the Mac App's update dialog opens once per version exactly as before; #822 Sparkle order: the calm dialog itself is unchanged.
+- Scope: #822 Sparkle order: `apps/control-center/src/components/control-center-app.tsx`, `apps/control-center/src/components/control-center-app.mac-update-prompt.test.tsx`, `apps/control-center/src/components/control-center-app.mac-app-offer.test.tsx` and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #822 Sparkle order: only the order of two existing dialogs changes, nothing a customer needs to learn
+
+## 2026-10-20 — #822 update offer: "Not now" holds per version (Codex review)
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 08:55: "Ja" (to "Soll das so rein?" about the picture ui/561-update-hint/01-no-vibetv-found-newer-app.png, in the new dialog style) — entry: #822 update offer: "Not now" holds per version (Codex review)
+- Approved customer-visible result: #822 when a newer release arrives while setup stays open after the previous offer was dismissed, setup offers the newer one once; the dialog itself is unchanged.
+- Scope: #822 `apps/control-center/src/components/setup/setup-wizard.tsx`, its test and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — #822 per-version dismissal, no new content
+
+## 2026-10-20 — #822: Paul's approval recorded (the calm update offer dialog (ui/561-update-hint/01-no-vibetv-found-newer-app.png))
+
+- User approval: approved by Paul in the communicator chat, 2026-10-20 08:55: "Ja" — #822 approval record for the calm update offer dialog (ui/561-update-hint/01-no-vibetv-found-newer-app.png); the #822 entries above now carry this approval, merge markers are marked as no visible change.
+- Approved customer-visible result: #822 as described in its entries above; nothing else changes.
+- Scope: #822 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #822 approval record only
+
+## 2026-10-20 — #822: approval marker after merging claude/group-calm-redesign at e51f999f
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (e51f999f) into #822; no visible change of its own; entry: #822: approval marker after merging claude/group-calm-redesign at e51f999f)
+- Approved customer-visible result: #822 as in its own entries (the calm "Update the Mac App first" dialog, dismissed per version, Paul's yes of 2026-10-20 08:55) on top of the merged calm redesign; nothing else changes.
+- Scope: the merge of e51f999f (only this approval record conflicted, resolved by keeping both sides) and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — merge of e51f999f, no customer-visible change of its own
+
+## 2026-10-20 — #822: approval lines rewritten to the two accepted forms
+
+- User approval: no visible change – UI approval not needed (#822 record rewrite for the gate in #823; no customer-visible change)
+- Approved customer-visible result: #822 unchanged; only the wording of the "User approval:" lines of its own entries in this approval record changed.
+- Scope: #822 this approval record only. Pull request branch only, not merged, not released.
+- What's new: none — #822 approval record only
+
+## 2026-10-20 — #822: approval marker after merging claude/group-calm-redesign at d748c370
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (d748c370) into #822; the own entries of #822 keep their approvals)
+- Approved customer-visible result: #822 as in its own entries plus the entries merged with d748c370; nothing else changes.
+- Scope: the merge of d748c370 and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — merge of d748c370, no customer-visible change of its own
+
+## 2026-10-20 — #822: approval marker after merging claude/group-calm-redesign at 79a9589b
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (79a9589b) into #822; the own entries of #822 keep their approvals)
+- Approved customer-visible result: #822 as in its own entries plus the entries merged with 79a9589b; nothing else changes.
+- Scope: the merge of 79a9589b and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — merge of 79a9589b, no customer-visible change of its own
+
+## 2026-10-21 — #822: approval marker after merging claude/group-calm-redesign at fb30d196
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (fb30d196) into #822; the own entries of #822 keep their approvals)
+- Approved customer-visible result: #822 as in its own entries plus the entries merged with fb30d196; nothing else changes.
+- Scope: the merge of fb30d196 and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — merge of fb30d196, no customer-visible change of its own
+
+## 2026-10-21 — #822: approval marker after merging claude/group-calm-redesign at fd9e6fb3
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (fd9e6fb3) into #822; the own entries of #822 keep their approvals)
+- Approved customer-visible result: #822 as in its own entries plus the entries merged with fd9e6fb3; nothing else changes.
+- Scope: the merge of fd9e6fb3 and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — merge of fd9e6fb3, no customer-visible change of its own
+
+## 2026-10-21 — #822: Mac App update prompt after the wizard's own check and on Windows during setup (Codex review)
+
+- User approval: pending — #822 update prompt: on Windows during setup the native update dialog opens again (as before this branch); on a Mac, the setup wizard's own update check no longer leads to a second update dialog when setup ends
+- Approved customer-visible result: On Windows during setup the native update dialog opens as it did before this branch. On a Mac, after "Update Mac App" in the setup wizard, the update dialog does not come a second time when setup ends. No text, screen or button changes.
+- Scope: `apps/control-center/src/components/control-center-app.tsx` (the update prompt effect and the wizard offer's `onUpdate`) and this approval record. Pull-request branch #822 only, not merged, not released. WIP: tests not yet written.
+- What's new: none — update prompt timing only, no new text
+
+## 2026-10-21 — #822: tests for the Codex fixes (one prompt per version, Windows keeps its updater during setup)
+
+- User approval: no visible change – UI approval not needed (#822 tests for the Codex fixes: one prompt per version, Windows keeps its updater during setup)
+- Approved customer-visible result: No visible change. The tests pin the update prompt timing from the previous commit: on a Mac the wizard's update check does not lead to a second update dialog, and on Windows the updater dialog still opens during setup. No text, screen or button changes.
+- Scope: `apps/control-center/src/components/control-center-app.mac-update-prompt.test.tsx` (new tests and the wizard capture in the test file) and this approval record. Pull-request branch #822 only, not merged, not released.
+- What's new: none — test-only change, no new text
+
+## 2026-10-21 — #822: approval marker after merging claude/group-calm-redesign at 0a599c37
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (0a599c37) into #822; the own entries of #822 keep their approvals)
+- Approved customer-visible result: #822 as in its own entries plus the entries merged with 0a599c37; nothing else changes.
+- Scope: the merge of 0a599c37 and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — merge of 0a599c37, no customer-visible change of its own
+
+## 2026-10-21 — #822: approval marker after merging claude/group-calm-redesign at b095ff2d
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (b095ff2d) into #822; the own entries of #822 keep their approvals)
+- Approved customer-visible result: #822 as in its own entries plus the entries merged with b095ff2d; nothing else changes.
+- Scope: the merge of b095ff2d and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — merge of b095ff2d, no customer-visible change of its own
+
+## 2026-10-21 — #822: approval marker after merging claude/group-calm-redesign at 2d217aa5
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (2d217aa5) into #822; the own entries of #822 keep their approvals)
+- Approved customer-visible result: #822 as in its own entries plus the entries merged with 2d217aa5; nothing else changes.
+- Scope: the merge of 2d217aa5 and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — merge of 2d217aa5, no customer-visible change of its own
+
+## 2026-10-21 — #822: approval marker after merging claude/group-calm-redesign at ff601365
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (ff601365) into #822; the own entries of #822 keep their approvals)
+- Approved customer-visible result: #822 as in its own entries plus the entries merged with ff601365; nothing else changes.
+- Scope: the merge of ff601365 and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — merge of ff601365, no customer-visible change of its own
+
+## 2026-10-21 — #822: approval marker after merging claude/group-calm-redesign at 3caaf211
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (3caaf211) into #822; the own entries of #822 keep their approvals)
+- Approved customer-visible result: #822 as in its own entries plus the entries merged with 3caaf211; nothing else changes.
+- Scope: the merge of 3caaf211 and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — merge of 3caaf211, no customer-visible change of its own
+
+## 2026-10-21 — #822: approval marker after merging claude/group-calm-redesign at 4371975c
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (4371975c) into #822; the own entries of #822 keep their approvals)
+- Approved customer-visible result: #822 as in its own entries plus the entries merged with 4371975c; nothing else changes.
+- Scope: the merge of 4371975c and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — merge of 4371975c, no customer-visible change of its own
+
+## 2026-10-21 — #822: approval marker after merging claude/group-calm-redesign at 260c4843
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (260c4843) into #822; the own entries of #822 keep their approvals)
+- Approved customer-visible result: #822 as in its own entries plus the entries merged with 260c4843; nothing else changes.
+- Scope: the merge of 260c4843 and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — merge of 260c4843, no customer-visible change of its own
+
+## 2026-10-21 — #822: Mac App offer only when no device was found (Codex P2 setup-wizard)
+
+- User approval: no visible change – UI approval not needed (bug fix: the Mac App update offer no longer replaces the device-not-found dialog when a scan found a device on the other transport)
+- Approved customer-visible result: the Mac App update offer appears only when a scan finds no VibeTV at all; otherwise the existing not-found dialog as before.
+- Scope: apps/control-center setup wizard offer condition and its test. Pull request branch #822 only, not merged, not released.
+- What's new: none — bug fix, the offer no longer appears in that case
+
+## 2026-10-21 — #822: approval marker after merging claude/group-calm-redesign at 035ced04
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign (035ced04) into #822; the own entries of both sides keep their approvals; the Mac App update hold during setup from #822 combined with main's rule that the Windows App never gets the native prompt; #822's Windows-setup prompt test was removed)
+- Approved customer-visible result: #822 as in its own entries plus the entries merged with 035ced04; nothing else changes.
+- Scope: the merge of 035ced04 and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — merge of 035ced04, no customer-visible change of its own
+
+## 2026-10-21 — #822: preserve update descriptions and stable notice identity through base merge
+
+- User approval: no visible change – UI approval not needed (merge of claude/group-calm-redesign at 52397ff8 into #822 preserves rich update descriptions, stable notice identity, and the Windows update-prompt exclusion)
+- Approved customer-visible result: both branches retain their existing behavior and approval blocks; this merge adds no customer-visible behavior.
+- Scope: base merge into #822, setup-dialog.tsx conflict resolution and this approval record; PR branch only.
+- What's new: none — merge-only compatibility resolution
+
+## 2026-10-21 — #822: wait for an empty completed scan before the WiFi update offer
+
+- User approval: no visible change – UI approval not needed (bug fix: #822 WiFi update offer no longer claims a failed search while scanning or after finding a device)
+- Approved customer-visible result: the existing update offer appears only after the whole scan finishes without a VibeTV; cable and manual-IP help remain reachable otherwise.
+- Scope: setup-wizard.tsx and its late-release regression tests; shared existing search state gates both update-offer paths.
+- What's new: none — correct an existing update-offer condition
+
+## 2026-10-21 — #822: honor failed runtime release checks
+
+- User approval: no visible change – UI approval not needed (bug fix: #822 stops stale hosted release success from reviving an update offer after the installed runtime reports check_failed)
+- Approved customer-visible result: an unavailable current update check withdraws the existing setup offer and does not open the native prompt after setup; a successful later check can offer the update again.
+- Scope: control-center-app.tsx release precedence and its regression test; runtime release state remains authoritative in the installed app.
+- What's new: none — fix stale update availability
+
+## 2026-10-21 — #822: preserve setup update dismissal after completion
+
+- User approval: no visible change – UI approval not needed (bug fix: #822 forwards Escape and Scan again to the existing per-version native update prompt owner)
+- Approved customer-visible result: dismissing the existing setup offer does not immediately reopen the same update in Sparkle after setup; a later version can still be offered.
+- Scope: setup-wizard.tsx, control-center-app.tsx and their dismissal regression tests; no text or layout changes.
+- What's new: none — remove a duplicate update prompt
+
+## 2026-10-22 — #822: main merge after #784
+
+- User approval: no visible change – UI approval not needed (merge of main after #784 into #822)
+- Approved customer-visible result: Preserve main's dialog contract and the PR's setup update offer.
+- Scope: main merge conflict resolution and this approval record.
+- What's new: none — integration only
+
+## 2026-10-22 — #822: stable update offer during WiFi retries
+
+- User approval: no visible change – UI approval not needed (keep the existing #822 update offer open during automatic WiFi retries)
+- Approved customer-visible result: The existing update offer stays readable and usable until dismissed; automatic discovery resumes afterwards.
+- Scope: pause the WiFi retry timer and deadline while the offer is open, with regression coverage.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-22 — #822: late update offer after not-found dismissal
+
+- User approval: no visible change – UI approval not needed (restore the existing late update offer after the ordinary not-found help is dismissed)
+- Approved customer-visible result: A newly available version still offers the existing update dialog once, independently of the ordinary help dialog's dismissal.
+- Scope: setup-wizard.tsx update branch and its red-first regression test.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-22 — #822: late update offer waits for the manual address dialog
+
+- User approval: no visible change – UI approval not needed (a late Mac App update no longer stacks over the open Enter IP address dialog; it is offered once that dialog closes)
+- Approved customer-visible result: The manual address dialog stays the only dialog while it is open; the existing update offer follows after it closes.
+- Scope: setup-wizard.tsx update condition and its red-first regression test.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-22 — #822: no update offer over a connect or a usage incident
+
+- User approval: no visible change – UI approval not needed (the late update offer no longer appears over a connect that is running or failed, or on top of the usage incident dialog; it takes the screen once those are done)
+- Approved customer-visible result: The connect screen and the usage incident dialog stay the only dialog while they are up; the existing update offer follows afterwards.
+- Scope: setup-wizard.tsx update condition and usage dialog suppression, with red-first regression tests.
+- What's new: none — bug fix, not announced to customers
+
+## 2026-10-22 — #822: approval marker after merging main (#782): the approved calm offer dialog stays
+
+- User approval: no visible change – UI approval not needed (merge of origin/main into #822; the calm "Update the Mac App first" dialog of #822 (approved 2026-10-20) replaces main's earlier design 1d in the conflicting hunks; the own entries of #822 keep their approvals)
+- Approved customer-visible result: #822 as in its own entries; nothing else changes.
+- Scope: the merge of origin/main into #822 (conflict hunks in the setup wizard, device dialogs, app shell and their tests) and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — merge of origin/main, no customer-visible change of its own
+
+## 2026-10-22 — #822: usage incident stays back over the WiFi-waiting update offer (Codex P2 check, test only)
+
+- User approval: no visible change – UI approval not needed (test-only: pins that the usage incident does not show over the update offer while "Already on WiFi" waits; the announcement gate from #632 already keeps it back, so no code changed)
+- Approved customer-visible result: No visible change. The usage incident dialog stays hidden while the WiFi-waiting update dialog is open, as before.
+- Scope: `apps/control-center/src/components/setup/setup-wizard.test.tsx` (one new test, one async wait in the late-offer test) and this approval record. Pull request branch #822 only, not merged, not released.
+- What's new: none — test-only change, no new text

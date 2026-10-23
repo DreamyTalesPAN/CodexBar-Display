@@ -21,8 +21,8 @@ import {
   SetupCableHelpDialog,
   SetupConnectFailedDialog,
   SetupDeviceNotFoundDialog,
-  SetupMacAppUpdateDialog,
   SetupDevicePickerDialog,
+  SetupMacAppUpdateDialog,
 } from "./setup-device-dialogs";
 import { SetupDeviceScreen } from "./setup-device-screen";
 import { SetupRecoveryDialogs } from "./setup-recovery-dialogs";
@@ -71,7 +71,7 @@ describe("Setup WiFi recovery", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("offers the Mac App update first, in its own dialog (#561, design 1d)", () => {
+  it("offers the Mac App update first, in its own dialog (#561, calm)", () => {
     const onUpdate = vi.fn();
     const onScanAgain = vi.fn();
     const onDismiss = vi.fn();
@@ -89,7 +89,11 @@ describe("Setup WiFi recovery", () => {
     expect(onUpdate).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Scan again" }));
     expect(onScanAgain).toHaveBeenCalledTimes(1);
-    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    // Calm style: no close X and no extra Close; "Scan again" is the way out,
+    // the version is plain text, and Escape still dismisses.
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+    expect(dialog.querySelector(".font-mono")).toBeNull();
+    fireEvent.keyDown(dialog, { key: "Escape" });
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
