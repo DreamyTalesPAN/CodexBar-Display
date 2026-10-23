@@ -14,6 +14,10 @@ namespace {
 using codexbar_display::themespec::FrameData;
 using codexbar_display::themespec::kResetSecsIdle;
 using codexbar_display::themespec::GifCommand;
+using codexbar_display::themespec::NeedleCommand;
+using codexbar_display::themespec::NeedleAngleDegrees;
+using codexbar_display::themespec::NeedleOpaqueBounds;
+using codexbar_display::themespec::NeedleSourcePixel;
 using codexbar_display::themespec::PixelsCommand;
 using codexbar_display::themespec::ProgressCommand;
 using codexbar_display::themespec::RectCommand;
@@ -67,6 +71,7 @@ enum class CommandType {
   Progress,
   Gif,
   Sprite,
+  Needle,
   Pixels,
 };
 
@@ -93,6 +98,7 @@ struct RecordedCommand {
   uint16_t bg = 0;
   uint16_t border = 0;
   bool hasBg = false;
+  int angle = 0;
   std::string assetPath;
   std::string data;
 };
@@ -179,6 +185,18 @@ class RecordingSink final : public Sink {
     cmd.width = gif.width;
     cmd.height = gif.height;
     cmd.assetPath = gif.assetPath == nullptr ? "" : gif.assetPath;
+    commands.push_back(cmd);
+  }
+
+  void DrawNeedle(const NeedleCommand& needle) override {
+    RecordedCommand cmd;
+    cmd.type = CommandType::Needle;
+    cmd.x = needle.x;
+    cmd.y = needle.y;
+    cmd.width = needle.width;
+    cmd.height = needle.height;
+    cmd.angle = needle.angle;
+    cmd.assetPath = needle.assetPath == nullptr ? "" : needle.assetPath;
     commands.push_back(cmd);
   }
 
@@ -3191,6 +3209,230 @@ void testProgressArcDrawsAFullRingAndAFullDisc() {
   TEST_ASSERT_EQUAL_INT(0xFFFF, disc.pixels[20 * 240 + 30]);
 }
 
+void testNeedleAngleFollowsTheSweepFromTwelve() {
+  TEST_ASSERT_EQUAL_INT(300, NeedleAngleDegrees(300, 120, 0));
+  TEST_ASSERT_EQUAL_INT(0, NeedleAngleDegrees(300, 120, 50));
+  TEST_ASSERT_EQUAL_INT(60, NeedleAngleDegrees(300, 120, 100));
+  TEST_ASSERT_EQUAL_INT(60, NeedleAngleDegrees(300, 120, 140));
+  TEST_ASSERT_EQUAL_INT(300, NeedleAngleDegrees(300, 120, -20));
+}
+
+void testNeedleSourcePixelTurnsClockwise() {
+  int col = -1;
+  int row = -1;
+  TEST_ASSERT_TRUE(NeedleSourcePixel(2, 0, 4, 4, 4, 4, 0, col, row));
+  TEST_ASSERT_EQUAL_INT(2, col);
+  TEST_ASSERT_EQUAL_INT(0, row);
+
+  bool found = false;
+  int foundX = -1;
+  int foundY = -1;
+  for (int y = 0; y < 4; ++y) {
+    for (int x = 0; x < 4; ++x) {
+      int srcCol = -1;
+      int srcRow = -1;
+      if (NeedleSourcePixel(x, y, 4, 4, 4, 4, 90, srcCol, srcRow) && srcCol == 2 && srcRow == 0) {
+        found = true;
+        foundX = x;
+        foundY = y;
+      }
+    }
+  }
+  TEST_ASSERT_TRUE(found);
+  TEST_ASSERT_TRUE(foundX > foundY);
+}
+
+void testNeedleProgressAsksForTheThemeSpriteAtThePercentAngle() {
+  FrameData frame = testFrame();
+  frame.usageSlot1Available = true;
+  frame.usageSlot1Percent = 50;
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(renderSpec(
+      R"JSON({"v":1,"id":"fuel","rev":1,"p":[{"t":"p","x":36,"y":40,"w":168,"h":168,"sl":1,"b":"us1p","ps":"needle","as":300,"aw":120,"a":"/themes/u/fu-n.cbi"}]})JSON",
+      frame, sink));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Needle), static_cast<int>(sink.commands[1].type));
+  TEST_ASSERT_EQUAL_INT(0, sink.commands[1].angle);
+  TEST_ASSERT_EQUAL_STRING("/themes/u/fu-n.cbi", sink.commands[1].assetPath.c_str());
+  TEST_ASSERT_EQUAL_INT(36, sink.commands[1].x);
+  TEST_ASSERT_EQUAL_INT(168, sink.commands[1].width);
+
+  frame.usageSlot1Percent = 0;
+  RecordingSink empty;
+  TEST_ASSERT_TRUE(renderSpec(
+      R"JSON({"v":1,"id":"fuel","rev":1,"p":[{"t":"p","x":0,"y":0,"w":64,"h":64,"b":"us1p","ps":"needle","as":300,"aw":120,"a":"/themes/u/fu-n.cbi"}]})JSON",
+      frame, empty));
+  TEST_ASSERT_EQUAL_INT(300, empty.commands[1].angle);
+
+  frame.usageSlot1Percent = 100;
+  RecordingSink full;
+  TEST_ASSERT_TRUE(renderSpec(
+      R"JSON({"v":1,"id":"fuel","rev":1,"p":[{"t":"p","x":0,"y":0,"w":64,"h":64,"b":"us1p","ps":"needle","as":300,"aw":120,"a":"/themes/u/fu-n.cbi"}]})JSON",
+      frame, full));
+  TEST_ASSERT_EQUAL_INT(60, full.commands[1].angle);
+}
+
+void testNeedleOpaqueBoundsCoverEveryDrawnPixel() {
+  uint8_t index[8 * 8];
+  for (int i = 0; i < 64; ++i) {
+    index[i] = 0xFF;
+  }
+  index[1 * 8 + 3] = 0;
+  index[1 * 8 + 4] = 0;
+  index[2 * 8 + 3] = 0;
+  index[2 * 8 + 4] = 0;
+  for (const int angle : {0, 30, 90, 200, 300}) {
+    Bounds bounds;
+    TEST_ASSERT_TRUE(NeedleOpaqueBounds(index, 8, 8, 10, 20, 64, 64, angle, 0xFF, bounds));
+    TEST_ASSERT_TRUE(bounds.width < 64);
+    TEST_ASSERT_TRUE(bounds.height < 64);
+    for (int y = 0; y < 64; ++y) {
+      for (int x = 0; x < 64; ++x) {
+        int srcCol = -1;
+        int srcRow = -1;
+        if (!NeedleSourcePixel(x, y, 64, 64, 8, 8, angle, srcCol, srcRow)) {
+          continue;
+        }
+        if (index[srcRow * 8 + srcCol] == 0xFF) {
+          continue;
+        }
+        const int absX = 10 + x;
+        const int absY = 20 + y;
+        TEST_ASSERT_TRUE(absX >= bounds.x && absX < bounds.x + bounds.width);
+        TEST_ASSERT_TRUE(absY >= bounds.y && absY < bounds.y + bounds.height);
+      }
+    }
+  }
+}
+
+bool testNeedleOnlyDirtyBounds(
+    const codexbar_display::themespec::CompiledPrimitive& primitive,
+    const FrameData&,
+    Bounds& bounds,
+    void*) {
+  if (primitive.kind != codexbar_display::themespec::PrimitiveKind::Progress ||
+      primitive.style != codexbar_display::themespec::kProgressStyleNeedle) {
+    return false;
+  }
+  bounds.x = primitive.x + 70;
+  bounds.y = primitive.y + 16;
+  bounds.width = 22;
+  bounds.height = 70;
+  return true;
+}
+
+void testNeedlePartialRepaintStaysOffTheRestOfTheDial() {
+  FrameData frame = testFrame();
+  frame.usageSlot1Available = true;
+  frame.usageSlot1Percent = 40;
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  const char* spec =
+      R"JSON({"v":1,"id":"fuel","rev":1,"p":[{"t":"p","x":40,"y":40,"w":160,"h":160,"sl":1,"b":"us1p","ps":"needle","as":300,"aw":120,"a":"/themes/u/fu-n.cbi"},{"t":"tx","x":8,"y":210,"w":224,"h":26,"sl":1,"v":"{usageSlot1Percent}%","s":1}]})JSON";
+  TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpecChangedPrimitives(
+      scene,
+      frame,
+      kThemeSpecFieldUsageWindows,
+      sink,
+      nullptr,
+      nullptr,
+      testNeedleOnlyDirtyBounds,
+      nullptr));
+  ReleaseCompiledThemeSpec(scene);
+  int clips = 0;
+  bool sawNeedle = false;
+  bool sawNumber = false;
+  for (const RecordedCommand& command : sink.commands) {
+    if (command.type != CommandType::BeginClip) {
+      continue;
+    }
+    ++clips;
+    TEST_ASSERT_TRUE(command.height < 160);
+    if (command.y < 120) {
+      sawNeedle = true;
+      TEST_ASSERT_EQUAL_INT(22, command.width);
+      TEST_ASSERT_EQUAL_INT(70, command.height);
+    } else {
+      sawNumber = true;
+    }
+  }
+  TEST_ASSERT_EQUAL_INT(2, clips);
+  TEST_ASSERT_TRUE(sawNeedle);
+  TEST_ASSERT_TRUE(sawNumber);
+}
+
+int testNeedleBoundsCalls = 0;
+
+bool testNeedleBoundsShrinkAfterTheFirstSample(
+    const codexbar_display::themespec::CompiledPrimitive& primitive,
+    const FrameData&,
+    Bounds& bounds,
+    void*) {
+  if (primitive.kind != codexbar_display::themespec::PrimitiveKind::Progress ||
+      primitive.style != codexbar_display::themespec::kProgressStyleNeedle) {
+    return false;
+  }
+  ++testNeedleBoundsCalls;
+  if (testNeedleBoundsCalls == 1) {
+    bounds.x = 30;
+    bounds.y = 40;
+    bounds.width = 120;
+    bounds.height = 90;
+    return true;
+  }
+  bounds.x = 80;
+  bounds.y = 80;
+  bounds.width = 10;
+  bounds.height = 10;
+  return true;
+}
+
+void testNeedleEraseBoxIsFixedBeforeTheLogoRedraws() {
+  testNeedleBoundsCalls = 0;
+  FrameData frame = testFrame();
+  frame.usageSlot1Available = true;
+  frame.usageSlot1Percent = 100;
+  JsonDocument doc;
+  CompiledThemeSpec scene;
+  const char* spec =
+      R"JSON({"v":1,"id":"fuel","rev":1,"p":[{"t":"sp","x":104,"y":104,"w":32,"h":32,"a":"/themes/u/fu-fb.cbi","pa":{"cursor":"/themes/u/fu-cu.cbi"}},{"t":"p","x":36,"y":66,"w":168,"h":168,"sl":1,"b":"us1p","ps":"needle","as":270,"aw":180,"a":"/themes/u/fu-n.cbi"}]})JSON";
+  TEST_ASSERT_TRUE(CompileThemeSpec(spec, doc, scene));
+  RecordingSink sink;
+  TEST_ASSERT_TRUE(RenderCompiledThemeSpecChangedPrimitives(
+      scene,
+      frame,
+      kThemeSpecFieldProvider | kThemeSpecFieldUsageWindows,
+      sink,
+      nullptr,
+      nullptr,
+      testNeedleBoundsShrinkAfterTheFirstSample,
+      nullptr));
+  ReleaseCompiledThemeSpec(scene);
+  TEST_ASSERT_EQUAL_INT(1, testNeedleBoundsCalls);
+  bool sawOldAndNew = false;
+  for (const RecordedCommand& command : sink.commands) {
+    if (command.type == CommandType::BeginClip && command.width == 120 && command.height == 90) {
+      sawOldAndNew = true;
+    }
+  }
+  TEST_ASSERT_TRUE(sawOldAndNew);
+}
+
+void testNeedleWithoutACbiSpriteIsSkipped() {
+  for (const char* spec : {
+           R"JSON({"v":1,"id":"fuel","rev":1,"p":[{"t":"p","x":0,"y":0,"w":64,"h":64,"ps":"needle","as":300,"aw":120},{"t":"tx","x":0,"y":0,"s":1,"v":"ok"}]})JSON",
+           R"JSON({"v":1,"id":"fuel","rev":1,"p":[{"t":"p","x":0,"y":0,"w":64,"h":64,"ps":"needle","as":300,"aw":120,"a":"/themes/u/fu-n.cba"},{"t":"tx","x":0,"y":0,"s":1,"v":"ok"}]})JSON",
+           R"JSON({"v":1,"id":"fuel","rev":1,"p":[{"t":"p","x":0,"y":0,"w":64,"h":64,"ps":"needle","as":360,"aw":120,"a":"/themes/u/fu-n.cbi"},{"t":"tx","x":0,"y":0,"s":1,"v":"ok"}]})JSON",
+           R"JSON({"v":1,"id":"fuel","rev":1,"p":[{"t":"p","x":0,"y":0,"w":64,"h":64,"ps":"needle","aw":0,"a":"/themes/u/fu-n.cbi"},{"t":"tx","x":0,"y":0,"s":1,"v":"ok"}]})JSON",
+       }) {
+    RecordingSink sink;
+    TEST_ASSERT_TRUE_MESSAGE(renderSpec(spec, testFrame(), sink), spec);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(2, sink.commands.size(), spec);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(CommandType::Text), static_cast<int>(sink.commands[1].type));
+  }
+}
+
 void testProgressArcOutsideItsLimitsIsSkipped() {
   for (const char* fields : {
            R"("as":0,"aw":270)",            // no thickness
@@ -4555,6 +4797,13 @@ int main() {
   RUN_TEST(testProgressArcUsesColorStopsLikeTheBar);
   RUN_TEST(testProgressArcIsNotDrawnForAMissingWindowLikeTheBar);
   RUN_TEST(testProgressArcDrawsAFullRingAndAFullDisc);
+  RUN_TEST(testNeedleAngleFollowsTheSweepFromTwelve);
+  RUN_TEST(testNeedleSourcePixelTurnsClockwise);
+  RUN_TEST(testNeedleProgressAsksForTheThemeSpriteAtThePercentAngle);
+  RUN_TEST(testNeedleOpaqueBoundsCoverEveryDrawnPixel);
+  RUN_TEST(testNeedlePartialRepaintStaysOffTheRestOfTheDial);
+  RUN_TEST(testNeedleEraseBoxIsFixedBeforeTheLogoRedraws);
+  RUN_TEST(testNeedleWithoutACbiSpriteIsSkipped);
   RUN_TEST(testProgressArcOutsideItsLimitsIsSkipped);
   RUN_TEST(testValignDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont);
   RUN_TEST(testValignBottomDirtyBoundsCoverGlyphsWhenHeightSmallerThanFont);

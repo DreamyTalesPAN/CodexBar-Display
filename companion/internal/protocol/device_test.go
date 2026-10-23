@@ -307,6 +307,16 @@ func TestCapabilitiesFromHelloAdvertisesProgressArc(t *testing.T) {
 	if older.SupportsProgressArcV1 {
 		t.Fatalf("firmware 1.0.42 capabilities must not imply progress-arc-v1: %+v", older)
 	}
+	if older.SupportsProgressNeedleV1 {
+		t.Fatalf("firmware 1.0.42 capabilities must not imply progress-needle-v1: %+v", older)
+	}
+	needle := CapabilitiesFromHello(DeviceHello{
+		Kind:     "hello",
+		Features: []string{FeatureTheme, FeatureThemeSpecV1, FeatureProgressNeedleV1},
+	})
+	if !needle.SupportsProgressNeedleV1 || needle.SupportsProgressArcV1 {
+		t.Fatalf("progress-needle-v1 must not imply the arc: %+v", needle)
+	}
 }
 
 // Issue #526: the answer firmware 1.0.45 gave to GET /hello over WiFi at low

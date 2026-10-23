@@ -844,7 +844,7 @@ function ThemePrimitiveNode({
   }
 
   if (type === "progress" || type === "p") {
-    return <ThemeProgress frame={frame} primitive={primitive} />;
+    return <ThemeProgress assets={assets} frame={frame} primitive={primitive} />;
   }
 
   if (
@@ -1032,9 +1032,11 @@ function ThemeTextPrimitive({
 }
 
 function ThemeProgress({
+  assets,
   frame,
   primitive,
 }: {
+  assets: Record<string, ThemePackAsset>;
   frame: FrameData;
   primitive: ThemePrimitive;
 }) {
@@ -1058,6 +1060,35 @@ function ThemeProgress({
   // A long-form key that is present decides, also when it is empty, as on
   // VibeTV: `"progressStyle":""` beside `"ps":"arc"` is a straight bar.
   const style = primitive.progressStyle ?? primitive.ps ?? "";
+  if (style === "needle") {
+    const assetPath = primitive.assetPath || primitive.a || "";
+    const asset = assetPath ? assets[assetPath] : undefined;
+    const raw = asset?.encoding === "text" ? asset.data : "";
+    const angle = themeNeedleAngle(primitive, percent);
+    const size = raw ? cbiPixelSize(raw) : null;
+    if (!size) {
+      return null;
+    }
+    const fit = Math.min(width, height);
+    const srcSide = Math.max(size.width, size.height);
+    const scale = srcSide > 0 ? fit / srcSide : 1;
+    const spriteWidth = size.width * scale;
+    const spriteHeight = size.height * scale;
+    const cx = x + width / 2;
+    const cy = y + height / 2;
+    return (
+      <g transform={`rotate(${angle} ${cx} ${cy})`}>
+        <ThemeSpriteImage
+          animate={false}
+          height={spriteHeight}
+          raw={raw}
+          width={spriteWidth}
+          x={cx - spriteWidth / 2}
+          y={cy - spriteHeight / 2}
+        />
+      </g>
+    );
+  }
   if (style === "arc") {
     const arc = themeProgressArc(primitive, percent);
     // Each stroke runs clockwise along the middle of the ring. A circle's
@@ -1915,6 +1946,30 @@ export function progressPercent(
 // angles in whole degrees clockwise from 12 o'clock, and the filled share of
 // the sweep cut to whole degrees. The device skips an arc outside its limits,
 // so there is none here either.
+// Same whole-degree sweep as NeedleAngleDegrees in theme_spec_renderer_core.h.
+export function themeNeedleAngle(primitive: ThemePrimitive, percent: number) {
+  const start = primitive.arcStart ?? primitive.as ?? 0;
+  const sweep = primitive.arcSweep ?? primitive.aw ?? 0;
+  const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+  const angle = start + Math.floor((sweep * clamped) / 100);
+  return ((angle % 360) + 360) % 360;
+}
+
+function cbiPixelSize(raw: string): { width: number; height: number } | null {
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines[0] !== "CBI1") {
+    return null;
+  }
+  const [width, height] = (lines[1] || "").split(/\s+/).map(Number);
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+    return null;
+  }
+  return { width, height };
+}
+
 export function themeProgressArc(primitive: ThemePrimitive, percent: number) {
   const width = primitive.width || primitive.w || 0;
   const height = primitive.height || primitive.h || 0;

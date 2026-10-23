@@ -16,6 +16,7 @@ import {
   THEME_CATALOG_PREVIEW_FRAME,
   ThemeSpecPreview,
   themeFirmwareTextMetrics,
+  themeNeedleAngle,
   themeProgressArc,
   themeTextAlignedY,
   themeTextFittedSize,
@@ -1099,6 +1100,53 @@ describe("arc-style progress", () => {
     const markup = markupFor({ ...arc, progressStyle: "" }, 50);
     expect(markup).not.toContain("<circle");
     expect(markup).toContain("<rect");
+  });
+});
+
+describe("needle progress", () => {
+  const needle = {
+    t: "p" as const,
+    x: 36,
+    y: 40,
+    w: 168,
+    h: 168,
+    b: "us1p",
+    ps: "needle" as const,
+    as: 300,
+    aw: 120,
+    a: "/themes/u/fu-n.cbi",
+  };
+  const frameAt = (percent: number) => ({
+    ...THEME_CATALOG_PREVIEW_FRAME,
+    usageSlot1Available: true,
+    usageSlot1Percent: percent,
+  });
+
+  it("turns the theme sprite by the same whole degrees as the firmware", () => {
+    expect(themeNeedleAngle(needle, 0)).toBe(300);
+    expect(themeNeedleAngle(needle, 50)).toBe(0);
+    expect(themeNeedleAngle(needle, 100)).toBe(60);
+    const markup = renderToStaticMarkup(
+      createElement(ThemeSpecPreview, {
+        animate: false,
+        frame: frameAt(50),
+        pack: {
+          ok: true,
+          themeId: "fuel",
+          spec: { p: [needle] },
+          assets: {
+            "/themes/u/fu-n.cbi": {
+              contentType: "text/plain",
+              data: "CBI1\n2 2\n1\n#E2B84A\na.\n.a\n",
+              encoding: "text",
+            },
+          },
+        },
+        status: "ready",
+        themeId: "fuel",
+      }),
+    );
+    expect(markup).toContain('transform="rotate(0 120 124)"');
   });
 });
 

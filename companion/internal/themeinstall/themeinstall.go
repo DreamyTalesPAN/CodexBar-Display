@@ -536,13 +536,15 @@ func canRetryAfterThemeCapabilityFirmwareUpdate(pack *themepack.Pack, caps proto
 	missingColorStops := isMissingUsageCapabilityError(err, protocol.FeatureColorStopsV1)
 	missingTextValign := isMissingUsageCapabilityError(err, protocol.FeatureTextValignV1)
 	missingProgressArc := isMissingUsageCapabilityError(err, protocol.FeatureProgressArcV1)
+	missingProgressNeedle := isMissingUsageCapabilityError(err, protocol.FeatureProgressNeedleV1)
 	if (!missingSlots || caps.SupportsUsageSlotsV1) &&
 		(!missingWindows || caps.SupportsUsageWindowsV1) &&
 		(!missingProviderSlots || caps.SupportsProviderSlotsV1) &&
 		(!missingProviderAssets || caps.SupportsProviderAssetsV1) &&
 		(!missingColorStops || caps.SupportsColorStopsV1) &&
 		(!missingTextValign || caps.SupportsTextValignV1) &&
-		(!missingProgressArc || caps.SupportsProgressArcV1) {
+		(!missingProgressArc || caps.SupportsProgressArcV1) &&
+		(!missingProgressNeedle || caps.SupportsProgressNeedleV1) {
 		return false
 	}
 	updatedCaps := caps
@@ -553,6 +555,7 @@ func canRetryAfterThemeCapabilityFirmwareUpdate(pack *themepack.Pack, caps proto
 	updatedCaps.SupportsColorStopsV1 = true
 	updatedCaps.SupportsTextValignV1 = true
 	updatedCaps.SupportsProgressArcV1 = true
+	updatedCaps.SupportsProgressNeedleV1 = true
 	return pack.ValidateAgainstCapabilities(updatedCaps) == nil
 }
 

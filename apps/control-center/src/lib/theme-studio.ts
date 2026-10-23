@@ -59,7 +59,7 @@ export type ThemeStudioPrimitive = {
   borderRadius?: number;
   align?: "left" | "center" | "right";
   valign?: "top" | "middle" | "bottom";
-  progressStyle?: "solid" | "segments" | "arc";
+  progressStyle?: "solid" | "segments" | "arc" | "needle";
   segments?: number;
   segmentGap?: number;
   // An arc is a ring inside the box: degrees clockwise from 12 o'clock.
@@ -168,6 +168,9 @@ const MAX_GIF_WIDTH = 80;
 const MAX_GIF_HEIGHT = 80;
 const MAX_GIF_PIXELS = MAX_GIF_WIDTH * MAX_GIF_HEIGHT;
 const MAX_SPRITE_FRAME_WIDTH = 64;
+// Matches kMaxNeedleSpriteSide and kMaxNeedleSpritePixels in the firmware.
+const MAX_NEEDLE_SPRITE_SIDE = 96;
+const MAX_NEEDLE_SPRITE_PIXELS = 4096;
 const MAX_SPRITE_FRAME_HEIGHT = 64;
 const MAX_STATIC_SPRITE_FRAME_WIDTH = DISPLAY_SIZE;
 const MAX_STATIC_SPRITE_FRAME_HEIGHT = DISPLAY_SIZE;
@@ -512,7 +515,9 @@ export function normalizeThemeSpec(spec: ThemeStudioSpec): ThemeStudioSpec {
           : undefined,
     fit: primitive.fit === "shrink" ? "shrink" : undefined,
     progressStyle:
-      primitive.progressStyle === "segments" || primitive.progressStyle === "arc"
+      primitive.progressStyle === "segments" ||
+      primitive.progressStyle === "arc" ||
+      primitive.progressStyle === "needle"
         ? primitive.progressStyle
         : undefined,
     frameCount:
@@ -612,6 +617,9 @@ function compiledThemeSpecStringBytes(
       stringBytes += compiledStringBytes(primitive.text);
     } else if (primitive.type === "progress") {
       stringBytes += compiledStringBytes(compactBindingValue(primitive.binding));
+      if (primitive.progressStyle === "needle") {
+        stringBytes += compiledStringBytes(primitive.assetPath);
+      }
     } else if (primitive.type === "gif" || primitive.type === "sprite") {
       stringBytes += compiledStringBytes(primitive.assetPath);
       stringBytes += compiledStringBytes(primitive.stateAssets?.idle);
@@ -715,6 +723,7 @@ export function buildThemePack(
   const usesColorStops = themeStudioSpecUsesColorStops(normalized);
   const usesTextValign = themeStudioSpecUsesTextValign(normalized);
   const usesProgressArc = themeStudioSpecUsesProgressArc(normalized);
+  const usesProgressNeedle = themeStudioSpecUsesProgressNeedle(normalized);
   // What the pack declares is the only thing standing between a design and a
   // VibeTV that cannot render it: install checks the manifest, not the spec.
   // Provider slots arrived after usage slots, so they carry the later floor.
@@ -728,11 +737,16 @@ export function buildThemePack(
     ...(usesColorStops ? ["color-stops-v1"] : []),
     ...(usesTextValign ? ["text-valign-v1"] : []),
     ...(usesProgressArc ? ["progress-arc-v1"] : []),
+    ...(usesProgressNeedle ? ["progress-needle-v1"] : []),
   ];
-  // The firmware that draws an arc has no number yet, so an arc carries the
-  // newest floor that has one and relies on progress-arc-v1 for the rest.
+  // The firmware that draws an arc or a needle has no number yet, so either
+  // carries the newest floor that has one and relies on its capability for the rest.
   const minFirmware =
-    usesProviderAssets || usesColorStops || usesTextValign || usesProgressArc
+    usesProviderAssets ||
+    usesColorStops ||
+    usesTextValign ||
+    usesProgressArc ||
+    usesProgressNeedle
       ? "1.0.42"
       : usesProviderSlots
         ? "1.0.41"
@@ -870,6 +884,15 @@ export function themeStudioSpecUsesProgressArc(
   );
 }
 
+export function themeStudioSpecUsesProgressNeedle(
+  spec: ThemeStudioSpec,
+): boolean {
+  return spec.primitives.some(
+    (primitive) =>
+      primitive.type === "progress" && primitive.progressStyle === "needle",
+  );
+}
+
 export function deviceThemeSpecJson(spec: ThemeStudioSpec): string {
   return JSON.stringify(buildDeviceThemeSpec(spec));
 }
@@ -966,9 +989,41 @@ function validatePrimitive(
       primitive.progressStyle !== undefined &&
       primitive.progressStyle !== "solid" &&
       primitive.progressStyle !== "segments" &&
-      primitive.progressStyle !== "arc"
+      primitive.progressStyle !== "arc" &&
+      primitive.progressStyle !== "needle"
     ) {
-      errors.push(`${prefix}: progress style must be solid, segments or arc.`);
+      errors.push(`${prefix}: progress style must be solid, segments, arc or needle.`);
+    }
+    if (primitive.progressStyle === "needle") {
+      const arcStart = primitive.arcStart ?? 0;
+      const arcSweep = primitive.arcSweep ?? 0;
+      if (!Number.isInteger(arcStart) || arcStart < 0 || arcStart > 359) {
+        errors.push(`${prefix}: arc start must be between 0 and 359.`);
+      }
+      if (!Number.isInteger(arcSweep) || arcSweep < 1 || arcSweep > 360) {
+        errors.push(`${prefix}: arc sweep must be between 1 and 360.`);
+      }
+      if (!primitive.assetPath?.toLowerCase().endsWith(".cbi")) {
+        errors.push(`${prefix}: needle requires a .cbi sprite.`);
+      } else if (!assets[primitive.assetPath]) {
+        errors.push(`${prefix}: ${primitive.assetPath} is not loaded.`);
+      } else {
+        const sprite =
+          assets[primitive.assetPath].encoding === "text"
+            ? spriteMetadata(assets[primitive.assetPath].data)
+            : null;
+        if (!sprite || sprite.kind !== "CBI1") {
+          errors.push(`${prefix}: ${primitive.assetPath} is not a still sprite.`);
+        } else if (
+          sprite.width > MAX_NEEDLE_SPRITE_SIDE ||
+          sprite.height > MAX_NEEDLE_SPRITE_SIDE ||
+          sprite.width * sprite.height > MAX_NEEDLE_SPRITE_PIXELS
+        ) {
+          errors.push(
+            `${prefix}: needle sprite must stay within ${MAX_NEEDLE_SPRITE_SIDE}px and ${MAX_NEEDLE_SPRITE_PIXELS} pixels.`,
+          );
+        }
+      }
     }
     if (primitive.progressStyle === "arc") {
       // The limits of CompilePrimitive in theme_spec_renderer_core.h, which
@@ -1325,7 +1380,11 @@ function buildDevicePrimitive(
   if (primitive.valign && primitive.valign !== "top") {
     compact.va = primitive.valign;
   }
-  if (primitive.progressStyle === "segments" || primitive.progressStyle === "arc") {
+  if (
+    primitive.progressStyle === "segments" ||
+    primitive.progressStyle === "arc" ||
+    primitive.progressStyle === "needle"
+  ) {
     compact.ps = primitive.progressStyle;
   }
   if (primitive.arcStart !== undefined) {
@@ -1467,6 +1526,8 @@ function importPrimitive(value: unknown): ThemeStudioPrimitive {
     primitive.progressStyle = "segments";
   } else if (progressStyle === "arc") {
     primitive.progressStyle = "arc";
+  } else if (progressStyle === "needle") {
+    primitive.progressStyle = "needle";
   }
   const arcStart = numberValue(value.arcStart) ?? numberValue(value.as);
   if (arcStart !== undefined) {

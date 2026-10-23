@@ -300,6 +300,9 @@ func validateAgainstCapabilities(spec Spec, raw json.RawMessage, caps protocol.D
 	if specUsesProgressArc(spec) && !caps.SupportsProgressArcV1 {
 		return errors.New("device does not advertise progress-arc-v1 support")
 	}
+	if specUsesProgressNeedle(spec) && !caps.SupportsProgressNeedleV1 {
+		return errors.New("device does not advertise progress-needle-v1 support")
+	}
 	if maxIndex := maxUsageWindowIndex(spec); maxIndex >= 0 && caps.MaxUsageWindows > 0 && maxIndex >= caps.MaxUsageWindows {
 		return fmt.Errorf("theme usage window index exceeds device limit: index=%d limit=%d", maxIndex, caps.MaxUsageWindows)
 	}
@@ -398,6 +401,15 @@ func specUsesTextValign(spec Spec) bool {
 func specUsesProgressArc(spec Spec) bool {
 	for _, primitive := range spec.Primitives {
 		if primitive.Type == "progress" && primitive.ProgressStyle == "arc" {
+			return true
+		}
+	}
+	return false
+}
+
+func specUsesProgressNeedle(spec Spec) bool {
+	for _, primitive := range spec.Primitives {
+		if primitive.Type == "progress" && primitive.ProgressStyle == "needle" {
 			return true
 		}
 	}
@@ -808,7 +820,10 @@ func validatePrimitive(p Primitive) error {
 	if err := validateColorStops(p); err != nil {
 		return err
 	}
-	return validateProgressArc(p)
+	if err := validateProgressArc(p); err != nil {
+		return err
+	}
+	return validateProgressNeedle(p)
 }
 
 // validateProgressArc holds the limits of CompilePrimitive in
@@ -825,6 +840,25 @@ func validateProgressArc(p Primitive) error {
 	}
 	if p.ArcThickness < 1 || p.ArcThickness*2 > min(p.Width, p.Height) {
 		return errors.New("arcThickness must be between 1 and half the smaller of width and height")
+	}
+	return nil
+}
+
+// validateProgressNeedle holds the limits of the needle branch of
+// CompilePrimitive. The picture is a theme CBI sprite, so the arc thickness
+// field is not used.
+func validateProgressNeedle(p Primitive) error {
+	if p.Type != "progress" || p.ProgressStyle != "needle" {
+		return nil
+	}
+	if p.ArcStart < 0 || p.ArcStart > 359 {
+		return errors.New("arcStart must be between 0 and 359")
+	}
+	if p.ArcSweep < 1 || p.ArcSweep > 360 {
+		return errors.New("arcSweep must be between 1 and 360")
+	}
+	if !isSafeThemeAssetPath(p.AssetPath) || !strings.HasSuffix(strings.ToLower(p.AssetPath), ".cbi") {
+		return errors.New("needle progress requires a .cbi assetPath")
 	}
 	return nil
 }
@@ -1040,6 +1074,9 @@ func compiledThemeSpecStringBytes(spec Spec) int {
 			addCompiledStringStorage(primitive.Text, &stringBytes)
 		case "progress":
 			addCompiledStringStorage(primitive.Binding, &stringBytes)
+			if primitive.ProgressStyle == "needle" {
+				addCompiledStringStorage(primitive.AssetPath, &stringBytes)
+			}
 		case "gif", "sprite", "image":
 			addCompiledStringStorage(primitive.AssetPath, &stringBytes)
 			if primitive.StateAssets != nil {

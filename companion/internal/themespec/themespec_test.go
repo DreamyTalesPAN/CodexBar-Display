@@ -1163,6 +1163,48 @@ func TestValidateRejectsProgressArcOutsideTheFirmwareLimits(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsProgressNeedle(t *testing.T) {
+	raw := `{"v":1,"id":"fuel","rev":1,"p":[{"t":"p","x":36,"y":40,"w":168,"h":168,"b":"us1p","ps":"needle","as":300,"aw":120,"a":"/themes/u/fu-n.cbi"}]}`
+	spec, _, err := Parse([]byte(raw))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if err := Validate(spec); err != nil {
+		t.Fatalf("expected needle to validate, got %v", err)
+	}
+	for name, bad := range map[string]string{
+		"no sprite": `{"v":1,"id":"fuel","rev":1,"p":[{"t":"p","x":0,"y":0,"w":64,"h":64,"ps":"needle","as":300,"aw":120}]}`,
+		"animated":  `{"v":1,"id":"fuel","rev":1,"p":[{"t":"p","x":0,"y":0,"w":64,"h":64,"ps":"needle","as":300,"aw":120,"a":"/themes/u/fu-n.cba"}]}`,
+		"start":     `{"v":1,"id":"fuel","rev":1,"p":[{"t":"p","x":0,"y":0,"w":64,"h":64,"ps":"needle","as":360,"aw":120,"a":"/themes/u/fu-n.cbi"}]}`,
+		"sweep":     `{"v":1,"id":"fuel","rev":1,"p":[{"t":"p","x":0,"y":0,"w":64,"h":64,"ps":"needle","aw":0,"a":"/themes/u/fu-n.cbi"}]}`,
+	} {
+		spec, _, err := Parse([]byte(bad))
+		if err == nil {
+			err = Validate(spec)
+		}
+		if err == nil {
+			t.Fatalf("expected %s to fail: %s", name, bad)
+		}
+	}
+}
+
+func TestValidateAgainstCapabilitiesRequiresProgressNeedle(t *testing.T) {
+	caps := protocol.DeviceCapabilities{Known: true, SupportsThemeSpecV1: true}
+	raw := `{"v":1,"id":"fuel","rev":1,"p":[{"t":"p","x":0,"y":0,"w":64,"h":64,"ps":"needle","as":300,"aw":120,"a":"/themes/u/fu-n.cbi"}]}`
+	spec, wire, err := Parse([]byte(raw))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if err := ValidateAgainstCapabilities(spec, wire, caps); err == nil ||
+		!strings.Contains(err.Error(), "progress-needle-v1") {
+		t.Fatalf("expected progress-needle-v1 rejection, got %v", err)
+	}
+	caps.SupportsProgressNeedleV1 = true
+	if err := ValidateAgainstCapabilities(spec, wire, caps); err != nil {
+		t.Fatalf("expected capable device to accept needle, got %v", err)
+	}
+}
+
 func TestValidateAgainstCapabilitiesRequiresProgressArc(t *testing.T) {
 	caps := protocol.DeviceCapabilities{Known: true, SupportsThemeSpecV1: true}
 	for _, raw := range []string{

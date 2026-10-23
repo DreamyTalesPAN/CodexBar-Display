@@ -176,6 +176,16 @@ struct SpriteCommand {
   bool hasBg = false;
 };
 
+// The theme's needle sprite, turned clockwise from its authored "up".
+struct NeedleCommand {
+  const char* assetPath = "";
+  int x = 0;
+  int y = 0;
+  int width = 0;
+  int height = 0;
+  int angle = 0;
+};
+
 struct PixelsCommand {
   const char* data = "";
   int x = 0;
@@ -190,6 +200,11 @@ constexpr size_t kMaxCompiledThemeSpecStringBytes = 1024;
 constexpr size_t kMaxCompiledProviderAssets = 16;
 constexpr size_t kMaxCompiledColorStops = 4;
 constexpr int kProgressStyleArc = 2;
+constexpr int kProgressStyleNeedle = 3;
+// A needle sprite is decoded whole so it can be rotated. These match the
+// static index buffer in the ESP8266 renderer: 64×64 fills it exactly.
+constexpr int kMaxNeedleSpriteSide = 96;
+constexpr int kMaxNeedleSpritePixels = 4096;
 
 struct CompiledProviderAsset {
   const char* key = nullptr;
@@ -322,6 +337,7 @@ class Sink {
   virtual void DrawProgress(const ProgressCommand& cmd) = 0;
   virtual void DrawGif(const GifCommand& cmd) = 0;
   virtual void DrawSprite(const SpriteCommand& cmd) = 0;
+  virtual void DrawNeedle(const NeedleCommand& cmd) = 0;
   virtual void DrawPixels(const PixelsCommand& cmd) = 0;
 };
 
@@ -1123,6 +1139,14 @@ inline bool AssetPathLooksAnimated(const char* path) {
           (std::strcmp(path + len - 4, ".gif") == 0));
 }
 
+inline bool AssetPathLooksCbi(const char* path) {
+  if (path == nullptr) {
+    return false;
+  }
+  const size_t len = std::strlen(path);
+  return len >= 4 && std::strcmp(path + len - 4, ".cbi") == 0;
+}
+
 inline bool AssetPathLooksGif(const char* path) {
   if (path == nullptr) {
     return false;
@@ -1226,6 +1250,10 @@ inline bool CountCompiledThemeSpecStorage(
       AddCompiledStringStorage(JsonStringFor(primitive, "text", "v"), plan.stringPoolCapacity);
     } else if (PrimitiveTypeIs(primitive, "progress", "p")) {
       AddCompiledStringStorage(JsonStringFor(primitive, "binding", "b"), plan.stringPoolCapacity);
+      const char* progressStyle = JsonStringFor(primitive, "progressStyle", "ps");
+      if (progressStyle != nullptr && std::strcmp(progressStyle, "needle") == 0) {
+        AddCompiledStringStorage(JsonStringFor(primitive, "assetPath", "a"), plan.stringPoolCapacity);
+      }
     } else if (PrimitiveTypeIs(primitive, "gif", "g") ||
                PrimitiveTypeIs(primitive, "sprite", "sp") ||
                PrimitiveTypeIs(primitive, "image", "img")) {
@@ -1459,6 +1487,21 @@ inline bool CompilePrimitive(CompiledThemeSpec& scene, JsonObjectConst primitive
       if (out.segments < 0 || out.segments > 359 ||
           out.segmentGap < 1 || out.segmentGap > 360 ||
           out.borderRadius < 1 || out.borderRadius * 2 > diameter) {
+        return false;
+      }
+    } else if (progressStyle != nullptr && std::strcmp(progressStyle, "needle") == 0) {
+      // Same angle fields as an arc. The picture is the theme's sprite, so
+      // thickness is unused and the asset path is the needle.
+      out.style = kProgressStyleNeedle;
+      out.segments = JsonIntFor(primitive, "arcStart", "as", 0);
+      out.segmentGap = JsonIntFor(primitive, "arcSweep", "aw", 0);
+      out.assetPath = CopyCompiledString(scene, JsonStringFor(primitive, "assetPath", "a"));
+      if (out.assetPath == nullptr) {
+        out.assetPath = "";
+      }
+      if (out.segments < 0 || out.segments > 359 ||
+          out.segmentGap < 1 || out.segmentGap > 360 ||
+          out.assetPath[0] == '\0' || !AssetPathLooksCbi(out.assetPath)) {
         return false;
       }
     } else {
@@ -1971,6 +2014,126 @@ inline bool CompiledPrimitiveBounds(
   return false;
 }
 
+// Clockwise degrees from the sprite's authored up. 0% sits at `start`,
+// 100% at `start + sweep`, wrapping into 0–359.
+inline int NeedleAngleDegrees(int start, int sweep, int percent) {
+  int angle = start + sweep * ClampPct(percent) / 100;
+  angle %= 360;
+  if (angle < 0) {
+    angle += 360;
+  }
+  return angle;
+}
+
+inline int DivRound(int num, int den) {
+  if (den <= 0) {
+    return 0;
+  }
+  const long long n = num;
+  const long long d = den;
+  if (n >= 0) {
+    return static_cast<int>((n + d / 2) / d);
+  }
+  return static_cast<int>(-((-n + d / 2) / d));
+}
+
+// The source pixel a destination pixel shows, after the sprite is scaled
+// uniformly into the box and turned clockwise around the box centre. The
+// sprite's centre is the pivot and its up is angle 0.
+inline bool NeedleSourcePixel(
+    int destCol,
+    int destRow,
+    int destW,
+    int destH,
+    int srcW,
+    int srcH,
+    int angleDegrees,
+    int& srcCol,
+    int& srcRow) {
+  if (destW <= 0 || destH <= 0 || srcW <= 0 || srcH <= 0 ||
+      destCol < 0 || destRow < 0 || destCol >= destW || destRow >= destH) {
+    return false;
+  }
+  int angle = angleDegrees % 360;
+  if (angle < 0) {
+    angle += 360;
+  }
+  const int sine = ArcSin4096(angle);
+  const int cosine = ArcSin4096(angle + 90);
+  const int relX = 2 * destCol + 1 - destW;
+  const int relY = 2 * destRow + 1 - destH;
+  const int srcRelX = DivRound(relX * cosine + relY * sine, 4096);
+  const int srcRelY = DivRound(-relX * sine + relY * cosine, 4096);
+  const int fit = destW < destH ? destW : destH;
+  const int srcSide = srcW > srcH ? srcW : srcH;
+  if (fit <= 0 || srcSide <= 0) {
+    return false;
+  }
+  const int srcHalfX = DivRound(srcRelX * srcSide, fit);
+  const int srcHalfY = DivRound(srcRelY * srcSide, fit);
+  srcCol = (srcHalfX + srcW - 1) / 2;
+  srcRow = (srcHalfY + srcH - 1) / 2;
+  return srcCol >= 0 && srcRow >= 0 && srcCol < srcW && srcRow < srcH;
+}
+
+// Axis-aligned box of the pixels DrawNeedle will paint. The scan uses the
+// same inverse sampler as the draw, so a partial update can erase the old
+// blade and the new one without clearing the rest of the dial.
+inline bool NeedleOpaqueBounds(
+    const uint8_t* index,
+    int srcW,
+    int srcH,
+    int destX,
+    int destY,
+    int destW,
+    int destH,
+    int angleDegrees,
+    uint8_t transparent,
+    Bounds& bounds) {
+  if (index == nullptr || srcW <= 0 || srcH <= 0 || destW <= 0 || destH <= 0) {
+    return false;
+  }
+  int minX = destW;
+  int minY = destH;
+  int maxX = -1;
+  int maxY = -1;
+  for (int row = 0; row < destH; ++row) {
+    for (int col = 0; col < destW; ++col) {
+      int srcCol = 0;
+      int srcRow = 0;
+      if (!NeedleSourcePixel(col, row, destW, destH, srcW, srcH, angleDegrees, srcCol, srcRow)) {
+        continue;
+      }
+      if (index[srcRow * srcW + srcCol] == transparent) {
+        continue;
+      }
+      if (col < minX) {
+        minX = col;
+      }
+      if (row < minY) {
+        minY = row;
+      }
+      if (col > maxX) {
+        maxX = col;
+      }
+      if (row > maxY) {
+        maxY = row;
+      }
+    }
+    if ((row & 15) == 15) {
+      RenderYield();
+    }
+  }
+  if (maxX < minX || maxY < minY) {
+    return false;
+  }
+  bounds.x = destX + minX;
+  bounds.y = destY + minY;
+  bounds.width = maxX - minX + 1;
+  bounds.height = maxY - minY + 1;
+  return bounds.width > 0 && bounds.height > 0;
+}
+
 inline bool DrawCompiledPrimitive(
     const CompiledThemeSpec& scene,
     const CompiledPrimitive& primitive,
@@ -2035,6 +2198,18 @@ inline bool DrawCompiledPrimitive(
       const int percent = CompiledProgressPercentFor(primitive, frame);
       DrawProgressArc(primitive, percent, ResolveProgressFillColor(primitive, percent, frame.usageMode), sink);
       return true;
+    }
+    if (primitive.style == kProgressStyleNeedle) {
+      const int percent = CompiledProgressPercentFor(primitive, frame);
+      NeedleCommand cmd;
+      cmd.assetPath = primitive.assetPath == nullptr ? "" : primitive.assetPath;
+      cmd.x = primitive.x;
+      cmd.y = primitive.y;
+      cmd.width = primitive.width;
+      cmd.height = primitive.height;
+      cmd.angle = NeedleAngleDegrees(primitive.segments, primitive.segmentGap, percent);
+      sink.DrawNeedle(cmd);
+      return cmd.assetPath[0] != '\0';
     }
     ProgressCommand cmd;
     cmd.x = primitive.x;
@@ -2243,13 +2418,19 @@ inline bool RenderCompiledThemeSpecRegionPrimitives(
   return rendered;
 }
 
+// Return true with a tighter box than the primitive's own bounds. Used for a
+// needle, whose primitive is the whole dial but whose pixels are one blade.
+using DirtyBoundsFn = bool (*)(const CompiledPrimitive& primitive, const FrameData& frame, Bounds& bounds, void* context);
+
 inline bool RenderCompiledThemeSpecChangedPrimitives(
     const CompiledThemeSpec& scene,
     const FrameData& frame,
     uint32_t changedFields,
     Sink& sink,
     const char** error = nullptr,
-    bool* skippedAnimatedOverlap = nullptr) {
+    bool* skippedAnimatedOverlap = nullptr,
+    DirtyBoundsFn dirtyBounds = nullptr,
+    void* dirtyBoundsContext = nullptr) {
   if (error != nullptr) {
     *error = "";
   }
@@ -2267,6 +2448,69 @@ inline bool RenderCompiledThemeSpecChangedPrimitives(
       *error = "empty_scene";
     }
     return false;
+  }
+
+  // A needle and the percent under it both change on one usage update. Unioning
+  // those boxes clears everything between them, so the dial flashes. When the
+  // caller can name a tighter box, repaint each changed primitive on its own.
+  // Bounds are fixed before any drawing: a logo redraw paints the needle at
+  // its new angle and must not shrink the box that still has to erase the old one.
+  if (dirtyBounds != nullptr) {
+    bool anyAffected = false;
+    bool anyCustom = false;
+    static Bounds plannedRegions[kMaxCompiledThemeSpecPrimitives];
+    static uint8_t plannedReady[kMaxCompiledThemeSpecPrimitives];
+    for (size_t i = 0; i < scene.primitiveCount; ++i) {
+      plannedReady[i] = 0;
+      const CompiledPrimitive& primitive = scene.primitives[i];
+      if ((primitive.liveFields & changedFields) == 0) {
+        continue;
+      }
+      anyAffected = true;
+      Bounds region;
+      if (dirtyBounds(primitive, frame, region, dirtyBoundsContext) &&
+          region.width > 0 && region.height > 0) {
+        plannedRegions[i] = region;
+        plannedReady[i] = 1;
+        anyCustom = true;
+      }
+    }
+    if (!anyAffected) {
+      if (error != nullptr) {
+        *error = "no_affected_primitive";
+      }
+      return false;
+    }
+    if (anyCustom) {
+      bool skippedAnimated = false;
+      bool rendered = false;
+      for (size_t i = 0; i < scene.primitiveCount; ++i) {
+        const CompiledPrimitive& primitive = scene.primitives[i];
+        if ((primitive.liveFields & changedFields) == 0) {
+          continue;
+        }
+        Bounds region;
+        if (plannedReady[i] != 0) {
+          region = plannedRegions[i];
+        } else if (!CompiledPrimitiveBounds(scene, primitive, frame, true, region)) {
+          if (error != nullptr) {
+            *error = "unstable_dirty_bounds";
+          }
+          return false;
+        }
+        bool regionSkippedAnimated = false;
+        if (!RenderCompiledThemeSpecRegionPrimitives(
+                scene, frame, region, sink, error, &regionSkippedAnimated)) {
+          return false;
+        }
+        rendered = true;
+        skippedAnimated = skippedAnimated || regionSkippedAnimated;
+      }
+      if (skippedAnimatedOverlap != nullptr) {
+        *skippedAnimatedOverlap = skippedAnimated;
+      }
+      return rendered;
+    }
   }
 
   bool hasAffectedPrimitive = false;

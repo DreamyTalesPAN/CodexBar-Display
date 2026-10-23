@@ -307,6 +307,7 @@ func (s *Server) handleHello(w http.ResponseWriter, r *http.Request) {
 			protocol.FeatureColorStopsV1,
 			protocol.FeatureTextValignV1,
 			protocol.FeatureProgressArcV1,
+			protocol.FeatureProgressNeedleV1,
 		},
 		MaxFrameBytes: MaxFrameBytes,
 		Capabilities: protocol.CapabilityBlock{
@@ -323,6 +324,7 @@ func (s *Server) handleHello(w http.ResponseWriter, r *http.Request) {
 				SupportsColorStopsV1:     true,
 				SupportsTextValignV1:     true,
 				SupportsProgressArcV1:    true,
+				SupportsProgressNeedleV1: true,
 				MaxUsageWindows:          3,
 				SupportsStoredThemes:     true,
 				MaxThemeSpecBytes:        2048,
@@ -777,11 +779,20 @@ func primitiveCompiles(primitive map[string]any) bool {
 // must compile, and width and height are above zero.
 func progressCompiles(primitive map[string]any) bool {
 	width, height := jsonInt(primitive, "width", "w", 0), jsonInt(primitive, "height", "h", 0)
-	if jsonFor[string](primitive, "progressStyle", "ps") == "arc" {
+	style := jsonFor[string](primitive, "progressStyle", "ps")
+	if style == "arc" {
 		start := jsonInt(primitive, "arcStart", "as", 0)
 		sweep := jsonInt(primitive, "arcSweep", "aw", 0)
 		thickness := jsonInt(primitive, "arcThickness", "at", 0)
 		if start < 0 || start > 359 || sweep < 1 || sweep > 360 || thickness < 1 || thickness*2 > min(width, height) {
+			return false
+		}
+	}
+	if style == "needle" {
+		start := jsonInt(primitive, "arcStart", "as", 0)
+		sweep := jsonInt(primitive, "arcSweep", "aw", 0)
+		asset := jsonFor[string](primitive, "assetPath", "a")
+		if start < 0 || start > 359 || sweep < 1 || sweep > 360 || !strings.HasSuffix(strings.ToLower(asset), ".cbi") {
 			return false
 		}
 	}
