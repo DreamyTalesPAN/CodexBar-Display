@@ -1,18 +1,25 @@
 // @vitest-environment jsdom
 import React from "react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ThemeSpecPreview, type ThemeRenderPack } from "./live-vibetv-preview";
+import { buildFrameData, ThemeSpecPreview, type ThemeRenderPack } from "./live-vibetv-preview";
 
 beforeEach(() => {
   vi.stubGlobal("React", React);
   vi.useFakeTimers();
   vi.setSystemTime(0);
+  // jsdom has no SVG layout; report no measurement so firmware metrics apply.
+  Object.defineProperty(SVGElement.prototype, "getComputedTextLength", {
+    configurable: true, value: () => Number.NaN,
+  });
   vi.spyOn(document, "hasFocus").mockReturnValue(true);
   vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
 });
 afterEach(() => {
   cleanup();
+  Reflect.deleteProperty(SVGElement.prototype, "getComputedTextLength");
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -80,4 +87,69 @@ it("reuses images when moved and refreshes them when resized or edited", () => {
   const edited = { ...resized, assets: { art: { ...pack.assets!.art, data: "CBI1\n2 1\n1\n#654321\n.a" } } };
   rerender(<ThemeSpecPreview animate={false} pack={edited} status="ready" themeId="test" />);
   expect(imageDocument(image).querySelector("rect")?.getAttribute("fill")).toBe("#654321");
+});
+
+// These real-pack checks run even when the browser has no hardware WebGL.
+// They test the screen renderer directly, without faking GPU capability.
+function catalogPack(theme: string, revision: string): ThemeRenderPack {
+  return JSON.parse(readFileSync(resolve(
+    process.cwd(), `../../dist/theme-packs/render/${theme}/${revision}.json`,
+  ), "utf8"));
+}
+
+it("renders the Overview's real zero and long usage labels at readable sizes", () => {
+  const frame = buildFrameData(undefined, {
+    v: 1, provider: "codex", label: "Codex", sessionUnavailable: true,
+    weekly: 63, resetSecs: 5400, usageMode: "used", activity: "coding",
+    usageSlots: [
+      { id: "primary", label: "Weekly", percent: 0, resetSecs: 5400 },
+      { id: "secondary", label: "Codex Spark Weekly", percent: 63, resetSecs: 0 },
+    ],
+  });
+  const { container } = render(<ThemeSpecPreview
+    pack={catalogPack("synthwave", "synthwa-3-619665")} status="ready"
+    themeId="synthwave" frame={frame} />);
+  const texts = [...container.querySelectorAll("text")];
+  const text = (value: string) => texts.find((node) => node.textContent === value);
+  expect(text("USAGE")).toBeTruthy();
+  for (const label of ["Weekly used", "Codex Spark Weekly used"]) {
+    expect(text(label)?.getAttribute("font-size")).toBe("16");
+  }
+  expect(text("0%")).toBeTruthy();
+  expect(text("63%")).toBeTruthy();
+  expect(text("VIBETV")).toBeUndefined();
+});
+
+it.each([
+  ["mini-classic", "mini-cl-3-47fe90", "gif", "Codex"],
+  ["clippy", "clippy-3-fe3fd4", "animated-sprite", "Codex"],
+  ["cozy-meadow", "cm-3-1ed79c", "static-sprite", "Session"],
+  ["synthwave", "synthwa-3-619665", "static-sprite", "Codex"],
+  ["claude-creature", "claude--3-afab9c", "animated-sprite", "Codex"],
+])("renders the live %s pack and its actual asset types", (theme, revision, kind, label) => {
+  const frame = buildFrameData(undefined, {
+    v: 1, provider: "codex", label: "Codex", session: 27, weekly: 63,
+    resetSecs: 5400, usageMode: "used", activity: "coding",
+    usageSlots: [
+      { id: "primary", label: "Session", percent: 27, resetSecs: 5400 },
+      { id: "secondary", label: "Weekly", percent: 63, resetSecs: 5400 },
+    ],
+  });
+  const { container, queryByText } = render(<ThemeSpecPreview
+    pack={catalogPack(theme, revision)} status="ready" themeId={theme} frame={frame} />);
+  expect([...container.querySelectorAll("text")].some((node) => node.textContent === label)).toBe(true);
+  expect(queryByText("ThemeSpec not available")).toBeNull();
+  const images = [...container.querySelectorAll("image")];
+  if (kind === "gif") {
+    expect(images.length).toBeGreaterThanOrEqual(1);
+  } else {
+    const pixels = images.filter((image) => image.getAttribute("href")?.startsWith("data:image/svg+xml,"))
+      .reduce((count, image) => count + imageDocument(image).querySelectorAll("rect").length, 0);
+    expect(pixels).toBeGreaterThan(10);
+  }
+  if (kind === "animated-sprite") {
+    const before = container.innerHTML;
+    act(() => { vi.advanceTimersByTime(650); });
+    expect(container.innerHTML).not.toBe(before);
+  }
 });

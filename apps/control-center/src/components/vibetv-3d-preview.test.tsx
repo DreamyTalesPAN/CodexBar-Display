@@ -8,6 +8,8 @@ import type { Scene } from "three";
 import { VibeTV3DPreview } from "./vibetv-3d-preview";
 
 const state = vi.hoisted(() => ({
+  rendererFails: false,
+  modelFails: false,
   angles: [] as number[],
   listeners: {} as Record<string, () => void>,
   renders: 0,
@@ -21,6 +23,9 @@ const state = vi.hoisted(() => ({
 vi.mock("three", async (importOriginal) => {
   const three = await importOriginal<typeof import("three")>();
   class FakeRenderer {
+    constructor() {
+      if (state.rendererFails) throw new Error("WebGL renderer unavailable");
+    }
     domElement = document.createElement("canvas");
     shadowMap = { enabled: false, type: 0 };
     toneMapping = 0;
@@ -68,7 +73,8 @@ vi.mock("three/addons/controls/OrbitControls.js", async () => {
 vi.mock("three/addons/loaders/GLTFLoader.js", async () => {
   const { Group } = await import("three");
   class FakeGLTFLoader {
-    load(_url: string, onLoad: (gltf: { scene: unknown }) => void) {
+    load(_url: string, onLoad: (gltf: { scene: unknown }) => void, _progress: unknown, onError: () => void) {
+      if (state.modelFails) { onError(); return; }
       onLoad({ scene: new Group() });
     }
   }
@@ -103,6 +109,8 @@ const requestFrame = vi.fn((callback: FrameRequestCallback) =>
 
 beforeEach(() => {
   vi.useFakeTimers();
+  state.rendererFails = false;
+  state.modelFails = false;
   state.angles = [];
   state.listeners = {};
   state.scene = null;
@@ -249,5 +257,20 @@ describe("3D VibeTV sway", () => {
     act(() => state.resize());
     view.unmount();
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+
+describe("3D preview failure", () => {
+  it.each(["renderer", "model"])("reports a %s failure so the caller reveals its fallback", (failure) => {
+    state.rendererFails = failure === "renderer";
+    state.modelFails = failure === "model";
+    const onFailed = vi.fn();
+    const onReady = vi.fn();
+    const { container } = render(<VibeTV3DPreview device={null} displayFrame={null} usage={null} onReady={onReady} onFailed={onFailed} />);
+    runFrames(0);
+    expect(onFailed).toHaveBeenCalledTimes(1);
+    expect(onReady).not.toHaveBeenCalled();
+    expect(container.firstChild).toBeNull();
   });
 });

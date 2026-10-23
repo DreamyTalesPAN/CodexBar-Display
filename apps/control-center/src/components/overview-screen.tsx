@@ -1,7 +1,6 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   CompanionStatus,
   DeviceInfo,
@@ -22,17 +21,8 @@ import {
   deviceUsesCable,
 } from "./control-center-types";
 import { SetupDialog } from "./setup/setup-dialog";
-import {
-  LiveVibeTVPreview,
-  type DisplayFrameSnapshot,
-} from "./live-vibetv-preview";
-import { hardwareWebGLAvailable } from "./vibetv-3d-support";
-
-// three.js and the model are their own chunk, loaded only on Overview.
-const VibeTV3DPreview = dynamic(
-  () => import("./vibetv-3d-preview").then((module) => module.VibeTV3DPreview),
-  { ssr: false },
-);
+import type { DisplayFrameSnapshot } from "./live-vibetv-preview";
+import { LiveVibeTV3DPreview } from "./live-vibetv-3d-preview";
 
 export type OverviewNotice = "weak-wifi" | "theme-not-shown";
 
@@ -145,21 +135,6 @@ export function OverviewScreen({
   const updateOwnedDisconnect = Boolean(
     !connected && firmwareUpdateStatus?.phase === "installing",
   );
-  // The heading and the flat live preview come first. The 3D case starts after
-  // the first paint, only on a hardware WebGL, and replaces the flat preview
-  // once its model is on screen; the device screen inside shows the live
-  // state, or the offline placeholder when VibeTV has no live frame.
-  const [use3D, setUse3D] = useState(false);
-  const [threeReady, setThreeReady] = useState(false);
-  // Stable, so the flat preview's handover timer is not restarted on each poll.
-  const onThreeReady = useCallback(() => setThreeReady(true), []);
-  useEffect(() => {
-    const timer = window.setTimeout(
-      () => setUse3D(hardwareWebGLAvailable()),
-      0,
-    );
-    return () => window.clearTimeout(timer);
-  }, []);
 
   return (
     <div className="flex w-full flex-1 flex-col pb-8">
@@ -191,39 +166,14 @@ export function OverviewScreen({
           </h2>
         </div>
 
-        <div className="relative mt-3 mb-5 flex w-full justify-center">
-          {use3D ? (
-            <div
-              // Until the 3D is revealed it is only drawn in the background:
-              // the flat preview is the one screen readers get.
-              aria-hidden={threeReady ? undefined : true}
-              className={
-                threeReady
-                  ? "flex w-full justify-center"
-                  : "absolute inset-0 flex justify-center opacity-0"
-              }
-              inert={threeReady ? undefined : true}
-            >
-              <VibeTV3DPreview
-                className="-my-[22px] aspect-[640/411] max-w-[718px]"
-                device={device}
-                displayFrame={displayFrame}
-                onReady={onThreeReady}
-                updateOwnedDisconnect={updateOwnedDisconnect}
-                usage={usage || null}
-              />
-            </div>
-          ) : null}
-          {threeReady ? null : (
-            <div className="w-[440px] max-w-full">
-              <LiveVibeTVPreview
-                device={device}
-                displayFrame={displayFrame}
-                updateOwnedDisconnect={updateOwnedDisconnect}
-                usage={usage || null}
-              />
-            </div>
-          )}
+        <div className="mt-3 mb-5 w-full">
+          <LiveVibeTV3DPreview
+            className="-my-[22px] aspect-[640/411] max-w-[718px]"
+            device={device}
+            displayFrame={displayFrame}
+            updateOwnedDisconnect={updateOwnedDisconnect}
+            usage={usage || null}
+          />
         </div>
 
         <dl className="mt-auto grid w-full grid-cols-2 gap-x-8 gap-y-5 border-t border-foreground/10 pt-5 text-[13px] min-[960px]:grid-cols-4">
