@@ -102,6 +102,8 @@ Run `npm run check:customer-ui-copy` in `apps/control-center` before shipping cu
 
 The repository gate also blocks every customer-facing UI diff until the same change includes a new approval entry with `User approval:`, `Approved customer-visible result:` and `What's new:`. A general implementation or release approval is not enough; the visible result must be named.
 
+An entry whose `User approval:` line says `pending` or `draft` keeps the gate red until Paul's OK. A change without a visible change records `no visible change – UI approval not needed (<reason>)`; after Paul's yes the line becomes `approved by Paul in the communicator chat, <date time>: "<his quote>"`. How approvals are recorded: `docs/control-center-customer-ui-approval.md`.
+
 ## What's New
 
 After an update, the first time a customer who was already set up lands on Overview, the dialog `What's new` tells them what they can now do. `What's new` on Updates opens it again. A customer who is setting VibeTV up never gets it. The entries are the list in `apps/control-center/src/lib/whats-new.ts`.

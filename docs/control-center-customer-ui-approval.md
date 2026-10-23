@@ -12,6 +12,14 @@ issue scope, or release permission never implies UI permission.
 - Scope: `macos/VibeTVControlCenter/main.swift`, `URLSchemeTests.swift`, `scripts/test-macos-control-center-app-bundle.sh`, and this approval record. Pull request branch only, not merge or release.
 - What's new: none — a recovery screen only for copies signed differently from the official app, not announced to customers
 
+### How approvals are recorded
+
+The line `User approval:` of an entry has exactly one of three states:
+
+1. **Approved.** Only after Paul's "yes" in the communicator chat, and only on the communicator's instruction with his quote, the orchestrator changes the line from `pending …` to `approved by Paul in the communicator chat, <YYYY-MM-DD HH:MM>: "<his exact quote>"`. The gate accepts this form; the quote is Paul's own words and may contain any word.
+2. **No visible change.** A pull request without a visible change (a merge of main, a firmware or companion fix that only touches UI files without changing what customers see) needs no UI approval. Its entry says `no visible change – UI approval not needed (<reason>)`. The reason is required and must not be empty. The gate accepts this form, also in entries of earlier commits of the pull request. It does not accept it for an entry that also names something in `What's new:` (that is something customers see); whether a change is really invisible is for the reviewer to judge, so the reason must say what makes it so.
+3. **Everything else stays `pending …`** (or `draft`) and keeps the gate red until Paul's OK. Nobody writes "approved" into a line on their own.
+
 ## 2026-10-16 — Subscription providers first in the provider list (#651)
 
 - User approval: Marcus, 16.10.2026, channel Abstimmungschat (question 27, answer "ja").
