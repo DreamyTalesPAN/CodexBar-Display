@@ -9881,3 +9881,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #894 as in its own entries plus the entries merged with 242e4846; nothing else changes.
 - Scope: the merge of 242e4846 and this approval record. Pull request branch #894 only, not merged, not released.
 - What's new: none — merge of 242e4846, no customer-visible change of its own
+
+## 2026-10-23 — #894: Include Cozy Meadow with an active Session in pending review
+
+- User approval: pending — #894 active-Session Cozy Meadow wording, including the repeated Session label, still requires Paul's visual decision following Marcus's review.
+- Approved customer-visible result: pending, not approved. Cozy Meadow rev 4 keeps the "Session" label at y 126 and changes its reset line at y 193 from "1h 0m" to "Session resets in 1h 0m" for an active Session with that deadline; Session therefore appears twice. With an idle Session it still shows "No active session" and never borrows the hidden Weekly reset. This records the existing PR behavior without changing its text or layout.
+- Scope: Documentation only. Real VibeTV screen photos remain outstanding for Mini Classic with idle Session and a Weekly reset, Cozy Meadow with an active Session, and a pair theme (Claude Creature or Pixel Battery), running this PR's firmware. The linked pairing, theme and stream checks do not establish footer readability; the Mac report also leaves warm start open. The prior real-screen PASS claim is not supported by those reports.
+- What's new: none — document the missing approval case and outstanding screen evidence; no product change.
