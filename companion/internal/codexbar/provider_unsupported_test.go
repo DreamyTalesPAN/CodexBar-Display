@@ -8,7 +8,7 @@ import (
 // The exact sentences bundled CodexBar emits for a Google account whose Gemini
 // CLI OAuth access Google discontinued. Taken verbatim from the pinned
 // CodexBar 0.63.0 CLI binary, which is the contract this classification reads;
-// they are byte-identical in 0.56.8, 0.57.0, 0.63.0 and 0.75.0.
+// they are byte-identical in 0.56.8, 0.57.0, 0.63.0 and 0.80.0.
 //
 // Each one names OAuth, credentials or signing in, which is why the generic
 // auth markers used to claim them -- and why the customer was told to sign in

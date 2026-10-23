@@ -436,8 +436,8 @@ main() {
   [[ ! -e "${app}/Contents/Resources/companion" ]] \
     || die "Mach-O helpers must not be stored in the Resources directory"
   assert_file "${app}/Contents/Resources/VibeTVControlCenter.icns"
-  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-macos-universal-0.75.0.zip"
-  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-v0.75.0.manifest.json"
+  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-macos-universal-0.80.0.zip"
+  assert_file "${app}/Contents/Resources/CodexBar/CodexBar-v0.80.0.manifest.json"
   assert_file "${app}/Contents/Resources/CodexBar/CodexBar-LICENSE.txt"
   assert_file "${app}/Contents/Library/LaunchAgents/shop.vibetv.control-center.runtime.plist"
   assert_file "${app}/Contents/Frameworks/Sparkle.framework/README.txt"
@@ -537,7 +537,7 @@ if environment.get("CODEXBAR_DISPLAY_STREAM_LAUNCH_AGENT_LABEL") != agent.get("L
     raise SystemExit(
         "DMG runtime must expose its LaunchAgent label to the Companion API"
     )
-if environment.get("VIBETV_CODEXBAR_PINNED_VERSION") != "0.75.0":
+if environment.get("VIBETV_CODEXBAR_PINNED_VERSION") != "0.80.0":
     raise SystemExit(
         "DMG runtime must force the Companion to use VibeTV's pinned CodexBar"
     )
@@ -756,9 +756,9 @@ required_source = [
     "button.intrinsicContentSize.width + 32",
     "button.widthAnchor.constraint(equalToConstant: shadcnButtonWidth)",
     'codexBarBundleIdentifier = "com.steipete.codexbar"',
-    'codexBarPinnedVersion = "0.75.0"',
+    'codexBarPinnedVersion = "0.80.0"',
 
-    'CodexBar-macos-universal-0.75.0.zip',
+    'CodexBar-macos-universal-0.80.0.zip',
     'bootstrapCodexBar()',
 
 
@@ -964,12 +964,10 @@ prepare_payload_end = source.find("private func bootstrapCodexBar()", prepare_pa
 prepare_payload = source[prepare_payload_start:prepare_payload_end]
 if (
     '"prepare-codexbar", "--archive"' not in prepare_payload
-    or 'arguments.append("--reuse-running")' not in prepare_payload
-    or 'withBundleIdentifier: codexBarBundleIdentifier' not in prepare_payload
     or 'return await runPinnedCodexBar(arguments)' not in prepare_payload
     or 'await runPinnedCodexBar(["validate-codexbar", "--app", appURL.path])' not in source
 ):
-    raise SystemExit("native shell must delegate pinned staging/validation and preserve the running-app exception")
+    raise SystemExit("native shell must delegate pinned staging/validation")
 
 repair_start = source.find("private func beginCodexBarRepair(hasJavaScriptOwner: Bool)")
 repair_end = source.find("@objc private func openSupportLog()", repair_start)
@@ -1313,9 +1311,9 @@ PY
     || die "Sparkle distribution version must stay pinned"
   grep -qF 'SHA256="1cb340cbbef04c6c0d162078610c25e2221031d794a3449d89f2f56f4df77c95"' "${ROOT}/scripts/fetch-sparkle.sh" \
     || die "Sparkle distribution checksum must stay pinned"
-  grep -qF 'VERSION="0.75.0"' "${ROOT}/scripts/fetch-codexbar.sh" \
+  grep -qF 'VERSION="0.80.0"' "${ROOT}/scripts/fetch-codexbar.sh" \
     || die "CodexBar distribution version must stay pinned"
-  grep -qF 'SHA256="98d7d415f98b1fe1aaf89b394ea423c8a9acb57c753399bb6597f576f08dc8fc"' "${ROOT}/scripts/fetch-codexbar.sh" \
+  grep -qF 'SHA256="7cdc7768947163b9c5af3ac52b3546c01c99b82c7cfcc7e0bf18e7086f38d208"' "${ROOT}/scripts/fetch-codexbar.sh" \
     || die "CodexBar distribution checksum must stay pinned"
   grep -qF 'verify-bundled-codexbar.sh' "${ROOT}/.github/workflows/validate-macos-dmg.yml" \
     || die "the signed DMG workflow must verify the bundled CodexBar payload"

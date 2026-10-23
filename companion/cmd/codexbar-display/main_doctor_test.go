@@ -14,6 +14,7 @@ import (
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimeconfig"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/runtimepaths"
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/testenv"
+	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/themeinstall"
 )
 
 func TestParseLaunchAgentArgument(t *testing.T) {
@@ -48,7 +49,7 @@ func TestDoctorTransportFollowsRuntimeConnectionMode(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := doctorTransportForRuntimeConfig(tt.cfg); got != tt.want {
+			if got := runtimeconfig.ActiveTransport(tt.cfg); got != tt.want {
 				t.Fatalf("doctor transport=%q, expected %q", got, tt.want)
 			}
 		})
@@ -609,7 +610,7 @@ func restoreDoctorTestDeps(t *testing.T) {
 }
 
 func TestFallbackThemeSpecCapabilities(t *testing.T) {
-	caps := fallbackThemeSpecCapabilities()
+	caps := themeinstall.FallbackThemeSpecCapabilities()
 	if !caps.Known {
 		t.Fatalf("expected fallback capabilities to be known")
 	}
