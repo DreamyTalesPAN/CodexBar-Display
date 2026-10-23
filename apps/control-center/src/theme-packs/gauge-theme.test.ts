@@ -74,7 +74,7 @@ describe("Gauge theme pack", () => {
       const markup = render(data);
       expect(renderTextPrimitive(number, data)).toBe(expected);
       expect(ring(markup), expected).toEqual(strokes);
-      expect(shown(markup)).toContain("Reset in 2h 14m");
+      expect(shown(markup)).toContain("Session 2h 14m");
       expect(deviceWidth(expected), expected).toBeLessThanOrEqual(number.w!);
     }
     // The ring starts at 9 o'clock and runs over the top to 3 o'clock.
@@ -145,7 +145,7 @@ describe("Gauge theme pack", () => {
     }
     const markup = render();
     expect(markup).toContain('viewBox="0 0 240 240"');
-    expect(shown(markup)).toBe("Claude50%Session usedReset in 2h 14m");
+    expect(shown(markup)).toBe("Claude50%Session usedSession 2h 14m");
     // A visible preview can be requested explicitly without writes on normal CI runs.
     const previewDir = process.env.VIBETV_THEME_PREVIEW_DIR;
     if (previewDir) {

@@ -9844,3 +9844,47 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #873 as in its own entries plus the entries merged with d2f3fade; nothing else changes.
 - Scope: the merge of d2f3fade and this approval record. Pull request branch #873 only, not merged, not released.
 - What's new: none — merge of d2f3fade, no customer-visible change of its own
+
+## 2026-10-21 — footer-first-reset: Use the first displayed reset in the shared footer
+- User approval: pending — Paul asked ~22:20 „hier unten steht keine reset time, das tritt auch bei anderen themes auf, bspw. cozy coder“; footer-first-reset implementation awaits visual review.
+- Approved customer-visible result: Mini Classic with idle Session and Weekly reset in 3d 1h shows “Weekly resets in 3d 1h”; Cozy Meadow displays only Session and keeps “No active session”, never borrowing the hidden Weekly reset; unavailable deadlines remain unavailable.
+- Scope: Central firmware and Control Center preview footer rendering, with matching regression tests; no provider semantics or theme-specific rules.
+- What's new: none — correction of the existing reset footer.
+
+## 2026-10-21 — #894: Keep the reset footer at its theme font size
+- User approval: pending — #894 fixed-size footer wording refinement requested after the smaller Mini Classic screenshot; exact final wording awaits visual approval.
+- Approved customer-visible result: At the original footer font size, use “Weekly resets in 3d 1h” when it fits, otherwise “Weekly 3d 1h”; “Resets 3d 1h” is allowed only with one displayed limit. Mini Classic shows “Weekly 3d 1h” at font 2 size 2 in used and remaining mode. Cozy Meadow with idle Session still shows “No active session” at its original font size; Gauge shows “Session 2h 14m”. If no permitted wording fits, retain the font and existing clipping rather than shrink or hide a multi-limit name.
+- Scope: Central firmware and preview footer rendering, font measurement and focused regression tests; no theme-specific cases, provider or hardware changes.
+- What's new: none — preserve the existing footer font size while shortening reset wording.
+
+## 2026-10-21 — #894: Shrink idle reset footers again
+- User approval: no visible change – UI approval not needed (bug fix: idle footer shrinks again as before #894)
+- Approved customer-visible result: Idle "No active session" and "Reset unavailable" footers fit their theme width again by shrinking, as before #894; countdown footers keep their fixed size and wording.
+- Scope: Firmware and Control Center preview footer shrink opt-out limited to countdown wording; focused regression tests in both.
+- What's new: none — restores the pre-#894 shrink for idle and unavailable footers.
+
+## 2026-10-21 — #894: Footer wording table tests
+- User approval: no visible change – UI approval not needed (test-only: footer wording table in firmware and preview)
+- Approved customer-visible result: none; the rendered footer wording is unchanged.
+- Scope: Table-driven footer wording tests (countdown, idle, unavailable; used and remaining; one and two displayed limits; hidden limits) in the native firmware suite and the Control Center preview suite.
+- What's new: none — tests only.
+
+## 2026-10-22 — #894: Pair footer is never clipped
+- User approval: no visible change – UI approval not needed (bug fix: a Two-at-once footer text no longer runs past the screen edge; it names the limit without the provider, then shrinks)
+- Approved customer-visible result: none beyond the fix: "Claude Weekly 3d 1h" that did not fit now reads "Weekly 3d 1h".
+- Scope: Footer wording selection in firmware and preview tries the limit name after the pair label, and a countdown that fits no variant keeps the theme's shrink-fit; native and preview tests with Claude Creature and Pixel Battery footer widths.
+- What's new: none — bug fix; nothing new to announce.
+
+## 2026-10-22 — #894: approval marker after merging main at 242e4846
+
+- User approval: no visible change – UI approval not needed (merge of main (242e4846) into #894; the own entries of #894 keep their approvals)
+- Approved customer-visible result: #894 as in its own entries plus the entries merged with 242e4846; nothing else changes.
+- Scope: the merge of 242e4846 and this approval record. Pull request branch #894 only, not merged, not released.
+- What's new: none — merge of 242e4846, no customer-visible change of its own
+
+## 2026-10-23 — #894: Include Cozy Meadow with an active Session in pending review
+
+- User approval: pending — #894 active-Session Cozy Meadow wording, including the repeated Session label, still requires Paul's visual decision following Marcus's review.
+- Approved customer-visible result: pending, not approved. Cozy Meadow rev 4 keeps the "Session" label at y 126 and changes its reset line at y 193 from "1h 0m" to "Session resets in 1h 0m" for an active Session with that deadline; Session therefore appears twice. With an idle Session it still shows "No active session" and never borrows the hidden Weekly reset. This records the existing PR behavior without changing its text or layout.
+- Scope: Documentation only. Real VibeTV screen photos remain outstanding for Mini Classic with idle Session and a Weekly reset, Cozy Meadow with an active Session, and a pair theme (Claude Creature or Pixel Battery), running this PR's firmware. The linked pairing, theme and stream checks do not establish footer readability; the Mac report also leaves warm start open. The prior real-screen PASS claim is not supported by those reports.
+- What's new: none — document the missing approval case and outstanding screen evidence; no product change.

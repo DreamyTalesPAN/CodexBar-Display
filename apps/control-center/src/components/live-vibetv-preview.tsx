@@ -183,6 +183,7 @@ export type ThemePrimitive = {
 };
 
 type FrameData = {
+  resetBasisTrusted?: boolean;
   provider: string;
   label: string;
   session: number;
@@ -765,6 +766,7 @@ function ThemeSpecSVG({
           frame={frame}
           key={index}
           primitive={primitive}
+          primitives={primitives}
         />
       ))}
     </svg>
@@ -776,11 +778,13 @@ function ThemePrimitiveNode({
   animate,
   frame,
   primitive,
+  primitives,
 }: {
   assets: Record<string, ThemePackAsset>;
   animate: boolean;
   frame: FrameData;
   primitive: ThemePrimitive;
+  primitives: ThemePrimitive[];
 }) {
   const type = primitive.type || primitive.t || "";
   const x = primitive.x || 0;
@@ -811,17 +815,25 @@ function ThemePrimitiveNode({
   }
 
   if (type === "text" || type === "tx") {
-    const text = renderTextPrimitive(primitive, frame);
+    const footer = displayedResetFooter(primitive, frame, primitives);
+    const text = footer ?? renderTextPrimitive(primitive, frame);
     const maxWidth =
       primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
     const font = primitive.font || primitive.f || 1;
     const maxSize = Math.max(1, primitive.fontSize || primitive.s || 1);
+    // Only a countdown footer that fits is fixed-width; idle, unavailable and
+    // a countdown that fits no variant still shrink.
+    const countdownFooter =
+      footer !== null &&
+      footer !== RESET_IDLE &&
+      footer !== RESET_UNAVAILABLE &&
+      themeTextFittedSize(text, font, maxSize, maxWidth, true) === maxSize;
     const size = themeTextFittedSize(
       text,
       font,
       maxSize,
       maxWidth,
-      (primitive.fit || primitive.ft) === "shrink",
+      !countdownFooter && (primitive.fit || primitive.ft) === "shrink",
     );
     const fontSize = themeFontSize(font, size);
     return (
@@ -1388,6 +1400,7 @@ export function buildFrameData(
     (slot?.resetSecs ?? 0) <= 0 &&
     clampPercent(slot?.percent) === nothingUsedPercent;
   return {
+    resetBasisTrusted: basisTrusted,
     provider: displayFrame.provider || "",
     label: displayFrame.label || displayFrame.provider || "",
     session: clampPercent(displayFrame.session),
@@ -1611,10 +1624,61 @@ export function themeShowsTokenTotals(spec?: ThemeSpec | null): boolean {
   });
 }
 
+// A standalone first-limit countdown below the usage rows is the shared footer.
+// Explicit per-limit lines (with their label or another row below) keep their binding.
+function displayedResetFooter(
+  primitive: ThemePrimitive,
+  frame: FrameData,
+  primitives: ThemePrimitive[],
+): string | null {
+  const binding = primitive.binding || primitive.b;
+  const isFooter = binding
+    ? /^(?:usageSlot1Reset|us1r|usage\.0\.reset)$/.test(binding)
+    : /^(?:Reset|Resets) in \{(?:usageSlot1Reset|us1r|usage\.0\.reset)\}$/.test(
+        primitive.text || primitive.v || "",
+      );
+  if (!isFooter) return null;
+  const slots = new Set<number>();
+  for (const row of primitives) {
+    if (row === primitive || !primitiveUsageSlotVisible(row, frame)) continue;
+    const index = row.usageIndex ?? row.ui ?? ((row.slot ?? row.sl ?? 0) - 1);
+    if (index < 0) continue;
+    if ((row.y || 0) >= (primitive.y || 0)) return null;
+    slots.add(index);
+  }
+  if (slots.size === 0) return null;
+  if (frame.resetBasisTrusted === false) return RESET_UNAVAILABLE;
+  let sawAvailable = false;
+  let allIdle = true;
+  for (const index of [...slots].sort((a, b) => a - b)) {
+    const window = frame.usageWindows[index];
+    if (!window?.available) continue;
+    sawAvailable = true;
+    allIdle = allIdle && window.idle;
+    if (window.resetSecs > 0) {
+      const duration = formatReset(window.resetSecs, false);
+      // A pair label ("Claude Weekly") is longer than the limit name ("Weekly").
+      const limit = frame.provider.includes("+") ? window.label.replace(/^\S+ /, "") : window.label;
+      const variants = [`${window.label} resets in ${duration}`, `${window.label} ${duration}`, `${limit} ${duration}`];
+      if (slots.size === 1) variants.push(`Resets ${duration}`);
+      const maxWidth = primitive.maxWidth || primitive.mw || primitive.width || primitive.w || 0;
+      const font = primitive.font || primitive.f || 1;
+      const size = Math.max(1, primitive.fontSize || primitive.s || 1);
+      return variants.find(text => maxWidth <= 0 ||
+        (themeFirmwareTextMetrics(text, font, size)?.width ??
+          themeTextWidth(text, themeFontSize(font, size))) <= maxWidth) ?? variants.at(-1)!;
+    }
+  }
+  return sawAvailable && allIdle ? RESET_IDLE : RESET_UNAVAILABLE;
+}
+
 export function renderTextPrimitive(
   primitive: ThemePrimitive,
   frame: FrameData,
+  primitives: ThemePrimitive[] = [],
 ): string {
+  const footer = displayedResetFooter(primitive, frame, primitives);
+  if (footer !== null) return footer;
   const binding = primitive.binding || primitive.b;
   if (binding) {
     return boundValue(binding, frame);
