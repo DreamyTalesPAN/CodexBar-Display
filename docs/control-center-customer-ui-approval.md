@@ -10329,3 +10329,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: after an update that ends in attention the headline and the firmware row follow one decision and show no "up to date" claim; every other state is unchanged.
 - Scope: Updates tab only, the firmware no-answer decision in updates-screen.tsx (the separate row rule is removed) and its test. Pull request #798 only, not merged, not released.
 - What's new: none — removes a wrong claim, no customer-visible addition
+
+## 2026-10-23 — #798: approval marker after merging main at 81dfc95b
+
+- User approval: no visible change – UI approval not needed (merge of main (81dfc95b) into #798; the existing approval entries remain unchanged).
+- Approved customer-visible result: #798 retains its existing product diff unchanged; the merge imports main without additional customer-visible changes of its own.
+- Scope: the merge of 81dfc95b into PR #798 and this approval record; no main merge, release, or device write.
+- What's new: none — merge with main, no customer-visible change of its own
