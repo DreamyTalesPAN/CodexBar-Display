@@ -181,7 +181,7 @@ func TestFirmwareUpdateFirstThemeSetup(t *testing.T) {
 				}
 				var job firmwareUpdateJob
 				for attempt := 0; attempt < 600; attempt++ {
-					job, _ = server.firmwareUpdateJobSnapshot(started.Job.ID)
+					job, _ = server.updateJobs.snapshot(started.Job.ID)
 					if job.FinishedAt != nil {
 						break
 					}

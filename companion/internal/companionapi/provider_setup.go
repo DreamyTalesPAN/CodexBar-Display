@@ -586,18 +586,17 @@ func (s *Server) finishProviderRetry(providerID string, providerRevision uint64,
 // the given one. A provider switch holds providerFollowupMu while it applies
 // the change, so a follow-up either sees the new revision and does nothing,
 // or finishes before the switch is applied at all. providerPreferences.mu is not held while follow runs,
-// because it writes the setup log. It returns false when follow did not run.
-func (s *Server) whileProviderRevision(providerID string, providerRevision uint64, follow func()) bool {
+// because it writes the setup log.
+func (s *Server) whileProviderRevision(providerID string, providerRevision uint64, follow func()) {
 	s.providerFollowupMu.Lock()
 	defer s.providerFollowupMu.Unlock()
 	if s.currentProviderRevision(providerID) != providerRevision {
-		return false
+		return
 	}
 	if s.providerFollowupHeldHook != nil {
 		s.providerFollowupHeldHook()
 	}
 	follow()
-	return true
 }
 
 // followProviderRetry logs what the check found and lets the usage service
