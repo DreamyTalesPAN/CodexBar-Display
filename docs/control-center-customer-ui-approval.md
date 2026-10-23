@@ -9879,3 +9879,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: a connection or disconnect failure keeps its existing message in the existing position, but no longer marks the cleared or replacement key input invalid. No new text or layout is introduced.
 - Scope: `openai-key-form.tsx` and its regression tests; remove the operation-error-to-field-invalid mapping because no current field validation result is available and connection attempts clear the input. Issue #887 item 1 only; item 3 remains untouched, not merged, not released.
 - What's new: none — correct a misleading invalid-field indicator
+
+## 2026-10-22 — #632: one shared dialog stack
+
+- User approval: pending — one edge case changes order: a page notice (Overview notice, Themes error or storage notice) that appears while an announcement (AI usage notice, What's new, busy computer notice) is already open now shows first, the announcement steps aside and returns after it closes. Before, the notice waited behind the announcement.
+- Approved customer-visible result: no text, layout or focus change of any dialog. A dialog the customer asked for still comes before everything; announcements still wait for every other dialog and never take its focus, also when both open in the same render.
+- Scope: apps/control-center/src/components dialog-stack.ts (replaces announcement-gate.ts), ui/dialog.tsx, ui/alert-dialog.tsx, setup/setup-dialog.tsx, setup/setup-usage-dialog.tsx, system-busy-dialog.tsx, whats-new-dialog.tsx, overview-screen.tsx, theme-library-screen.tsx and their tests. Pull request for #632 only, not merged, not released.
+- What's new: none — ordering of existing dialogs in one edge case, no new feature
+
+## 2026-10-22 — #632: the sidebar sheet and popovers hold their slot
+
+- User approval: no visible change – UI approval not needed (an announcement waits behind an open mobile sidebar sheet or popover again, as it did before the shared stack; the rank is declared once per dialog)
+- Approved customer-visible result: nothing new for the customer; the order of dialogs is as in the entry above.
+- Scope: apps/control-center/src/components ui/sheet.tsx, ui/popover.tsx, setup/setup-dialog.tsx and its callers (setup-usage-dialog.tsx, system-busy-dialog.tsx, overview-screen.tsx, theme-library-screen.tsx), dialog-stack.ts, dialog-stack.test.tsx. Pull request for #632 only, not merged, not released.
+- What's new: none — restores an existing order, no customer-visible change

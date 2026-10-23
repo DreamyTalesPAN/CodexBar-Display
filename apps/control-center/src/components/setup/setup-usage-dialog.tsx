@@ -1,7 +1,6 @@
 "use client";
 
 import { copyForHost } from "@/lib/customer-platform";
-import { pageDialogOpen, useWaitsForPageDialog } from "../announcement-gate";
 import { SetupDialog } from "./setup-dialog";
 
 export type SetupUsageCause =
@@ -65,22 +64,11 @@ export function SetupUsageDialog({
   open,
   windowsHost = false,
 }: SetupUsageDialogProps) {
-  // Shown over whatever the customer is doing, it waits while a page dialog
-  // is open and shows after it closes (#632).
-  if (useWaitsForPageDialog()) {
-    return null;
-  }
   const { description, title } = setupUsageCauseCopy[cause];
   return (
     <SetupDialog
-      announcement
+      rank="announcement"
       description={copyForHost(description, windowsHost)}
-      onOpenAutoFocus={(event) => {
-        // Opened together with a page dialog, the page dialog keeps the focus.
-        if (pageDialogOpen()) {
-          event.preventDefault();
-        }
-      }}
       onOpenChange={onOpenChange}
       open={open}
       primaryAction={{ label: "Repair", onSelect: onRepair }}

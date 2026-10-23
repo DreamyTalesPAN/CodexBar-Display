@@ -4,6 +4,7 @@ import * as React from "react"
 import { Popover as PopoverPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import { DialogSlot } from "@/components/dialog-stack"
 
 function Popover({
   ...props
@@ -21,6 +22,7 @@ function PopoverContent({
   className,
   align = "center",
   sideOffset = 4,
+  children,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Content>) {
   return (
@@ -34,7 +36,10 @@ function PopoverContent({
           className
         )}
         {...props}
-      />
+      >
+        <DialogSlot rank="question" />
+        {children}
+      </PopoverPrimitive.Content>
     </PopoverPrimitive.Portal>
   )
 }

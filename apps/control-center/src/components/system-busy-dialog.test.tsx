@@ -8,17 +8,44 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, expect, it } from "vitest";
 
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { SetupDialog } from "./setup/setup-dialog";
 import { expectNoAxeViolations } from "@/test/axe";
 import { SystemBusyDialog, systemBusyCopy } from "./system-busy-dialog";
 
 afterEach(cleanup);
 
+// A page's own dialog of each kind: a Dialog and a confirmation.
+function pageDialog(other: string) {
+  return other === "alertdialog"
+    ? createElement(
+        AlertDialog,
+        { open: true },
+        createElement(
+          AlertDialogContent,
+          null,
+          createElement(AlertDialogTitle, null, "Delete this theme?"),
+          createElement(AlertDialogDescription, null, "This cannot be undone."),
+        ),
+      )
+    : createElement(SetupDialog, {
+        description: "Sure?",
+        onOpenChange: () => {},
+        open: true,
+        title: "Delete this theme?",
+      });
+}
+
 function page(other: string | null) {
   return createElement(
     "div",
     null,
-    other ? createElement("div", { role: other }, "Delete this theme?") : null,
+    other ? pageDialog(other) : null,
     createElement(SystemBusyDialog, { onClose: () => {} }),
   );
 }
@@ -77,9 +104,9 @@ it("a page dialog that opens in the same render keeps the focus", async () => {
   ).toBe(true);
 });
 
-// The check runs in a microtask, before the browser paints: one microtask
-// after the render that mounted both, the notice is gone.
-it("takes the notice down before the next paint when a page dialog mounts with it", async () => {
+// The notice is settled in the commit that mounts both, before the browser
+// paints.
+it("is gone before the next paint when a page dialog mounts with it", async () => {
   const { rerender } = render(sameRender(false));
   act(() => rerender(sameRender(true)));
   await Promise.resolve();
