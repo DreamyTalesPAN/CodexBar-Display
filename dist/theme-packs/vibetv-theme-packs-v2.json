@@ -182,20 +182,21 @@
       "id": "pace-meter",
       "title": "Pace Meter",
       "usage": "live",
-      "version": "1.0.2",
-      "themeRev": 4,
-      "themeSpecPath": "/themes/u/pace-4-2449e897.json",
+      "version": "1.0.3",
+      "themeRev": 5,
+      "themeSpecPath": "/themes/u/pace-5-40439bb7.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
         "color-stops-v1",
         "usage-pace-v1"
       ],
-      "downloadAsset": "vibetv-theme-pace-meter-v1.0.2.zip",
-      "sha256": "c32cf107d237c9f6c780c17901594db052118d67244b5b67270844bf4f9fb725",
-      "bytes": 899,
+      "downloadAsset": "vibetv-theme-pace-meter-v1.0.3.zip",
+      "sha256": "dc0b24dc41f115262ae83a29a9316b89cd01693f62f90fc8bd64910b44f8ff67",
+      "bytes": 926,
       "earlierThemeSpecPaths": [
         "/themes/u/pace-3-1b01befc.json",
+        "/themes/u/pace-4-2449e897.json",
         "/themes/u/pm-2-09a741.json"
       ]
     },
@@ -264,9 +265,9 @@
       "id": "synthwave",
       "title": "Synthwave",
       "usage": "live",
-      "version": "1.2.6",
-      "themeRev": 12,
-      "themeSpecPath": "/themes/u/syn-12-319e19a2.json",
+      "version": "1.2.7",
+      "themeRev": 13,
+      "themeSpecPath": "/themes/u/syn-13-75fe90cc.json",
       "requiresFirmware": "1.0.50",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -277,12 +278,13 @@
         "pixel-art",
         "providers-1"
       ],
-      "downloadAsset": "vibetv-theme-synthwave-v1.2.6.zip",
-      "sha256": "98f2676063d4003a1565f5cbd48ac6a79241a57727d275f7c05b0bfb8ce8de27",
-      "bytes": 4982,
+      "downloadAsset": "vibetv-theme-synthwave-v1.2.7.zip",
+      "sha256": "e7680ae06671839079ef19752039b8f7e37dc92d1d576bf0ff7c6f367e1f9cfd",
+      "bytes": 5011,
       "earlierThemeSpecPaths": [
         "/themes/u/syn-10-cc3fcc64.json",
         "/themes/u/syn-11-876b1fbe.json",
+        "/themes/u/syn-12-319e19a2.json",
         "/themes/u/syn-7-c929bcfe.json",
         "/themes/u/syn-8-0b08afde.json",
         "/themes/u/syn-9-7e671d91.json",

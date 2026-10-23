@@ -111,10 +111,9 @@ const SCENARIOS: Scenario[] = [
   },
   { name: "Codex alone", solo: { provider: "codex", label: "Codex", limits: [["weekly", "Weekly", 99]] } },
 ];
-// Names that are only reached by the no-shrink guard below: Codex limits that carry the provider ("Codex Weekly remaining" is the
-// longest label there is) and the longest provider names for the title.
+// Names that are only reached by the guards below: the longest provider names, for the title and, in Two at once, for the limit names
+// ("Antigravity Weekly"). One provider never carries the provider in a limit name; the Companion prefixes it in a pair only.
 const NAME_SCENARIOS: Scenario[] = [
-  { name: "Codex limit names", solo: { provider: "codex", label: "Codex", limits: [["weekly", "Codex Weekly", 99], ["session", "Codex Session", 99]] } },
   {
     name: "Antigravity", solo: { provider: "antigravity", label: "Antigravity", limits: [["weekly", "Weekly", 99], ["session", "Session", 50]] },
     pair: [["antigravity:weekly", "Antigravity Weekly", 99], ["perplexity:session", "Perplexity Session", 50]], // the two longest provider names, with descenders
@@ -294,8 +293,7 @@ const CLOCKS = [new Date(2026, 9, 22, 8, 8), new Date(2026, 9, 22, 20, 28), new 
 // Decisions that are still open with Paul: these texts shrink today and the second test below fails the day one of them stops, so
 // no entry outlives its decision.
 const SHRINK_PENDING: Array<{ theme: string; source: RegExp; why: string }> = [
-  { theme: "pace-meter", source: /Label/, why: "Paul decision pending 2.20/2.21: the mode word in the limit name" },
-  { theme: "synthwave", source: /Label/, why: "Paul decision pending 2.20/2.21: the mode word in the limit name" },
+  { theme: "pace-meter", source: /Label/, why: "open decision: Two at once with \"Antigravity Weekly\" or \"Perplexity Session\" declares 2 and draws 1" },
   { theme: "reset-countdown", source: /ResetFull/, why: "open decision: the countdown is declared at 4 and drawn at 2 (a widened box or a declared 2)" },
 ];
 
@@ -390,6 +388,29 @@ function inkHits(pack: ThemeRenderPack, themeId: string, pending = false): strin
   }
   return [...found.values()].filter((detail) => LAYOUT_PENDING.some((entry) => entry.theme === themeId && entry.detail.test(detail)) === pending);
 }
+
+// Paul's variant 1 for the mode word (question 5): with one provider "remaining" / "used" stands small at the right end of the row of its limit
+// name instead of inside the name. It keeps 3 px from the name and from every other text of the screen, in every state it is drawn in (Two at
+// once has no mode word).
+describe("the mode word at the end of a limit name's row keeps 3 px from every other text", () => {
+  it.each(["pace-meter", "synthwave"])("%s", (themeId) => {
+    const prims = loadPack(themeId).spec?.p ?? [];
+    const found = new Set<string>();
+    for (const scenario of [...SCENARIOS, ...NAME_SCENARIOS]) for (const usageMode of ["used", "remaining"]) for (const pace of [undefined, ...(Object.keys(ALL_PACES) as PaceName[])]) {
+      const frame = frameFor(false, usageMode, pace, undefined, undefined, 424000, scenario);
+      const texts = prims.filter((p) => p.t === "tx" && primitiveUsageSlotVisible(p, frame))
+        .map((p) => ({ p, text: renderTextPrimitive(p, frame, prims) })).filter(({ text }) => text.trim())
+        .map(({ p, text }) => ({ p, text, ...textInk(p, text) }));
+      const words = texts.filter(({ p }) => source(p).includes("usageModeStandalone"));
+      expect(words.length).toBeGreaterThan(0);
+      for (const word of words) for (const other of texts.filter((t) => t !== word)) {
+        const gap = facingGap(word, other) ?? CLEAR;
+        if (gap < CLEAR) found.add(`"${word.text}" [${show(word)}] is ${gap} px from "${other.text}" [${show(other)}] (${scenario.name}, ${usageMode}, pace ${pace ?? "off"})`);
+      }
+    }
+    expect([...found]).toEqual([]);
+  });
+});
 
 describe("no text is drawn smaller than its theme declares", () => {
   it.each(catalogIds)("%s", (themeId) => {
