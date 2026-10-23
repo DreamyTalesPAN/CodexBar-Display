@@ -6,11 +6,11 @@ import {
   render,
   renderHook,
   screen,
-  waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DeviceInfo } from "./control-center-types";
 import { OverviewScreen, useOverviewNotice } from "./overview-screen";
+import { SetupDialog } from "./setup/setup-dialog";
 
 // The flat preview is the Overview here; the 3D case is not under test.
 vi.mock("./vibetv-3d-support", () => ({
@@ -118,20 +118,20 @@ describe("OverviewScreen notice dialog", () => {
   });
 
   it("waits while another dialog is open and shows once that dialog has closed", async () => {
-    const otherDialog = document.createElement("div");
-    otherDialog.setAttribute("role", "dialog");
-    document.body.append(otherDialog);
-
-    render(
-      <OverviewScreen companionStatus="online" device={weakWiFi} notice="weak-wifi" />,
+    const page = (asked: boolean) => (
+      <>
+        {asked ? (
+          <SetupDialog description="Sure?" onOpenChange={() => {}} open title="Run setup again?" />
+        ) : null}
+        <OverviewScreen companionStatus="online" device={weakWiFi} notice="weak-wifi" />
+      </>
     );
+    const { rerender } = render(page(true));
+    await act(async () => {});
     expect(screen.queryByRole("dialog", { name: "Weak WiFi signal" })).toBeNull();
 
-    act(() => otherDialog.remove());
-
-    await waitFor(() => {
-      expect(screen.getByRole("dialog", { name: "Weak WiFi signal" })).toBeTruthy();
-    });
+    await act(async () => rerender(page(false)));
+    expect(screen.getByRole("dialog", { name: "Weak WiFi signal" })).toBeTruthy();
   });
 });
 

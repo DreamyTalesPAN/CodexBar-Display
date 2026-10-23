@@ -12,7 +12,7 @@ import {
   openedWithKeyboard,
 } from "@/components/ui/dialog";
 import { catalogThemeRowId, type WhatsNewEntry } from "@/lib/whats-new";
-import { pageDialogOpen, useWaitsForPageDialog } from "./announcement-gate";
+import { useWaitsForDialog } from "./dialog-stack";
 import { providerShortcutKeys } from "./settings-screen";
 
 /**
@@ -35,7 +35,7 @@ export function WhatsNewDialog({
   windowsHost: boolean;
 }) {
   const gotIt = useRef<HTMLButtonElement>(null);
-  if (useWaitsForPageDialog()) {
+  if (useWaitsForDialog("announcement")) {
     return null;
   }
   return (
@@ -45,17 +45,14 @@ export function WhatsNewDialog({
         // In a short window only the list scrolls: the title stays on top and
         // `Got it` stays in view below it.
         className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-[520px]"
-        data-announcement=""
+        rank="announcement"
         onOpenAutoFocus={(event) => {
           // Opened by the keyboard: Enter closes the notice, as the first
           // control would open Settings. Otherwise no control shows a ring
           // until the customer tabs (the dialog takes focus itself).
           if (!openedWithKeyboard(document.activeElement)) return;
           event.preventDefault();
-          // Opened together with a page dialog, the page dialog keeps the focus.
-          if (!pageDialogOpen()) {
-            gotIt.current?.focus();
-          }
+          gotIt.current?.focus();
         }}
       >
         <DialogHeader className="gap-1">

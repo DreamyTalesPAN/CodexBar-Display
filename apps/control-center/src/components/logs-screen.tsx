@@ -64,7 +64,7 @@ export function LogsScreen({
     copyForHost(formatCustomerSupportText(value), windowsHost);
 
   return (
-    <div className="grid max-w-[760px] gap-10 pt-8 pb-10 text-sm leading-normal">
+    <div className="grid gap-10 pt-8 pb-10 text-sm leading-normal">
       <div
         className={`flex items-center justify-between gap-6 p-5 ${FRAME}`}
       >

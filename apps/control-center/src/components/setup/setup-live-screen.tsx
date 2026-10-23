@@ -6,11 +6,12 @@ import type {
   SupportDiagnostics,
   UsageSnapshot,
 } from "../control-center-types";
+import type { DisplayFrameSnapshot } from "../live-vibetv-preview";
+import { LiveVibeTV3DPreview } from "../live-vibetv-3d-preview";
 import {
-  LiveVibeTVPreview,
-  type DisplayFrameSnapshot,
-} from "../live-vibetv-preview";
-import { SetupWizardScreen, SetupWizardTitle } from "./setup-wizard-screen";
+  SetupWizardScreen,
+  SetupWizardTitle,
+} from "./setup-wizard-screen";
 
 type SetupLiveScreenProps = {
   device: DeviceInfo | null;
@@ -56,12 +57,15 @@ export function SetupLiveScreen({
       windowsHost={windowsHost}
     >
       <SetupWizardTitle>Your VibeTV is live</SetupWizardTitle>
-      <LiveVibeTVPreview
-        device={device}
-        displayFrame={displayFrame}
-        onPreviewReady={onPreviewReady}
-        usage={usage}
-      />
+      <div className="mt-8 w-full">
+        <LiveVibeTV3DPreview
+          className="-my-[22px] aspect-[640/411] w-[min(640px,calc(100vw-48px))] max-w-none shrink-0"
+          device={device}
+          displayFrame={displayFrame}
+          onPreviewReady={onPreviewReady}
+          usage={usage}
+        />
+      </div>
     </SetupWizardScreen>
   );
 }
