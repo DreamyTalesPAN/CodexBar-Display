@@ -307,8 +307,9 @@ func TestPlanProviderSignInOwnLoginPrograms(t *testing.T) {
 	if plan.Action != providerSignInActionCLILogin || plan.Path != "/usr/local/bin/grok" || strings.Join(plan.Args, " ") != "login" {
 		t.Fatalf("grok on PATH on macOS: %#v", plan)
 	}
-	plan, _ = planProviderSignIn("grok", "darwin", "/Users/x", none, exists("/Users/x/.grok/bin/grok"))
-	if plan.Action != providerSignInActionCLILogin || plan.Path != "/Users/x/.grok/bin/grok" {
+	grokInstalled := filepath.Join("/Users/x", ".grok", "bin", "grok")
+	plan, _ = planProviderSignIn("grok", "darwin", "/Users/x", none, exists(grokInstalled))
+	if plan.Action != providerSignInActionCLILogin || plan.Path != grokInstalled {
 		t.Fatalf("grok from its installer on macOS: %#v", plan)
 	}
 	windsurf := filepath.Join(home, "AppData", "Local", "Programs", "Windsurf", "Windsurf.exe")
