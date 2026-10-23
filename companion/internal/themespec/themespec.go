@@ -178,6 +178,8 @@ func (p *Primitive) UnmarshalJSON(data []byte) error {
 }
 
 type Spec struct {
+	// MaxProviders is 1 for a theme that cannot combine provider frames.
+	MaxProviders     int         `json:"maxProviders,omitempty"`
 	ThemeSpecVersion int         `json:"themeSpecVersion"`
 	ShortVersion     int         `json:"v,omitempty"`
 	ThemeID          string      `json:"themeId"`
@@ -221,6 +223,9 @@ func Validate(spec Spec) error {
 		return err
 	}
 	spec = normalizeSpec(spec)
+	if spec.MaxProviders != 0 && spec.MaxProviders != 1 {
+		return errors.New("maxProviders must be 1 or omitted")
+	}
 	if spec.ThemeSpecVersion != VersionV1 {
 		return fmt.Errorf("themeSpecVersion=%d unsupported (expected %d)", spec.ThemeSpecVersion, VersionV1)
 	}

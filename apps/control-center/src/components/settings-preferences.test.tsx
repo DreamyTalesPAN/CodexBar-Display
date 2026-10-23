@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildThemePack, createBlankThemeSpec } from "@/lib/theme-studio";
 import { writeUserThemes } from "@/lib/theme-studio-storage";
@@ -91,6 +91,29 @@ function choose(option: string) {
 }
 
 describe("SettingsScreen display preferences", () => {
+  it("disables Two at once for a single-provider theme without changing the saved pair", async () => {
+    const spec = { ...createBlankThemeSpec(), maxProviders: 1 };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+      ok: true, themeId: "token-counter", name: "Token Counter", spec,
+      specPath: "/themes/u/tc.json",
+    }) }));
+    const settings = props({ device: {
+      active: true, connected: true, ready: true, paired: true, activeTheme: "token-counter",
+      display: { themeSpec: { active: true, path: "/themes/u/tc.json" } },
+      capabilities: { theme: { supportsUsageWindowsV1: true, maxUsageWindows: 2 } },
+    } });
+    settings.providerPicker.display = { mode: "pair", providerIds: ["claude", "codex"], configured: true, valid: true };
+    const view = render(<SettingsScreen {...settings} />);
+    await waitFor(() => expect((screen.getByRole("button", { name: "Two at once" }) as HTMLButtonElement).disabled).toBe(true));
+    expect(screen.getByText("Token Counter shows one provider at a time. Provider 1 is shown.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Two at once" }));
+    expect(settings.providerPicker.onDisplayChange).not.toHaveBeenCalled();
+    // A different theme restores the saved pair without writing preferences.
+    view.rerender(<SettingsScreen {...settings} device={{ ...settings.device!, activeTheme: "clippy", display: undefined }} />);
+    expect(screen.getByRole("button", { name: "Two at once" }).getAttribute("aria-pressed")).toBe("true");
+    expect((screen.getByRole("button", { name: "Two at once" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it.each(["automatic", "fixed", "pair"] as const)("offers CodexBar's mode under Display mode in %s", (mode) => {
     const onChange = vi.fn();
     const settings = props({ displayPreferences: [rotation, usageMode], onDisplayPreferenceChange: onChange });

@@ -73,7 +73,7 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 	result.collectedAt = collectedAt
 	result.resetBasisAt = collectedAt
 	var display *runtimeconfig.ProviderDisplayConfig
-	if cfg, ok := loadRuntimeConfig(deps); ok {
+	if cfg, ok := loadRuntimeDisplayConfig(deps); ok {
 		display = cfg.ProviderDisplay
 	}
 	result.frame.ProviderSlots = providerResetSlots(allProviders, collectedAt, display)
@@ -91,7 +91,7 @@ func selectCycleFrameFromProviders(state *runtimeState, allProviders []codexbar.
 // reading, goes to selected: the provider Automatic would show anyway, so
 // switching the timer on does not change the screen.
 func rotateShownProvider(state *runtimeState, providers []codexbar.ParsedFrame, selected codexbar.ParsedFrame, now time.Time, deps runtimeDeps) (codexbar.ParsedFrame, string, bool) {
-	cfg, _ := loadRuntimeConfig(deps)
+	cfg, _ := loadRuntimeDisplayConfig(deps)
 	interval := time.Duration(cfg.DisplayRotateSeconds) * time.Second
 	if interval <= 0 || (cfg.ProviderDisplay != nil && cfg.ProviderDisplay.Mode != "automatic") {
 		state.rotationProvider = ""
@@ -130,7 +130,7 @@ func rotateShownProvider(state *runtimeState, providers []codexbar.ParsedFrame, 
 }
 
 func applyProviderDisplaySelection(state *runtimeState, providers []codexbar.ParsedFrame, deps runtimeDeps, providerOff providerOffFunc) []codexbar.ParsedFrame {
-	cfg, ok := loadRuntimeConfig(deps)
+	cfg, ok := loadRuntimeDisplayConfig(deps)
 	if !ok || cfg.ProviderDisplay == nil {
 		return preferAvailableProviders(providers, nil)
 	}

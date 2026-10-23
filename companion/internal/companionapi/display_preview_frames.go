@@ -30,10 +30,10 @@ type previewFramesForItem struct {
 // previewFramesFor lists providers in CodexBar's order; one without a reading
 // yet gets the host's unavailable frame, and has no Automatic frame while
 // another provider has a current reading.
-func previewFramesFor(usage daemon.PersistedUsage, inventory []codexbar.ProviderSetting, showUsed, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time, updates *daemon.FirmwareUpdateCache, cliTheme string, hiddenWindows map[string][]string) *previewFramesResponse {
+func previewFramesFor(usage daemon.PersistedUsage, inventory []codexbar.ProviderSetting, showUsed, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time, updates *daemon.FirmwareUpdateCache, cliTheme string, hiddenWindows map[string][]string, singleProviderTheme bool) *previewFramesResponse {
 	resp := &previewFramesResponse{GeneratedAt: now.UTC().Format(time.RFC3339Nano), Providers: []previewFramesForItem{}}
 	usage = usageInInventoryOrder(usage, inventory)
-	for _, preview := range daemon.PreviewFrames(usage, showUsed, systemBusy, caps, now.In(time.Local), updates, cliTheme, inventory, hiddenWindows) {
+	for _, preview := range daemon.PreviewFrames(usage, showUsed, systemBusy, caps, now.In(time.Local), updates, cliTheme, inventory, hiddenWindows, singleProviderTheme) {
 		resp.Providers = append(resp.Providers, previewFramesForItem{ID: preview.Provider, Automatic: preview.Automatic, Pinned: preview.Pinned, Pairs: preview.Pairs})
 	}
 	return resp

@@ -31,7 +31,7 @@ func applyDisplayLimits(frame protocol.Frame, providers []codexbar.ParsedFrame, 
 // it is sent in place of a reading. Every such substitution goes through here,
 // so a limit hidden since the frame was kept never comes back on a restated one.
 func limitLastGood(frame protocol.Frame, deps runtimeDeps) protocol.Frame {
-	if cfg, ok := loadRuntimeConfig(deps); ok {
+	if cfg, ok := loadRuntimeDisplayConfig(deps); ok {
 		return limitCachedFrame(frame, cfg.ProviderDisplay)
 	}
 	return frame
@@ -284,4 +284,21 @@ func usageWindowResetSource(provider string, window string) string {
 		return source
 	}
 	return protocol.ResetSourceKey(provider, "")
+}
+
+// loadRuntimeDisplayConfig derives the effective display choice without exposing
+// it to config writers. The saved pair returns as soon as the theme allows it.
+func loadRuntimeDisplayConfig(deps runtimeDeps) (runtimeconfig.Config, bool) {
+	cfg, ok := loadRuntimeConfig(deps)
+	if !ok {
+		return cfg, false
+	}
+	if cfg.ProviderDisplay != nil && cfg.ProviderDisplay.Mode == providerDisplayModePair &&
+		len(cfg.ProviderDisplay.ProviderIDs) > 0 && deps.singleProviderTheme != nil && deps.singleProviderTheme() {
+		// This is the effective choice for this theme, never a saved preference.
+		display := *cfg.ProviderDisplay
+		display.Mode, display.ProviderIDs = "fixed", display.ProviderIDs[:1]
+		cfg.ProviderDisplay = &display
+	}
+	return cfg, true
 }

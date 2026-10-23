@@ -16,7 +16,7 @@ import type {
   SupportDiagnostics,
   UsageSnapshot,
 } from "../control-center-types";
-import type { DisplayFrame } from "../live-vibetv-preview";
+import { themeLimitsFromPack, themePairNote, type DisplayFrame } from "../live-vibetv-preview";
 import {
   Item,
   ItemActions,
@@ -352,6 +352,7 @@ export function DisplayModeChoice({
     providers,
   );
   const { index, reducedMotion } = useProviderRotation(rotation.length);
+  const themeNote = themePairNote(themePack.pack ? themeLimitsFromPack(themePack.pack) : null, mode);
   const offersPair = Boolean(onSelectPair) && pairProviders.length >= 2;
   const manualFrames = manualPreview ? [pinnedPreview(manualPreview)] : [];
   const tiles = (frames: SetupDisplayModePreview[], at: number) => {
@@ -421,8 +422,8 @@ export function DisplayModeChoice({
           <ModeCard
             calm={calm}
             ink={ink}
-            description={pairNote ?? "VibeTV shows two providers together, one limit each."}
-            disabled={saving || pairNote !== null}
+            description={themeNote ?? pairNote ?? "VibeTV shows two providers together, one limit each."}
+            disabled={saving || themeNote !== null || pairNote !== null}
             onSelect={() => onSelectMode("pair")}
             selected={mode === "pair"}
             title="Two at once"

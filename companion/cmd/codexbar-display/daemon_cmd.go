@@ -369,6 +369,7 @@ func runDaemonWithCompanionAPI(ctx context.Context, opts daemonCommandOptions) e
 	daemonOpts.ReportSystemBusy = systemBusy.Store
 	daemonOpts.CurrentSystemBusy = systemBusy.Load
 	daemonOpts.FirmwareUpdates = firmwareUpdates
+	daemonOpts.SingleProviderTheme = server.SingleProviderTheme
 
 	errc := make(chan error, 1)
 	go func() {

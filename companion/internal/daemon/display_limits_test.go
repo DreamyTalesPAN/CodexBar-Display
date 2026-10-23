@@ -517,3 +517,44 @@ func TestProviderDisplayAutomaticSkipsAProviderWithNoVisibleWindow(t *testing.T)
 		t.Fatalf("automatic selection=%+v want the only provider kept", got)
 	}
 }
+
+func TestSingleProviderThemeKeepsProviderOneAndSavedPair(t *testing.T) {
+	basis := time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC)
+	first, second := displayLimitsClaude(basis), displayLimitsCodex(basis)
+	first.Frame.SessionTokens, first.Frame.TokenTotalsKnown = 12345, true
+	second.Frame.SessionTokens, second.Frame.TokenTotalsKnown = 67890, true
+	display := runtimeconfig.ProviderDisplayConfig{Mode: "pair", ProviderIDs: []string{"claude", "codex"}}
+	deps := providerDisplayTestDeps(display)
+	single := true
+	deps.singleProviderTheme = func() bool { return single }
+	state := &runtimeState{selector: codexbar.NewProviderSelector()}
+	state.selector.SetCurrentProvider("codex")
+	got := selectCycleFrameFromProviders(state, []codexbar.ParsedFrame{second, first}, basis, deps, nil, "select-provider", "", "", "codexbar")
+	if got.frame.Provider != "claude" || got.frame.SessionTokens != 12345 || !got.frame.TokenTotalsKnown {
+		t.Fatalf("single-provider theme must show provider 1 with its own tokens: %+v", got.frame)
+	}
+	saved, _ := deps.loadConfig("test")
+	if saved.ProviderDisplay.Mode != "pair" || len(saved.ProviderDisplay.ProviderIDs) != 2 {
+		t.Fatalf("saved pair was changed: %+v", saved.ProviderDisplay)
+	}
+	single = false
+	got = selectCycleFrameFromProviders(state, []codexbar.ParsedFrame{second, first}, basis, deps, nil, "select-provider", "", "", "codexbar")
+	if got.frame.Provider != "claude+codex" {
+		t.Fatalf("pair did not return: %+v", got.frame)
+	}
+}
+
+func TestSingleProviderThemeDoesNotReuseCachedPairOrSecondProvider(t *testing.T) {
+	now := time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC)
+	display := runtimeconfig.ProviderDisplayConfig{Mode: "pair", ProviderIDs: []string{"claude", "codex"}}
+	deps := providerDisplayTestDeps(display)
+	deps.singleProviderTheme = func() bool { return true }
+	first, second := displayLimitsClaude(now), displayLimitsCodex(now)
+	first.Frame.UsageUnavailable = true
+	state := &runtimeState{selector: codexbar.NewProviderSelector(), hasLastGood: true, lastGoodAt: now,
+		lastGood: protocol.Frame{Provider: "claude+codex", TokenTotalsKnown: false}}
+	got := selectCycleFrameFromProviders(state, []codexbar.ParsedFrame{second, first}, now, deps, nil, "select-provider", "", "", "codexbar")
+	if got.frame.Provider == "codex" || got.frame.Provider == "claude+codex" || got.frame.TokenTotalsKnown {
+		t.Fatalf("borrowed another provider instead of unavailable: %+v", got.frame)
+	}
+}

@@ -350,9 +350,9 @@
       "id": "token-counter",
       "title": "Token Counter",
       "usage": "live",
-      "version": "0.1.0",
-      "themeRev": 2,
-      "themeSpecPath": "/themes/u/tc-2-d5ddb991.json",
+      "version": "0.1.1",
+      "themeRev": 3,
+      "themeSpecPath": "/themes/u/tc-3-d876098f.json",
       "requiresFirmware": "1.0.42",
       "requiredCapabilities": [
         "usage-slots-v1",
@@ -362,10 +362,12 @@
         "providers-1",
         "usage-stats"
       ],
-      "downloadAsset": "vibetv-theme-token-counter-v0.1.0.zip",
-      "sha256": "52ec00deb0b9c66218fd548ce7439e74a6933807ffa563f3468e6e364bf3f735",
-      "bytes": 784,
-      "earlierThemeSpecPaths": []
+      "downloadAsset": "vibetv-theme-token-counter-v0.1.1.zip",
+      "sha256": "9af2700e66c571a87b280f8441a8a4cfe1ed311228c24987cfbb2b9c2f261d64",
+      "bytes": 801,
+      "earlierThemeSpecPaths": [
+        "/themes/u/tc-2-d5ddb991.json"
+      ]
     },
     {
       "id": "token-fire",

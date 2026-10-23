@@ -16541,7 +16541,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #780 as in its own entries plus the entries merged with f314106c; nothing else changes.
 - Scope: the merge of f314106c and this approval record. Pull request branch #780 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
-=========
+==
 
 ## 2026-10-21 — #856: approval marker after merging main at 61f79061
 
@@ -16622,7 +16622,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #821 as in its own entries plus the entries merged with 9702a6ef; nothing else changes.
 - Scope: the merge of 9702a6ef and this approval record. Pull request branch #821 only, not merged, not released.
 - What's new: none — merge of 9702a6ef, no customer-visible change of its own
-=========
+==
 
 ## 2026-10-21 — #780: approval marker after merging main at 467fd7fb
 
@@ -16710,7 +16710,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #816 as in its own entries plus the entries merged with ff601365; nothing else changes.
 - Scope: the merge of ff601365 and this approval record. Pull request branch #816 only, not merged, not released.
 - What's new: none — merge of ff601365, no customer-visible change of its own
-=========
+==
 
 ## 2026-10-21 — #784: approval marker after merging main at 467fd7fb
 
@@ -16768,7 +16768,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #817 as in its own entries plus the entries merged with ff601365; nothing else changes.
 - Scope: the merge of ff601365 and this approval record. Pull request branch #817 only, not merged, not released.
 - What's new: none — merge of ff601365, no customer-visible change of its own
-=========
+==
 
 ## 2026-10-21 — #817: approval marker after merging claude/group-calm-redesign at ff601365
 
@@ -16804,7 +16804,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #822 as in its own entries plus the entries merged with ff601365; nothing else changes.
 - Scope: the merge of ff601365 and this approval record. Pull request branch #822 only, not merged, not released.
 - What's new: none — merge of ff601365, no customer-visible change of its own
-=========
+==
 
 ## 2026-10-21 — #822: approval marker after merging claude/group-calm-redesign at ff601365
 
@@ -16847,7 +16847,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #813 as in its own entries plus the entries merged with f314106c; nothing else changes.
 - Scope: the merge of f314106c and this approval record. Pull request branch #813 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
-=========
+==
 
 ## 2026-10-21 — #813: approval marker after merging main at f314106c
 
@@ -16883,7 +16883,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #782 as in its own entries plus the entries merged with f314106c; nothing else changes.
 - Scope: the merge of f314106c and this approval record. Pull request branch #782 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
-=========
+==
 
 ## 2026-10-21 — #782: Paul decisions on support diagnostics and manual refresh (Codex review)
 
@@ -16979,7 +16979,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #783 as in its own entries plus the entries merged with f314106c; nothing else changes.
 - Scope: the merge of f314106c and this approval record. Pull request branch #783 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
-=========
+==
 
 ## 2026-10-21 — #856: approval marker after merging main at 61f79061
 
@@ -17115,7 +17115,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #802 as in its own entries plus the entries merged with ff601365; nothing else changes.
 - Scope: the merge of ff601365 and this approval record. Pull request branch #802 only, not merged, not released.
 - What's new: none — merge of ff601365, no customer-visible change of its own
-=========
+==
 
 ## 2026-10-21 — #802: keyboard focus stays when an updated theme card leaves "Update available" (#857)
 
@@ -17165,7 +17165,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #781 as in its own entries plus the entries merged with f314106c; nothing else changes.
 - Scope: the merge of f314106c and this approval record. Pull request branch #781 only, not merged, not released.
 - What's new: none — merge of f314106c, no customer-visible change of its own
-=========
+==
 
 ## 2026-10-21 — #781: Theme Studio header wraps below 960 px (Codex fix, P2)
 
@@ -17256,7 +17256,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #803 as in its own entries plus the entries merged with ff601365; nothing else changes.
 - Scope: the merge of ff601365 and this approval record. Pull request branch #803 only, not merged, not released.
 - What's new: none — merge of ff601365, no customer-visible change of its own
-=========
+==
 
 ## 2026-10-21 — #803: approval marker after merging claude/group-calm-redesign at ff601365
 
@@ -17389,7 +17389,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #798 as in its own entries plus the entries merged with ff601365; nothing else changes.
 - Scope: the merge of ff601365 and this approval record. Pull request branch #798 only, not merged, not released.
 - What's new: none — merge of ff601365, no customer-visible change of its own
-=========
+==
 
 ## 2026-10-21 — #798: Updates title row stays below the page title until lg
 
@@ -17718,7 +17718,7 @@ issue scope, or release permission never implies UI permission.
 ## 2026-10-20 — #784: approval marker after merging main
 
 - User approval: no visible change – UI approval not needed (merge commit into #784; no visible change of its own; entry: #784: approval marker after merging main)
-=========
+==
 - User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #663: Same device-switch reset as #645 for display brightness (no visible change)
 - User approval: no visible change – UI approval not needed (merge commit into #783; no visible change of its own; entry: #674: approval marker after merging #645 and main (no visible change))
 - User approval: approved by Paul in the communicator chat, 2026-10-21 09:20: "7200 passt" (build 7200 review) — entry: #674: Codex review fix, queued Brightness writes stop at a VibeTV change (no visible chang
@@ -17745,7 +17745,7 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #784 as in its own entries plus the entries merged with 467fd7fb; nothing else changes.
 - Scope: the merge of 467fd7fb and this approval record. Pull request branch #784 only, not merged, not released.
 - What's new: none — merge of 467fd7fb, no customer-visible change of its own
-=========
+==
 
 ## 2026-10-21 — #800: approval marker after merging claude/group-usage at f3cb1c10
 
@@ -20520,3 +20520,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Every provider that supplies exactly one limit gets a vertically centred limit group in Pixel Battery, Clippy, Gauge, Pace Meter and Synthwave, with and without Pace. Headers, fixed footers, and every two-limit layout stay in place; old firmware keeps the single group at the original position without second-limit leftovers.
 - Scope: Optional singleLimitY/sly primitive position in the shared firmware renderer, redraw dependencies, live preview and protocol; five theme packs and centring/ink/native guards. Pixel Battery 1.17.12, Clippy 1.2.12, Gauge 0.2.12, Pace Meter 1.0.4, Synthwave 1.2.11.
 - What's new: none — theme layout only
+
+## 2026-10-23 — Token Counter uses one provider (Paul question 15 B)
+
+- User approval: approved by Paul, 2026-10-23 09:09
+- Approved customer-visible result: While Token Counter is active, Two at once is greyed out with a short explanation. A saved pair shows Provider 1 with its own token count; switching to a theme that supports two providers restores the pair without changing the saved preference.
+- Scope: ThemeSpec maxProviders capability, Token Counter pack, Settings display mode, and the shared Companion frame selection used by the device and previews.
+- What's new: none — part of the unreleased Paul test-line corrections.

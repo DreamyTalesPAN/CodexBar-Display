@@ -18,6 +18,7 @@ import (
 )
 
 type runtimeDeps struct {
+	singleProviderTheme   func() bool
 	transport             transportlayer.DeviceTransport
 	now                   func() time.Time
 	after                 func(time.Duration) <-chan time.Time

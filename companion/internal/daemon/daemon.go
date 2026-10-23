@@ -17,6 +17,8 @@ import (
 )
 
 type Options struct {
+	// SingleProviderTheme reads the active theme capability from the shared device health source.
+	SingleProviderTheme func() bool
 	// FirmwareUpdates shares the stream cache with API previews.
 	FirmwareUpdates        *FirmwareUpdateCache
 	Port                   string
@@ -131,6 +133,7 @@ func runWithDeps(ctx context.Context, opts Options, deps runtimeDeps) error {
 	if opts.Interval <= 0 {
 		opts.Interval = defaultIntervalForTransport(deps.transportName)
 	}
+	deps.singleProviderTheme = opts.SingleProviderTheme
 	deps.beginDeviceWrite = opts.BeginDeviceWrite
 	deps.interval = opts.Interval
 	if opts.RecordEvent != nil {

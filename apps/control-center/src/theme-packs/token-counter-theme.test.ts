@@ -8,7 +8,7 @@ import {
   ThemeSpecPreview, themeFirmwareTextMetrics, themeShowsTokenTotals, themeTextFittedSize,
   type ThemePrimitive, type ThemeRenderPack,
 } from "@/components/live-vibetv-preview";
-import { importThemeSpec, validateThemeSpec } from "@/lib/theme-studio";
+import { deviceThemeSpecJson, importThemeSpec, validateThemeSpec } from "@/lib/theme-studio";
 
 const root = path.resolve(process.cwd(), "../..");
 const pack = JSON.parse(readFileSync(path.join(root, "dist/theme-packs/render/token-counter.json"), "utf8")) as ThemeRenderPack;
@@ -39,9 +39,11 @@ describe("Token Counter theme pack", () => {
     expect(manifest.assets).toEqual([]);
     expect(manifest.minFirmware).toBe("1.0.42");
     expect(manifest.requiredCapabilities).toEqual(["usage-slots-v1", "text-valign-v1"]);
-    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/tc-2-[0-9a-f]{8}\.json$/);
+    expect(manifest.themeSpec.path).toMatch(/^\/themes\/u\/tc-3-[0-9a-f]{8}\.json$/);
     expect(manifest.themeSpec.bytes).toBe(Buffer.byteLength(rawSpec));
     expect(pack.specPath).toBe(manifest.themeSpec.path);
+    expect(pack.spec?.maxProviders).toBe(1);
+    expect(JSON.parse(deviceThemeSpecJson(importThemeSpec(pack.spec))).maxProviders).toBe(1);
   });
 
   // Themes says so on the row when the computer has no token history (#551).

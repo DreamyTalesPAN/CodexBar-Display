@@ -42,7 +42,7 @@ func TestPreviewFramesMatchTheStreamsRowsAndResetTrust(t *testing.T) {
 			protocol.UsageWindow{ID: "weekly", Label: "Weekly", Percent: 4, ResetSec: 9000}),
 	}}
 
-	previews := PreviewFrames(usage, true, false, previewTestCaps(2048), now, nil, "", nil, nil)
+	previews := PreviewFrames(usage, true, false, previewTestCaps(2048), now, nil, "", nil, nil, false)
 	if len(previews) != 2 || previews[0].Provider != "codex" || previews[1].Provider != "claude" {
 		t.Fatalf("expected codex and claude in collector order: %+v", previews)
 	}
@@ -76,7 +76,7 @@ func TestPreviewFramesFlipRowsInRemainingMode(t *testing.T) {
 		previewSnapshot("codex", now, protocol.UsageWindow{ID: "weekly", Label: "Weekly", Percent: 30, ResetSec: 3600}),
 	}}
 
-	frame := PreviewFrames(usage, false, false, previewTestCaps(2048), now, nil, "", nil, nil)[0].Automatic
+	frame := PreviewFrames(usage, false, false, previewTestCaps(2048), now, nil, "", nil, nil, false)[0].Automatic
 	if frame.UsageMode != "remaining" || frame.UsageWindows[0].Percent != 70 || frame.ProviderSlots[0].Percent != 70 {
 		t.Fatalf("remaining mode: %+v", frame)
 	}
@@ -94,7 +94,7 @@ func TestPreviewFramesKeepUnavailableProvidersUnavailable(t *testing.T) {
 	noReading := ProviderUsageSnapshot{Provider: "gemini", NoReading: true, Frame: protocol.Frame{Provider: "gemini", Label: "Gemini", UsageUnavailable: true}}
 	live := previewSnapshot("codex", now, protocol.UsageWindow{ID: "session", Label: "Session", Percent: 10, ResetSec: 600})
 
-	previews := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale, noReading, live}}, true, false, previewTestCaps(2048), now, nil, "", nil, nil)
+	previews := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale, noReading, live}}, true, false, previewTestCaps(2048), now, nil, "", nil, nil, false)
 	if len(previews) != 3 {
 		t.Fatalf("every provider keeps its place in the rotation: %+v", previews)
 	}
@@ -138,7 +138,7 @@ func TestPreviewFramesAutomaticSkipsWhatTheStreamSkips(t *testing.T) {
 	stale := previewSnapshot("claude", now.Add(-time.Hour), protocol.UsageWindow{ID: "session", Label: "Session", Percent: 50, ResetSec: 600})
 	stale.Stale = true
 
-	previews := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale, live}}, true, false, previewTestCaps(2048), now, nil, "", nil, nil)
+	previews := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale, live}}, true, false, previewTestCaps(2048), now, nil, "", nil, nil, false)
 	if previews[0].Automatic != nil || previews[1].Automatic == nil {
 		t.Fatalf("only the current provider rotates: %+v", previews)
 	}
@@ -159,8 +159,8 @@ func TestPreviewFramesRetainedReadingIsWhatTheStreamSends(t *testing.T) {
 
 	want := streamFrameFor(t, []codexbar.ParsedFrame{parsedOf(stale)}, now, true)
 	for name, got := range map[string]protocol.Frame{
-		"automatic": *PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale}}, true, false, previewTestCaps(2048), now, nil, "", nil, nil)[0].Automatic,
-		"pinned":    PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale}}, true, false, previewTestCaps(2048), now, nil, "", nil, nil)[0].Pinned,
+		"automatic": *PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale}}, true, false, previewTestCaps(2048), now, nil, "", nil, nil, false)[0].Automatic,
+		"pinned":    PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{stale}}, true, false, previewTestCaps(2048), now, nil, "", nil, nil, false)[0].Pinned,
 	} {
 		if got.UsageUnavailable || len(got.UsageWindows) != 1 || got.UsageWindows[0].Percent != 50 ||
 			got.ResetTrust != want.ResetTrust || got.ResetSec != want.ResetSec {
@@ -194,7 +194,7 @@ func TestPreviewFramesAllStaleRestateTheStreamsLastGood(t *testing.T) {
 	}
 	want := applyUsageBarsPreference(state.lastGood, true).ApplyResetTrust(state.lastGoodAt, now, false)
 
-	previews := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{claude, codex}}, true, false, previewTestCaps(2048), now, nil, "", nil, nil)
+	previews := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{claude, codex}}, true, false, previewTestCaps(2048), now, nil, "", nil, nil, false)
 	if previews[0].Automatic != nil || previews[1].Automatic == nil {
 		t.Fatalf("exactly the last-good provider shows in Automatic: %+v", previews)
 	}
@@ -253,7 +253,7 @@ func TestPreviewFramesAutomaticIsTheStreamsFrameForEveryState(t *testing.T) {
 				p.Frame.V = protocol.ProtocolVersionV2
 				providers = append(providers, p)
 			}
-			for i, preview := range PreviewFrames(PersistedUsage{Providers: tc.snaps}, true, false, previewTestCaps(2048), now, nil, "", nil, nil) {
+			for i, preview := range PreviewFrames(PersistedUsage{Providers: tc.snaps}, true, false, previewTestCaps(2048), now, nil, "", nil, nil, false) {
 				state := &runtimeState{selector: codexbar.NewProviderSelector(), rotationProvider: tc.snaps[i].Provider, rotationAt: now}
 				deps := rotationTestDeps(3600, &runtimeconfig.ProviderDisplayConfig{Mode: "automatic"})
 				deps.now = func() time.Time { return now }
@@ -284,7 +284,7 @@ func TestPreviewFramesAllUnavailableWithoutLastGoodIsTheStreamsErrorFrame(t *tes
 	isolatePreviewHome(t)
 	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
 	none := ProviderUsageSnapshot{Provider: "codex", NoReading: true, Frame: protocol.Frame{Provider: "codex", Label: "Codex", UsageUnavailable: true}}
-	got := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{none}}, true, false, previewTestCaps(2048), now, nil, "", nil, nil)[0].Automatic
+	got := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{none}}, true, false, previewTestCaps(2048), now, nil, "", nil, nil, false)[0].Automatic
 	if got == nil || got.Error != protocol.ErrorFrame(runtimeErrorFrameCode(runtimeErrorNoProviders)).Error {
 		t.Fatalf("expected the no-providers error frame: %+v", got)
 	}
@@ -300,14 +300,14 @@ func TestPreviewFramesSystemBusyKeepsExpiredLastGood(t *testing.T) {
 	}
 	unavailable := ProviderUsageSnapshot{Provider: "codex", NoReading: true, Frame: protocol.Frame{Provider: "codex", UsageUnavailable: true}}
 	usage := PersistedUsage{Providers: []ProviderUsageSnapshot{unavailable}}
-	preview := PreviewFrames(usage, true, true, previewTestCaps(2048), now, nil, "", nil, nil)[0]
+	preview := PreviewFrames(usage, true, true, previewTestCaps(2048), now, nil, "", nil, nil, false)[0]
 	for mode, busy := range map[string]*protocol.Frame{"automatic": preview.Automatic, "pinned": &preview.Pinned} {
 		if busy == nil || busy.Error != "" || busy.UsageUnavailable || busy.Session != good.Session || busy.Label != SystemBusyLabel {
 			t.Fatalf("%s busy preview must retain expired last-good values with busy label: %+v", mode, busy)
 		}
 	}
 
-	normal := PreviewFrames(usage, true, false, previewTestCaps(2048), now, nil, "", nil, nil)[0].Automatic
+	normal := PreviewFrames(usage, true, false, previewTestCaps(2048), now, nil, "", nil, nil, false)[0].Automatic
 	if normal == nil || (normal.Error == "" && !normal.UsageUnavailable) || normal.Label == SystemBusyLabel {
 		t.Fatalf("without busy verdict expired usage must remain unavailable: %+v", normal)
 	}
@@ -344,7 +344,7 @@ func TestPreviewFramesMatchSentTokenVisibilityAtWireBoundary(t *testing.T) {
 			if err := sendCycleResult(context.Background(), "test-port", caps, caps.MaxFrameBytes, state, deps, result); err != nil {
 				t.Fatal(err)
 			}
-			preview := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{snapshot}}, true, false, caps, now, state.firmwareUpdates, theme, nil, nil)[0]
+			preview := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{snapshot}}, true, false, caps, now, state.firmwareUpdates, theme, nil, nil, false)[0]
 			for mode, frame := range map[string]*protocol.Frame{"automatic": preview.Automatic, "pinned": &preview.Pinned} {
 				if frame == nil || !reflect.DeepEqual(*frame, sent) {
 					t.Fatalf("%s preview must match actual send at %d-byte boundary: preview=%+v sent=%+v", mode, budget, frame, sent)
@@ -383,7 +383,7 @@ func TestPreviewFramesCapWindowsBeforeProjectingRootCountdown(t *testing.T) {
 			original := append([]protocol.UsageWindow(nil), snapshot.Frame.UsageWindows...)
 			caps := previewTestCaps(2048)
 			caps.MaxUsageWindows = tc.limit
-			preview := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{snapshot}}, true, false, caps, now, nil, "", nil, nil)[0]
+			preview := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{snapshot}}, true, false, caps, now, nil, "", nil, nil, false)[0]
 			for mode, frame := range map[string]*protocol.Frame{"automatic": preview.Automatic, "pinned": &preview.Pinned} {
 				if frame == nil || len(frame.UsageWindows) != tc.wantCount || frame.ResetSec != tc.wantReset {
 					t.Errorf("%s: want %d windows and root reset %d, got %+v", mode, tc.wantCount, tc.wantReset, frame)
@@ -416,7 +416,7 @@ func TestPreviewFramesV1RemainingMatchesSentFrame(t *testing.T) {
 	if sent.Session != 70 || len(sent.UsageSlots) != 1 || sent.UsageSlots[0].Percent != 70 {
 		t.Fatalf("unexpected stream fixture: %+v", sent)
 	}
-	preview := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{snapshot}}, false, false, caps, now, nil, "", nil, nil)[0]
+	preview := PreviewFrames(PersistedUsage{Providers: []ProviderUsageSnapshot{snapshot}}, false, false, caps, now, nil, "", nil, nil, false)[0]
 	for mode, frame := range map[string]*protocol.Frame{"automatic": preview.Automatic, "pinned": &preview.Pinned} {
 		if frame == nil || !reflect.DeepEqual(*frame, sent) {
 			t.Errorf("%s: preview=%+v sent=%+v", mode, frame, sent)
@@ -444,14 +444,14 @@ func TestPreviewFramesReuseTheStreamUpdateCacheWithoutFetching(t *testing.T) {
 	next := initializeRuntimeState(now, Options{FirmwareUpdates: cache}, deps)
 	attachFirmwareUpdateState(context.Background(), next, deps, caps, &result)
 	usage := PersistedUsage{Providers: []ProviderUsageSnapshot{{Provider: "codex", NoReading: true, Frame: protocol.Frame{V: 2, Provider: "codex", UsageUnavailable: true}}}}
-	preview := PreviewFrames(usage, true, false, caps, now, cache, "", nil, nil)[0]
+	preview := PreviewFrames(usage, true, false, caps, now, cache, "", nil, nil, false)[0]
 	for mode, frame := range map[string]*protocol.Frame{"automatic": preview.Automatic, "pinned": &preview.Pinned} {
 		if frame == nil || frame.Error == "" || !reflect.DeepEqual(frame.Update, compactFrameUpdate(result.frame.Update)) {
 			t.Fatalf("%s error frame lost update envelope: %+v", mode, frame)
 		}
 	}
 	caps.Firmware = "1.0.57"
-	other := PreviewFrames(usage, true, false, caps, now, cache, "", nil, nil)[0]
+	other := PreviewFrames(usage, true, false, caps, now, cache, "", nil, nil, false)[0]
 	if other.Pinned.Update != nil {
 		t.Fatal("preview reused another firmware's envelope")
 	}
@@ -468,7 +468,7 @@ func TestPreviewFramesAllUnavailableEmitsAutomaticErrorOnlyOnce(t *testing.T) {
 		usage.Providers = append(usage.Providers, ProviderUsageSnapshot{Provider: id, NoReading: true,
 			Frame: protocol.Frame{Provider: id, Label: id, UsageUnavailable: true}})
 	}
-	previews := PreviewFrames(usage, true, false, previewTestCaps(2048), now, nil, "", nil, nil)
+	previews := PreviewFrames(usage, true, false, previewTestCaps(2048), now, nil, "", nil, nil, false)
 	count := 0
 	for _, preview := range previews {
 		if preview.Pinned.Error == "" {
@@ -497,7 +497,7 @@ func TestPreviewFramesCapLegacyFieldsAfterSelectingPinnedRows(t *testing.T) {
 	}
 	caps := previewTestCaps(2048)
 	caps.MaxUsageWindows = 1
-	previews := PreviewFrames(usage, true, false, caps, now, nil, "", nil, nil)
+	previews := PreviewFrames(usage, true, false, caps, now, nil, "", nil, nil, false)
 	for _, preview := range previews {
 		for mode, frame := range map[string]*protocol.Frame{"automatic": preview.Automatic, "pinned": &preview.Pinned} {
 			if frame == nil || len(frame.UsageWindows) != 1 || frame.Session != 20 || !frame.WeeklyUnavailable || frame.Weekly != 0 || frame.ResetSec != 0 {
@@ -523,7 +523,7 @@ func TestPreviewFramesDoNotNormalizeTheSharedUpdateCache(t *testing.T) {
 	cache := &FirmwareUpdateCache{}
 	cache.current.Store(&firmwareUpdateSnapshot{update: original, checkedAt: now, board: caps.Board, firmware: caps.Firmware})
 	usage := PersistedUsage{Providers: []ProviderUsageSnapshot{previewSnapshot("codex", now)}}
-	preview := PreviewFrames(usage, true, false, caps, now, cache, "", nil, nil)[0]
+	preview := PreviewFrames(usage, true, false, caps, now, cache, "", nil, nil, false)[0]
 	for mode, frame := range map[string]*protocol.Frame{"automatic": preview.Automatic, "pinned": &preview.Pinned} {
 		if frame == nil || frame.Update == nil || frame.Update.Status != "current" || frame.Update.LatestVersion != "1.0.56" {
 			t.Fatalf("%s frame was not normalized: %+v", mode, frame)
@@ -561,7 +561,7 @@ func TestPreviewFramesDiscardTerminalLastGoodWithoutChangingPersistence(t *testi
 			if !ok || len(usage.Providers) != 1 {
 				t.Fatalf("missing persisted usage: %+v", usage)
 			}
-			preview := PreviewFrames(usage, true, false, previewTestCaps(2048), now, nil, "", nil, nil)[0]
+			preview := PreviewFrames(usage, true, false, previewTestCaps(2048), now, nil, "", nil, nil, false)[0]
 			for mode, frame := range map[string]*protocol.Frame{"automatic": preview.Automatic, "pinned": &preview.Pinned} {
 				if frame == nil {
 					t.Fatalf("missing %s frame", mode)
@@ -595,7 +595,7 @@ func TestPreviewFramesPairKeepsOrderAndHiddenLimits(t *testing.T) {
 		previewSnapshot("codex", now, protocol.UsageWindow{ID: "session", Label: "Session", Percent: 90, ResetSec: 600}, protocol.UsageWindow{ID: "weekly", Label: "Weekly", Percent: 20, ResetSec: 3600}),
 		previewSnapshot("claude", now, protocol.UsageWindow{ID: "session", Label: "Session", Percent: 40, ResetSec: 7200}),
 	}}
-	previews := PreviewFrames(usage, true, false, previewTestCaps(2048), now, nil, "", nil, nil)
+	previews := PreviewFrames(usage, true, false, previewTestCaps(2048), now, nil, "", nil, nil, false)
 	for _, tc := range []struct {
 		frame         protocol.Frame
 		first, second string
@@ -625,11 +625,11 @@ func TestPreviewFramesUnsavedHiddenWindowsReplaceStoredOnes(t *testing.T) {
 		previewSnapshot("codex", now, protocol.UsageWindow{ID: "session", Label: "Session", Percent: 90, ResetSec: 600}, protocol.UsageWindow{ID: "weekly", Label: "Weekly", Percent: 20, ResetSec: 3600}),
 		previewSnapshot("claude", now, protocol.UsageWindow{ID: "session", Label: "Session", Percent: 40, ResetSec: 7200}),
 	}}
-	stored := PreviewFrames(usage, true, false, previewTestCaps(2048), now, nil, "", nil, nil)
+	stored := PreviewFrames(usage, true, false, previewTestCaps(2048), now, nil, "", nil, nil, false)
 	if got := stored[0].Pinned.UsageWindows; len(got) != 1 || got[0].ID != "session" {
 		t.Fatalf("stored limit not applied: %+v", got)
 	}
-	draft := PreviewFrames(usage, true, false, previewTestCaps(2048), now, nil, "", nil, map[string][]string{"codex": {"session"}})
+	draft := PreviewFrames(usage, true, false, previewTestCaps(2048), now, nil, "", nil, map[string][]string{"codex": {"session"}}, false)
 	if got := draft[0].Pinned.UsageWindows; len(got) != 1 || got[0].ID != "weekly" {
 		t.Fatalf("draft limit not applied to the pinned frame: %+v", got)
 	}
@@ -637,7 +637,26 @@ func TestPreviewFramesUnsavedHiddenWindowsReplaceStoredOnes(t *testing.T) {
 	if len(pair.UsageWindows) != 2 || pair.UsageWindows[0].ID != "codex:weekly" {
 		t.Fatalf("draft limit not applied to the pair: %+v", pair.UsageWindows)
 	}
-	if again := PreviewFrames(usage, true, false, previewTestCaps(2048), now, nil, "", nil, nil); again[0].Pinned.UsageWindows[0].ID != "session" {
+	if again := PreviewFrames(usage, true, false, previewTestCaps(2048), now, nil, "", nil, nil, false); again[0].Pinned.UsageWindows[0].ID != "session" {
 		t.Fatalf("draft persisted into the stored setting")
+	}
+}
+
+func TestPreviewPairOnSingleProviderThemeUsesFirstProvidersTokens(t *testing.T) {
+	now := time.Now()
+	first, second := displayLimitsClaude(now), displayLimitsCodex(now)
+	first.Frame.SessionTokens, first.Frame.TokenTotalsKnown = 12345, true
+	second.Frame.SessionTokens, second.Frame.TokenTotalsKnown = 67890, true
+	usage := PersistedUsage{Providers: []ProviderUsageSnapshot{
+		{Provider: "claude", Frame: first.Frame, CollectedAt: now},
+		{Provider: "codex", Frame: second.Frame, CollectedAt: now},
+	}}
+	previews := PreviewFrames(usage, false, false, previewTestCaps(2048), now, nil, "", nil, nil, true)
+	for _, p := range previews {
+		for _, frame := range p.Pairs {
+			if frame.Provider != p.Provider || !frame.TokenTotalsKnown || frame.SessionTokens == 0 {
+				t.Fatalf("pair preview is not provider 1: %+v", frame)
+			}
+		}
 	}
 }
