@@ -52,11 +52,11 @@ func fetchFixtureProviders(t *testing.T, dir string) map[string]ParsedFrame {
 	return byID
 }
 
-// CodexBar 0.75 sends the plan name and the extra-usage cap through serve.
+// CodexBar 0.80 sends the plan name and the extra-usage cap through serve.
 // Claude has a EUR 100 monthly cap, Codex a cap of 0 (no cap), and the
 // companion passes on only what CodexBar sends.
-func TestPlanAndSpendFromCodexBar075Serve(t *testing.T) {
-	byID := fetchFixtureProviders(t, filepath.Join("testdata", "cli", "codexbar-macos-0.75.0"))
+func TestPlanAndSpendFromCodexBar080Serve(t *testing.T) {
+	byID := fetchFixtureProviders(t, filepath.Join("testdata", "cli", "codexbar-macos-0.80.0"))
 
 	claude := byID["claude"]
 	if claude.Meta.Plan != "Max 20x" {
@@ -80,8 +80,8 @@ func TestPlanAndSpendFromCodexBar075Serve(t *testing.T) {
 }
 
 // The same cap in the CLI answer (usage --json) reaches the frame too.
-func TestPlanAndSpendFromCodexBar075Cli(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("testdata", "cli", "codexbar-macos-0.75.0", "usage-all.json"))
+func TestPlanAndSpendFromCodexBar080Cli(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "cli", "codexbar-macos-0.80.0", "usage-all.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

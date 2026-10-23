@@ -28,11 +28,11 @@ func samePace(a, b protocol.UsagePace) bool {
 		(a.Lasts == nil) == (b.Lasts == nil) && (a.Lasts == nil || *a.Lasts == *b.Lasts)
 }
 
-// The production path: CodexBar 0.75.0's serve recordings, keyed by its
+// The production path: CodexBar 0.80.0's serve recordings, keyed by its
 // structural lanes, land on the dashboard windows they describe, in the device
 // frame and in the usage meta the API reads.
 func TestDashboardUsageCarriesCodexBarPace(t *testing.T) {
-	dir := filepath.Join("testdata", "cli", "codexbar-macos-0.75.0")
+	dir := filepath.Join("testdata", "cli", "codexbar-macos-0.80.0")
 	serve := func(name string) http.HandlerFunc {
 		raw, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
@@ -46,17 +46,16 @@ func TestDashboardUsageCarriesCodexBarPace(t *testing.T) {
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	collectedAt := time.Date(2026, 10, 14, 7, 42, 20, 0, time.UTC)
+	collectedAt := time.Date(2026, 10, 23, 7, 28, 27, 0, time.UTC)
 	providers, err := FetchDashboardProviders(context.Background(), dashboardFetchTestInfo(server), collectedAt)
 	if err != nil || len(providers) != 2 {
 		t.Fatalf("providers=%d err=%v", len(providers), err)
 	}
 	want := map[string][]protocol.UsagePace{
-		// "54% in deficit | Expected 16% used | Runs out in 11h 14m"
-		"codex": {pace(54, protocol.PaceDeficit, false)},
-		// Claude's recorded resets differ by one second between endpoints;
-		// those paces cannot describe the dashboard windows. Fable has none.
-		"claude": {{}, {}, {}},
+		// "3% in reserve | Expected 9% used | Lasts until reset"
+		"codex": {pace(-3, protocol.PaceReserve, true)},
+		// Claude's recorded measurements match both endpoints; Fable has no pace.
+		"claude": {pace(-30, protocol.PaceReserve, true), pace(45, protocol.PaceDeficit, false), {}},
 	}
 	for _, provider := range providers {
 		windows := provider.Frame.UsageWindows
@@ -68,7 +67,7 @@ func TestDashboardUsageCarriesCodexBarPace(t *testing.T) {
 				t.Fatalf("%s window %s pace=%+v want %+v", provider.Provider, window.ID, window.Pace, want[provider.Provider][i])
 			}
 		}
-		if (len(provider.Meta.Pace) > 0) != (provider.Provider == "codex") {
+		if len(provider.Meta.Pace) != map[string]int{"codex": 1, "claude": 2}[provider.Provider] {
 			t.Fatalf("%s: API pace must match the device's measurement: %+v", provider.Provider, provider.Meta.Pace)
 		}
 	}
@@ -168,7 +167,7 @@ func TestDashboardPaceRequiresMatchingMeasurement(t *testing.T) {
 	}
 }
 
-// CodexBar 0.75.0 CLIRenderer.pacePayload rounds both percentages before
+// CodexBar 0.80.0 CLIRenderer.pacePayload rounds both percentages before
 // encoding them; integral JSON numbers are valid regardless of decimal syntax.
 func TestParsePacePercentagesStrictNumbers(t *testing.T) {
 	for _, field := range []string{"deltaPercent", "expectedUsedPercent"} {

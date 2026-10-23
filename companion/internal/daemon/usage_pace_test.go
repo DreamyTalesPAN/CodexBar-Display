@@ -164,7 +164,7 @@ func TestStaleReadingSendsNoPace(t *testing.T) {
 
 func TestFooterWindowReachesOnlyFirmwareThatAdvertisesIt(t *testing.T) {
 	prepareFastTestEnv(t)
-	raw, err := os.ReadFile("../codexbar/testdata/cli/codexbar-macos-0.75.0/serve-snapshot.json")
+	raw, err := os.ReadFile("../codexbar/testdata/cli/codexbar-macos-0.80.0/serve-snapshot.json")
 	if err != nil {
 		t.Fatal(err)
 	}

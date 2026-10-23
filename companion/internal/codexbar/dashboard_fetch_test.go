@@ -471,9 +471,9 @@ func TestDashboardAggregateUsageRequestGivesUp(t *testing.T) {
 }
 
 // The Mac serve answers with CodexBar's own pace next to the windows. The
-// recorded 0.75.0 answer must reach the collector's meta unchanged.
+// recorded 0.80.0 answer must reach the collector's meta unchanged.
 func TestFetchDashboardProvidersKeepsCodexBarPaceFromServeFixture(t *testing.T) {
-	dir := filepath.Join("testdata", "cli", "codexbar-macos-0.75.0")
+	dir := filepath.Join("testdata", "cli", "codexbar-macos-0.80.0")
 	snapshot, err := os.ReadFile(filepath.Join(dir, "serve-snapshot.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -513,7 +513,7 @@ func TestFetchDashboardProvidersKeepsCodexBarPaceFromServeFixture(t *testing.T) 
 		t.Fatalf("codex missing from %d providers", len(providers))
 	}
 	pace := codex.Meta.Pace
-	if len(pace) != 1 || pace[0].Window != "secondary" || pace[0].WillLastToReset || pace[0].ETASeconds != 40427 {
-		t.Fatalf("expected the recorded weekly pace (runs out in 40427s), got %+v", pace)
+	if len(pace) != 1 || pace[0].Window != "secondary" || !pace[0].WillLastToReset || pace[0].ETASeconds != 0 {
+		t.Fatalf("expected the recorded weekly pace (lasts until reset, no ETA), got %+v", pace)
 	}
 }

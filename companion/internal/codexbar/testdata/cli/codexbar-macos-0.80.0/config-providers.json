@@ -73,12 +73,6 @@
   },
   {
     "defaultEnabled": false,
-    "displayName": "Fireworks",
-    "enabled": false,
-    "provider": "fireworks"
-  },
-  {
-    "defaultEnabled": false,
     "displayName": "Gemini",
     "enabled": false,
     "provider": "gemini"
@@ -271,12 +265,6 @@
   },
   {
     "defaultEnabled": false,
-    "displayName": "plugin (not loaded)",
-    "enabled": false,
-    "provider": "crof"
-  },
-  {
-    "defaultEnabled": false,
     "displayName": "Venice",
     "enabled": false,
     "provider": "venice"
@@ -394,6 +382,18 @@
     "displayName": "ZoomMate",
     "enabled": false,
     "provider": "zoommate"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "plugin (not loaded)",
+    "enabled": false,
+    "provider": "crof"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Fireworks",
+    "enabled": false,
+    "provider": "fireworks"
   },
   {
     "defaultEnabled": false,
@@ -622,5 +622,35 @@
     "displayName": "Parallel",
     "enabled": false,
     "provider": "parallel"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Future AGI",
+    "enabled": false,
+    "provider": "futureagi"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Claude Platform",
+    "enabled": false,
+    "provider": "claudeplatform"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Munito",
+    "enabled": false,
+    "provider": "munito"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Soniox",
+    "enabled": false,
+    "provider": "soniox"
+  },
+  {
+    "defaultEnabled": false,
+    "displayName": "Trae CN",
+    "enabled": false,
+    "provider": "traecn"
   }
 ]
