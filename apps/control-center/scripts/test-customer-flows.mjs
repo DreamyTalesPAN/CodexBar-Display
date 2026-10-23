@@ -2748,10 +2748,7 @@ async function testProviderReadinessCustomerStates(browser, appUrl) {
     await page
       .getByRole("heading", { name: "VibeTV is connected" })
       .waitFor({ timeout: 10_000 });
-    // The Overview shows the live VibeTV; without a hardware GPU it is the flat preview (#713).
-    // The rendered theme (its image label starts "Rendered VibeTV") is the proof: the
-    // loading state has no such image, so the checks below run after the preview drew.
-    await page.getByRole("img", { name: /^Rendered VibeTV / }).waitFor({ timeout: 15_000 });
+    await waitForLivePreview(page, /^Rendered VibeTV /, 15_000);
     assert(
       (await page.getByText("AI provider", { exact: true }).count()) === 0,
       "Overview must not guess or show an AI provider",
@@ -3425,9 +3422,7 @@ async function testRunningCompanionOutageKeepsControlCenterOpen(
   await page.getByRole("button", { name: "Overview", exact: true }).waitFor({
     timeout: 15_000,
   });
-  await page
-    .getByRole("img", { name: /Rendered VibeTV theme/ })
-    .waitFor({ timeout: 10_000 });
+  await waitForLivePreview(page);
   await clickNavigation(page, "Usage");
   await page.getByText("Session: 12% used", { exact: true }).waitFor();
   failStatus = true;
@@ -5116,15 +5111,15 @@ async function testThemeMissingDeviceChoosesThemeAndCompletesSetup(
     `Theme setup must not retry on its own, got ${installRequests.length} install requests`,
   );
 
-  const renderedFinalPreview = setupScreen(page, SETUP_LIVE_SCREEN)
-    .getByRole("img", { name: /Rendered VibeTV theme synthwave/ })
-    .waitFor({ timeout: 20_000 });
+  const renderedFinalPreview = waitForLivePreview(
+    setupScreen(page, SETUP_LIVE_SCREEN), /Rendered VibeTV theme synthwave/, 20_000,
+  );
   await installFailureDialog.getByRole("button", { name: "Try again" }).click();
   await renderedFinalPreview;
   assert(
     (await page.getByRole("navigation", { name: "Control Center" }).count()) ===
       0,
-    "Theme setup must show the real preview on its final screen before Overview",
+    "Theme setup must show its live preview state before handing over to Overview",
   );
   await page.getByRole("heading", { name: "VibeTV is connected" }).waitFor({
     timeout: 20_000,
@@ -5638,7 +5633,7 @@ async function testReplacementVibeTVWaitsForItsPreview(browser, appUrl) {
     "A frame arriving after the replacement disconnects must not finish setup");
   companion.setDevice(replacement);
   await page.getByRole("heading", { name: "Overview", exact: true }).waitFor({ timeout: 20_000 });
-  await page.getByRole("img", { name: /Rendered VibeTV theme/ }).waitFor();
+  await waitForLivePreview(page);
   await page.close();
 }
 
@@ -5917,7 +5912,7 @@ async function testUnsupportedThemeHandsOverOnDeviceReport(browser, appUrl) {
   const companion = await routeCompanionOnline(page, installRequests, () => {}, { device: lostCustom(false) });
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await waitForCondition(() => missingPackReads > 0, "the missing custom preview should be requested");
-  await page.getByText("Unsupported theme", { exact: true }).waitFor({ timeout: 10_000 });
+  await waitForLivePreview(page, /Rendered VibeTV theme/, 10_000, "Unsupported theme");
   await page.waitForTimeout(4_000);
   assert((await page.locator("main.control-center-shell").count()) === 0, "an unsupported theme VibeTV has not confirmed must not admit the Control Center");
   assert((await page.getByRole("button", { name: "Back", exact: true }).count()) === 0, "Your VibeTV is live must not offer Back");
@@ -10024,37 +10019,30 @@ async function testOverviewShowsOnlyTheVibeTV(browser, appUrl) {
       (await page.locator("dl").getByText("1.0.32", { exact: true }).count()) === 1,
     "Overview must show the Mac App and firmware versions",
   );
-  await page
-    .getByRole("img", {
-      name: /Rendered VibeTV theme synthwave showing Codex, Weekly 0% used, Codex Spark Weekly 63% used/,
-    })
-    .waitFor({ timeout: 10_000 });
-  const renderedTheme = page.getByRole("img", {
-    name: /Rendered VibeTV theme synthwave/,
-  });
-  await renderedTheme.getByText("USAGE").waitFor({ timeout: 10_000 });
-  const weeklyLabel = renderedTheme.getByText("Weekly used", { exact: true });
-  const sparkLabel = renderedTheme.getByText("Codex Spark Weekly used", {
-    exact: true,
-  });
-  await weeklyLabel.waitFor({ timeout: 10_000 });
-  await sparkLabel.waitFor({ timeout: 10_000 });
-  assert(
-    (await weeklyLabel.getAttribute("font-size")) === "16" &&
-      (await sparkLabel.getAttribute("font-size")) === "16",
-    "Synthwave should use its largest readable font for both real Codex window labels",
-  );
-  await renderedTheme.getByText("0%").waitFor({ timeout: 10_000 });
-  await renderedTheme.getByText("63%").waitFor({ timeout: 10_000 });
-  const previewFigure = page.locator("figure").filter({ has: renderedTheme });
-  assert(
-    (await previewFigure.locator('[data-testid="vibetv-case"]').count()) === 1,
-    "Overview preview should render the VibeTV case shell",
-  );
-  assert(
-    (await previewFigure.getByText("VIBETV", { exact: true }).count()) === 0,
-    "Overview preview should render the theme without device chrome",
-  );
+  if (await waitForLivePreview(page,
+    /Rendered VibeTV theme synthwave showing Codex, Weekly 0% used, Codex Spark Weekly 63% used/)) {
+    const renderedTheme = page.getByRole("img", {
+      name: /Rendered VibeTV theme synthwave/,
+    });
+    await renderedTheme.getByText("USAGE").waitFor({ timeout: 10_000 });
+    const weeklyLabel = renderedTheme.getByText("Weekly used", { exact: true });
+    const sparkLabel = renderedTheme.getByText("Codex Spark Weekly used", {
+      exact: true,
+    });
+    await weeklyLabel.waitFor({ timeout: 10_000 });
+    await sparkLabel.waitFor({ timeout: 10_000 });
+    assert(
+      (await weeklyLabel.getAttribute("font-size")) === "16" &&
+        (await sparkLabel.getAttribute("font-size")) === "16",
+      "Synthwave should use its largest readable font for both real Codex window labels",
+    );
+    await renderedTheme.getByText("0%").waitFor({ timeout: 10_000 });
+    await renderedTheme.getByText("63%").waitFor({ timeout: 10_000 });
+    assert(
+      (await renderedTheme.getByText("VIBETV", { exact: true }).count()) === 0,
+      "The live screen should render the theme without substitute device chrome",
+    );
+  }
   assert(
     (await page
       .getByAltText("VibeTV device showing the current usage theme")
@@ -10125,9 +10113,7 @@ async function testOverviewWaitsForRealUsage(browser, appUrl) {
     "No rendered theme should be shown while first usage is pending");
   previewAvailable = true;
   await page.getByText("VibeTV is connected").waitFor({ timeout: 15_000 });
-  await page
-    .getByRole("img", { name: /Rendered VibeTV theme synthwave/ })
-    .waitFor({ timeout: 10_000 });
+  await waitForLivePreview(page, /Rendered VibeTV theme synthwave/);
 
   assertNoInstallRequests(installRequests);
   await assertNoMobileOverflow(page);
@@ -10199,6 +10185,49 @@ async function cachedSpritePixelCount(preview) {
   }, 0));
 }
 
+// Select the expected outcome from the browser, never from the product's result.
+// This observes real WebGL capability without overriding any application API.
+async function waitForLivePreview(root, name = /Rendered VibeTV theme/, timeout = 10_000, hardwarePlaceholder) {
+  const capability = await root.evaluate(() => {
+    const gl = document.createElement("canvas").getContext("webgl2");
+    if (!gl) return { hardware: false, renderer: "no WebGL2 context" };
+    const info = gl.getExtension("WEBGL_debug_renderer_info");
+    const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "";
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
+    return {
+      hardware: !/swiftshader|llvmpipe|software|basic render driver|\bwarp\b/i.test(renderer),
+      renderer,
+    };
+  });
+  console.log(`Live preview capability: ${JSON.stringify(capability)}`);
+  const rendered = hardwarePlaceholder
+    ? root.getByText(hardwarePlaceholder, { exact: true })
+    : root.getByRole("img", { name });
+  const unavailable = root.getByText("3D preview is unavailable.", { exact: true });
+  if (capability.hardware) {
+    // An unexpected loading/error result must time out, not bypass content checks.
+    await rendered.waitFor({ timeout });
+    assert((await unavailable.count()) === 0, "Hardware 3D must not report unavailable");
+    const model = root.getByRole("group", { name: "Interactive VibeTV preview. Drag to rotate." });
+    assert(await model.isVisible(), "A rendered live theme must belong to the visible real 3D model");
+    assert((await model.locator("canvas").count()) === 1,
+      "The real 3D model must own its renderer canvas");
+  } else {
+    await unavailable.waitFor({ timeout });
+    assert((await rendered.count()) === 0,
+      "Unavailable hardware must not pretend to render a live theme");
+    assert((await root.getByRole("group", {
+      name: "Interactive VibeTV preview. Drag to rotate.", includeHidden: true,
+    }).count()) === 0, "Unavailable hardware must not mount the 3D renderer");
+    console.log("Verified software/no-WebGL neutral state; no GPU rendering PASS claimed.");
+  }
+  assert((await root.getByText("Loading 3D preview…", { exact: true }).count()) === 0,
+    "Live preview must leave loading before the customer flow proceeds");
+  assert((await root.locator('[data-testid="vibetv-case"]').count()) === 0,
+    "Live preview must never mount the old device photo");
+  return capability.hardware;
+}
+
 async function testOverviewRendersThemeSpecAssetTypes(browser, appUrl) {
   const cases = [
     { id: "mini-classic", kind: "gif", expectedLabel: "Codex" },
@@ -10255,44 +10284,48 @@ async function testOverviewRendersThemeSpecAssetTypes(browser, appUrl) {
     });
 
     await page.goto(appUrl, { waitUntil: "domcontentloaded" });
-    const renderedTheme = page.getByRole("img", {
-      name: new RegExp(
-        `Rendered VibeTV theme ${theme.id} showing Codex, Session 27% used, Weekly 63% used`,
-      ),
-    });
-    await renderedTheme.waitFor({ timeout: 10_000 });
-    await renderedTheme
-      .getByText(theme.expectedLabel)
-      .waitFor({ timeout: 10_000 });
-    assert(
-      (await page.getByText("ThemeSpec not available").count()) === 0,
-      `${theme.id} preview should load its ThemeSpec`,
-    );
+    if (await waitForLivePreview(page, new RegExp(
+      `Rendered VibeTV theme ${theme.id} showing Codex, Session 27% used, Weekly 63% used`,
+    ))) {
+      const renderedTheme = page.getByRole("img", {
+        name: new RegExp(
+          `Rendered VibeTV theme ${theme.id} showing Codex, Session 27% used, Weekly 63% used`,
+        ),
+      });
+      await renderedTheme
+        .getByText(theme.expectedLabel)
+        .waitFor({ timeout: 10_000 });
+      assert(
+        (await page.getByText("ThemeSpec not available").count()) === 0,
+        `${theme.id} preview should load its ThemeSpec`,
+      );
 
-    if (theme.kind === "gif") {
-      assert(
-        (await renderedTheme.locator("image").count()) >= 1,
-        `${theme.id} preview should render GIF assets`,
-      );
-    } else {
-      assert(
-        (await cachedSpritePixelCount(renderedTheme)) > 10,
-        `${theme.id} preview should render sprite primitives`,
-      );
-    }
+      if (theme.kind === "gif") {
+        assert(
+          (await renderedTheme.locator("image").count()) >= 1,
+          `${theme.id} preview should render GIF assets`,
+        );
+      } else {
+        assert(
+          (await cachedSpritePixelCount(renderedTheme)) > 10,
+          `${theme.id} preview should render sprite primitives`,
+        );
+      }
 
-    if (theme.kind === "animated-sprite") {
-      const firstRender = await renderedTheme.evaluate(
-        (node) => node.innerHTML,
-      );
-      await page.waitForTimeout(650);
-      const secondRender = await renderedTheme.evaluate(
-        (node) => node.innerHTML,
-      );
-      assert(
-        firstRender !== secondRender,
-        `${theme.id} animated sprite should advance frames`,
-      );
+      if (theme.kind === "animated-sprite") {
+        const firstRender = await renderedTheme.evaluate(
+          (node) => node.innerHTML,
+        );
+        await page.waitForTimeout(650);
+        const secondRender = await renderedTheme.evaluate(
+          (node) => node.innerHTML,
+        );
+        assert(
+          firstRender !== secondRender,
+          `${theme.id} animated sprite should advance frames`,
+        );
+      }
+
     }
 
     assertNoInstallRequests(installRequests);

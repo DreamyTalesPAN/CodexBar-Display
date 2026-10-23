@@ -9921,3 +9921,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: unchanged from product commit 3b0083b2; the test now asserts the approved neutral unavailable message and absence of the old case. Existing device, frame, theme-pack and exact handover timing assertions remain intact.
 - Scope: `apps/control-center/src/components/setup/setup-wizard.test.tsx` only, plus this required approval marker. Product source and quick artifacts remain byte-identical to 3b0083b2; all final Mac/Windows evidence and review gates remain required.
 - What's new: none — regression test and provenance documentation only, no customer behavior change.
+
+## 2026-10-23 — #982: browser tests distinguish real 3D from neutral unavailable
+
+- User approval: no visible change — O12 msg_27c4964bff1a authorizes the required browser-test-only correction for the existing no-photo result. Product code remains identical to 3b0083b2; final rendered acceptance is not inferred from headless CI.
+- Approved customer-visible result: unchanged. Browser tests select the expected outcome from an independent real WebGL2/renderer probe and reject an unexpected unavailable result on hardware. They reject the old device case, retain real 3D assertions, and identify neutral no-hardware coverage without claiming a GPU pass. Real-pack component tests always check the same labels, zero/63 values, firmware font sizes, GIF/sprite content and animation; jsdom does not measure browser SVG layout. Existing readiness, navigation, install and frame safeguards and separate loading/model-error tests remain; catalog preview assertions are unchanged.
+- Scope: `apps/control-center/scripts/test-customer-flows.mjs`, `apps/control-center/src/components/live-vibetv-preview.sprites.test.tsx` and this record only. No GPU spoofing, product flag, timer change, renderer change or new customer behavior.
+- What's new: none — test-contract alignment and evidence limits only.
