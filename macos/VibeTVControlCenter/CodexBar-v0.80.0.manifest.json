@@ -1,11 +1,11 @@
 {
   "name": "CodexBar",
-  "version": "0.75.0",
+  "version": "0.80.0",
   "bundleIdentifier": "com.steipete.codexbar",
   "teamIdentifier": "Y5PE65HELJ",
-  "archive": "CodexBar-macos-universal-0.75.0.zip",
-  "sha256": "98d7d415f98b1fe1aaf89b394ea423c8a9acb57c753399bb6597f576f08dc8fc",
-  "source": "https://github.com/steipete/CodexBar/releases/tag/v0.75.0",
+  "archive": "CodexBar-macos-universal-0.80.0.zip",
+  "sha256": "7cdc7768947163b9c5af3ac52b3546c01c99b82c7cfcc7e0bf18e7086f38d208",
+  "source": "https://github.com/steipete/CodexBar/releases/tag/v0.80.0",
   "license": "MIT",
   "licenseFile": "CodexBar-LICENSE.txt",
   "licenseSha256": "14293556b79940745123d0160c71d27ed0e9fe9b8a848093f3ed78f4853caafe"

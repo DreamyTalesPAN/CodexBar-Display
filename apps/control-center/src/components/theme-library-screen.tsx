@@ -10,8 +10,8 @@ import {
   ShieldCheck,
   Wifi,
 } from "lucide-react";
-import type { ComponentProps, ReactNode } from "react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   AlertDescription,
@@ -201,37 +201,6 @@ export type ThemeLibraryScreenProps = {
   windowsHost?: boolean;
 };
 
-// One rule for the page's notices: a notice waits while any other dialog is
-// open in the document. Not counted: this page's own notices, and the busy
-// announcement, which already waits for every other dialog (so the two never
-// wait on each other and loop).
-const OPEN_DIALOGS = '[role="dialog"], [role="alertdialog"]';
-
-function otherDialogOpen(): boolean {
-  if (typeof document === "undefined") return false;
-  return Array.from(document.querySelectorAll(OPEN_DIALOGS)).some(
-    (dialog) => !dialog.matches('[data-notice-kind="system-busy"], [data-notice-kind="theme-library"]'),
-  );
-}
-
-/** Whether another dialog is open right now, kept current while mounted. */
-function useOtherDialogOpen(): boolean {
-  const [open, setOpen] = useState(otherDialogOpen);
-  useLayoutEffect(() => {
-    const check = () => setOpen(otherDialogOpen());
-    check();
-    const observer = new MutationObserver(check);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, []);
-  return open;
-}
-
-/** A page notice: identified in the DOM without mount-count bookkeeping. */
-function PageNotice(props: ComponentProps<typeof SetupDialog>) {
-  return <SetupDialog {...props} noticeKind="theme-library" />;
-}
-
 export function ThemeLibraryScreen({
   themes,
   usage = "live",
@@ -321,11 +290,9 @@ export function ThemeLibraryScreen({
   const [previewTheme, setPreviewTheme] = useState<ThemeLibraryItem | null>(null);
   const recoveryMatchesUsage =
     (recovery ? themeDocumentUsage(recovery.document) : "live") === usage;
-  // A page notice waits while another dialog of this page is open.
-  // Page notices wait for any other open dialog (one generic rule, see
-  // useOtherDialogOpen) and never show together: an error wins over the
+  // The page's notices wait while a dialog the customer asked for is open
+  // (see dialog-stack) and never show together: an error wins over the
   // storage notice.
-  const otherDialogOpen = useOtherDialogOpen();
   const libraryThemes: ThemeLibraryItem[] = [
     ...userThemes
       .filter((custom) => themeDocumentUsage(custom.document) === usage)
@@ -833,8 +800,9 @@ export function ThemeLibraryScreen({
       ) : null}
       {/* Errors are overlays over the page. OK or the X clears the error; an
           error that arrives while another dialog is open waits for it. */}
-      {libraryError && !otherDialogOpen ? (
-        <PageNotice
+      {libraryError ? (
+        <SetupDialog
+          rank="notice"
           description={copyForHost(libraryError, windowsHost)}
           onOpenChange={(open) => {
             if (!open) setLibraryError("");
@@ -847,9 +815,9 @@ export function ThemeLibraryScreen({
       {/* The storage notice shows after the error is closed, never with it. */}
       {storageWarning &&
       storageWarning !== closedStorageWarning &&
-      !libraryError &&
-      !otherDialogOpen ? (
-        <PageNotice
+      !libraryError ? (
+        <SetupDialog
+          rank="notice"
           description={storageWarning}
           onOpenChange={(open) => {
             if (!open) setClosedStorageWarning(storageWarning);

@@ -87,7 +87,6 @@ func parseProviderPayload(payload map[string]any) (ParsedFrame, error) {
 		"usage.primary",
 		"primary",
 		"session",
-		"openaiDashboard.primaryLimit",
 	)
 	weekly, weeklyKnown := knownUsagePercentAtPaths(payload,
 		"usage.secondary",
@@ -437,7 +436,7 @@ func parseUsageWindows(payload map[string]any) []UsageWindow {
 		label string
 		paths []string
 	}{
-		{id: "primary", label: "Session", paths: []string{"usage.primary", "primary", "openaiDashboard.primaryLimit"}},
+		{id: "primary", label: "Session", paths: []string{"usage.primary", "primary"}},
 		{id: "secondary", label: "Weekly", paths: []string{"usage.secondary", "secondary", "openaiDashboard.secondaryLimit"}},
 		{id: "tertiary", label: "Tertiary", paths: []string{"usage.tertiary", "tertiary", "openaiDashboard.tertiaryLimit"}},
 	} {
