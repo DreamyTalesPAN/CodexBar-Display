@@ -5,6 +5,7 @@ import { AlertDialog as AlertDialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { DialogSlot } from "@/components/dialog-stack"
 import { focusDialogOnOpen } from "@/components/ui/dialog"
 
 function AlertDialog({
@@ -47,6 +48,7 @@ function AlertDialogOverlay({
 
 function AlertDialogContent({
   className,
+  children,
   size = "default",
   onOpenAutoFocus,
   ...props
@@ -71,7 +73,10 @@ function AlertDialogContent({
           focusDialogOnOpen(event, opener)
         }}
         {...props}
-      />
+      >
+        <DialogSlot rank="question" />
+        {children}
+      </AlertDialogPrimitive.Content>
     </AlertDialogPortal>
   )
 }
