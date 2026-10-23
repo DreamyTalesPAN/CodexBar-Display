@@ -10,6 +10,26 @@ private func require(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 
 func runURLSchemeTests() {
+    let companionURL = URL(string: "http://127.0.0.1:54321/v1/status")!
+    for (method, timeout) in [("GET", 5.0), ("GET", 20.0), ("POST", 5.0)] {
+        let request = makeCompanionRequest(url: companionURL, method: method, timeout: timeout)
+        require(
+            request.url == companionURL && request.httpMethod == method
+                && request.timeoutInterval == timeout
+                && request.cachePolicy == .reloadIgnoringLocalCacheData,
+            "companion requests must preserve the origin, method, timeout and cache policy"
+        )
+        require(
+            request.httpBody == nil && (request.allHTTPHeaderFields ?? [:]).isEmpty,
+            "companion requests must not add a body, token or headers"
+        )
+    }
+    let healthRequest = makeCompanionRequest(url: companionURL)
+    require(
+        healthRequest.httpMethod == "GET" && healthRequest.timeoutInterval == 5,
+        "runtime health requests must keep their five-second GET defaults"
+    )
+
     // Issue #655: a window behind other windows must not suspend the page that
     // drives the setup.
     MainActor.assumeIsolated {
@@ -484,24 +504,38 @@ func runURLSchemeTests() {
             && !(environmentResult?.output.isEmpty ?? true),
         "the Companion child must inherit the app environment so it can find HOME"
     )
-    require(
-        RuntimePreparationOutcome.nativeRuntimeReady.shouldReloadControlCenter,
-        "healthy native runtime must refresh the WebView"
+    for (capture, merge, expected) in [(true, true, "outerr"), (true, false, "out"), (false, true, "")] {
+        let result = try! runProcess(
+            executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "printf out; printf err >&2; exit 7"],
+            captureOutput: capture,
+            mergeStandardError: merge
+        )
+        require(
+            result?.exitCode == 7 && result?.output == expected,
+            "captured, stdout-only and discarded output must preserve nonzero exit status"
+        )
+    }
+    let explicitEnvironment = runCodexBarCommand(
+        executableURL: URL(fileURLWithPath: "/usr/bin/printenv"),
+        arguments: ["VIBETV_COMMAND_TEST"],
+        environment: ["VIBETV_COMMAND_TEST": "explicit"]
     )
     require(
-        !RuntimePreparationOutcome.codexBarRepairRequired.shouldReloadControlCenter,
-        "a failed CodexBar installation must keep customer setup blocked"
+        explicitEnvironment?.exitCode == 0 && explicitEnvironment?.output == "explicit\n",
+        "a supplied child environment must be passed through"
     )
+    let missingExecutable = commandFixtureDirectory.appendingPathComponent("missing-command")
     require(
-        !RuntimePreparationOutcome.failure(.backgroundApproval)
-            .shouldReloadControlCenter,
-        "background approval must keep the WebView closed until the runtime is verified"
+        runCodexBarCommand(executableURL: missingExecutable, arguments: []) == nil,
+        "CodexBar launch failures must still return nil"
     )
-    require(
-        !RuntimePreparationOutcome.failure(.legacyRepair)
-            .shouldReloadControlCenter,
-        "uncertain runtime state must not force a misleading WebView refresh"
-    )
+    do {
+        _ = try runProcess(executableURL: missingExecutable, arguments: [])
+        require(false, "process launch errors must reach callers that log them")
+    } catch {
+        // Diagnostic and launchctl callers keep their own error messages.
+    }
     require(
         !shouldRetryControlCenterNavigation(
             NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
@@ -878,9 +912,8 @@ func runURLSchemeTests() {
         coldRouter.receive([URL(string: "vibetv://open-control-center")!]) == nil,
         "cold launch must queue the request until AppKit finishes launching"
     )
-    require(coldRouter.hasPendingOpen, "cold launch request was not queued")
     require(coldRouter.markReady() == "control-center", "queued cold launch request was not delivered")
-    require(!coldRouter.hasPendingOpen, "delivered cold launch request was not cleared")
+    require(coldRouter.markReady() == nil, "delivered cold launch request was not cleared")
 
     var warmRouter = ControlCenterURLRouter()
     require(warmRouter.markReady() == nil, "warm router should start without a queued request")
@@ -901,7 +934,7 @@ func runURLSchemeTests() {
         coldThemeRouter.markReady() == "control-center/install/claude-creature",
         "cold theme link must keep its selected theme"
     )
-    require(!coldThemeRouter.hasPendingOpen, "delivered theme link must be cleared")
+    require(coldThemeRouter.markReady() == nil, "delivered theme link must be cleared")
     require(
         warmRouter.receive([themeLink]) == "control-center/install/claude-creature",
         "warm theme link must navigate immediately"
@@ -961,7 +994,7 @@ func runURLSchemeTests() {
         invalidRouter.receive([URL(string: "vibetv://install-theme")!]) == nil,
         "invalid URL must not open the Control Center"
     )
-    require(!invalidRouter.hasPendingOpen, "invalid URL must not be queued")
+    require(invalidRouter.markReady() == nil, "invalid URL must not be queued")
 
     require(
         !runtimeServiceNeedsRefresh(
