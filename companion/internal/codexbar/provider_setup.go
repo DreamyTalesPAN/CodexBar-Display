@@ -942,7 +942,7 @@ var providerCopyGOOS = runtime.GOOS
 // itself (companionapi/provider_sign_in_launch.go; a test there pins the list).
 // Their signed-out sentence offers the sign-in, every other provider's says
 // the app has to be signed in on this computer.
-var signInStartableProviders = []string{"codex", "claude", "cursor", "antigravity"}
+var signInStartableProviders = []string{"codex", "claude", "cursor", "antigravity", "grok", "kiro", "augment", "kilo", "vertexai", "windsurf"}
 
 // SignInStartableProviderIDs lists the providers in signInStartableProviders.
 func SignInStartableProviderIDs() []string {

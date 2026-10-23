@@ -72,6 +72,12 @@ export const SIGN_IN_PROVIDER_IDS = [
   "claude",
   "cursor",
   "antigravity",
+  "grok",
+  "kiro",
+  "augment",
+  "kilo",
+  "vertexai",
+  "windsurf",
 ];
 
 /**
@@ -91,7 +97,7 @@ export function providerRowHealthState(
 /**
  * Health states in which the row offers to start the provider's sign-in.
  *
- * Only the four in SIGN_IN_PROVIDER_IDS have a sign-in the Companion can
+ * Only the providers in SIGN_IN_PROVIDER_IDS have a sign-in the Companion can
  * start. Any other provider would get an action that can only fail, so its
  * row keeps the switch and "Check again", and its popup says what to do.
  */
