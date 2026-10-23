@@ -60,6 +60,7 @@ async function openUpdates(failedCheck?: "app" | "firmware", offerFirmwareUpdate
     firmwareJob: undefined as FirmwareUpdateJob | undefined,
     reportFirmwareJob: false,
     installCalls: 0,
+    resetCalls: 0,
   };
   // A customer who has read "What's new"; it would lie over Overview.
   markWhatsNewSeen();
@@ -128,6 +129,10 @@ async function openUpdates(failedCheck?: "app" | "firmware", offerFirmwareUpdate
           updateAvailable: offerFirmwareUpdate,
           status: failedCheck === "firmware" ? "check_failed" : offerFirmwareUpdate ? "update_available" : "current",
         });
+      }
+      if (url.endsWith("/v1/setup/reset")) {
+        companion.resetCalls += 1;
+        return jsonResponse({ ok: true, connectionModeChoiceRequired: true });
       }
       if (url.endsWith("/v1/updates/install")) {
         companion.installCalls += 1;
@@ -312,4 +317,32 @@ it("shows a clock time for firmware activity instead of the attempt key", async 
   const activity = screen.getByText("VibeTV update started").closest("li")!;
   expect(within(activity).getByText(/^\d{2}:\d{2}:\d{2}$/)).toBeTruthy();
   expect(activity.textContent).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+});
+
+
+it("opens the existing setup confirmation from firmware attention without reinstalling firmware", async () => {
+  const window = await openUpdates();
+  window.companion.firmwareJob = {
+    id: "attention-job",
+    phase: "attention",
+    outcome: "firmware_current_render_attention",
+    startedAt: "2026-10-23T08:00:00Z",
+    finishedAt: "2026-10-23T08:01:00Z",
+  };
+  window.companion.reportFirmwareJob = true;
+  await window.wait(6);
+  expect(screen.getByRole("heading", { name: "VibeTV needs attention" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+  const dialog = screen.getByRole("dialog", { name: "Run setup again?" });
+  expect(dialog.textContent).toContain("VibeTV keeps its WiFi details, settings and themes.");
+  expect(window.companion.installCalls).toBe(0);
+  expect(window.companion.resetCalls).toBe(0);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("dialog", { name: "Run setup again?" })).toBeNull();
+  expect(screen.getByRole("heading", { name: "VibeTV needs attention" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Run setup again?" })).getByRole("button", { name: "Run setup again" }));
+  await window.wait(1);
+  expect(window.companion.resetCalls).toBe(1);
+  expect(window.companion.installCalls).toBe(0);
 });

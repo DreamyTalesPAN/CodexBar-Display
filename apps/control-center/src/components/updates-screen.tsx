@@ -68,6 +68,7 @@ export type UpdatesScreenProps = {
   onCheckUpdates?: () => Promise<void> | void;
   onCreateReport?: () => void;
   onInstallUpdate?: () => Promise<boolean> | boolean | void;
+  onStartSetup?: () => void;
   onRetryThemeUpdate?: () => Promise<boolean> | boolean | void;
   /** Opens the "What's new" notice again. */
   onShowWhatsNew?: () => void;
@@ -141,6 +142,7 @@ export function UpdatesScreen({
   onCreateReport,
   onInstallUpdate,
   onRetryThemeUpdate,
+  onStartSetup,
   onShowWhatsNew,
   otherDialogOpen = false,
   requiresMacAppMigration = false,
@@ -318,9 +320,11 @@ export function UpdatesScreen({
           ? "Update available"
           : checkingUpdates
             ? "Checking for updates"
-            : firmwareNoAnswer || macAppNoAnswer
-              ? "No update available"
-              : "Everything is up to date";
+            : visibleUpdateStatus?.phase === "attention"
+              ? "VibeTV needs attention"
+              : firmwareNoAnswer || macAppNoAnswer
+                ? "No update available"
+                : "Everything is up to date";
   const headingTone: Tone = installingUpdate
     ? "ink"
     : refreshing
@@ -533,6 +537,7 @@ export function UpdatesScreen({
               onDismissError={() => setDismissedUpdateError(visibleUpdateStatus.startedAt)}
               creatingReport={creatingReport}
               onCreateReport={onCreateReport}
+              onStartSetup={actionsLocked ? undefined : onStartSetup}
               onRetry={
                 firmwareUpdateBlocked
                   ? undefined
@@ -726,6 +731,7 @@ function InlineUpdateProgress({
   onDismissError,
   onCreateReport,
   onRetry,
+  onStartSetup,
   status,
 }: {
   creatingReport: boolean;
@@ -733,6 +739,7 @@ function InlineUpdateProgress({
   onDismissError: () => void;
   onCreateReport?: () => void;
   onRetry?: () => void;
+  onStartSetup?: () => void;
   status: FirmwareUpdateStatus;
 }) {
   if (status.phase === "error") {
@@ -760,6 +767,12 @@ function InlineUpdateProgress({
   }
   const complete = status.phase === "complete";
   const attention = status.phase === "attention";
+  const canReconnect = [
+    "firmware_current_health_attention",
+    "firmware_current_stream_attention",
+    "firmware_current_stream_restart_attention",
+    "firmware_current_render_attention",
+  ].includes(status.outcome ?? "");
   const restarting =
     status.phase === "installing" &&
     (status.stage === "rebooting" || status.stage === "rediscovering");
@@ -774,8 +787,11 @@ function InlineUpdateProgress({
         ? "VibeTV is restarting"
       : "Updating VibeTV";
   const detail = attention
-      ? status.message ||
-        "The firmware is current, but the connection or picture still needs repair."
+      ? status.outcome === "firmware_current_theme_attention"
+        ? "Try again to finish updating your theme."
+        : canReconnect
+          ? "Run setup again to reconnect VibeTV and check its picture."
+          : "Keep VibeTV powered on and create a report for help with the connection or picture."
     : complete
       ? status.result?.firmware
         ? `Firmware ${status.result.firmware} is installed.`
@@ -807,12 +823,16 @@ function InlineUpdateProgress({
               onClick={onRetry}
               size="sm"
               type="button"
-              variant="outline"
             >
               Try again
             </Button>
+          ) : canReconnect ? (
+            <Button disabled={!onStartSetup} onClick={onStartSetup} size="sm" type="button">
+              Run setup again
+            </Button>
           ) : null}
           <Button
+            variant="outline"
             disabled={!onCreateReport || creatingReport}
             onClick={onCreateReport}
             size="sm"

@@ -6007,6 +6007,7 @@ export function ControlCenterApp({ catalog, initialThemeId }: Props) {
               void createSupportReport();
             }}
             onInstallUpdate={installFirmwareUpdate}
+            onStartSetup={() => setSetupAgainRequested(true)}
             onRetryThemeUpdate={retryActiveThemeUpgrade}
             onShowWhatsNew={
               somethingElseAsks ? undefined : () => setWhatsNewReopened(true)

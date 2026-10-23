@@ -10208,3 +10208,11 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: after an update that ends in attention the headline and the firmware row follow one decision and show no "up to date" claim; every other state is unchanged.
 - Scope: Updates tab only, the firmware no-answer decision in updates-screen.tsx (the separate row rule is removed) and its test. Pull request #798 only, not merged, not released.
 - What's new: none — removes a wrong claim, no customer-visible addition
+
+
+## 2026-10-23 — Paul question 11: repair action on Updates (new draft)
+
+- User approval: pending — Paul question 11, new draft after his rejection 23.10.
+- Approved customer-visible result: Draft for review: when current firmware still needs attention, Updates says “VibeTV needs attention” and offers “Run setup again” with “Run setup again to reconnect VibeTV and check its picture.” This opens the existing setup confirmation, preserving its explanation and Cancel action. A failed theme install instead keeps its existing “Try again” action with “Try again to finish updating your theme.” Unresolved catalog/support outcomes instruct the customer to keep VibeTV powered on and create a report, without offering a speculative repair. Create report is secondary.
+- Scope: `apps/control-center/src/components/updates-screen.tsx`, its focused tests, and the existing setup-confirmation callback in `control-center-app.tsx`; no new repair, reset, device or provider implementation.
+- What's new: none — makes existing recovery actions clear after an update that needs attention.

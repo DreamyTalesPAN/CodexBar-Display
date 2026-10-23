@@ -232,7 +232,7 @@ describe("UpdatesScreen VibeTV update card", () => {
     );
 
     expect(html).toContain("Firmware current — attention needed");
-    expect(html).toContain("No update available");
+    expect(html).toContain("VibeTV needs attention");
     expect(html).not.toContain("Everything is up to date");
     // Only the Mac App row, whose check answered, says "Up to date".
     expect(html.match(/Up to date/g)).toHaveLength(1);
