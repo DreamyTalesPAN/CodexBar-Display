@@ -306,8 +306,8 @@ export function SetupDeviceScreen({
       ) : null}
 
       {showWiFiForm ? (
-        <form className="mt-8 w-full text-left" onSubmit={submitWiFi}>
-          <FieldGroup className="gap-0">
+        <form className="mt-8 flex w-full flex-1 flex-col text-left" onSubmit={submitWiFi}>
+          <FieldGroup className="flex-1 gap-0">
             <Field>
               <FieldLabel className={CALM_LABEL_CLASS} htmlFor="setup-wifi-network">
                 WiFi network
@@ -400,7 +400,7 @@ export function SetupDeviceScreen({
                   : "Enter hidden network"}
               </Button>
             </div>
-            <Field className="mt-6">
+            <Field className="mt-6 mb-8">
               <FieldLabel className={CALM_LABEL_CLASS} htmlFor="setup-wifi-password">
                 WiFi password
               </FieldLabel>
