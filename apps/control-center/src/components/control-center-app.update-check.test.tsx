@@ -3,8 +3,9 @@
 // Observed on hardware on 2026-10-07 (Windows app): "Check for updates" moved
 // the VibeTV card's "Last checked" and left the app card's where it was. The
 // app's own release is read with the status, which repeats its answer for six
-// hours; only a read that says the customer asked gets a new one.
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+// hours; only a read that says the customer asked gets a new one. The calm
+// Updates screen shows the newest of the two checks ("Checked Oct 7, 12:34").
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -12,6 +13,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { markWhatsNewSeen } from "@/lib/whats-new";
 import { expectKeepsFocus } from "@/test/focus";
 import { ControlCenterApp } from "./control-center-app";
+import type { FirmwareUpdateJob } from "./update-jobs";
 
 const themeSpec = { active: true, path: "/themes/codex/spec-v7.json", hash: "hash-v7", renderOk: true };
 const device = {
@@ -36,21 +38,28 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function lastChecked(value: string): string {
-  return `Last checked ${new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "medium",
-  }).format(new Date(value))}`;
+  const date = new Date(value);
+  return `Checked ${new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "short",
+  }).format(date)}, ${new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date)}`;
 }
 
 // The Mac App as this window sees it: its release answer only changes when a
 // status read asks for a new one.
-async function openUpdates() {
+async function openUpdates(failedCheck?: "app" | "firmware", offerFirmwareUpdate = false) {
   const companion = {
     releaseCheckedAt: firstCheck,
     statusReads: [] as string[],
     statusReadsInFlight: 0,
     statusReadMs: 0,
     firmwareChecks: 0,
+    firmwareJob: undefined as FirmwareUpdateJob | undefined,
+    reportFirmwareJob: false,
+    installCalls: 0,
   };
   // A customer who has read "What's new"; it would lie over Overview.
   markWhatsNewSeen();
@@ -89,7 +98,7 @@ async function openUpdates() {
             app: { version: "9.9.9", installedInApplications: true },
             update: {
               checkedAt,
-              status: "available",
+              status: failedCheck === "app" ? "check_failed" : "available",
               latestVersion: "9.9.9",
               installedVersion: "9.9.9",
               updateAvailable: false,
@@ -97,17 +106,50 @@ async function openUpdates() {
             },
           },
           device,
+          firmwareUpdate: companion.reportFirmwareJob ? companion.firmwareJob : undefined,
+        });
+      }
+      if (url.includes("/api/companion/latest")) {
+        return jsonResponse({
+          checkedAt: firstCheck,
+          status: failedCheck === "app" ? "check_failed" : "available",
+          latestVersion: "9.9.9",
+          installedVersion: "9.9.9",
+          updateAvailable: false,
+          message: "Mac App is up to date.",
         });
       }
       if (url.includes("/api/firmware/latest")) {
         companion.firmwareChecks += 1;
         return jsonResponse({
-          checkedAt: "2026-10-07T12:34:07Z",
+          checkedAt: "2026-10-07T11:50:07Z",
           installedFirmware: device.firmware,
-          latestFirmware: device.firmware,
-          updateAvailable: false,
-          status: "current",
+          latestFirmware: offerFirmwareUpdate ? "9999.0.525" : device.firmware,
+          updateAvailable: offerFirmwareUpdate,
+          status: failedCheck === "firmware" ? "check_failed" : offerFirmwareUpdate ? "update_available" : "current",
         });
+      }
+      if (url.endsWith("/v1/updates/install")) {
+        companion.installCalls += 1;
+        companion.firmwareJob = {
+          id: `firmware-job-${companion.installCalls}`,
+          phase: "installing",
+          // Server time differs from the local click, including sub-millisecond precision.
+          startedAt: new Date(Date.now() + 7).toISOString().replace("Z", "345Z"),
+        };
+        return jsonResponse({ ok: true, job: companion.firmwareJob });
+      }
+      if (url.includes("/v1/updates/install/status?jobId=")) {
+        companion.firmwareJob = {
+          ...companion.firmwareJob!,
+          phase: "error",
+          error: {
+            code: "firmware_update_failed",
+            message: "VibeTV update failed.",
+            nextAction: "Keep VibeTV powered on, then try again.",
+          },
+        };
+        return jsonResponse({ ok: true, job: companion.firmwareJob });
       }
       if (url.endsWith("/v1/display-frame/latest")) {
         return jsonResponse({
@@ -154,7 +196,7 @@ async function openUpdates() {
   await window.wait(10);
   fireEvent.click(screen.getByRole("button", { name: "Updates" }));
   await window.wait(6);
-  expect(window.text()).toContain(lastChecked(firstCheck));
+  if (failedCheck !== "app") expect(window.text()).toContain(lastChecked(firstCheck));
   expect(companion.statusReads).not.toContain("/v1/status?checkAppUpdate=1");
   return window;
 }
@@ -215,4 +257,59 @@ it("Check for updates keeps keyboard focus during the check and after it", async
   await window.wait(10);
   expect(button.textContent).toBe("Check for updates");
   expectKeepsFocus(button);
+});
+
+
+it.each(["app", "firmware"] as const)("keeps a failed %s check closed after leaving Updates and returning", async (failedCheck) => {
+  const window = await openUpdates(failedCheck);
+  expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(screen.queryByRole("dialog", { name: "Could not check for updates" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Updates" }));
+  expect(screen.queryByRole("dialog", { name: "Could not check for updates" })).toBeNull();
+
+  // A new check may ask again even if its timestamp is unchanged.
+  fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+  await window.wait(2);
+  expect(screen.getByRole("dialog", { name: "Could not check for updates" })).toBeTruthy();
+});
+
+it("keeps a locally handled firmware failure closed when its server job arrives", async () => {
+  const window = await openUpdates(undefined, true);
+  fireEvent.click(screen.getByRole("button", { name: "Update" }));
+  await window.wait(2);
+  expect(window.companion.installCalls).toBe(1);
+  expect(screen.getByRole("dialog", { name: "Update failed" })).toBeTruthy();
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(screen.queryByRole("dialog", { name: "Update failed" })).toBeNull();
+
+  // The same job arrives later through the app-wide status poll.
+  window.companion.reportFirmwareJob = true;
+  window.companion.statusReads.length = 0;
+  await window.wait(12);
+  expect(window.companion.statusReads.length).toBeGreaterThan(0);
+  expect(screen.queryByRole("dialog", { name: "Update failed" })).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Updates" }));
+  expect(screen.queryByRole("dialog", { name: "Update failed" })).toBeNull();
+
+  // Closing the old attempt must not hide a new failure.
+  fireEvent.click(screen.getByRole("button", { name: "Update" }));
+  await window.wait(2);
+  expect(window.companion.installCalls).toBe(2);
+  expect(screen.getByRole("dialog", { name: "Update failed" })).toBeTruthy();
+});
+
+
+it("shows a clock time for firmware activity instead of the attempt key", async () => {
+  const window = await openUpdates(undefined, true);
+  fireEvent.click(screen.getByRole("button", { name: "Update" }));
+  await window.wait(2);
+  fireEvent.keyDown(document, { key: "Escape" });
+  fireEvent.click(screen.getByRole("button", { name: "Support" }));
+  const activity = screen.getByText("VibeTV update started").closest("li")!;
+  expect(within(activity).getByText(/^\d{2}:\d{2}:\d{2}$/)).toBeTruthy();
+  expect(activity.textContent).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
 });

@@ -209,6 +209,17 @@ function startWindow({
           ],
         });
       }
+      // Both update checks answer: a failed one opens its own dialog on Updates.
+      if (url.includes("/api/companion/latest") || url.includes("/api/firmware/latest")) {
+        return jsonResponse({
+          checkedAt: "2026-10-07T12:00:00Z",
+          status: url.includes("/api/firmware/latest") ? "current" : "available",
+          installedFirmware: "9999.0.524",
+          latestFirmware: "9999.0.524",
+          updateAvailable: false,
+          message: "Up to date.",
+        });
+      }
       return jsonResponse({ ok: false, error: { code: "HTTP_404" } }, 404);
     }),
   );
@@ -378,7 +389,7 @@ it("closes for another dialog when it was opened from Updates", async () => {
   await app.wait(10);
   fireEvent.click(screen.getByRole("button", { name: "Updates" }));
   await app.wait(1);
-  fireEvent.click(screen.getByRole("button", { name: "What's new" }));
+  fireEvent.click(screen.getByRole("button", { name: "Read notes" }));
   expect(notice()).not.toBeNull();
   const usageDialog = () => screen.queryByRole("dialog", { name: "AI usage is not set up" });
 
@@ -387,13 +398,13 @@ it("closes for another dialog when it was opened from Updates", async () => {
   expect(usageDialog()).not.toBeNull();
   expect(notice()).toBeNull();
   // While something else asks, Updates does not offer it either.
-  expect(screen.queryByRole("button", { name: "What's new", hidden: true })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Read notes", hidden: true })).toBeNull();
 
   app.companion.usageBroken = false;
   await app.wait(6);
   expect(usageDialog()).toBeNull();
   expect(notice()).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "What's new" }));
+  fireEvent.click(screen.getByRole("button", { name: "Read notes" }));
   expect(notice()).not.toBeNull();
 });
 
@@ -406,7 +417,7 @@ it("closes when the window leaves Updates under the reopened notice", async () =
   await app.wait(10);
   fireEvent.click(screen.getByRole("button", { name: "Updates" }));
   await app.wait(1);
-  fireEvent.click(screen.getByRole("button", { name: "What's new" }));
+  fireEvent.click(screen.getByRole("button", { name: "Read notes" }));
   expect(notice()).not.toBeNull();
 
   // The dialog covers the page; the app itself still can switch it.
@@ -609,7 +620,7 @@ it("opens again from Updates with the keys of a Windows computer", async () => {
 
   fireEvent.click(screen.getByRole("button", { name: "Updates" }));
   await app.wait(1);
-  const again = screen.getByRole("button", { name: "What's new" });
+  const again = screen.getByRole("button", { name: "Read notes" });
   again.focus();
   fireEvent.click(again);
 
