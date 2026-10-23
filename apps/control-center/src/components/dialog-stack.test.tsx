@@ -53,6 +53,7 @@ it("hands keyboard focus to the queued busy dialog after a page dialog closes", 
   fireEvent.keyDown(document.activeElement!, { key: "Escape" });
   await act(async () => new Promise((done) => setTimeout(done, 0)));
   expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(opener);
 });
 
 it("a busy announcement on its own leaves the customer's field focused", () => {
