@@ -313,7 +313,7 @@ func (s *Server) handleThemeInstallStatus(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "missing_install_job", "Theme install status is missing.", "Start theme install again.")
 		return
 	}
-	job, ok := s.themeInstallJobSnapshot(jobID)
+	job, ok := s.installJobs.snapshot(jobID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "install_job_not_found", "Theme install status was not found.", "Start theme install again.")
 		return
@@ -576,38 +576,31 @@ func logThemeInstallTiming(out io.Writer, phase string, startedAt time.Time) {
 }
 
 func (s *Server) createThemeInstallJob(req themeInstallRequest) themeInstallJob {
-	s.installJobsMu.Lock()
-	defer s.installJobsMu.Unlock()
-	if s.installJobs == nil {
-		s.installJobs = make(map[string]*themeInstallJob)
-	}
-	s.nextInstallJob++
-	id := fmt.Sprintf("theme-install-%d-%d", time.Now().UnixNano(), s.nextInstallJob)
 	slot := strings.TrimSpace(req.Slot)
 	if slot == "" {
 		slot = themepack.UsageLive
 	}
-	job := &themeInstallJob{
-		ID:        id,
-		ThemeID:   strings.TrimSpace(req.ThemeID),
-		ThemeName: strings.TrimSpace(req.ThemeName),
-		Slot:      slot,
-		Phase:     "installing",
-		Progress:  5,
-		StartedAt: time.Now().UTC(),
-	}
-	job.say("Preparing theme install.")
-	s.installJobs[id] = job
-	return cloneThemeInstallJob(job)
+	return s.installJobs.create("theme-install", func(id string) *themeInstallJob {
+		job := &themeInstallJob{
+			ID:        id,
+			ThemeID:   strings.TrimSpace(req.ThemeID),
+			ThemeName: strings.TrimSpace(req.ThemeName),
+			Slot:      slot,
+			Phase:     "installing",
+			Progress:  5,
+			StartedAt: time.Now().UTC(),
+		}
+		job.say("Preparing theme install.")
+		return job
+	})
 }
 
 // Returns the error code that refused the start, or "" when the install may
-// run. Each guard sits under the lock that owns the thing it guards, and both
-// are taken in the same order handleRuntimeUpdateHold uses --
-// firmwareUpdateStartMu, then installJobsMu -- so a repair and an install can
-// never deadlock and one of the two always loses cleanly. Checking the hold
-// outside this lock would leave the gap the hold exists to close: an install
-// that starts after the Mac App was told it may restart dies with the runtime.
+// run. Both guards sit under firmwareUpdateStartMu, the lock
+// handleRuntimeUpdateHold also takes, so a repair and an install can never
+// both win. Checking the hold outside this lock would leave the gap the hold
+// exists to close: an install that starts after the Mac App was told it may
+// restart dies with the runtime.
 func (s *Server) tryStartThemeInstall() string {
 	s.firmwareUpdateStartMu.Lock()
 	defer s.firmwareUpdateStartMu.Unlock()
@@ -617,19 +610,14 @@ func (s *Server) tryStartThemeInstall() string {
 	if _, running := s.activeFirmwareUpdateJob(); running {
 		return "firmware_update_in_progress"
 	}
-	s.installJobsMu.Lock()
-	defer s.installJobsMu.Unlock()
-	if s.themeInstallActive {
+	if !s.themeInstallActive.CompareAndSwap(false, true) {
 		return "theme_install_in_progress"
 	}
-	s.themeInstallActive = true
 	return ""
 }
 
 func (s *Server) finishThemeInstall() {
-	s.installJobsMu.Lock()
-	s.themeInstallActive = false
-	s.installJobsMu.Unlock()
+	s.themeInstallActive.Store(false)
 }
 
 // The install finished, but the device cannot draw usage yet. Both the progress
@@ -657,7 +645,7 @@ func (s *Server) startThemeInstallJob(_ context.Context, jobID string, cfg runti
 		fail := func(apiErr apiError) {
 			finishedAt := time.Now().UTC()
 			s.recordSetupEvent(setupEvent{Stage: stage, Status: "failed", Message: apiErr.Message, Code: apiErr.Code, NextAction: apiErr.NextAction})
-			s.updateThemeInstallJob(jobID, func(job *themeInstallJob) {
+			s.installJobs.update(jobID, func(job *themeInstallJob) {
 				job.Phase = "error"
 				job.Progress = 100
 				job.FinishedAt = &finishedAt
@@ -713,7 +701,7 @@ func (s *Server) completeThemeInstallJob(jobID, stage, slot string, result theme
 		done = "Screensaver is ready on VibeTV."
 	}
 	s.recordSetupEvent(setupEvent{Stage: stage, Status: "succeeded", Message: done})
-	s.updateThemeInstallJob(jobID, func(job *themeInstallJob) {
+	s.installJobs.update(jobID, func(job *themeInstallJob) {
 		job.Phase = "complete"
 		// Without a ready provider the VibeTV keeps drawing the error frame,
 		// so "active on VibeTV" would contradict the screen the customer is
@@ -766,49 +754,7 @@ func (s *Server) waitForThemeInstallTail(ctx context.Context) bool {
 	}
 }
 
-func (s *Server) updateThemeInstallJob(jobID string, update func(*themeInstallJob)) {
-	s.installJobsMu.Lock()
-	defer s.installJobsMu.Unlock()
-	if s.installJobs == nil {
-		return
-	}
-	job := s.installJobs[jobID]
-	if job == nil {
-		return
-	}
-	update(job)
-}
-
-func (s *Server) themeInstallJobSnapshot(jobID string) (themeInstallJob, bool) {
-	s.installJobsMu.Lock()
-	defer s.installJobsMu.Unlock()
-	job := s.installJobs[jobID]
-	if job == nil {
-		return themeInstallJob{}, false
-	}
-	return cloneThemeInstallJob(job), true
-}
-
-func (s *Server) latestThemeInstallJob() (themeInstallJob, bool) {
-	s.installJobsMu.Lock()
-	defer s.installJobsMu.Unlock()
-	var latest *themeInstallJob
-	for _, job := range s.installJobs {
-		if job == nil || (latest != nil && !job.StartedAt.After(latest.StartedAt)) {
-			continue
-		}
-		latest = job
-	}
-	if latest == nil {
-		return themeInstallJob{}, false
-	}
-	return cloneThemeInstallJob(latest), true
-}
-
 func cloneThemeInstallJob(job *themeInstallJob) themeInstallJob {
-	if job == nil {
-		return themeInstallJob{}
-	}
 	clone := *job
 	clone.Logs = append([]string(nil), job.Logs...)
 	if job.Result != nil {
@@ -852,7 +798,7 @@ func (w *themeInstallProgressWriter) noteLine(line string) {
 	if line == "" || w.server == nil {
 		return
 	}
-	w.server.updateThemeInstallJob(w.jobID, func(job *themeInstallJob) {
+	w.server.installJobs.update(w.jobID, func(job *themeInstallJob) {
 		// A job that reported Installed keeps its message while the
 		// display stream refresh still writes lines (#911).
 		if job.Phase != "installing" {
