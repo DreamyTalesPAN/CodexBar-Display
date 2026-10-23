@@ -282,7 +282,7 @@ func TestPlanProviderSignInOwnLoginPrograms(t *testing.T) {
 		id, installed, args, download string
 	}{
 		{"grok", filepath.Join(home, ".grok", "bin", "grok.exe"), "login", "https://docs.x.ai/build/overview"},
-		{"kiro", filepath.Join(home, "AppData", "Local", "Programs", "Kiro", "kiro-cli.exe"), "login", "https://kiro.dev/cli/"},
+		{"kiro", filepath.Join(home, "AppData", "Local", "Kiro-Cli", "kiro-cli.exe"), "login", "https://kiro.dev/cli/"},
 		{"augment", filepath.Join(home, "AppData", "Roaming", "npm", "auggie.cmd"), "login --headless", "https://docs.augmentcode.com/cli/setup-auggie/install-auggie-cli"},
 		{"kilo", filepath.Join(home, "AppData", "Roaming", "npm", "kilo.cmd"), "auth login --provider kilo", "https://kilo.ai/cli"},
 		{"vertexai", filepath.Join(home, "AppData", "Local", "Google", "Cloud SDK", "google-cloud-sdk", "bin", "gcloud.cmd"), "auth application-default login", "https://cloud.google.com/sdk/docs/install"},

@@ -82,8 +82,9 @@ var providerSignInLaunches = map[string]providerSignInLaunch{
 		downloadURL: "https://docs.x.ai/build/overview",
 	},
 	"kiro": {
-		cliNames:    []string{"kiro-cli"},
-		cliWindows:  []string{"AppData/Local/Programs/Kiro/kiro-cli.exe"},
+		cliNames: []string{"kiro-cli"},
+		// The official MSI installs into LocalAppDataFolder\Kiro-Cli.
+		cliWindows:  []string{"AppData/Local/Kiro-Cli/kiro-cli.exe"},
 		cliDarwin:   []string{".local/bin/kiro-cli", "/opt/homebrew/bin/kiro-cli", "/usr/local/bin/kiro-cli"},
 		loginArgs:   []string{"login"},
 		downloadURL: "https://kiro.dev/cli/",
