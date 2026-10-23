@@ -207,7 +207,17 @@ var launchProviderSignInFn = func(plan providerSignInPlan) error {
 // and on the Mac alike: a terminal box the customer cannot close looks broken
 // in a packaged app. The login opens the browser itself.
 func startCLILogin(path string, args []string) error {
-	cmd := childproc.Hide(exec.Command(path, args...))
+	name := path
+	// npm installs Augment and Kilo, and Google installs gcloud, as .cmd
+	// files; Windows runs those only through the command interpreter.
+	if runtime.GOOS == "windows" {
+		switch strings.ToLower(filepath.Ext(path)) {
+		case ".cmd", ".bat":
+			name = "cmd.exe"
+			args = append([]string{"/c", path}, args...)
+		}
+	}
+	cmd := childproc.Hide(exec.Command(name, args...))
 	// The login keeps printing while it waits for the browser, so its
 	// output must go somewhere; a full pipe buffer would stall it.
 	cmd.Stdout = io.Discard
