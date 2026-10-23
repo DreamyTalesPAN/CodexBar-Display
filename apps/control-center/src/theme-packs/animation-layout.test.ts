@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
   buildFrameData, decodeSprite, paceBinding, primitiveUsageSlotVisible, renderTextPrimitive,
-  themeProgressArc, themeTextFit,
+  themeKeptNameFooter, themeProgressArc, themeTextFit,
   type FrameData, type ThemePrimitive, type ThemeRenderPack,
 } from "@/components/live-vibetv-preview";
 import { cellHeight, textInk, type Rect } from "./text-ink";
@@ -622,8 +622,9 @@ describe("no text ink comes within 3 px of a divider, frame line, bar or ring", 
 
 // Paul decision 23.10.2026 (question 6): "Pixel Battery: Name behalten, 'Session reset 55m' verkleinern (bewusste Ausnahme von
 // nie-verkleinern, Paul-Entscheidung; Text muss trotzdem 3 px Abstand halten)." The footer of Pixel Battery keeps the limit's name
-// and is drawn one size smaller exactly where its full-size sentence would come within 3 px of the frame line of the background.
-// Every other footer, and every other text, stays at its declared size (shrunkTexts).
+// and is drawn smaller (font 4 size 1, the largest font under font 2 size 2) exactly where its full-size sentence would come within
+// 3 px of the frame line of the background. A footnote-sized footer is not that decision: the smaller footer keeps at least 75 % of
+// the cap height of the normal one and its vertical centre. Every other footer, and every other text, stays at its declared size.
 describe("the Pixel Battery footer keeps 3 px from the frame line at every reset value and shrinks only where it has to", () => {
   const resets: Array<[string, number]> = [
     ...Array.from({ length: 59 }, (_, i): [string, number] => [`${i + 1}m`, (i + 1) * 60]),
@@ -633,18 +634,27 @@ describe("the Pixel Battery footer keeps 3 px from the frame line at every reset
   it.each([false, true])("Two at once: %s", (two) => {
     const pack = loadPack("pixel-battery"), prims = pack.spec?.p ?? [], artAt = staticArt(pack);
     const footer = prims.find((p) => p.t === "tx" && /^Resets? in /.test(p.v ?? ""))!;
-    const tooClose: string[] = [], shrunk: string[] = [], wouldBeTooClose: string[] = [];
+    const centre = (r: Rect) => r.y + r.h / 2;
+    const normal = textInk(footer, "Session reset 9m");
+    const tooClose: string[] = [], shrunk: string[] = [], wouldBeTooClose: string[] = [], footnote: string[] = [], offCentre: string[] = [];
     for (const [label, secs] of resets) {
       const frame = frameFor(two, "remaining", undefined, 0, undefined, 424000, SCENARIOS[0], secs);
       const text = renderTextPrimitive(footer, frame, prims);
       expect(text, label).toBe(`Session reset ${label}`);
-      if (artNearText(textInk(footer, text), artAt)) tooClose.push(label);
-      if (artNearText(textInk({ ...footer, ft: undefined }, text), artAt)) wouldBeTooClose.push(label);
-      if (themeTextFit(text, footer.f ?? 1, footer.s ?? 1, footer.w ?? 0, true, footer.h ?? 0).size < (footer.s ?? 1)) shrunk.push(label);
+      const ink = textInk(footer, text);
+      if (artNearText(ink, artAt)) tooClose.push(label);
+      if (themeKeptNameFooter(footer, text) !== footer) shrunk.push(label);
+      if (artNearText(textInk({ ...footer, kn: undefined, ft: undefined }, text), artAt)) {
+        wouldBeTooClose.push(label);
+        if (ink.h < 0.75 * normal.h) footnote.push(`${label} ${ink.h} of ${normal.h} px`);
+        if (centre(ink) !== centre(normal)) offCentre.push(`${label} ${centre(ink)} vs ${centre(normal)}`);
+      }
     }
     expect(tooClose).toEqual([]);
     expect(shrunk).toEqual(wouldBeTooClose);
     expect(wouldBeTooClose.length).toBeGreaterThan(0);
+    expect(footnote).toEqual([]);
+    expect(offCentre).toEqual([]);
   });
 });
 
