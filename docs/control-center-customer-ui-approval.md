@@ -9949,3 +9949,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: switching on the computer's Reduce motion setting stops the existing 3D device sway immediately, including its pending idle delay. Switching it off restores the existing sway behavior without reopening the page. Layout, model, live usage and manual rotation remain unchanged.
 - Scope: `apps/control-center/src/components/vibetv-3d-preview.tsx`, its focused regression tests and this append-only record. This addresses one part of #214; its remaining accessibility targets stay open. Exact-head CI, Codex and native validation are pending; no merge or release approval is implied.
 - What's new: none — accessibility correction to the existing motion preference, no new feature or control.
+
+## 2026-10-23 — #214: setup regression fixture supports media-query events
+
+- User approval: pending final rendered acceptance by Paul, unchanged from the preceding entry. This is a test-only correction for the same authorized fix, not an additional product change.
+- Approved customer-visible result: unchanged from b3ff459f. The setup handover fixture now implements the standard media-query event target used by the open preview.
+- Scope: `apps/control-center/src/components/setup/setup-live-handover.test.tsx` and this record. CI run 40028084850 exposed its incomplete `matchMedia` stub; the two existing handover tests retain their real-preview and no-photo assertions.
+- What's new: none — test fixture correction only.

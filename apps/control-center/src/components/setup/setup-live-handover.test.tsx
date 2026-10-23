@@ -100,7 +100,7 @@ beforeEach(() => {
     window.setTimeout(() => callback(performance.now()), 16));
   vi.stubGlobal("cancelAnimationFrame", (id: number) => window.clearTimeout(id));
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
-  vi.stubGlobal("matchMedia", () => ({ matches: true }));
+  vi.stubGlobal("matchMedia", () => Object.assign(new EventTarget(), { matches: true }));
 });
 afterEach(() => {
   cleanup();
