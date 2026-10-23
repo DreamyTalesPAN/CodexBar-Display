@@ -20822,3 +20822,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: The approved centred single-limit themes, Token Counter single-provider behavior, and Updates recovery action coexist on the Paul line. Existing Paul layouts remain; the inherited manual-refresh correction uses the existing icon button and its pending spinner, with the accessible name Refreshing, without a second pending badge.
 - Scope: Merge Q13 and Q15 onto 1205d46b, then Q11 with its main/calm-updates ancestry; preserve every source approval block, the latest Paul layouts and the incoming runtime fixes. No additional UI design.
 - What's new: none — integration of the unreleased approved Paul test-line corrections.
+
+## 2026-10-23 — Q15: Token Counter selects One provider and hides Provider 2
+
+- User approval: approved by Paul, 2026-10-23 09:09
+- Approved customer-visible result: While Token Counter (ThemeSpec maxProviders: 1) is active, Settings and setup show One provider selected with Provider 1 and its own token count. Two at once is greyed out, unselected and unavailable, with only “Token Counter shows one provider at a time.” below it; Provider 2 is hidden, just as in One provider mode. The saved Two at once mode and both providers remain unchanged in the background; switching to a theme that supports two providers restores Two at once and both provider fields.
+- What's new: none — corrects the Q15 display-mode choice

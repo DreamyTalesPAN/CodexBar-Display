@@ -90,6 +90,22 @@ function choose(option: string) {
   fireEvent.keyDown(screen.getByRole("option", { name: option }), { key: "Enter" });
 }
 
+const item = (providerId: string, label: string): ProviderItem => ({
+  allowsDefault: false,
+  availability: { state: "available" },
+  effectiveValue: true,
+  health: { message: "Ready.", service: "operational", state: "healthy" },
+  id: `codexbar.providers.${providerId}.enabled`,
+  label,
+  owner: "codexbar",
+  providerId,
+  section: "providers",
+  type: "boolean",
+  value: true,
+  writable: true,
+  writeStrategy: "codexbar_command",
+});
+
 describe("SettingsScreen display preferences", () => {
   it("disables Two at once for a single-provider theme without changing the saved pair", async () => {
     const spec = { ...createBlankThemeSpec(), maxProviders: 1 };
@@ -103,15 +119,25 @@ describe("SettingsScreen display preferences", () => {
       capabilities: { theme: { supportsUsageWindowsV1: true, maxUsageWindows: 2 } },
     } });
     settings.providerPicker.display = { mode: "pair", providerIds: ["claude", "codex"], configured: true, valid: true };
+    settings.providerPicker.items = [item("claude", "Claude"), item("codex", "Codex")];
+    settings.providerPicker.usage = { providers: ["claude", "codex"].map(id => ({ id, label: id, session: 13, weekly: 32, resetSecs: 7200, usageMode: "remaining" })) };
     const view = render(<SettingsScreen {...settings} />);
     await waitFor(() => expect((screen.getByRole("button", { name: "Two at once" }) as HTMLButtonElement).disabled).toBe(true));
-    expect(screen.getByText("Token Counter shows one provider at a time. Provider 1 is shown.")).toBeTruthy();
+    expect(screen.getByText("Token Counter shows one provider at a time.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "One provider" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Two at once" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByRole("combobox", { name: "Provider 2" })).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Source" }).textContent).toBe("Claude");
     fireEvent.click(screen.getByRole("button", { name: "Two at once" }));
     expect(settings.providerPicker.onDisplayChange).not.toHaveBeenCalled();
     // A different theme restores the saved pair without writing preferences.
     view.rerender(<SettingsScreen {...settings} device={{ ...settings.device!, activeTheme: "clippy", display: undefined }} />);
     expect(screen.getByRole("button", { name: "Two at once" }).getAttribute("aria-pressed")).toBe("true");
     expect((screen.getByRole("button", { name: "Two at once" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByRole("combobox", { name: "Provider 1" }).textContent).toBe("Claude");
+    expect(screen.getByRole("combobox", { name: "Provider 2" }).textContent).toBe("Codex");
+    expect(settings.providerPicker.display).toEqual({ mode: "pair", providerIds: ["claude", "codex"], configured: true, valid: true });
+    expect(settings.providerPicker.onDisplayChange).not.toHaveBeenCalled();
   });
 
   it.each(["automatic", "fixed", "pair"] as const)("offers CodexBar's mode under Display mode in %s", (mode) => {
@@ -254,21 +280,6 @@ describe("SettingsScreen installed screensaver", () => {
 });
 
 describe("SettingsScreen display sources", () => {
-  const item = (providerId: string, label: string): ProviderItem => ({
-    allowsDefault: false,
-    availability: { state: "available" },
-    effectiveValue: true,
-    health: { message: "Ready.", service: "operational", state: "healthy" },
-    id: `codexbar.providers.${providerId}.enabled`,
-    label,
-    owner: "codexbar",
-    providerId,
-    section: "providers",
-    type: "boolean",
-    value: true,
-    writable: true,
-    writeStrategy: "codexbar_command",
-  });
   const sources = (mode: "fixed" | "pair", providerIds: string[]) => {
     const onDisplayChange = vi.fn();
     const base = props();

@@ -594,7 +594,26 @@ describe("SetupDisplayModeScreen", () => {
 it("greys out Two at once for the theme on the setup display step", () => {
   themePack = { status: "ready", pack: { themeId: "token-counter", name: "Token Counter", spec: { p: [], maxProviders: 1 } } };
   const html = render({ mode: "pair", theme: { id: "token-counter" }, onSelectPair: vi.fn(), pairProviderIds: ["codex", "cursor"] });
-  expect(html).toContain("Token Counter shows one provider at a time. Provider 1 is shown.");
+  expect(html).toContain("Token Counter shows one provider at a time.");
+  expect(html).not.toContain("Provider 1 is shown.");
+  expect(html).not.toContain('aria-label="Provider 2"');
+  const one = (html.match(/<button[^>]*>[\s\S]*?<\/button>/g) ?? []).find((button) => button.includes("One provider"));
+  expect(one?.slice(0, one.indexOf(">") + 1)).toContain('aria-pressed="true"');
   const pair = (html.match(/<button[^>]*>[\s\S]*?<\/button>/g) ?? []).find((button) => button.includes("Two at once"));
   expect(pair?.slice(0, pair.indexOf(">") + 1)).toContain('disabled=""');
+});
+
+it("restores both saved providers when setup returns to a two-provider theme", () => {
+  const saved = { mode: "pair" as const, theme: { id: "token-counter" }, onSelectMode: vi.fn(), onSelectProvider: vi.fn(), onSelectPair: vi.fn(), pairProviderIds: ["codex", "cursor"] };
+  themePack = { status: "ready", pack: { themeId: "token-counter", name: "Token Counter", spec: { p: [], maxProviders: 1 } } };
+  expect(render(saved)).not.toContain('aria-label="Provider 2"');
+  themePack = readyPack;
+  const html = render({ ...saved, theme: { id: "claude-creature" } });
+  expect(html).toContain('aria-label="Provider 1"');
+  expect(html).toContain('aria-label="Provider 2"');
+  const pair = (html.match(/<button[^>]*>[\s\S]*?<\/button>/g) ?? []).find((button) => button.includes("Two at once"));
+  expect(pair?.slice(0, pair.indexOf(">") + 1)).toContain('aria-pressed="true"');
+  expect(saved.onSelectMode).not.toHaveBeenCalled();
+  expect(saved.onSelectProvider).not.toHaveBeenCalled();
+  expect(saved.onSelectPair).not.toHaveBeenCalled();
 });
