@@ -136,6 +136,8 @@ export type ThemePrimitive = {
   w?: number;
   height?: number;
   h?: number;
+  singleLimitY?: number | [number, number];
+  sly?: number | [number, number];
   slot?: number;
   sl?: number;
   providerSlot?: number;
@@ -841,7 +843,7 @@ function ThemeSpecSVG({
           animate={animate}
           frame={frame}
           key={index}
-          primitive={primitive}
+          primitive={themeSingleLimitPrimitive(primitive, frame)}
           primitives={primitives}
         />
       ))}
@@ -1654,6 +1656,16 @@ function missingUsageText(primitive: ThemePrimitive, frame: FrameData): string |
   const source = primitive.binding || primitive.b || primitive.text || primitive.v || "";
   const label = /Label|\.label/.test(source), percent = /Percent|\.percent/.test(source);
   return label || percent ? `${label ? window.label : ""}${percent ? (label ? " --" : "--") : ""}` : null;
+}
+
+export function themeSingleLimitPrimitive(primitive: ThemePrimitive, frame: FrameData): ThemePrimitive {
+  const index = primitive.usageIndex ?? primitive.ui ?? ((primitive.slot ?? primitive.sl ?? 0) - 1);
+  const singleY = primitive.singleLimitY ?? primitive.sly ?? -1;
+  const y = Array.isArray(singleY) ? singleY[boundPace("usageSlot1Pace", frame) ? 1 : 0] : singleY;
+  const present = (window: FrameData["usageWindows"][number]) => Boolean(window.available || window.id || window.label);
+  const firstPresent = frame.usageWindows[0] && present(frame.usageWindows[0]) || frame.usageSlot1Available || frame.usageSlot1Label;
+  const morePresent = frame.usageWindows.slice(1).some(present) || frame.usageSlot2Available || frame.usageSlot2Label;
+  return index === 0 && y >= 0 && firstPresent && !morePresent ? { ...primitive, y } : primitive;
 }
 
 export function primitiveUsageSlotVisible(

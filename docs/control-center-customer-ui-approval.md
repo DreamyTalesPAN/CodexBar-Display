@@ -20506,3 +20506,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: With one provider the limit names in Pace Meter and Synthwave ("Session", "Weekly", "Fable only") stand alone at their full size, and "remaining" or "used" stands small at the right end of the same row, above the reset line in Pace Meter and above the percentage in Synthwave, 3 px or more from every other text. The title, the update notice, the bars, the percentages, the pace sentences and every other theme look the same; Two at once looks the same except that Pace Meter's long name "Claude Fable only" now stands at its full size too (it was drawn at half the height). No text gets smaller.
 - Scope: the theme packs Pace Meter 1.0.3 (spec rev 5, the limit name and the mode word are two texts per limit, the word is the new text {usageModeStandalone} at x 150, 12 px under the name's top) and Synthwave 1.2.10 (spec rev 16, the same split, the word in the limit's colour at x 177 above the percentage), the layout guard test animation-layout.test.ts (the mode word keeps 3 px from every other text in every state of one provider; the Codex limit names scenario is removed because the Companion carries the provider in a limit name in Two at once only; Synthwave's shrink entry is dropped, Pace Meter's narrowed to Two at once with "Antigravity Weekly" and "Perplexity Session") and pace-themes.test.ts (the rendered text no longer holds a space between name and mode word).
 - What's new: none — theme layouts only
+
+## 2026-10-23 — Q13: Remove decoration owned by an absent second limit
+
+- User approval: approved by Paul, 2026-10-23 09:09
+- Approved customer-visible result: With one limit, Clippy and Gauge hide the second-limit divider and Pixel Battery hides its second battery; Pace Meter and Synthwave draw no second-limit placeholder. The two-limit picture stays pixel-identical.
+- Scope: Slot ownership in Clippy, Gauge and Pixel Battery; separate battery sprite reused for both slots; the five affected packs, generated distribution, and absent-slot guards.
+- What's new: none — theme layout only
+
+## 2026-10-23 — Q13: Centre a single limit between header and footer
+
+- User approval: approved by Paul, 2026-10-23 09:09
+- Approved customer-visible result: Every provider that supplies exactly one limit gets a vertically centred limit group in Pixel Battery, Clippy, Gauge, Pace Meter and Synthwave, with and without Pace. Headers, fixed footers, and every two-limit layout stay in place; old firmware keeps the single group at the original position without second-limit leftovers.
+- Scope: Optional singleLimitY/sly primitive position in the shared firmware renderer, redraw dependencies, live preview and protocol; five theme packs and centring/ink/native guards. Pixel Battery 1.17.12, Clippy 1.2.12, Gauge 0.2.12, Pace Meter 1.0.4, Synthwave 1.2.11.
+- What's new: none — theme layout only
