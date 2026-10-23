@@ -20493,3 +20493,9 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: a setup step showing its own percentage, including 100% before restart, gets no “Still … – hang tight.” hint; other long steps get one hint, and identical consecutive log lines collapse to one. The newest copy keeps its current error styling.
 - Scope: the central SetupLog producer and its percentage, retry, deduplication and provider-loading tests; no separate firmware-only rule.
 - What's new: none — quieter progress logs with the same real update status
+
+## 2026-10-23 — #7218: The Active pill stays on the theme picture, also where it covers preview content
+
+- User approval: approved by Paul, 2026-10-23 09:41
+- Approved customer-visible result: the lime Active pill stays at the top right on the theme picture as in 7218 (d787bbda), also on themes where it covers part of the preview, such as Clippy's title-bar buttons; it does not move beside the name or above the picture.
+- What's new: none — confirms the restored pill position of 7218
