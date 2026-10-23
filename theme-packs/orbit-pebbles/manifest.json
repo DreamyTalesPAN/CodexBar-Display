@@ -1,0 +1,28 @@
+{
+  "kind": "vibetv-theme-pack",
+  "schemaVersion": 1,
+  "id": "orbit-pebbles",
+  "name": "Orbit Pebbles",
+  "version": "0.1.0",
+  "minFirmware": "1.0.40",
+  "usage": "screensaver",
+  "requiredCapabilities": [
+    "usage-slots-v1"
+  ],
+  "themeSpec": {
+    "path": "/themes/s/op-2-271cbc08.json",
+    "file": "theme.json",
+    "bytes": 141,
+    "sha256": "271cbc0851a8fb23df51b7d350f3a65a894de6faf7713a4064ff9939f458b7c8",
+    "contentType": "application/json"
+  },
+  "assets": [
+    {
+      "path": "/themes/s/op-orbit.cba",
+      "file": "assets/op-orbit.cba",
+      "bytes": 11232,
+      "sha256": "ddd9267d680d761177ada85976b9e64906e84199341ebc82ff36962f2c1f1364",
+      "contentType": "text/plain"
+    }
+  ]
+}

@@ -9942,3 +9942,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: an installed legacy Mac App keeps its existing verified hosted DMG migration action. Installed non-legacy apps still use their runtime release result, so the initial firmware update remains available despite an unrelated hosted download failure; outside-installed and failed-runtime behavior remain unchanged.
 - Scope: exclude required legacy migration from the runtime-only condition in `control-center-app.tsx`, extend `control-center-app.mac-app-up-to-date.test.tsx` with the existing legacy download path, and this record. New-head CI, Codex and Mac/Windows cold/warm validation remain required; earlier hardware results remain historical.
 - What's new: none — preserves an existing migration action while retaining the firmware-check fix.
+
+## 2026-10-23 — #261: Orbit Pebbles screensaver proposal
+
+- User approval: pending. Paul's overnight instruction authorizes work on open issues; O19 message msg_ddda3b1337d3 explicitly authorizes a new independent Draft after checking the 2026-10-08 rejection. This does not approve the new name or design. The rejected blue ring and old Retro 3D name remain removed; no earlier approval entry is changed.
+- Approved customer-visible result: proposed, not yet accepted — Appearance → Screensavers offers `Orbit Pebbles`, three original glossy cyan, pink and gold pebbles orbiting on black in a four-second loop. It uses the existing screensaver slot and returns to the live theme through the unchanged standby system. The new notice reads `New screensaver: Orbit Pebbles` / `Three glossy pebbles orbit on a dark background. Choose it in Appearance → Screensavers.` The PR remains Draft until the visible result is accepted.
+- Scope: the new preset, deterministic asset generator, generated catalog/render/ZIP data, asset tests, the preview in `docs/orbit-pebbles-screensaver.md`, and this notice. No provider, firmware, renderer, or standby architecture changes. Native and hardware checks are separate from the decoded preview and remain required.
+- What's new: `screensaver-orbit-pebbles`
