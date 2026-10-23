@@ -525,10 +525,10 @@ fn keep_inside(start: i32, area_start: i32, area_size: u32, size: u32) -> i32 {
 }
 
 // The frame after the window was set to the remembered one. Only when the
-// minimum made it grow is it pulled back inside its monitor; otherwise it
-// stays as remembered, even across two monitors.
-fn after_growth(remembered: WindowRect, grown: WindowRect, area: WindowRect, min: (u32, u32)) -> WindowRect {
-    if (grown.width, grown.height) == (remembered.width, remembered.height) {
+// minimum made it grow beyond the combined work areas is it pulled back
+// inside its monitor; a fully visible spanning rectangle stays where it was.
+fn after_growth(remembered: WindowRect, grown: WindowRect, area: WindowRect, min: (u32, u32), screens: &[Screen]) -> WindowRect {
+    if (grown.width, grown.height) == (remembered.width, remembered.height) || fully_visible(grown, screens) {
         grown
     } else {
         fit_into(grown, area, min)
@@ -591,8 +591,8 @@ fn reported_rect(change: Option<Change>, base: WindowRect, frame: (u32, u32)) ->
     }
 }
 
-// Worker threads only: the getters wait for the event loop. The outer
-// rectangle is stored, so the clamp sees the caption and borders too.
+// Tauri 2.11.4 runs these getters directly on the event thread; calls from a
+// worker wait for that thread. Store the outer rectangle, including the frame.
 fn window_geometry(
     window: &tauri::WebviewWindow,
     change: Option<Change>,
@@ -622,9 +622,8 @@ fn store_if_newer(slot: &mut Option<(u64, Remembered)>, seq: u64, geometry: Reme
     *slot = Some((seq, geometry));
 }
 
-// Worker threads only. Called on every move and resize, so a close while the
-// window is maximized still has the last normal place (Tauri reports only the
-// maximized bounds then).
+// Capture move/resize events synchronously, before a later maximize can lose
+// their normal rectangle. The delayed close worker also uses this path.
 fn remember_window_geometry(
     app: &AppHandle,
     window: &tauri::WebviewWindow,
@@ -717,7 +716,8 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
             {
                 let (area, min) = screen_of(&monitor);
                 let grown = WindowRect { x: at.x, y: at.y, width: outer.width, height: outer.height };
-                let fitted = after_growth(rect, grown, area, min);
+                let screens: Vec<Screen> = app.available_monitors().unwrap_or_default().iter().map(screen_of).collect();
+                let fitted = after_growth(rect, grown, area, min, &screens);
                 let _ = window.set_position(PhysicalPosition::new(fitted.x, fitted.y));
             }
         }
@@ -742,11 +742,10 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
                 WindowEvent::Resized(size) => Change::Resized(*size),
                 _ => unreachable!(),
             };
-            let handle = handle.clone();
-            let window = tracked.clone();
-            // Numbered here, in event order, before the worker starts.
+            // Capture before returning to the event loop. Independent workers
+            // could complete maximize first and discard the final normal event.
             let seq = handle.state::<Shell>().geometry_seq.fetch_add(1, Ordering::SeqCst) + 1;
-            std::thread::spawn(move || remember_window_geometry(&handle, &window, Some(change), seq));
+            remember_window_geometry(&handle, &tracked, Some(change), seq);
         }
         // A present that came between hide_after_flush's check and the
         // destroy showed the old window just before it went away: create it
@@ -1764,7 +1763,7 @@ mod tests {
     use super::{
         after_growth, choose_placement, clear_loaded_theme, close_stands, fit_into, inner_within,
         label_for_generation, theme_id_from_deep_link, work_area_of_centre, Placement,
-        WindowRect, remembered_after, remembered_for, store_if_newer, reported_rect, Change,
+        WindowRect, remembered_after, remembered_for, store_if_newer, Change,
     };
     use url::Url;
 
@@ -1844,6 +1843,30 @@ mod tests {
         assert_eq!(slot, Some((2, snapshot(20))));
         store_if_newer(&mut slot, 3, snapshot(30));
         assert_eq!(slot, Some((3, snapshot(30))));
+    }
+
+    #[test]
+    fn move_resize_capture_finishes_before_later_events_and_workers() {
+        // Guard the actual dispatch boundary: a pure store_if_newer test cannot
+        // catch the event handler handing the normal rectangle to a late worker.
+        let source = include_str!("main.rs");
+        let handler = source.split("WindowEvent::Moved(_) | WindowEvent::Resized(_) => {").nth(1).unwrap()
+            .split("WindowEvent::Destroyed =>").next().unwrap();
+        assert!(!handler.contains("std::thread::spawn"), "capture must finish in event order");
+
+        let old = WindowRect { x: 0, y: 0, width: 1000, height: 700 };
+        let maximized = WindowRect { x: -8, y: -8, width: 1936, height: 1056 };
+        for normal in [WindowRect { x: 100, y: 80, ..old }, WindowRect { width: 1280, height: 900, ..old }] {
+            let mut slot = Some((0, (Some(old), false)));
+            // Capture the normal event before a newer maximize event is handled.
+            let moved = remembered_after(normal, None, (16, 32), false, false, slot.map(|(_, g)| g)).unwrap();
+            store_if_newer(&mut slot, 1, moved);
+            let max = remembered_after(maximized, None, (16, 32), false, true, slot.map(|(_, g)| g)).unwrap();
+            store_if_newer(&mut slot, 2, max);
+            // A previously started close worker may still finish last.
+            store_if_newer(&mut slot, 0, (Some(old), false));
+            assert_eq!(slot, Some((2, (Some(normal), true))));
+        }
     }
 
     #[test]
@@ -1959,10 +1982,25 @@ mod tests {
         // Spans two 1920 monitors; its centre monitor is the right one.
         let right = rect(1920, 0, 1920, 1032);
         let across = rect(1500, 100, 1000, 800);
-        assert_eq!(after_growth(across, across, right, MIN), across);
+        assert_eq!(after_growth(across, across, right, MIN, &[(right, MIN)]), across);
         // Grown by the minimum: pulled back inside the monitor.
         let small = rect(1900, 1000, 500, 300);
-        assert_eq!(after_growth(small, rect(1900, 1000, 960, 640), rect(0, 0, 1920, 1032), MIN), rect(960, 392, 960, 640));
+        let area = rect(0, 0, 1920, 1032);
+        assert_eq!(after_growth(small, rect(1900, 1000, 960, 640), area, MIN, &[(area, MIN)]), rect(960, 392, 960, 640));
+    }
+
+    #[test]
+    fn a_grown_window_still_visible_across_monitors_keeps_its_position() {
+        let remembered = WindowRect { x: 1500, y: 100, width: 1000, height: 800 };
+        let grown = WindowRect { width: 1200, ..remembered };
+        let right = WindowRect { x: 1920, y: 0, width: 1920, height: 1032 };
+        let left = WindowRect { x: 0, ..right };
+        let screens = [(left, MIN), (right, (1200, 800))];
+        assert_eq!(after_growth(remembered, grown, right, (1200, 800), &screens), grown);
+        // A missing neighbour or a gap still requires the original clamp.
+        assert_eq!(after_growth(remembered, grown, right, (1200, 800), &screens[1..]).x, 1920);
+        let gap = [(WindowRect { width: 1800, ..left }, MIN), screens[1]];
+        assert_eq!(after_growth(remembered, grown, right, (1200, 800), &gap).x, 1920);
     }
 
     #[test]
