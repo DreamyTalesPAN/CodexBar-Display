@@ -109,7 +109,7 @@ func TestUsagePreferenceMissingKeyUsesServeSnapshot(t *testing.T) {
 	runUsagePreferenceCommandFn = func(context.Context, string, ...string) ([]byte, error) {
 		return nil, errors.New("domain/default pair does not exist")
 	}
-	raw, err := os.ReadFile("testdata/cli/codexbar-macos-0.75.0/serve-snapshot.json")
+	raw, err := os.ReadFile("testdata/cli/codexbar-macos-0.80.0/serve-snapshot.json")
 	if err != nil {
 		t.Fatal(err)
 	}

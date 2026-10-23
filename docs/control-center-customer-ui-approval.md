@@ -9921,3 +9921,24 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Same as the entries of #877 above; the Show row no longer stays unavailable or stale in this narrow case.
 - Scope: Control Center usage read checks the current tab at completion; one regression test.
 - What's new: none — fixes a missed refresh of the Show row.
+
+## 2026-10-21 — Settings: Used / Remaining switch (writes CodexBar's own setting, Mac)
+
+- User approval: pending — Paul (21.10.): Settings gets a switch Used / Remaining (Mac; it is CodexBar's own setting, Usage and VibeTV follow it); not on Windows until Win-CodexBar has the setting (#874); Paul sees it in build 7203
+- Approved customer-visible result: Settings → Display mode has a Show row with Used and Remaining, using the existing preference control; it follows CodexBar's saved choice and is disabled when the usage-mode environment override is set.
+- Scope: CodexBar preference read/write adapter, display preference registration, Settings row, and focused tests; no VibeTV copy, usage conversion, or Windows setting.
+- What's new: none — customer notice waits for Paul's review of build 7203.
+
+## 2026-10-21 — #895: Settings reads CodexBar's Used / Remaining once the first usage read lands
+
+- User approval: no visible change – UI approval not needed (bug fix: Settings re-reads CodexBar's Used / Remaining while it is unavailable, so the first serve snapshot shows it without reopening Settings)
+- Approved customer-visible result: The Show row stays disabled until the first serve snapshot and then shows the saved mode without leaving Settings; nothing else changes.
+- Scope: Control Center Settings display-preference re-read on usage reads and its regression test; no new controls or copy.
+- What's new: none — the row fills in sooner after a fresh start.
+
+## 2026-10-22 — #906: Only a Used / Remaining change invalidates a running usage read
+
+- User approval: no visible change – UI approval not needed (bug fix: saving an unrelated Settings preference no longer drops a manual usage refresh that is still running; no new text or layout)
+- Approved customer-visible result: none; the refresh the customer asked for shows its result as before.
+- Scope: control-center-app.tsx (the save path of display preferences) and its test; pull request branch #877 only.
+- What's new: none — bug fix, no customer-visible text or layout change
