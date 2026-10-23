@@ -10011,3 +10011,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: the existing "Update Mac App" offer appears when the launch update check finishes late and finds an update, including while the setup hold rules of #822 apply and on the Updates tab; no new text or layout.
 - Scope: control-center-runtime.ts listener and control-center-app.tsx offer state with its regression test; the Mac shell hands the late version over through the existing window-event bridge.
 - What's new: none — the existing update offer learns a late update
+
+## 2026-10-23 — #897: corrected scope of the pending #892 late update offer
+
+- User approval: pending — the existing "Update Mac App" offer also appears after a slow launch update check, subject to the setup hold rules of #822; the Updates tab does not consume the late result; no new text or layout
+- Approved customer-visible result: This corrects and supersedes the pending #892 description immediately above. The late result drives the existing setup offer, the post-setup native prompt, and the shell update badge. The Updates tab still uses only the Companion release result, so it can show a failed check or "Up to date" while the shell badge reports an update; the late result alone adds no manual Update action there.
+- Scope: Documentation correction after Marcus' review; no product code changes. The late version is replayed after page load and read when the listener mounts; the offer stays until the running Mac App reaches that version, even if the Companion reports "up to date".
+- What's new: none — documentation only; the customer-visible #892 behavior still awaits approval
