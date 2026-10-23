@@ -9781,3 +9781,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #919 as in its #883 entry plus the entries merged with 3babd786; nothing else changes.
 - Scope: the merge of 3babd786 and this approval record. Pull request #919 only, not merged, not released.
 - What's new: none — merge of 3babd786, no customer-visible change of its own
+
+## 2026-10-22 — #946: approval marker after merging main at 2d42c92f
+
+- User approval: no visible change – UI approval not needed (merge of main (2d42c92f, which holds #919 squashed) into #946; the #883 entry keeps Paul's approval; #946's own change (#940, when the tray hint shows) keeps its text and look)
+- Approved customer-visible result: #946 (#940 fix on top of #919, as in the #883 entry) plus the entries merged with 2d42c92f; nothing else changes.
+- Scope: the merge of 2d42c92f and this approval record. Pull request #946 only, not merged, not released.
+- What's new: none — merge of 2d42c92f, no customer-visible change of its own
