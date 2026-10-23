@@ -356,7 +356,6 @@ func isApprovedCodexBarDownloadURL(_ url: URL) -> Bool {
 struct ControlCenterURLRouter {
     private(set) var isReady = false
     private(set) var pendingPath: String?
-    var hasPendingOpen: Bool { pendingPath != nil }
 
     mutating func receive(_ urls: [URL]) -> String? {
         guard let path = urls.compactMap(controlCenterPath).first else { return nil }
@@ -918,8 +917,6 @@ private struct RuntimeStatusPayload: Decodable {
 
         struct Runtime: Decodable {
             let version: String?
-            let commit: String?
-            let pid: Int32?
             let listenerOwner: String?
         }
     }
@@ -1783,10 +1780,6 @@ enum RuntimePreparationOutcome: Equatable {
     case nativeRuntimeReady
     case codexBarRepairRequired
     case failure(InstallationFailure)
-
-    var shouldReloadControlCenter: Bool {
-        self == .nativeRuntimeReady
-    }
 }
 
 enum RuntimeServiceRegistrationOutcome: Equatable {
@@ -4016,19 +4009,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     private func prepareBundledCodexBarCLI() async -> URL? {
         guard let resourcesURL = Bundle.main.resourceURL else { return nil }
-        let targetAppURL = appManagedCodexBarAppURL(applicationSupportURL: applicationSupportURL())
-        var arguments = [
+        let arguments = [
             "prepare-codexbar", "--archive",
             resourcesURL.appendingPathComponent("CodexBar", isDirectory: true)
                 .appendingPathComponent(codexBarArchiveName).path,
         ]
-        if NSRunningApplication.runningApplications(
-            withBundleIdentifier: codexBarBundleIdentifier
-        ).contains(where: {
-            $0.bundleURL?.standardizedFileURL == targetAppURL.standardizedFileURL
-        }) {
-            arguments.append("--reuse-running")
-        }
         return await runPinnedCodexBar(arguments)
     }
 
