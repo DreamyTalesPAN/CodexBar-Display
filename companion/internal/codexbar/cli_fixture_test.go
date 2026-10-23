@@ -130,7 +130,7 @@ func TestCLIFixtures(t *testing.T) {
 // only limit in usage.primary's place is openaiDashboard.primaryLimit, a
 // 10080-minute (weekly) window. It must not become the Session slot.
 func TestCodexDashboardLimitIsNotSession(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("testdata", "cli", "codexbar-macos-0.79.0", "usage-codex.json"))
+	raw, err := os.ReadFile(filepath.Join("testdata", "cli", "codexbar-macos-0.80.0", "usage-codex.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

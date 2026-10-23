@@ -90,7 +90,7 @@ func main() {
 			os.Exit(2)
 		}
 	case "--version", "version":
-		fmt.Println("codexbar-stub 0.79.0")
+		fmt.Println("codexbar-stub 0.80.0")
 	default:
 		fmt.Fprintln(os.Stderr, "unsupported fixture command:", strings.Join(args, " "))
 		os.Exit(2)

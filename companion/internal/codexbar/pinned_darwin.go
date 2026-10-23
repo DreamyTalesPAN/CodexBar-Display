@@ -18,7 +18,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const pinnedSHA256 = "b3b02340269e13682dcd8b666d7d762cdd298fd6f31fa9a036049fbe432b6a7a"
+const pinnedSHA256 = "7cdc7768947163b9c5af3ac52b3546c01c99b82c7cfcc7e0bf18e7086f38d208"
 const pinnedTeam = "Y5PE65HELJ"
 const pinnedBundle = "com.steipete.codexbar"
 

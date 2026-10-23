@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="0.79.0"
-SHA256="b3b02340269e13682dcd8b666d7d762cdd298fd6f31fa9a036049fbe432b6a7a"
+VERSION="0.80.0"
+SHA256="7cdc7768947163b9c5af3ac52b3546c01c99b82c7cfcc7e0bf18e7086f38d208"
 ARCHIVE_NAME="CodexBar-macos-universal-${VERSION}.zip"
 CACHE_ROOT="${CODEXBAR_CACHE_ROOT:-${ROOT}/tmp/codexbar}"
 ARCHIVE="${CACHE_ROOT}/${ARCHIVE_NAME}"

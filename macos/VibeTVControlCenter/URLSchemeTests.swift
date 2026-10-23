@@ -350,12 +350,12 @@ func runURLSchemeTests() {
     )
     require(
         appManagedCodexBarAppURL(applicationSupportURL: appSupportURL).path
-            == "/Users/customer/Library/Application Support/codexbar-display/CodexBar/0.79.0/CodexBar.app",
+            == "/Users/customer/Library/Application Support/codexbar-display/CodexBar/0.80.0/CodexBar.app",
         "VibeTV must publish CodexBar only into its private versioned app support directory"
     )
     require(
         appManagedCodexBarCLIURL(applicationSupportURL: appSupportURL).path
-            == "/Users/customer/Library/Application Support/codexbar-display/CodexBar/0.79.0/CodexBar.app/Contents/Helpers/CodexBarCLI",
+            == "/Users/customer/Library/Application Support/codexbar-display/CodexBar/0.80.0/CodexBar.app/Contents/Helpers/CodexBarCLI",
         "the Companion must use the exact private CodexBarCLI path"
     )
     let managedApp = appManagedCodexBarAppURL(applicationSupportURL: appSupportURL)
@@ -899,7 +899,7 @@ func runURLSchemeTests() {
         "http://github.com/steipete/CodexBar/releases/latest",
         "https://github.com/other/CodexBar/releases/latest",
         "https://github.com/steipete/CodexBar/releases/latest?download=1",
-        "https://github.com/steipete/CodexBar/releases/download/v0.79.0/CodexBar.zip",
+        "https://github.com/steipete/CodexBar/releases/download/v0.80.0/CodexBar.zip",
     ] {
         require(
             !isApprovedCodexBarDownloadURL(URL(string: rejectedURL)!),
