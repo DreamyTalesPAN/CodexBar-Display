@@ -20828,3 +20828,10 @@ issue scope, or release permission never implies UI permission.
 - User approval: approved by Paul, 2026-10-23 09:09
 - Approved customer-visible result: While Token Counter (ThemeSpec maxProviders: 1) is active, Settings and setup show One provider selected with Provider 1 and its own token count. Two at once is greyed out, unselected and unavailable, with only “Token Counter shows one provider at a time.” below it; Provider 2 is hidden, just as in One provider mode. The saved Two at once mode and both providers remain unchanged in the background; switching to a theme that supports two providers restores Two at once and both provider fields.
 - What's new: none — corrects the Q15 display-mode choice
+
+## 2026-10-23 — #7219: Pixel Battery reset footers keep their declared font
+
+- User approval: pending — 7219 render-fix assignment and Q6 clarification relayed by the coordinator on 2026-10-23 at 11:34: keep the font and omit a limit name when it does not fit; supersedes the Pixel Battery kept-name shrinking exceptions above.
+- Approved customer-visible result: Pixel Battery keeps its declared footer font at every reset value; when the Session name does not fit (10m–59m, 10h–23h and 10d–14d), it reads “Reset 55m”, “Reset 10h” or “Reset 11d”. The fitting Session and Weekly names remain, with at least 3 px to the frame.
+- Scope: Pixel Battery 1.17.13 (rev 29, remove the footer kn override), generated pack/catalog/render revision and animation-layout.test.ts reset sweeps. No renderer or Control Center UI implementation change.
+- What's new: none — fixes the assigned Pixel Battery reset-footer render failure on the unreleased Paul test line.
