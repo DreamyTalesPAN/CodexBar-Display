@@ -1056,18 +1056,20 @@ function ThemeTextPrimitive({
     );
   }, [measurementKey, text]);
 
+  const glyph = firmwareMetrics
+    ? themeGlyphPlacement(font, size, systemTallGlyphHeight())
+    : null;
   const commonTextProps = {
     // WebKit ignores text-before-edge and falls back to an alphabetic
     // baseline at y, leaving only descenders inside the firmware clip box.
     // Use the standard alphabetic baseline with an explicit ascent instead.
     dominantBaseline: "alphabetic" as const,
     fill: color,
-    fontFamily:
-      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-    fontSize,
+    fontFamily: THEME_TEXT_FONT_FAMILY,
+    fontSize: glyph?.fontSize ?? fontSize,
     fontWeight,
     letterSpacing: "0",
-    y: textY + fontSize * 0.8,
+    y: textY + (glyph?.baseline ?? fontSize * 0.8),
   };
   const textNode = firmwareMetrics ? (
     <text
@@ -3012,6 +3014,56 @@ function themeTextStartX(
     return textX - textWidth;
   }
   return textX;
+}
+
+const THEME_TEXT_FONT_FAMILY =
+  "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
+
+// Rows the tallest glyphs (capitals, digits, ascenders) of the TFT_eSPI 2.5.43
+// fonts cover at size 1, and the row they stand on, measured with the
+// firmware's own rasteriser. The glyph cell is taller (8, 16, 26 rows): drawing
+// the system font at the cell height makes its digits end below the device's
+// baseline and its capitals start above the device's top line, so a number and
+// the line under it lose 2-4 px of the gap the device keeps.
+const FIRMWARE_GLYPH_ROWS: Record<number, { baseline: number; tall: number }> = {
+  1: { baseline: 7, tall: 7 },
+  2: { baseline: 13, tall: 10 },
+  4: { baseline: 19, tall: 18 },
+};
+
+// Height of the system monospace font's tallest glyphs in em: 0.76 on Menlo,
+// 0.64 on the generic monospace fallback, so it is measured once where the
+// platform can.
+let measuredTallGlyphHeight: number | undefined;
+function systemTallGlyphHeight(): number {
+  if (measuredTallGlyphHeight === undefined) {
+    const context =
+      typeof OffscreenCanvas === "undefined"
+        ? null
+        : new OffscreenCanvas(1, 1).getContext("2d");
+    if (context) {
+      context.font = `700 100px ${THEME_TEXT_FONT_FAMILY}`;
+    }
+    const ascent = (context?.measureText("Hdl0").actualBoundingBoxAscent ?? 0) / 100;
+    measuredTallGlyphHeight = ascent > 0.3 ? ascent : 0.76;
+  }
+  return measuredTallGlyphHeight;
+}
+
+// The font size and baseline offset inside the glyph cell that put the system
+// font's tallest glyphs on the rows of the device's.
+export function themeGlyphPlacement(
+  font: number,
+  size: number,
+  tallGlyphHeight: number,
+): { baseline: number; fontSize: number } | null {
+  const rows = FIRMWARE_GLYPH_ROWS[font];
+  return rows
+    ? {
+        baseline: rows.baseline * size,
+        fontSize: (rows.tall * size) / tallGlyphHeight,
+      }
+    : null;
 }
 
 function themeFontSize(font?: number, size?: number): number {

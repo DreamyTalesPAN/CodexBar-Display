@@ -194,6 +194,26 @@ it("keeps the Active marker off the preview picture, in the title row", () => {
   expect(pill.closest('[data-slot="item-title"]')).not.toBeNull();
 });
 
+// jsdom has no layout, so this pins the rule that makes the rows line up: the Active pill is taller than the title
+// text, and a card whose title row only grew for the pill pushed its "Theme" label ≈3 px and "Edit" ≈1 px below the
+// neighbours' (B7 of the 7216 review). Every card's title row is as tall as the pill, so the pill changes nothing.
+it("gives every card a title row as tall as the Active pill, so the cards of a row line up", () => {
+  render(
+    <Page
+      device={{ connected: true, paired: true, ready: true, activeTheme: "clippy" }}
+      selectedThemeId="clippy"
+      themes={plain}
+    />,
+  );
+  const pillHeight = within(document.getElementById("catalog-theme-clippy")!)
+    .getByTestId("theme-status-pill").className.match(/(?:^|\s)h-(\d+)(?:\s|$)/)![1];
+  const titles = document.querySelectorAll<HTMLElement>('[id^="catalog-theme-"] [data-slot="item-title"]');
+  expect(titles.length).toBeGreaterThan(2);
+  for (const title of titles) {
+    expect(title.classList.contains(`min-h-${pillHeight}`), title.textContent ?? "").toBe(true);
+  }
+});
+
 it("marks only a verifiably enabled, device-installed screensaver Active", () => {
   const night = product("night-clock", "Night Clock", "screensaver", {
     themeSpecPath: "/themes/s/night.json",
