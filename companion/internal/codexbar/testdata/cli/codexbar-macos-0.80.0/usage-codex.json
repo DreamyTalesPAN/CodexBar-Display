@@ -5,8 +5,8 @@
       "balanceReadSucceeded": true,
       "creditsAvailable": true,
       "events": [],
-      "remaining": 62509.16382425,
-      "updatedAt": "2026-10-22T10:03:16Z"
+      "remaining": 58866.22830125,
+      "updatedAt": "2026-10-23T07:28:03Z"
     },
     "openaiDashboard": {
       "accountID": "",
@@ -28,12 +28,11 @@
     },
     "pace": {
       "secondary": {
-        "deltaPercent": 88,
-        "etaSeconds": 679,
-        "expectedUsedPercent": 11,
-        "stage": "farAhead",
-        "summary": "88% in deficit | Expected 11% used | Runs out in 12m",
-        "willLastToReset": false
+        "deltaPercent": -3,
+        "expectedUsedPercent": 9,
+        "stage": "slightlyBehind",
+        "summary": "3% in reserve | Expected 9% used | Lasts until reset",
+        "willLastToReset": true
       }
     },
     "provider": "codex",
@@ -54,7 +53,7 @@
             "description": "Thanks for using Codex! You've been granted one free rate limit reset.",
             "expires_at": "2026-10-29T18:57:50Z",
             "granted_at": "2026-09-29T18:57:50Z",
-            "id": "codex-reset-credit-v1-f16f8749b30484614e1481087c471306366e7c73707e791776b881f31df444e7",
+            "id": "redacted-reset-credit",
             "reset_type": "codex_rate_limits",
             "status": "available",
             "title": "Full reset"
@@ -63,13 +62,13 @@
             "description": "Thanks for using Codex! You've been granted one free rate limit reset.",
             "expires_at": "2026-11-06T23:27:33Z",
             "granted_at": "2026-10-07T23:27:33Z",
-            "id": "codex-reset-credit-v1-d52f43f2bdfa83515cce6133e9aec900f49bef90372d2a478b4a722927469964",
+            "id": "redacted-reset-credit",
             "reset_type": "codex_rate_limits",
             "status": "available",
             "title": "Full reset"
           }
         ],
-        "updatedAt": "2026-10-22T10:03:16Z"
+        "updatedAt": "2026-10-23T07:28:03Z"
       },
       "dataConfidence": "exact",
       "identity": {
@@ -80,22 +79,22 @@
       "loginMethod": "pro",
       "primary": null,
       "providerCost": {
-        "balance": 62509.16382425,
-        "balanceUpdatedAt": "2026-10-22T10:03:16Z",
+        "balance": 58866.22830125,
+        "balanceUpdatedAt": "2026-10-23T07:28:03Z",
         "currencyCode": "Credits",
         "limit": 0,
         "period": "Extra usage",
-        "updatedAt": "2026-10-22T10:03:16Z",
+        "updatedAt": "2026-10-23T07:28:03Z",
         "used": 0
       },
       "secondary": {
-        "resetDescription": "Oct 28 at 4:23\u202fPM",
-        "resetsAt": "2026-10-28T15:23:11Z",
-        "usedPercent": 99,
+        "resetDescription": "Oct 29 at 6:09\u202fPM",
+        "resetsAt": "2026-10-29T17:09:54Z",
+        "usedPercent": 6,
         "windowMinutes": 10080
       },
       "tertiary": null,
-      "updatedAt": "2026-10-22T10:03:16Z"
+      "updatedAt": "2026-10-23T07:28:03Z"
     },
     "version": "0.153.0"
   }

@@ -5,8 +5,8 @@
       "balanceReadSucceeded": true,
       "creditsAvailable": true,
       "events": [],
-      "remaining": 62509.16382425,
-      "updatedAt": "2026-10-22T10:03:05Z"
+      "remaining": 58866.22830125,
+      "updatedAt": "2026-10-23T07:27:45Z"
     },
     "openaiDashboard": {
       "accountID": "",
@@ -28,12 +28,11 @@
     },
     "pace": {
       "secondary": {
-        "deltaPercent": 88,
-        "etaSeconds": 679,
-        "expectedUsedPercent": 11,
-        "stage": "farAhead",
-        "summary": "88% in deficit | Expected 11% used | Runs out in 12m",
-        "willLastToReset": false
+        "deltaPercent": -3,
+        "expectedUsedPercent": 9,
+        "stage": "slightlyBehind",
+        "summary": "3% in reserve | Expected 9% used | Lasts until reset",
+        "willLastToReset": true
       }
     },
     "provider": "codex",
@@ -54,7 +53,7 @@
             "description": "Thanks for using Codex! You've been granted one free rate limit reset.",
             "expires_at": "2026-10-29T18:57:50Z",
             "granted_at": "2026-09-29T18:57:50Z",
-            "id": "codex-reset-credit-v1-f16f8749b30484614e1481087c471306366e7c73707e791776b881f31df444e7",
+            "id": "redacted-reset-credit",
             "reset_type": "codex_rate_limits",
             "status": "available",
             "title": "Full reset"
@@ -63,13 +62,13 @@
             "description": "Thanks for using Codex! You've been granted one free rate limit reset.",
             "expires_at": "2026-11-06T23:27:33Z",
             "granted_at": "2026-10-07T23:27:33Z",
-            "id": "codex-reset-credit-v1-d52f43f2bdfa83515cce6133e9aec900f49bef90372d2a478b4a722927469964",
+            "id": "redacted-reset-credit",
             "reset_type": "codex_rate_limits",
             "status": "available",
             "title": "Full reset"
           }
         ],
-        "updatedAt": "2026-10-22T10:03:05Z"
+        "updatedAt": "2026-10-23T07:27:45Z"
       },
       "dataConfidence": "exact",
       "identity": {
@@ -80,22 +79,22 @@
       "loginMethod": "pro",
       "primary": null,
       "providerCost": {
-        "balance": 62509.16382425,
-        "balanceUpdatedAt": "2026-10-22T10:03:05Z",
+        "balance": 58866.22830125,
+        "balanceUpdatedAt": "2026-10-23T07:27:45Z",
         "currencyCode": "Credits",
         "limit": 0,
         "period": "Extra usage",
-        "updatedAt": "2026-10-22T10:03:05Z",
+        "updatedAt": "2026-10-23T07:27:45Z",
         "used": 0
       },
       "secondary": {
-        "resetDescription": "Oct 28 at 4:23\u202fPM",
-        "resetsAt": "2026-10-28T15:23:11Z",
-        "usedPercent": 99,
+        "resetDescription": "Oct 29 at 6:09\u202fPM",
+        "resetsAt": "2026-10-29T17:09:54Z",
+        "usedPercent": 6,
         "windowMinutes": 10080
       },
       "tertiary": null,
-      "updatedAt": "2026-10-22T10:03:05Z"
+      "updatedAt": "2026-10-23T07:27:45Z"
     },
     "version": "0.153.0"
   },
@@ -120,19 +119,18 @@
   {
     "pace": {
       "primary": {
-        "deltaPercent": 21,
-        "etaSeconds": 3572,
-        "expectedUsedPercent": 51,
-        "stage": "farAhead",
-        "summary": "21% in deficit | Expected 51% used | Projected empty in 1h",
-        "willLastToReset": false
+        "deltaPercent": -30,
+        "expectedUsedPercent": 79,
+        "stage": "farBehind",
+        "summary": "30% in reserve | Expected 79% used | Lasts until reset",
+        "willLastToReset": true
       },
       "secondary": {
-        "deltaPercent": 19,
-        "etaSeconds": 191009,
-        "expectedUsedPercent": 28,
+        "deltaPercent": 45,
+        "etaSeconds": 40123,
+        "expectedUsedPercent": 41,
         "stage": "farAhead",
-        "summary": "19% in deficit | Expected 28% used | Runs out in 2d 5h",
+        "summary": "45% in deficit | Expected 41% used | Runs out in 11h 9m",
         "willLastToReset": false
       }
     },
@@ -144,17 +142,8 @@
     "source": "web",
     "usage": {
       "accountEmail": "redacted@example.com",
-      "accountOrganization": "redacted@example.com's Organization",
+      "accountOrganization": "redacted",
       "details": [
-        {
-          "rows": [
-            {
-              "label": "Limit Reset Credits",
-              "secondaryValue": "Expires 6:00\u202fPM",
-              "value": "1 available"
-            }
-          ]
-        },
         {
           "rows": [
             {
@@ -185,15 +174,15 @@
       ],
       "identity": {
         "accountEmail": "redacted@example.com",
-        "accountOrganization": "redacted@example.com's Organization",
+        "accountOrganization": "redacted",
         "loginMethod": "Claude Max 20x",
         "providerID": "claude"
       },
       "loginMethod": "Claude Max 20x",
       "primary": {
-        "resetDescription": "Oct 22 at 2:30PM",
-        "resetsAt": "2026-10-22T12:30:00Z",
-        "usedPercent": 72,
+        "resetDescription": "Oct 23 at 10:29AM",
+        "resetsAt": "2026-10-23T08:29:59Z",
+        "usedPercent": 49,
         "windowMinutes": 300
       },
       "providerCost": {
@@ -201,18 +190,18 @@
         "currencyCode": "EUR",
         "limit": 100,
         "period": "Monthly cap",
-        "updatedAt": "2026-10-22T10:03:03Z",
+        "updatedAt": "2026-10-23T07:27:45Z",
         "used": 0
       },
       "secondary": {
-        "resetDescription": "Oct 27 at 12:00PM",
-        "resetsAt": "2026-10-27T11:00:00Z",
-        "usedPercent": 47,
+        "resetDescription": "Oct 27 at 11:59AM",
+        "resetsAt": "2026-10-27T10:59:59Z",
+        "usedPercent": 86,
         "windowMinutes": 10080
       },
       "subscriptionRenewsAt": "2026-11-07T08:08:43Z",
       "tertiary": null,
-      "updatedAt": "2026-10-22T10:03:04Z"
+      "updatedAt": "2026-10-23T07:27:46Z"
     }
   },
   {
@@ -318,7 +307,7 @@
           "id": "antigravity-quota-summary-gemini-weekly",
           "title": "Gemini weekly",
           "window": {
-            "resetsAt": "2026-10-29T10:03:09Z",
+            "resetsAt": "2026-10-30T07:27:49Z",
             "usedPercent": 0,
             "windowMinutes": 10080
           }
@@ -327,7 +316,7 @@
           "id": "antigravity-quota-summary-3p-weekly",
           "title": "Claude/GPT weekly",
           "window": {
-            "resetsAt": "2026-10-29T10:03:09Z",
+            "resetsAt": "2026-10-30T07:27:49Z",
             "usedPercent": 0,
             "windowMinutes": 10080
           }
@@ -337,17 +326,17 @@
         "providerID": "antigravity"
       },
       "primary": {
-        "resetsAt": "2026-10-29T10:03:09Z",
+        "resetsAt": "2026-10-30T07:27:49Z",
         "usedPercent": 0,
         "windowMinutes": 10080
       },
       "secondary": {
-        "resetsAt": "2026-10-29T10:03:09Z",
+        "resetsAt": "2026-10-30T07:27:49Z",
         "usedPercent": 0,
         "windowMinutes": 10080
       },
       "tertiary": null,
-      "updatedAt": "2026-10-22T10:03:09Z"
+      "updatedAt": "2026-10-23T07:27:50Z"
     }
   },
   {
@@ -637,7 +626,7 @@
       },
       "secondary": null,
       "tertiary": null,
-      "updatedAt": "2026-10-22T10:03:11Z"
+      "updatedAt": "2026-10-23T07:27:55Z"
     }
   },
   {
@@ -770,6 +759,15 @@
     "error": {
       "code": 1,
       "kind": "provider",
+      "message": "No available fetch strategy for soniox."
+    },
+    "provider": "soniox",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
       "message": "No available fetch strategy for poe."
     },
     "provider": "poe",
@@ -884,44 +882,13 @@
     "source": "auto"
   },
   {
-    "pace": {
-      "secondary": {
-        "deltaPercent": -90,
-        "expectedUsedPercent": 90,
-        "stage": "farBehind",
-        "summary": "90% in reserve | Expected 90% used | Lasts until reset",
-        "willLastToReset": true
-      }
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Notion HTTP 403 from getCreditRateLimitStatus"
     },
     "provider": "notion",
-    "rateWindowLabels": {
-      "primary": "Rolling",
-      "secondary": "Monthly"
-    },
-    "source": "web",
-    "usage": {
-      "accountEmail": "redacted@example.com",
-      "accountOrganization": "Redacted Organization",
-      "identity": {
-        "accountEmail": "redacted@example.com",
-        "accountID": "00000000-0000-0000-0000-000000000000",
-        "accountOrganization": "Redacted Organization",
-        "loginMethod": "Business",
-        "providerID": "notion"
-      },
-      "loginMethod": "Business",
-      "primary": {
-        "usedPercent": 0,
-        "windowMinutes": 360
-      },
-      "secondary": {
-        "resetsAt": "2026-10-25T10:00:00Z",
-        "usedPercent": 0,
-        "windowMinutes": 43200
-      },
-      "tertiary": null,
-      "updatedAt": "2026-10-22T10:03:12Z"
-    }
+    "source": "auto"
   },
   {
     "error": {
@@ -994,7 +961,7 @@
       "primary": null,
       "secondary": null,
       "tertiary": null,
-      "updatedAt": "2026-10-22T10:03:14Z"
+      "updatedAt": "2026-10-23T07:27:58Z"
     }
   },
   {
@@ -1229,6 +1196,15 @@
       "message": "No available fetch strategy for munito."
     },
     "provider": "munito",
+    "source": "auto"
+  },
+  {
+    "error": {
+      "code": 1,
+      "kind": "provider",
+      "message": "Sign in to Trae CN at trae.cn, then refresh CodexBar."
+    },
+    "provider": "traecn",
     "source": "auto"
   }
 ]
