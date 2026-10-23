@@ -1,0 +1,66 @@
+{
+  "kind": "vibetv-theme-pack",
+  "schemaVersion": 1,
+  "id": "fuel",
+  "name": "Fuel",
+  "version": "1.15.0",
+  "minFirmware": "1.0.42",
+  "usage": "live",
+  "requiredCapabilities": [
+    "usage-slots-v1",
+    "text-valign-v1",
+    "provider-assets-v1",
+    "progress-needle-v1"
+  ],
+  "themeSpec": {
+    "path": "/themes/u/fue-b4dde4.json",
+    "file": "theme.json",
+    "bytes": 811,
+    "sha256": "b4dde4f053d3b9f484329952d3f4d56e0359c39cde7cf7e83028d150c4872421",
+    "contentType": "application/json"
+  },
+  "assets": [
+    {
+      "path": "/themes/u/fuef-e3a1a9.cbi",
+      "file": "assets/face.cbi",
+      "bytes": 1753,
+      "sha256": "e3a1a9bc464e4ba336b0984b9446b32cbff5c8231d0476c9321e547ecd263c2b",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/fuen-c9cc36.cbi",
+      "file": "assets/needle.cbi",
+      "bytes": 438,
+      "sha256": "c9cc36e776893e87373c7f12e82400ebf390a0943344876426a16b18ee09f2a9",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/fuea-cad422.cbi",
+      "file": "assets/fallback.cbi",
+      "bytes": 433,
+      "sha256": "cad422fa747478ddf459f3a98747cf3ec6e967cda7a666c061090aa4babae779",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/fuec-906d24.cbi",
+      "file": "assets/cursor.cbi",
+      "bytes": 315,
+      "sha256": "906d24a04594df3f30a9a2d0ded5498518674961c51df0277ff66aebeee1142b",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/fuel-857eb2.cbi",
+      "file": "assets/claude.cbi",
+      "bytes": 593,
+      "sha256": "857eb24980be47950ea5f2af0c5b1790087b5c01a19bea87cd8b25a57a339b03",
+      "contentType": "text/plain"
+    },
+    {
+      "path": "/themes/u/fueo-03ed77.cbi",
+      "file": "assets/codex.cbi",
+      "bytes": 473,
+      "sha256": "03ed776a6695e57563d689a0a692d84c5eeb40bb425f98d25054d4178231aa04",
+      "contentType": "text/plain"
+    }
+  ]
+}

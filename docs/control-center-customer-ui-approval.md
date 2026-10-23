@@ -9786,8 +9786,8 @@ issue scope, or release permission never implies UI permission.
 ## 2026-10-23 — #963: theme-supplied progress needles and preview corrections
 
 - User approval: pending — Florian requested the code review and fixes in this Codex chat on 2026-10-23. The exact visible result still requires Paul's review before merge. This entry records the proposed result, not a completed visual approval.
-- Approved customer-visible result: Proposed, pending review: a theme can show its own needle graphic following the usage value across its configured sweep. The preview clips the rotated graphic to the same rectangle as VibeTV. Exported themes retain that graphic. The 3D preview housing is neutral white and its display rim black. A theme that needs newer needle support keeps the existing firmware-update handling.
-- Scope: PR #963 Control Center theme serialization, capability handling, active-theme upgrade checks, 2D and 3D previews, their tests, and this approval record. No merge, release, or hardware write is authorized by this entry.
+- Approved customer-visible result: Proposed, pending review: a theme can show its own needle graphic following the usage value across its configured sweep. The preview clips the rotated graphic to the same rectangle as VibeTV. Exported themes retain that graphic. A theme that needs newer needle support keeps the existing firmware-update handling.
+- Scope: PR #963 Control Center theme serialization, capability handling, active-theme upgrade checks, the 2D preview, their tests, and this approval record. No merge, release, or hardware write is authorized by this entry.
 - What's new: none — this draft corrects theme rendering, export, and previews; it adds no catalog theme or new customer control.
 
 
@@ -9797,3 +9797,11 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: Proposed, pending review: the existing update attention state remains when the device lacks needle support and the active theme cannot be resolved from the catalog or its capability requirements are missing. Known themes that do not require needles keep their existing behavior. No copy or controls are added.
 - Scope: active-theme-upgrade.ts, its regression tests, and this approval record in PR #963. No merge, release, or hardware write.
 - What's new: none — fixes the existing post-update attention state without a new customer action.
+
+
+## 2026-10-23 — #963: separate 3D materials from needle support
+
+- User approval: pending — Florian requested both maintainer follow-ups in this chat. Paul asked to remove the unrelated material changes in PR comment 6359786971; approval of the remaining needle UI is still pending.
+- Approved customer-visible result: Proposed, pending review: the 3D housing and screen-rim materials remain exactly as at the PR base. Fuel 1.15.0 is included only as a review example, with browser preview and native framebuffer evidence; it is not added to the customer catalog.
+- Scope: restore vibetv-3d-preview.tsx and its test to the PR base, add example/evidence documentation, and track the independent material observation in issue #972. No hardware write, merge, or release.
+- What's new: none — review scope correction and example documentation only.

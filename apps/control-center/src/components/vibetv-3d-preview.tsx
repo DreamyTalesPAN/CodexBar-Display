@@ -9,7 +9,6 @@ import {
   Group,
   HemisphereLight,
   Mesh,
-  MeshBasicMaterial,
   type Object3D,
   PCFSoftShadowMap,
   PerspectiveCamera,
@@ -304,30 +303,9 @@ export function VibeTV3DPreview({
         const model = gltf.scene;
         model.scale.setScalar(MM);
         model.traverse((node) => {
-          if (!(node instanceof Mesh)) return;
-          node.castShadow = true;
-          node.receiveShadow = true;
-          // The CAD housing white is short on blue (0.732 vs 0.764). The key
-          // light blows the front face up to a neutral white, and the side
-          // keeps the warmth, so the body reads as two colors.
-          if (node.name === "housing") {
-            const materials = Array.isArray(node.material) ? node.material : [node.material];
-            for (const material of materials) {
-              if (!("color" in material) || material.color == null) continue;
-              const level = Math.max(material.color.r, material.color.g, material.color.b);
-              material.color.setRGB(level, level, level);
-            }
-          }
-          // The glass fillet above the live screen faces the key light, so the
-          // top edge of the opening reads as a gray bar. The preview already
-          // covers the glass face; keep the rim black.
-          if (node.name !== "display_glass") return;
-          const previous = node.material;
-          node.material = new MeshBasicMaterial({ color: 0x000000 });
-          node.castShadow = false;
-          node.receiveShadow = false;
-          for (const material of Array.isArray(previous) ? previous : [previous]) {
-            material.dispose();
+          if (node instanceof Mesh) {
+            node.castShadow = true;
+            node.receiveShadow = true;
           }
         });
         model.updateMatrixWorld(true);

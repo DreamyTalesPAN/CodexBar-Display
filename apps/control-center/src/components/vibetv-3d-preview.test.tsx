@@ -4,7 +4,7 @@
 // stands still; it asks for no more animation frames from then on.
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Mesh, MeshBasicMaterial, MeshStandardMaterial, type Scene } from "three";
+import type { Scene } from "three";
 import { VibeTV3DPreview } from "./vibetv-3d-preview";
 
 const state = vi.hoisted(() => ({
@@ -15,8 +15,6 @@ const state = vi.hoisted(() => ({
   resize: () => {},
   settle: () => {},
   autoSettle: true,
-  includeGlass: false,
-  includeHousing: false,
   scene: null as Scene | null,
 }));
 
@@ -68,28 +66,10 @@ vi.mock("three/addons/controls/OrbitControls.js", async () => {
   return { OrbitControls: FakeOrbitControls };
 });
 vi.mock("three/addons/loaders/GLTFLoader.js", async () => {
-  const { BoxGeometry, Color, Group, Mesh, MeshStandardMaterial } = await import("three");
+  const { Group } = await import("three");
   class FakeGLTFLoader {
     load(_url: string, onLoad: (gltf: { scene: unknown }) => void) {
-      const scene = new Group();
-      if (state.includeGlass) {
-        const glass = new Mesh(
-          new BoxGeometry(1, 1, 1),
-          new MeshStandardMaterial({ color: 0xffffff }),
-        );
-        glass.name = "display_glass";
-        scene.add(glass);
-      }
-      if (state.includeHousing) {
-        const color = new Color().setRGB(0.7637252807617188, 0.7637252807617188, 0.7319368720054626);
-        const housing = new Mesh(
-          new BoxGeometry(1, 1, 1),
-          new MeshStandardMaterial({ color }),
-        );
-        housing.name = "housing";
-        scene.add(housing);
-      }
-      onLoad({ scene });
+      onLoad({ scene: new Group() });
     }
   }
   return { GLTFLoader: FakeGLTFLoader };
@@ -129,8 +109,6 @@ beforeEach(() => {
   state.renders = 0;
   state.cssRenders = 0;
   state.autoSettle = true;
-  state.includeGlass = false;
-  state.includeHousing = false;
   requestFrame.mockClear();
   vi.spyOn(document, "hidden", "get").mockReturnValue(false);
   vi.stubGlobal("requestAnimationFrame", requestFrame);
@@ -271,36 +249,5 @@ describe("3D VibeTV sway", () => {
     act(() => state.resize());
     view.unmount();
     expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it("keeps the housing white neutral so the shaded side is not a warm second tone", () => {
-    state.includeHousing = true;
-    mountPreview();
-    runFrames(32);
-
-    let housing: Mesh | undefined;
-    state.scene?.traverse((node) => {
-      if (node.name === "housing" && node instanceof Mesh) housing = node;
-    });
-    const color = (housing?.material as MeshStandardMaterial).color;
-    expect(color.r).toBeCloseTo(color.g);
-    expect(color.g).toBeCloseTo(color.b);
-    expect(color.r).toBeGreaterThan(0.7);
-  });
-
-  it("keeps the screen-glass rim black so the top edge is not a lit gray bar", () => {
-    state.includeGlass = true;
-    mountPreview();
-    runFrames(32);
-
-    let glass: Mesh | undefined;
-    state.scene?.traverse((node) => {
-      if (node.name === "display_glass" && node instanceof Mesh) glass = node;
-    });
-    expect(glass).toBeInstanceOf(Mesh);
-    expect(glass?.material).toBeInstanceOf(MeshBasicMaterial);
-    expect((glass?.material as MeshBasicMaterial).color.getHex()).toBe(0x000000);
-    expect(glass?.receiveShadow).toBe(false);
-    expect(glass?.castShadow).toBe(false);
   });
 });
