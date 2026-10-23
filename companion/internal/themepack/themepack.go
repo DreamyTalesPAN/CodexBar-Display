@@ -41,6 +41,11 @@ const (
 	maxSpriteDimension = 480
 	maxSpriteRowChars  = 512
 
+	// Needles are decoded whole before rotation, unlike streamed static
+	// sprites. Mirrors kMaxNeedleSpriteSide/Pixels in the shared renderer.
+	maxNeedleSpriteSide   = 96
+	maxNeedleSpritePixels = 4096
+
 	// An animated sprite is composed in a full-frame buffer before it is
 	// pushed, so its rendered size is bounded by that buffer rather than by
 	// the source dimension limit. kMaxCbaBufferWidth/Height in
@@ -147,6 +152,10 @@ func (p *Pack) ValidateAgainstCapabilities(caps protocol.DeviceCapabilities) err
 		case protocol.FeatureProgressArcV1:
 			if !caps.SupportsProgressArcV1 {
 				return fmt.Errorf("device does not advertise required capability %s", protocol.FeatureProgressArcV1)
+			}
+		case protocol.FeatureProgressNeedleV1:
+			if !caps.SupportsProgressNeedleV1 {
+				return fmt.Errorf("device does not advertise required capability %s", protocol.FeatureProgressNeedleV1)
 			}
 		default:
 			return fmt.Errorf("theme pack requires unsupported capability %q", capability)
@@ -443,7 +452,8 @@ func validateManifestFields(manifest Manifest) error {
 			protocol.FeatureProviderAssetsV1,
 			protocol.FeatureColorStopsV1,
 			protocol.FeatureTextValignV1,
-			protocol.FeatureProgressArcV1:
+			protocol.FeatureProgressArcV1,
+			protocol.FeatureProgressNeedleV1:
 		default:
 			return fmt.Errorf("required capability %q is unsupported", capability)
 		}
@@ -583,7 +593,8 @@ func validateReferencedAssets(spec themespec.Spec, assets []File) error {
 		available[asset.Entry.Path] = struct{}{}
 	}
 	for index, primitive := range spec.Primitives {
-		if primitive.Type != "gif" && primitive.Type != "sprite" && primitive.Type != "image" {
+		isNeedle := primitive.Type == "progress" && primitive.ProgressStyle == "needle"
+		if primitive.Type != "gif" && primitive.Type != "sprite" && primitive.Type != "image" && !isNeedle {
 			continue
 		}
 		if primitive.AssetPath != "" {
@@ -607,6 +618,12 @@ func validateReferencedAssets(spec themespec.Spec, assets []File) error {
 
 func validateSpriteAssets(spec themespec.Spec, assets []File) error {
 	refs := referencedSpriteAssets(spec)
+	needles := map[string]bool{}
+	for _, primitive := range spec.Primitives {
+		if primitive.Type == "progress" && primitive.ProgressStyle == "needle" {
+			needles[primitive.AssetPath] = true
+		}
+	}
 	for _, asset := range assets {
 		_, referenced := refs[asset.Entry.Path]
 		// Every .cbi/.cba file in the pack is written to the device, so an
@@ -617,6 +634,16 @@ func validateSpriteAssets(spec themespec.Spec, assets []File) error {
 		}
 		if err := validateSpriteAsset(asset.Entry.Path, asset.Data); err != nil {
 			return err
+		}
+		if needles[asset.Entry.Path] {
+			lines := spriteAssetLines(asset.Data)
+			width, height, _, _, err := parseSpriteDimensions(lines[1:], false)
+			if err != nil {
+				return fmt.Errorf("needle sprite %s: %w", asset.Entry.Path, err)
+			}
+			if width > maxNeedleSpriteSide || height > maxNeedleSpriteSide || width*height > maxNeedleSpritePixels {
+				return fmt.Errorf("needle sprite %s must stay within %dpx and %d pixels", asset.Entry.Path, maxNeedleSpriteSide, maxNeedleSpritePixels)
+			}
 		}
 	}
 	return validateAnimatedSpriteRenderSizes(spec, assets)

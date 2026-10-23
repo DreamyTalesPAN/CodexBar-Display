@@ -244,6 +244,32 @@ describe("validateThemeAgainstCapabilities", () => {
     expect(errorsFor(false)).toEqual([]);
   });
 
+  it("blocks a needle when the device lacks progress-needle support", () => {
+    const spec = baseSpec();
+    spec.primitives.push({
+      type: "progress",
+      x: 0,
+      y: 0,
+      width: 64,
+      height: 64,
+      progressStyle: "needle",
+      arcStart: 300,
+      arcSweep: 120,
+      assetPath: "/themes/u/fu-n.cbi",
+    });
+    const errorsFor = (supportsProgressNeedleV1?: boolean) =>
+      validateThemeAgainstCapabilities(spec, {
+        "/themes/u/fu-n.cbi": {
+          contentType: "text/plain",
+          data: "CBI1\n2 2\n1\n#E2B84A\na.\n.a\n",
+          encoding: "text",
+        },
+      }, { ...baseCapabilities, supportsProgressNeedleV1 }).errors;
+
+    expect(errorsFor()).toEqual(["This VibeTV needs a firmware update before it can use this theme."]);
+    expect(errorsFor(true)).toEqual([]);
+  });
+
   it("blocks compact slot templates when the device lacks usage slot support", () => {
     const spec = baseSpec();
     spec.primitives.push({

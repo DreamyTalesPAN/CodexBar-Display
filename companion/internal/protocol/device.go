@@ -19,6 +19,7 @@ const (
 	FeatureColorStopsV1     = "color-stops-v1"
 	FeatureTextValignV1     = "text-valign-v1"
 	FeatureProgressArcV1    = "progress-arc-v1"
+	FeatureProgressNeedleV1 = "progress-needle-v1"
 	DefaultMaxFrameBytes    = 512
 	DefaultMinBrightness    = 10
 	DefaultMaxBrightness    = 100
@@ -59,6 +60,7 @@ type ThemeCapabilities struct {
 	SupportsColorStopsV1     bool     `json:"supportsColorStopsV1,omitempty"`
 	SupportsTextValignV1     bool     `json:"supportsTextValignV1,omitempty"`
 	SupportsProgressArcV1    bool     `json:"supportsProgressArcV1,omitempty"`
+	SupportsProgressNeedleV1 bool     `json:"supportsProgressNeedleV1,omitempty"`
 	MaxUsageWindows          int      `json:"maxUsageWindows,omitempty"`
 	SupportsStoredThemes     bool     `json:"supportsStoredThemes,omitempty"`
 	MaxThemeSpecBytes        int      `json:"maxThemeSpecBytes,omitempty"`
@@ -275,6 +277,7 @@ type DeviceCapabilities struct {
 	SupportsColorStopsV1       bool
 	SupportsTextValignV1       bool
 	SupportsProgressArcV1      bool
+	SupportsProgressNeedleV1   bool
 	MaxUsageWindows            int
 	SupportsStoredThemes       bool
 	MaxFrameBytes              int
@@ -322,6 +325,7 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 	supportsColorStopsV1 := h.HasFeature(FeatureColorStopsV1) || h.Capabilities.Theme.SupportsColorStopsV1
 	supportsTextValignV1 := h.HasFeature(FeatureTextValignV1) || h.Capabilities.Theme.SupportsTextValignV1
 	supportsProgressArcV1 := h.HasFeature(FeatureProgressArcV1) || h.Capabilities.Theme.SupportsProgressArcV1
+	supportsProgressNeedleV1 := h.HasFeature(FeatureProgressNeedleV1) || h.Capabilities.Theme.SupportsProgressNeedleV1
 	supportsStoredThemes := h.Capabilities.Theme.SupportsStoredThemes || h.Capabilities.Theme.MaxStoredThemeSpecBytes > 0
 	if !supportsTheme {
 		supportsTheme = len(h.Capabilities.Theme.BuiltinThemes) > 0 || supportsThemeSpecV1
@@ -346,6 +350,7 @@ func CapabilitiesFromHello(raw DeviceHello) DeviceCapabilities {
 		SupportsColorStopsV1:       supportsColorStopsV1,
 		SupportsTextValignV1:       supportsTextValignV1,
 		SupportsProgressArcV1:      supportsProgressArcV1,
+		SupportsProgressNeedleV1:   supportsProgressNeedleV1,
 		MaxUsageWindows:            h.Capabilities.Theme.MaxUsageWindows,
 		SupportsStoredThemes:       supportsStoredThemes,
 		MaxFrameBytes:              h.MaxFrameBytes,

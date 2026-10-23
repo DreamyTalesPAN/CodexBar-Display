@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -229,6 +230,44 @@ func TestLoadRejectsMissingReferencedAsset(t *testing.T) {
 	_, err := Load(dir)
 	if err == nil || !strings.Contains(err.Error(), "manifest assets do not include") {
 		t.Fatalf("expected missing asset error, got %v", err)
+	}
+}
+
+func TestLoadRequiresNeedleSpriteAsset(t *testing.T) {
+	spec := `{"v":1,"id":"cozy-meadow","rev":1,"p":[{"t":"p","x":0,"y":0,"w":64,"h":64,"ps":"needle","as":300,"aw":120,"a":"/themes/u/cm.cbi"}]}`
+	_, err := Load(writeThemePackWithSpec(t, spec, nil))
+	if err == nil || !strings.Contains(err.Error(), "manifest assets do not include") {
+		t.Fatalf("expected missing needle asset error, got %v", err)
+	}
+	pack, err := Load(writeThemePackWithSpec(t, spec, []themePackTestAsset{
+		{path: "/themes/u/cm.cbi", file: "assets/cm.cbi", data: "CBI1\n1 1\n1\n#FFFFFF\na\n"},
+	}))
+	if err != nil {
+		t.Fatalf("load needle pack: %v", err)
+	}
+	if len(pack.Assets) != 1 || pack.Assets[0].Entry.Path != "/themes/u/cm.cbi" {
+		t.Fatalf("needle asset not loaded: %+v", pack.Assets)
+	}
+}
+
+func TestLoadChecksNeedleSpriteBufferLimits(t *testing.T) {
+	spec := `{"v":1,"id":"cozy-meadow","rev":1,"p":[{"t":"p","x":0,"y":0,"w":64,"h":64,"ps":"needle","as":300,"aw":120,"a":"/themes/u/cm.cbi"}]}`
+	for _, tc := range []struct {
+		width, height int
+		accepted      bool
+	}{{96, 1, true}, {1, 96, true}, {64, 64, true}, {97, 1, false}, {1, 97, false}, {65, 64, false}} {
+		t.Run(fmt.Sprintf("%dx%d", tc.width, tc.height), func(t *testing.T) {
+			data := fmt.Sprintf("CBI1\n%d %d\n1\n#FFFFFF\n", tc.width, tc.height) + strings.Repeat(fmt.Sprintf("%da\n", tc.width), tc.height)
+			_, err := Load(writeThemePackWithSpec(t, spec, []themePackTestAsset{
+				{path: "/themes/u/cm.cbi", file: "assets/cm.cbi", data: data},
+			}))
+			if tc.accepted && err != nil {
+				t.Fatalf("valid needle rejected: %v", err)
+			}
+			if !tc.accepted && (err == nil || !strings.Contains(err.Error(), "needle sprite")) {
+				t.Fatalf("expected needle sprite limit error, got %v", err)
+			}
+		})
 	}
 }
 

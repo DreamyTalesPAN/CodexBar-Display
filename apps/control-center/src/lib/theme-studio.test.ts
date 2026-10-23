@@ -6,6 +6,7 @@ import {
   deviceThemeSpecJson,
   importThemeSpec,
   normalizeThemeSpec,
+  referencedThemeAssetPaths,
   validateThemeSpec,
   type ThemeStudioSpec,
 } from "./theme-studio";
@@ -635,6 +636,86 @@ describe("arc-style progress", () => {
     const spec = specWith(arc);
     Object.assign(spec.primitives[0], change);
     expect(validateThemeSpec(spec).errors).toEqual([`Element 1: ${error}`]);
+  });
+});
+
+describe("needle progress", () => {
+  const needleCbi = "CBI1\n2 2\n1\n#E2B84A\na.\n.a\n";
+  const needlePath = "/themes/u/fu-n.cbi";
+  const needleAsset = {
+    contentType: "text/plain",
+    data: needleCbi,
+    encoding: "text" as const,
+  };
+  const needle = {
+    t: "p",
+    x: 36,
+    y: 40,
+    w: 168,
+    h: 168,
+    b: "us1p",
+    ps: "needle",
+    as: 300,
+    aw: 120,
+    a: needlePath,
+  };
+  const specWith = (primitive: Record<string, unknown>) =>
+    importThemeSpec({ v: 1, id: "fuel", rev: 1, bg: "#474B53", p: [primitive] });
+
+  it("keeps the theme sprite and declares progress-needle-v1", () => {
+    const imported = specWith(needle);
+    expect(imported.primitives[0]).toMatchObject({
+      type: "progress",
+      progressStyle: "needle",
+      arcStart: 300,
+      arcSweep: 120,
+      assetPath: needlePath,
+      binding: "usageSlot1Percent",
+    });
+    expect(validateThemeSpec(imported, { [needlePath]: needleAsset }).errors).toEqual([]);
+    expect(JSON.parse(deviceThemeSpecJson(imported)).p[0]).toMatchObject({
+      ps: "needle",
+      as: 300,
+      aw: 120,
+      a: needlePath,
+    });
+    const pack = buildThemePack(imported, "Fuel", { [needlePath]: needleAsset });
+    expect(pack.manifest.requiredCapabilities).toEqual([
+      "usage-slots-v1",
+      "progress-needle-v1",
+    ]);
+    expect(pack.manifest.minFirmware).toBe("1.0.42");
+    expect(referencedThemeAssetPaths(imported)).toEqual([needlePath]);
+    expect(pack.manifest.assets).toEqual([
+      expect.objectContaining({ path: needlePath, bytes: new TextEncoder().encode(needleCbi).length }),
+    ]);
+    const entries = new Map<string, string>();
+    const zip = new DataView(pack.zipBytes.buffer, pack.zipBytes.byteOffset, pack.zipBytes.byteLength);
+    const decoder = new TextDecoder();
+    for (let offset = 0; zip.getUint32(offset, true) === 0x04034b50;) {
+      expect(zip.getUint16(offset + 8, true)).toBe(0); // Stored, uncompressed entry.
+      const size = zip.getUint32(offset + 18, true);
+      const nameLength = zip.getUint16(offset + 26, true);
+      const extraLength = zip.getUint16(offset + 28, true);
+      const dataStart = offset + 30 + nameLength + extraLength;
+      const name = decoder.decode(pack.zipBytes.subarray(offset + 30, offset + 30 + nameLength));
+      entries.set(name, decoder.decode(pack.zipBytes.subarray(dataStart, dataStart + size)));
+      offset = dataStart + size;
+    }
+    expect(entries.get(pack.manifest.assets[0].file)).toBe(needleCbi);
+  });
+
+  it("refuses a needle without its sprite", () => {
+    const spec = specWith({ ...needle, a: undefined });
+    expect(validateThemeSpec(spec).errors[0]).toContain("needle requires a .cbi sprite");
+  });
+
+  it("applies device asset-path limits to a needle sprite", () => {
+    const path = "/themes/u/../needle.cbi";
+    const spec = specWith({ ...needle, a: path });
+    expect(validateThemeSpec(spec, { [path]: needleAsset }).errors).toContain(
+      "Element 1: asset path must be under /themes/.",
+    );
   });
 });
 

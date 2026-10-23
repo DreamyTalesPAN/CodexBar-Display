@@ -15,6 +15,7 @@
 
 #include "../../firmware_shared/theme_spec_renderer_core.h"
 #include "theme_spec_runtime_policy.h"
+#include "theme_spec_needle_tracking.h"
 
 namespace codexbar_display {
 namespace esp8266 {
@@ -206,6 +207,7 @@ bool compiledThemeSpecHasCbaAssets(const themespec::CompiledThemeSpec& scene) {
 
 const String& currentThemeSpecRaw();
 void resetAnimatedSpriteCaches();
+void resetNeedleTracking();
 
 void releaseCbaFrameBuffer() {
   delete[] cbaFrameBuffer;
@@ -284,6 +286,7 @@ void clearFullRenderRetry() {
 
 void releaseThemeSpecRenderMemory() {
   resetAnimatedSpriteCaches();
+  resetNeedleTracking();
   releaseCbaFrameBuffer();
   GifCore().ReleaseMemory();
   cachedThemeSpecDoc.clear();
@@ -311,6 +314,7 @@ bool ensureThemeSpecSceneCached(const String& raw) {
   // released while the next theme is parsed and compiled; GifCore allocates it
   // lazily only after real playback has found a valid GIF header.
   resetAnimatedSpriteCaches();
+  resetNeedleTracking();
   // The previous theme's assets are no longer drawn, so its sprite diagnostic
   // cannot describe the current render. A failing asset that the new theme
   // still references is re-reported by the next render pass.
@@ -1048,6 +1052,201 @@ void resetAnimatedSpriteCaches() {
   nextAnimatedSpriteCacheSlot = 0;
 }
 
+// One index per source pixel, 0xFF where the needle sprite is transparent.
+// Reused across draws; ThemeSpec rendering on this chip is single-threaded.
+uint8_t needleIndex[themespec::kMaxNeedleSpritePixels];
+
+struct DecodedNeedle {
+  char path[32] = {0};
+  int width = 0;
+  int height = 0;
+  int paletteSize = 0;
+  uint16_t palette[26] = {0};
+  bool valid = false;
+};
+
+DecodedNeedle decodedNeedle;
+ThemeSpecNeedleTracking needleTracking;
+
+void copyNeedlePath(char* dest, const char* src) {
+  if (src == nullptr) {
+    dest[0] = '\0';
+    return;
+  }
+  std::strncpy(dest, src, sizeof(decodedNeedle.path) - 1);
+  dest[sizeof(decodedNeedle.path) - 1] = '\0';
+}
+
+void resetNeedleTracking() {
+  decodedNeedle = DecodedNeedle{};
+  needleTracking.Reset();
+}
+
+bool decodeNeedleRow(const String& row, uint8_t* dest, int width, int paletteSize) {
+  int offset = 0;
+  for (size_t i = 0; i < row.length();) {
+    int runLength = 0;
+    bool hasRunLength = false;
+    while (i < row.length() && row[i] >= '0' && row[i] <= '9') {
+      hasRunLength = true;
+      runLength = (runLength * 10) + (row[i] - '0');
+      ++i;
+    }
+    if (!hasRunLength) {
+      runLength = 1;
+    }
+    if (runLength <= 0 || i >= row.length() || offset + runLength > width) {
+      return false;
+    }
+    const char token = row[i++];
+    uint8_t index = 0xFF;
+    if (token != '.') {
+      if (token < 'a' || token > 'z') {
+        return false;
+      }
+      const int colorIndex = token - 'a';
+      if (colorIndex >= paletteSize) {
+        return false;
+      }
+      index = static_cast<uint8_t>(colorIndex);
+    }
+    for (int n = 0; n < runLength; ++n) {
+      dest[offset + n] = index;
+    }
+    offset += runLength;
+  }
+  return offset == width;
+}
+
+bool loadDecodedNeedle(const char* assetPath) {
+  if (assetPath == nullptr || assetPath[0] == '\0') {
+    return false;
+  }
+  if (decodedNeedle.valid && std::strcmp(decodedNeedle.path, assetPath) == 0) {
+    return true;
+  }
+  decodedNeedle.valid = false;
+  if (!LittleFS.begin()) {
+    return false;
+  }
+  File file = LittleFS.open(assetPath, "r");
+  if (!file) {
+    markSpriteRenderFailed("sprite_asset_missing", assetPath);
+    return false;
+  }
+  String line;
+  if (!readSpriteLine(file, line) || line != "CBI1") {
+    file.close();
+    markSpriteRenderFailed("needle_not_cbi", assetPath);
+    return false;
+  }
+  int width = 0;
+  int height = 0;
+  if (!readSpriteLine(file, line) || !parseSpriteHeader(line, width, height)) {
+    file.close();
+    markSpriteRenderFailed("cbi_header_invalid", assetPath);
+    return false;
+  }
+  if (width > themespec::kMaxNeedleSpriteSide || height > themespec::kMaxNeedleSpriteSide ||
+      width * height > themespec::kMaxNeedleSpritePixels) {
+    file.close();
+    markSpriteRenderFailed("needle_sprite_too_big", assetPath);
+    return false;
+  }
+  uint16_t palette[26] = {0};
+  int paletteSize = 0;
+  if (!readSpritePalette(file, palette, paletteSize)) {
+    file.close();
+    markSpriteRenderFailed("cbi_palette_invalid", assetPath);
+    return false;
+  }
+  for (int row = 0; row < height; ++row) {
+    if (!readSpriteLine(file, line) ||
+        !decodeNeedleRow(line, needleIndex + row * width, width, paletteSize)) {
+      file.close();
+      markSpriteRenderFailed("cbi_row_invalid", assetPath);
+      return false;
+    }
+  }
+  file.close();
+  copyNeedlePath(decodedNeedle.path, assetPath);
+  decodedNeedle.width = width;
+  decodedNeedle.height = height;
+  decodedNeedle.paletteSize = paletteSize;
+  for (int i = 0; i < paletteSize; ++i) {
+    decodedNeedle.palette[i] = palette[i];
+  }
+  decodedNeedle.valid = true;
+  // Every declared row was decoded in this pass. Only this asset's successful
+  // decode can retire its earlier failure; a cached or unrelated draw cannot.
+  if (lastSpriteErrorAsset == assetPath) {
+    clearSpriteRenderError();
+  }
+  return true;
+}
+
+bool drawNeedleAsset(
+    const char* assetPath,
+    int x,
+    int y,
+    int targetWidth,
+    int targetHeight,
+    int angle) {
+  if (assetPath == nullptr || assetPath[0] == '\0' ||
+      !themespec::NeedleDestinationSizeValid(targetWidth, targetHeight)) {
+    return false;
+  }
+  if (!loadDecodedNeedle(assetPath)) {
+    return false;
+  }
+  const int width = decodedNeedle.width;
+  const int height = decodedNeedle.height;
+  for (int row = 0; row < targetHeight; ++row) {
+    int runStart = -1;
+    uint16_t runColor = 0;
+    for (int col = 0; col <= targetWidth; ++col) {
+      bool opaque = false;
+      uint16_t color = 0;
+      int srcCol = 0;
+      int srcRow = 0;
+      if (col < targetWidth &&
+          themespec::NeedleSourcePixel(
+              col, row, targetWidth, targetHeight, width, height, angle, srcCol, srcRow)) {
+        const uint8_t index = needleIndex[srcRow * width + srcCol];
+        if (index != 0xFF && index < decodedNeedle.paletteSize) {
+          opaque = true;
+          color = decodedNeedle.palette[index];
+        }
+      }
+      if (opaque && runStart >= 0 && color == runColor) {
+        continue;
+      }
+      if (runStart >= 0) {
+        PrimitiveFillRect(x + runStart, y + row, col - runStart, 1, runColor);
+      }
+      runStart = opaque ? col : -1;
+      runColor = color;
+    }
+    if (ThemeSpecRuntimePolicy::ShouldYieldDuringAssetScan(row + 1)) {
+      cooperativeYield();
+    }
+  }
+  return true;
+}
+
+bool needleDirtyBounds(
+    const themespec::CompiledPrimitive& primitive,
+    const themespec::FrameData& frame,
+    themespec::Bounds& bounds,
+    void*) {
+  if (!decodedNeedle.valid || primitive.assetPath == nullptr ||
+      std::strcmp(decodedNeedle.path, primitive.assetPath) != 0) {
+    return false;
+  }
+  return needleTracking.DirtyBounds(
+      primitive, frame, needleIndex, decodedNeedle.width, decodedNeedle.height, bounds);
+}
+
 class ThemeSpecSink final : public themespec::Sink {
  public:
   explicit ThemeSpecSink(
@@ -1191,6 +1390,13 @@ class ThemeSpecSink final : public themespec::Sink {
     request.hasBackgroundColor = cmd.hasBg || hasBackgroundColor_;
     request.backgroundColor = cmd.hasBg ? cmd.bg : backgroundColor_;
     (void)GifCore().Tick(Tft(), request, forceAnimatedFrame_);
+  }
+
+  void DrawNeedle(const themespec::NeedleCommand& cmd) override {
+    if (!drawNeedleAsset(cmd.assetPath, cmd.x, cmd.y, cmd.width, cmd.height, cmd.angle)) {
+      return;
+    }
+    needleTracking.Remember(cmd);
   }
 
   void DrawSprite(const themespec::SpriteCommand& cmd) override {
@@ -1467,6 +1673,8 @@ bool RenderThemeSpecPartial(uint32_t changedFields, const char* updateNoticeText
           changedFields,
           sink,
           &partialError,
+          nullptr,
+          needleDirtyBounds,
           nullptr)) {
     return false;
   }

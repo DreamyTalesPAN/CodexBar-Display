@@ -65,6 +65,7 @@ function device(
         supportsColorStopsV1: supportsUsageSlotsV1,
         supportsTextValignV1: supportsUsageSlotsV1,
         supportsProgressArcV1: supportsUsageSlotsV1,
+        supportsProgressNeedleV1: supportsUsageSlotsV1,
       },
     },
     connected: true,
@@ -78,6 +79,33 @@ function device(
 }
 
 describe("resolveActiveThemeUpgrade", () => {
+  it.each<{ name: string; themes: ThemeProduct[] }>([
+    { name: "missing catalog", themes: [] },
+    { name: "unknown active theme", themes: [{ ...slotTheme, themeId: "another-theme" }] },
+    { name: "missing capability metadata", themes: [{ ...slotTheme, requiredCapabilities: undefined }] },
+  ])("keeps a needle-only firmware gap unresolved with $name", ({ themes }) => {
+    const current = device(true, slotTheme.themeSpecPath);
+    current.capabilities!.theme!.supportsProgressNeedleV1 = false;
+    expect(resolveActiveThemeUpgrade(themes, current)).toMatchObject({
+      needed: false,
+      needsFirmwareCapability: false,
+      needsThemeSpec: false,
+      unresolved: true,
+    });
+  });
+
+  it("resolves a known theme that does not require the missing needle capability", () => {
+    const current = device(true, slotTheme.themeSpecPath);
+    current.capabilities!.theme!.supportsProgressNeedleV1 = false;
+    expect(resolveActiveThemeUpgrade([slotTheme], current)).toEqual({
+      needed: false,
+      needsFirmwareCapability: false,
+      needsThemeSpec: false,
+      theme: slotTheme,
+      unresolved: false,
+    });
+  });
+
   it("resolves a cataloged slot theme before and after the firmware update", () => {
     expect(resolveActiveThemeUpgrade([slotTheme], device(false))).toEqual({
       needed: true,

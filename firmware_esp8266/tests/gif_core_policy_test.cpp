@@ -1118,6 +1118,22 @@ bool testSpriteRenderErrorsOnlyClearOnProvenDecode(const char* themeSpecRenderer
           "only a pass that decoded every row may clear a static sprite error")) {
     return false;
   }
+  const std::size_t needleStart = renderer.find("bool loadDecodedNeedle(const char* assetPath) {");
+  const std::size_t needleEnd = renderer.find("bool drawNeedleAsset(", needleStart);
+  if (!expect(needleStart != std::string::npos && needleEnd != std::string::npos,
+              "the needle decoder must remain discoverable")) {
+    return false;
+  }
+  const std::string needle = renderer.substr(needleStart, needleEnd - needleStart);
+  const std::size_t decoded = needle.find("decodedNeedle.valid = true;");
+  const std::size_t clear = needle.find("clearSpriteRenderError();");
+  if (!expect(decoded != std::string::npos && clear > decoded && clear != std::string::npos &&
+              needle.find("if (lastSpriteErrorAsset == assetPath) {", decoded) < clear &&
+              needle.find("if (decodedNeedle.valid &&") < decoded &&
+              needle.find("!decodeNeedleRow(") < decoded,
+              "only a complete matching needle decode may retire its sprite error")) {
+    return false;
+  }
   // A new theme no longer draws the old theme's assets, so its stale
   // diagnostic must not outlive the theme switch.
   if (!expect(

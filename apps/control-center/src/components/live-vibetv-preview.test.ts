@@ -16,6 +16,7 @@ import {
   THEME_CATALOG_PREVIEW_FRAME,
   ThemeSpecPreview,
   themeFirmwareTextMetrics,
+  themeNeedleAngle,
   themeProgressArc,
   themeTextAlignedY,
   themeTextFittedSize,
@@ -1099,6 +1100,81 @@ describe("arc-style progress", () => {
     const markup = markupFor({ ...arc, progressStyle: "" }, 50);
     expect(markup).not.toContain("<circle");
     expect(markup).toContain("<rect");
+  });
+});
+
+describe("needle progress", () => {
+  const needle = {
+    t: "p" as const,
+    x: 36,
+    y: 40,
+    w: 168,
+    h: 168,
+    b: "us1p",
+    ps: "needle" as const,
+    as: 300,
+    aw: 120,
+    a: "/themes/u/fu-n.cbi",
+  };
+  const frameAt = (percent: number) => ({
+    ...THEME_CATALOG_PREVIEW_FRAME,
+    usageSlot1Available: true,
+    usageSlot1Percent: percent,
+  });
+
+  it("turns the theme sprite by the same whole degrees as the firmware", () => {
+    expect(themeNeedleAngle(needle, 0)).toBe(300);
+    expect(themeNeedleAngle(needle, 50)).toBe(0);
+    expect(themeNeedleAngle(needle, 100)).toBe(60);
+    const markup = renderToStaticMarkup(
+      createElement(ThemeSpecPreview, {
+        animate: false,
+        frame: frameAt(50),
+        pack: {
+          ok: true,
+          themeId: "fuel",
+          spec: { p: [needle] },
+          assets: {
+            "/themes/u/fu-n.cbi": {
+              contentType: "text/plain",
+              data: "CBI1\n2 2\n1\n#E2B84A\na.\n.a\n",
+              encoding: "text",
+            },
+          },
+        },
+        status: "ready",
+        themeId: "fuel",
+      }),
+    );
+    expect(markup).toContain('transform="rotate(0 120 124)"');
+  });
+
+  it("clips rotated opaque corners to the unrotated needle box", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ThemeSpecPreview, {
+        animate: false,
+        frame: frameAt(50),
+        pack: {
+          ok: true,
+          themeId: "fuel",
+          spec: { p: [{ ...needle, as: 0, aw: 90 }] },
+          assets: {
+            "/themes/u/fu-n.cbi": {
+              contentType: "text/plain",
+              data: "CBI1\n2 2\n1\n#E2B84A\naa\naa\n",
+              encoding: "text",
+            },
+          },
+        },
+        status: "ready",
+        themeId: "fuel",
+      }),
+    );
+    // The clip belongs to an unrotated parent, so it stays at the firmware's
+    // destination bounds while the full, opaque square turns inside it.
+    const clip = markup.match(/<g clip-path="url\(#([^)]*)\)"><defs><clipPath id="([^"]*)"><rect x="36" y="40" width="168" height="168"><\/rect><\/clipPath><\/defs><g transform="rotate\(45 120 124\)">/);
+    expect(clip).not.toBeNull();
+    expect(clip?.[1]).toBe(clip?.[2]);
   });
 });
 
