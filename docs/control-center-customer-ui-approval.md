@@ -9816,3 +9816,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #943 as in its entries above plus the entries merged with ce62db41; nothing else changes.
 - Scope: the merge of ce62db41 and this approval record. Pull request #943 only, not merged, not released.
 - What's new: none — merge of ce62db41, no customer-visible change of its own
+
+## 2026-10-23 — Mac: Claude names the next step when the browser sign-in could not be read (#965)
+
+- User approval: pending — Marcus via the orchestrator (wording and app-window screenshot), and Paul's yes in the PR review before merge
+- Approved customer-visible result: in the Mac app, when Claude still asks for a sign-in after the three-minute window that follows "Sign in to Claude" (setup and Settings › AI providers), a popup titled "Claude" opens once with "VibeTV could not read your Claude sign-in from the browser. Sign in to Claude Code on this Mac, or sign in to claude.ai in Firefox, then check again. Using Chrome? Allow VibeTV Control Center under System Settings > Privacy & Security > Files & Folders > Google Chrome." and the buttons "Check again" and "Not now". A new "Sign in to Claude" can open it again. Windows, the browser outside the app, Cursor and every other provider keep their current behaviour.
+- Scope: `apps/control-center/src/components/setup/setup-providers-screen.tsx`, its test, and this approval record. Pull request branch only, not merged, not released.
+- What's new: none — a help popup for a failed sign-in, nothing a customer would look for
