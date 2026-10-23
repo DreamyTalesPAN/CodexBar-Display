@@ -10302,3 +10302,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: #802 as in its own entries plus the entries merged with 2d42c92f; nothing else changes.
 - Scope: the merge of 2d42c92f and this approval record. Pull request #802 only, not merged, not released.
 - What's new: none — merge of 2d42c92f, no customer-visible change of its own
+
+## 2026-10-23 — #802: approval marker after merging main at abb0cde5
+
+- User approval: no visible change – UI approval not needed (merge of main (abb0cde5) into #802; the existing approval entries remain unchanged).
+- Approved customer-visible result: #802 retains its existing product diff unchanged; the merge imports main without additional customer-visible changes of its own.
+- Scope: the merge of abb0cde5 into PR #802 and this approval record; no main merge, release, or device write.
+- What's new: none — merge with main, no customer-visible change of its own
