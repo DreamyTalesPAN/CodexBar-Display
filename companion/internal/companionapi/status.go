@@ -325,11 +325,11 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var firmwareUpdate *firmwareUpdateJob
-	if latest, ok := s.latestFirmwareUpdateJob(); ok {
+	if latest, ok := s.updateJobs.latest(); ok {
 		firmwareUpdate = &latest
 	}
 	var themeInstall *themeInstallJob
-	if latest, ok := s.latestThemeInstallJob(); ok {
+	if latest, ok := s.installJobs.latest(); ok {
 		themeInstall = &latest
 	}
 	writeJSON(w, http.StatusOK, statusResponse{
