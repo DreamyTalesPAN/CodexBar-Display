@@ -101,10 +101,10 @@ describe("the Pace themes", () => {
 
   it("Pace Meter gives both limit names their own line and omits an untimed run-out note", () => {
     const { text } = renderPack("pace-meter", deficit, [38, 61]);
-    expect(text).toBe("ClaudeSession remaining38%resets 3h14% deficitWeekly remaining61%resets 5dOn pace");
-    expect(renderPack("pace-meter", reserve).text).toBe("ClaudeSession remaining91%resets 3h6% reserveWeekly remaining87%resets 5d35% reserve");
+    expect(text).toBe("ClaudeSessionremaining38%resets 3h14% deficitWeeklyremaining61%resets 5dOn pace");
+    expect(renderPack("pace-meter", reserve).text).toBe("ClaudeSessionremaining91%resets 3h6% reserveWeeklyremaining87%resets 5d35% reserve");
     // Without a pace: percentage, label, countdown and the plain bar stay.
-    expect(renderPack("pace-meter", null).text).toBe("ClaudeSession remaining91%resets 3hWeekly remaining87%resets 5d");
+    expect(renderPack("pace-meter", null).text).toBe("ClaudeSessionremaining91%resets 3hWeeklyremaining87%resets 5d");
   });
 
   it("Pace Meter puts the basis in the pair header and still shows device notices", () => {
@@ -122,7 +122,7 @@ describe("the Pace themes", () => {
     expect(frame.label).toBe("");
     expect(frame.usageSlot1Label).toBe("Codex Weekly");
     expect(frame.usageSlot2Label).toBe("Claude Session");
-    expect(render()).toBe("remainingCodex Weekly 91%resets 3hClaude Session 87%resets 5d");
+    expect(render()).toBe("remainingCodex Weekly91%resets 3hClaude Session87%resets 5d");
     expect(render()).not.toContain("Codex + Claude");
     expect(render("Update available")).toBe(`Update available${render().slice("remaining".length)}`);
     expect(render("Open VibeTV Mac App")).toBe(`Open VibeTV Mac App${render().slice("remaining".length)}`);
@@ -134,15 +134,22 @@ describe("the Pace themes", () => {
     expect(svg).toContain('fill="#FACC15"'); // 61 % left
   });
 
-  it("Pixel Battery names the limit in its footer at every minute count, not only from one hour on", () => {
+  it("Pixel Battery leaves the limit name out of its footer from 10 minutes on and names it from one hour on", () => {
     const pack = JSON.parse(readFileSync(path.join(root, "dist/theme-packs/render/pixel-battery.json"), "utf8")) as ThemeRenderPack;
-    for (let minutes = 1; minutes < 60; minutes++) {
+    const footer = (sessionSecs: number, weeklySecs = 484800, footerWindow?: string) => {
       const frame = buildFrameData(clock.toISOString(), {
-        provider: "claude", label: "Claude", usageMode: "remaining",
-        usageSlots: [{ id: "session", label: "Session", percent: 90, resetSecs: minutes * 60 }, { id: "weekly", label: "Weekly", percent: 50, resetSecs: 484800 }],
+        provider: "claude", label: "Claude", usageMode: "remaining", footerWindow,
+        usageSlots: [{ id: "session", label: "Session", percent: 90, resetSecs: sessionSecs }, { id: "weekly", label: "Weekly", percent: 50, resetSecs: weeklySecs }],
       }, clock);
-      const text = renderToStaticMarkup(createElement(ThemeSpecPreview, { pack, themeId: "pixel-battery", status: "ready", animate: false, frame })).replace(/<[^>]*>/g, "");
-      expect(text.replaceAll(" ", ""), `${minutes}m`).toContain(`Sessionreset${minutes}m`);
+      return renderToStaticMarkup(createElement(ThemeSpecPreview, { pack, themeId: "pixel-battery", status: "ready", animate: false, frame })).replace(/<[^>]*>/g, "").replaceAll(" ", "");
+    };
+    for (let minutes = 1; minutes < 60; minutes++) {
+      expect(footer(minutes * 60), `${minutes}m`).toContain(minutes < 10 ? `Sessionreset${minutes}m` : `Reset${minutes}m`);
+      expect(footer(minutes * 60), `${minutes}m`).not.toContain(minutes < 10 ? `Reset${minutes}m` : `Sessionreset${minutes}m`);
     }
+    expect(footer(7200)).toContain("Sessionreset2h");
+    expect(footer(14800)).toContain("Sessionreset4h");
+    expect(footer(3300, 484800, "weekly")).toContain("Weeklyreset5d");
+    expect(footer(3300, 2820, "weekly")).toContain("Weeklyreset47m");
   });
 });

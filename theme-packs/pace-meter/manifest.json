@@ -3,7 +3,7 @@
   "schemaVersion": 1,
   "id": "pace-meter",
   "name": "Pace Meter",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "minFirmware": "1.0.50",
   "usage": "live",
   "requiredCapabilities": [
@@ -12,10 +12,10 @@
     "usage-pace-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/pace-4-2449e897.json",
+    "path": "/themes/u/pace-5-40439bb7.json",
     "file": "theme.json",
-    "bytes": 1562,
-    "sha256": "2449e89750076a05bfba0b2d7ae65376e285a0be72200291b0e5aec02641b095",
+    "bytes": 1743,
+    "sha256": "40439bb7209d087ff42ce7752cdc3c8d1efc2a58175fc56ce028dd9b4c7d9464",
     "contentType": "application/json"
   },
   "assets": []

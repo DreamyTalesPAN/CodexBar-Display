@@ -3,7 +3,7 @@
   "schemaVersion": 1,
   "id": "pixel-battery",
   "name": "Pixel Battery",
-  "version": "1.17.8",
+  "version": "1.17.9",
   "usage": "live",
   "minFirmware": "1.0.50",
   "requiredCapabilities": [
@@ -14,10 +14,10 @@
     "usage-pace-v1"
   ],
   "themeSpec": {
-    "path": "/themes/u/pba-25-2304b7f5.json",
+    "path": "/themes/u/pba-26-2caffc16.json",
     "file": "theme.json",
     "bytes": 2272,
-    "sha256": "2304b7f559b62e4fd39cfbe5659bceb6531dba0656a5fbaa3123a745d9b2ec55",
+    "sha256": "2caffc16a43d58ab8cd71ede747969045d128dde9e5c8ed62c39b84744d1d76b",
     "contentType": "application/json"
   },
   "assets": [
