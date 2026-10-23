@@ -36,6 +36,13 @@ describe("hardwareWebGLAvailable", () => {
     expect(hardwareWebGLAvailable()).toBe(false);
   });
 
+  it("is false with WebGL 1 only", () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
+      (type: string) => (type === "webgl" ? (fakeContext("ANGLE (Apple, Apple M2)") as never) : null),
+    );
+    expect(hardwareWebGLAvailable()).toBe(false);
+  });
+
   it("is false without a WebGL context", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     expect(hardwareWebGLAvailable()).toBe(false);

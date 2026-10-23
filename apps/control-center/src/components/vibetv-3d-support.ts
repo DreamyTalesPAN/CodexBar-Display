@@ -1,12 +1,13 @@
 /**
- * True when the browser has a WebGL context on a real GPU. A software renderer
- * (SwiftShader, llvmpipe) or no context keeps the flat live preview: the 3D
- * case would only slow the page down there.
+ * True when the browser has a WebGL 2 context on a real GPU (the pinned three
+ * renderer needs WebGL 2; WebGL 1 is unsupported). A software renderer
+ * (SwiftShader, llvmpipe) or no context leaves the neutral unavailable state:
+ * the 3D case would only slow the page down there.
  */
 export function hardwareWebGLAvailable(): boolean {
   try {
     const canvas = document.createElement("canvas");
-    const gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
+    const gl = canvas.getContext("webgl2");
     if (!gl) return false;
     const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
     const renderer = debugInfo

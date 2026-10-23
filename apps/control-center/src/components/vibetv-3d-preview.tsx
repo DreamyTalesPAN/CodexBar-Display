@@ -37,6 +37,10 @@ type VibeTV3DPreviewProps = {
    * show; the caller then drops its flat preview.
    */
   onReady?: () => void;
+  /** Setup handover follows the currently visible screen and theme revision. */
+  onPreviewReady?: () => void;
+  /** Reveal the existing flat fallback if the renderer or model fails. */
+  onFailed?: () => void;
   updateOwnedDisconnect?: boolean;
   usage: UsageSnapshot | null;
 };
@@ -84,6 +88,8 @@ export function VibeTV3DPreview({
   device,
   displayFrame,
   onReady,
+  onPreviewReady,
+  onFailed,
   updateOwnedDisconnect = false,
   usage,
 }: VibeTV3DPreviewProps) {
@@ -108,6 +114,10 @@ export function VibeTV3DPreview({
   useEffect(() => {
     onReadyRef.current = onReady;
   }, [onReady]);
+
+  useEffect(() => {
+    if (modelFailed) onFailed?.();
+  }, [modelFailed, onFailed]);
 
   useEffect(() => {
     if (modelFailed) return;
@@ -386,6 +396,7 @@ export function VibeTV3DPreview({
         <LiveVibeTVPreview
           device={device}
           displayFrame={displayFrame}
+          onPreviewReady={onPreviewReady}
           onScreenSettled={onScreenSettled}
           onScreenLoading={onScreenLoading}
           screenOnly
