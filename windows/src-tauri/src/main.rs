@@ -48,6 +48,8 @@ const IDLE_UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 // argument and this note, and the app comes back in the tray only.
 const AFTER_IDLE_UPDATE_ARG: &str = "--after-idle-update";
 const IDLE_UPDATE_RELAUNCH_MARKER: &str = "idle-update-relaunch.txt";
+// Issue #883: written at the first close, so the tray hint shows only once.
+const TRAY_HINT_MARKER: &str = "tray-hint-shown.txt";
 
 const MENU_OPEN: &str = "open";
 const MENU_RELOAD: &str = "reload";
@@ -775,6 +777,10 @@ fn create_window(app: &AppHandle, provider_shortcut: bool, visible: bool) -> tau
                     let replaced = shell.windows_created.load(Ordering::SeqCst) != created_before;
                     if presented + 1 != released_at && !replaced {
                         prepare_and_load(handle);
+                    } else {
+                        // Issue #940: decided here, where it is known whether
+                        // the window came back, and not at the destroy call.
+                        show_tray_hint_once(&handle, released_at, presented, replaced);
                     }
                 });
             }
@@ -1015,6 +1021,58 @@ fn hide_after_flush(app: &AppHandle) {
 // A close stands only when nothing presented the window since it was requested.
 fn close_stands(presented_at_request: u64, presented_after_flush: u64) -> bool {
     presented_at_request == presented_after_flush
+}
+
+// Issue #883: the tray icon often sits behind the ^ next to the clock, so a
+// customer who closed the window may think VibeTV quit. The first close says
+// where it went, once. Called once the released window is gone.
+fn show_tray_hint_once(app: &AppHandle, released_at: u64, presented: u64, replaced: bool) {
+    let Ok(folder) = app.path().app_local_data_dir() else {
+        return;
+    };
+    if !claim_tray_hint(&folder, released_at, presented, replaced) {
+        return;
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            MB_ICONINFORMATION, MB_OK, MB_SETFOREGROUND, MB_TOPMOST, MessageBoxW,
+        };
+        let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+        let title = wide("VibeTV Control Center");
+        let text = wide(
+            "VibeTV keeps running in the tray, so your display stays up to date.\n\n\
+             To open it again, click the VibeTV icon next to the clock. \
+             If you don't see it, click the ^ arrow first.",
+        );
+        // SAFETY: both strings are NUL-terminated and outlive the call; no owner window.
+        unsafe {
+            MessageBoxW(
+                std::ptr::null_mut(),
+                text.as_ptr(),
+                title.as_ptr(),
+                MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST,
+            );
+        }
+    }
+}
+
+// Issue #940: the hint is only for a window that stayed closed. A tray click
+// or second launch between hide_after_flush's check and the destroy brings it
+// back (the presentation count moved on, or a present built a replacement);
+// then the marker stays unwritten and the next real close shows the hint.
+// The marker is written before the box shows, and a marker that cannot be
+// written means no box (better silent than every time).
+fn claim_tray_hint(folder: &Path, released_at: u64, presented: u64, replaced: bool) -> bool {
+    if presented + 1 != released_at || replaced {
+        return false;
+    }
+    let _ = std::fs::create_dir_all(folder);
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(folder.join(TRAY_HINT_MARKER))
+        .is_ok()
 }
 
 // Issue #424: Ctrl+Alt+Shift+P shows the next provider on VibeTV from any app.
@@ -1761,9 +1819,9 @@ fn show_message(message: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        after_growth, choose_placement, clear_loaded_theme, close_stands, fit_into, inner_within,
+        after_growth, choose_placement, claim_tray_hint, clear_loaded_theme, close_stands, fit_into, inner_within,
         label_for_generation, theme_id_from_deep_link, work_area_of_centre, Placement,
-        WindowRect, remembered_after, remembered_for, store_if_newer, Change,
+        WindowRect, remembered_after, remembered_for, store_if_newer, Change, TRAY_HINT_MARKER,
     };
     use url::Url;
 
@@ -1832,6 +1890,23 @@ mod tests {
     fn a_close_is_cancelled_by_any_present_after_the_request() {
         assert!(close_stands(3, 3));
         assert!(!close_stands(3, 4));
+    }
+
+    #[test]
+    fn the_tray_hint_waits_for_a_close_that_leaves_the_window_closed() {
+        let folder = std::env::temp_dir().join(format!("vibetv-tray-hint-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        // Released at presentation 3 (stored as 4). A tray click or second
+        // launch between the check and the destroy moved the count on ...
+        assert!(!claim_tray_hint(&folder, 4, 4, false));
+        // ... or already built a replacement window: no hint, no marker.
+        assert!(!claim_tray_hint(&folder, 4, 3, true));
+        assert!(!folder.join(TRAY_HINT_MARKER).exists());
+        // The next close that leaves the window closed shows it, once.
+        assert!(claim_tray_hint(&folder, 6, 5, false));
+        assert!(folder.join(TRAY_HINT_MARKER).exists());
+        assert!(!claim_tray_hint(&folder, 8, 7, false));
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

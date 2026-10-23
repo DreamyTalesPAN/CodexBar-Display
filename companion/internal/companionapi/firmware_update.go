@@ -391,7 +391,7 @@ func (s *Server) handleFirmwareUpdateStatus(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "missing_update_job", "Update status is missing.", "Start the update again.")
 		return
 	}
-	job, ok := s.firmwareUpdateJobSnapshot(jobID)
+	job, ok := s.updateJobs.snapshot(jobID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "update_job_not_found", "Update status was not found.", "Start the update again.")
 		return
@@ -400,53 +400,21 @@ func (s *Server) handleFirmwareUpdateStatus(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) activeFirmwareUpdateJob() (firmwareUpdateJob, bool) {
-	s.updateJobsMu.Lock()
-	defer s.updateJobsMu.Unlock()
-	for _, job := range s.updateJobs {
-		if job != nil && job.Phase == "installing" {
-			return cloneFirmwareUpdateJob(job), true
-		}
-	}
-	return firmwareUpdateJob{}, false
-}
-
-func (s *Server) latestFirmwareUpdateJob() (firmwareUpdateJob, bool) {
-	s.updateJobsMu.Lock()
-	defer s.updateJobsMu.Unlock()
-	var latest *firmwareUpdateJob
-	for _, job := range s.updateJobs {
-		if job == nil {
-			continue
-		}
-		if latest == nil || job.StartedAt.After(latest.StartedAt) {
-			latest = job
-		}
-	}
-	if latest == nil {
-		return firmwareUpdateJob{}, false
-	}
-	return cloneFirmwareUpdateJob(latest), true
+	return s.updateJobs.find(func(job *firmwareUpdateJob) bool { return job.Phase == "installing" })
 }
 
 func (s *Server) createFirmwareUpdateJob() firmwareUpdateJob {
-	s.updateJobsMu.Lock()
-	defer s.updateJobsMu.Unlock()
-	if s.updateJobs == nil {
-		s.updateJobs = make(map[string]*firmwareUpdateJob)
-	}
-	s.nextUpdateJob++
-	id := fmt.Sprintf("firmware-update-%d-%d", time.Now().UnixNano(), s.nextUpdateJob)
-	job := &firmwareUpdateJob{
-		ID:        id,
-		Phase:     "installing",
-		Stage:     "validating_artifact",
-		Message:   "Preparing VibeTV update.",
-		Progress:  5,
-		StartedAt: time.Now().UTC(),
-		Logs:      []string{"Preparing VibeTV update."},
-	}
-	s.updateJobs[id] = job
-	return cloneFirmwareUpdateJob(job)
+	return s.updateJobs.create("firmware-update", func(id string) *firmwareUpdateJob {
+		return &firmwareUpdateJob{
+			ID:        id,
+			Phase:     "installing",
+			Stage:     "validating_artifact",
+			Message:   "Preparing VibeTV update.",
+			Progress:  5,
+			StartedAt: time.Now().UTC(),
+			Logs:      []string{"Preparing VibeTV update."},
+		}
+	})
 }
 
 func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg runtimeconfig.Config, req firmwareUpdateRequest) {
@@ -508,7 +476,7 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 			cancelProbe()
 		}
 		if probeErr == nil && before.OK {
-			s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
+			s.updateJobs.update(jobID, func(job *firmwareUpdateJob) {
 				job.themeSetupRequiredBeforeUpdate = firmwareThemeSetupRequired(before)
 				job.themePathBeforeUpdate, job.themeActiveBeforeUpdate = firmwareUpdateLiveThemeState(before)
 			})
@@ -539,7 +507,7 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 		s.firmwareUpdateActive.Store(false)
 		resumeStream()
 
-		snapshot, _ := s.firmwareUpdateJobSnapshot(jobID)
+		snapshot, _ := s.updateJobs.snapshot(jobID)
 		// The rescue updater verifies its own result: only its success counts.
 		shouldVerify := err == nil || (!req.Rescue && snapshot.Result != nil && snapshot.Result.UploadAccepted)
 		if shouldVerify {
@@ -550,7 +518,8 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 				// The updater already proved the new firmware and identity over
 				// Cable. Connecting it is the setup's Cable step.
 				outcome = "updated"
-			} else if cableUpdate {
+			} else if cableUpdate || (snapshot.Result != nil && samePublicTarget(snapshot.Result.Target, cableDeviceTarget)) {
+				// A WiFi job whose updater found the VibeTV on the cable (#832).
 				outcome, attentionMessage, verifyErr = s.verifyCableFirmwareUpdateResult(ctx, jobID, cfg)
 			} else {
 				outcome, attentionMessage, verifyErr = s.verifyFirmwareUpdateResult(ctx, jobID, cfg)
@@ -562,7 +531,7 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 				} else {
 					s.recordSetupEvent(setupEvent{Stage: "firmware_update", Status: "succeeded", Message: "VibeTV update complete."})
 				}
-				s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
+				s.updateJobs.update(jobID, func(job *firmwareUpdateJob) {
 					job.Progress = 100
 					job.FinishedAt = &finishedAt
 					job.Outcome = outcome
@@ -592,7 +561,7 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 			}
 			apiErr := firmwareUpdateErrorPayload(err, snapshot.RetryPolicy)
 			s.recordSetupEvent(setupEvent{Stage: "firmware_update", Status: "failed", Message: apiErr.Message, Code: apiErr.Code, NextAction: apiErr.NextAction})
-			s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
+			s.updateJobs.update(jobID, func(job *firmwareUpdateJob) {
 				job.Phase = "error"
 				job.Message = "Update failed."
 				job.Progress = 100
@@ -606,7 +575,7 @@ func (s *Server) startFirmwareUpdateJob(_ context.Context, jobID string, cfg run
 }
 
 func (s *Server) verifyCableFirmwareUpdateResult(ctx context.Context, jobID string, initialCfg runtimeconfig.Config) (string, string, error) {
-	snapshot, ok := s.firmwareUpdateJobSnapshot(jobID)
+	snapshot, ok := s.updateJobs.snapshot(jobID)
 	if !ok || snapshot.Result == nil {
 		return "", "", errors.New("firmware update produced no verification result")
 	}
@@ -637,6 +606,14 @@ func (s *Server) verifyCableFirmwareUpdateResult(ctx context.Context, jobID stri
 		result.Firmware = strings.TrimSpace(hello.Firmware)
 		result.ObservedFirmware = strings.TrimSpace(hello.Firmware)
 	})
+	if runtimeconfig.NormalizeConnectionMode(cfg.ConnectionMode) != "cable" {
+		// The updater can find the same VibeTV on Cable after WiFi times out.
+		// The daemon chooses its transport from config, not the restart target.
+		cfg, err = s.saveCableSelection(hello, cfg.DeviceToken)
+		if err != nil {
+			return "", "", fmt.Errorf("save verified Cable connection: %w", err)
+		}
+	}
 	if !hello.HasFeature(protocol.FeatureCableHealthV1) {
 		return firmwareAttentionOutcome("render"), "Firmware is current, but this VibeTV cannot verify the picture over Cable yet.", nil
 	}
@@ -731,7 +708,7 @@ func firmwareUpdateOutcome(snapshot firmwareUpdateJob) string {
 }
 
 func (s *Server) verifyFirmwareUpdateResult(ctx context.Context, jobID string, initialCfg runtimeconfig.Config) (string, string, error) {
-	snapshot, ok := s.firmwareUpdateJobSnapshot(jobID)
+	snapshot, ok := s.updateJobs.snapshot(jobID)
 	if !ok || snapshot.Result == nil {
 		return "", "", errors.New("firmware update produced no verification result")
 	}
@@ -990,7 +967,7 @@ func firmwareAttentionOutcome(kind string) string {
 }
 
 func (s *Server) setFirmwareUpdateStage(jobID, stage string) {
-	s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
+	s.updateJobs.update(jobID, func(job *firmwareUpdateJob) {
 		job.Stage = stage
 		message, progress := firmwareUpdateStageProgress(stage)
 		if message != "" {
@@ -1004,7 +981,7 @@ func (s *Server) setFirmwareUpdateStage(jobID, stage string) {
 }
 
 func (s *Server) updateFirmwareVerification(jobID string, update func(*firmwareUpdateResult)) {
-	s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
+	s.updateJobs.update(jobID, func(job *firmwareUpdateJob) {
 		if job.Result == nil {
 			job.Result = &firmwareUpdateResult{}
 		}
@@ -1012,33 +989,7 @@ func (s *Server) updateFirmwareVerification(jobID string, update func(*firmwareU
 	})
 }
 
-func (s *Server) updateFirmwareUpdateJob(jobID string, update func(*firmwareUpdateJob)) {
-	s.updateJobsMu.Lock()
-	defer s.updateJobsMu.Unlock()
-	if s.updateJobs == nil {
-		return
-	}
-	job := s.updateJobs[jobID]
-	if job == nil {
-		return
-	}
-	update(job)
-}
-
-func (s *Server) firmwareUpdateJobSnapshot(jobID string) (firmwareUpdateJob, bool) {
-	s.updateJobsMu.Lock()
-	defer s.updateJobsMu.Unlock()
-	job := s.updateJobs[jobID]
-	if job == nil {
-		return firmwareUpdateJob{}, false
-	}
-	return cloneFirmwareUpdateJob(job), true
-}
-
 func cloneFirmwareUpdateJob(job *firmwareUpdateJob) firmwareUpdateJob {
-	if job == nil {
-		return firmwareUpdateJob{}
-	}
 	clone := *job
 	clone.Logs = append([]string(nil), job.Logs...)
 	clone.Warnings = append([]string(nil), job.Warnings...)
@@ -1136,7 +1087,7 @@ func (w *firmwareUpdateProgressWriter) noteLine(line string) {
 		}
 		return
 	}
-	w.server.updateFirmwareUpdateJob(w.jobID, func(job *firmwareUpdateJob) {
+	w.server.updateJobs.update(w.jobID, func(job *firmwareUpdateJob) {
 		message, progress, ok := customerFirmwareUpdateProgress(line)
 		if !ok {
 			return
@@ -1160,7 +1111,7 @@ func (s *Server) applyFirmwareUpdateEvent(jobID string, event firmwareUpdateEven
 		// yet, so nothing has ended its legacy mode over the cable.
 		s.rememberLegacyWiFiDevice(event.DeviceID)
 	}
-	s.updateFirmwareUpdateJob(jobID, func(job *firmwareUpdateJob) {
+	s.updateJobs.update(jobID, func(job *firmwareUpdateJob) {
 		if stage := strings.TrimSpace(event.Stage); stage != "" {
 			job.Stage = stage
 		}
