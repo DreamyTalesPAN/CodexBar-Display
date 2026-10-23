@@ -1,6 +1,8 @@
 package usb
 
 import (
+	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -903,9 +905,15 @@ func TestSenderScansWiFiNetworksForExactCableIdentity(t *testing.T) {
 }
 
 func TestSenderPairsExactCableDevice(t *testing.T) {
+	key, err := hex.DecodeString("0123456789abcdef0123456789abcdef")
+	if err != nil {
+		t.Fatal(err)
+	}
+	random := bytes.NewReader(key)
 	port := newMockSerialPort()
 	port.readQueue = [][]byte{[]byte(`{"kind":"pairing","status":"paired","deviceId":"14799300","token":"0123456789abcdef0123456789abcdef"}` + "\n")}
 	sender := NewSenderWithConfig(SenderConfig{
+		Random:      random,
 		Opener:      &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
 		Sleep:       func(time.Duration) {},
 		HelloWindow: 10 * time.Millisecond,
@@ -918,7 +926,10 @@ func TestSenderPairsExactCableDevice(t *testing.T) {
 	if token != "0123456789abcdef0123456789abcdef" {
 		t.Fatalf("unexpected Cable pairing token %q", token)
 	}
-	want := `{"kind":"request","op":"pair","deviceId":"14799300"}` + "\n"
+	if random.Len() != 0 {
+		t.Fatal("pairing did not consume exactly 16 random bytes")
+	}
+	want := `{"kind":"request","op":"pair","deviceId":"14799300","token":"0123456789abcdef0123456789abcdef"}` + "\n"
 	if len(port.writePayloads) != 1 || string(port.writePayloads[0]) != want {
 		t.Fatalf("unexpected Cable pairing request %#v", port.writePayloads)
 	}
@@ -1214,5 +1225,20 @@ func TestSenderFactoryResetRejectsFailureAndOtherDevice(t *testing.T) {
 		if err := sender.FactoryReset("/dev/mock", "14799300"); err == nil {
 			t.Fatalf("expected factory reset failure for %s", reply)
 		}
+	}
+}
+
+func TestSenderDoesNotPairWhenRandomSourceFails(t *testing.T) {
+	port := newMockSerialPort()
+	sender := NewSenderWithConfig(SenderConfig{
+		Random: strings.NewReader("too short"),
+		Opener: &mockOpener{portsByPath: map[string]SerialPort{"/dev/mock": port}},
+		Sleep:  func(time.Duration) {},
+	})
+	if token, err := sender.PairDevice("/dev/mock", "14799300"); err == nil || token != "" {
+		t.Fatalf("entropy failure must abort pairing: %q, %v", token, err)
+	}
+	if len(port.writePayloads) != 0 {
+		t.Fatal("sent pairing with incomplete entropy")
 	}
 }

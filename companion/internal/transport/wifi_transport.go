@@ -291,10 +291,14 @@ func (t WiFiTransport) PairDevice(target string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	proposedToken, err := protocol.NewPairingToken(nil)
+	if err != nil {
+		return "", err
+	}
 	var lastErr error
 	for attempt := 1; attempt <= pairDeviceAttempts; attempt++ {
 		attemptCtx, cancel := context.WithTimeout(context.Background(), defaultWiFiTimeout)
-		token, pairErr := t.pairDeviceOnce(attemptCtx, base, currentToken)
+		token, pairErr := t.pairDeviceOnce(attemptCtx, base, currentToken, proposedToken)
 		cancel()
 		if pairErr == nil {
 			return token, nil
@@ -310,7 +314,7 @@ func (t WiFiTransport) PairDevice(target string) (string, error) {
 	return "", fmt.Errorf("pair device failed after %d attempts: %w", pairDeviceAttempts, lastErr)
 }
 
-func (t WiFiTransport) pairDeviceOnce(ctx context.Context, base, currentToken string) (string, error) {
+func (t WiFiTransport) pairDeviceOnce(ctx context.Context, base, currentToken, proposedToken string) (string, error) {
 	pairURL, err := url.Parse(base + "/api/pair")
 	if err != nil {
 		return "", fmt.Errorf("build device pair URL: %w", err)
@@ -318,13 +322,14 @@ func (t WiFiTransport) pairDeviceOnce(ctx context.Context, base, currentToken st
 	query := pairURL.Query()
 	query.Set("api", "1")
 	pairURL.RawQuery = query.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, pairURL.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, pairURL.String(), strings.NewReader(url.Values{"token": {proposedToken}}.Encode()))
 	if err != nil {
 		return "", fmt.Errorf("build device pair request: %w", err)
 	}
 	if currentToken != "" {
 		req.Header.Set(deviceAuthHeader, currentToken)
 	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Close = true
 	resp, err := t.client.Do(req)
 	if err != nil {

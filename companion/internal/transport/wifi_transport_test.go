@@ -3,10 +3,12 @@ package transport
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -278,8 +280,13 @@ func TestWiFiTransportPairDevicePostsPairingAPI(t *testing.T) {
 	if token != "pair-token-abc" {
 		t.Fatalf("unexpected token %q", token)
 	}
-	if gotBody != "" {
-		t.Fatalf("unexpected pair body %q", gotBody)
+	form, err := url.ParseQuery(gotBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := hex.DecodeString(form.Get("token"))
+	if err != nil || len(key) != 16 {
+		t.Fatalf("pairing must send a 128-bit key in the POST body: %q", gotBody)
 	}
 }
 
@@ -289,6 +296,7 @@ func TestWiFiTransportPairDeviceRetriesLostResponses(t *testing.T) {
 	t.Cleanup(func() { pairDeviceRetryDelay = oldDelay })
 
 	var attempts atomic.Int32
+	var firstBody string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempt := attempts.Add(1)
 		if r.Method != http.MethodPost || r.URL.Path != "/api/pair" || r.URL.Query().Get("api") != "1" {
@@ -298,8 +306,15 @@ func TestWiFiTransportPairDeviceRetriesLostResponses(t *testing.T) {
 		if err != nil {
 			t.Errorf("read pair body: %v", err)
 		}
-		if len(body) != 0 {
-			t.Errorf("pair body=%q want empty", body)
+		form, parseErr := url.ParseQuery(string(body))
+		key, keyErr := hex.DecodeString(form.Get("token"))
+		if parseErr != nil || keyErr != nil || len(key) != 16 {
+			t.Errorf("pair body must contain a 128-bit token")
+		}
+		if attempt == 1 {
+			firstBody = string(body)
+		} else if string(body) != firstBody {
+			t.Error("retry changed the proposed key")
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if attempt < pairDeviceAttempts {

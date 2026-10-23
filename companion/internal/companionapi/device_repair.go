@@ -746,6 +746,10 @@ func (s *Server) pair(ctx context.Context, target, currentToken string) (string,
 	s.pairMu.Lock()
 	defer s.pairMu.Unlock()
 
+	proposedToken, err := protocol.NewPairingToken(nil)
+	if err != nil {
+		return "", err
+	}
 	attempts := s.pairAttempts
 	if attempts <= 0 {
 		attempts = 1
@@ -760,7 +764,7 @@ func (s *Server) pair(ctx context.Context, target, currentToken string) (string,
 		if s.pairAttemptTimeout > 0 {
 			attemptCtx, cancel = context.WithTimeout(ctx, s.pairAttemptTimeout)
 		}
-		token, err := s.pairOnce(attemptCtx, target, currentToken)
+		token, err := s.pairOnce(attemptCtx, target, currentToken, proposedToken)
 		cancel()
 		if err == nil {
 			return token, nil
@@ -781,7 +785,7 @@ func (s *Server) pair(ctx context.Context, target, currentToken string) (string,
 	return "", fmt.Errorf("pairing failed after %d attempts: %w", attempts, lastErr)
 }
 
-func (s *Server) pairOnce(ctx context.Context, target, currentToken string) (string, error) {
+func (s *Server) pairOnce(ctx context.Context, target, currentToken, proposedToken string) (string, error) {
 	pairURL, err := url.Parse(endpoint(target, "/api/pair"))
 	if err != nil {
 		return "", err
@@ -789,10 +793,11 @@ func (s *Server) pairOnce(ctx context.Context, target, currentToken string) (str
 	query := pairURL.Query()
 	query.Set("api", "1")
 	pairURL.RawQuery = query.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, pairURL.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, pairURL.String(), strings.NewReader(url.Values{"token": {proposedToken}}.Encode()))
 	if err != nil {
 		return "", err
 	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Close = true
 	applyDeviceToken(req, currentToken)
 	var response struct {

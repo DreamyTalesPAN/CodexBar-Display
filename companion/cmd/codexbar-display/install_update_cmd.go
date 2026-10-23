@@ -691,8 +691,13 @@ func discoverInstallUpdateTarget(ctx context.Context, home, base, deviceID strin
 }
 
 func pairFirmwareUpdateDevice(ctx context.Context, base string) (string, error) {
+	proposedToken, err := protocol.NewPairingToken(nil)
+	if err != nil {
+		return "", err
+	}
 	form := url.Values{}
 	form.Set("api", "1")
+	form.Set("token", proposedToken)
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,

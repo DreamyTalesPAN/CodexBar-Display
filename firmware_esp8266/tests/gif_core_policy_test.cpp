@@ -246,16 +246,17 @@ bool testCablePairingRequiresExactPhysicalIdentity(const char* mainPath) {
   const std::string body = mainSource.substr(handler, handlerEnd - handler);
   const std::size_t pair = body.find("strcmp(op, \"pair\") == 0");
   const std::size_t identity = body.find("strcmp(expectedDeviceID, deviceID.c_str())", pair);
-  const std::size_t existing = body.find("deviceAuthConfigured()", identity);
-  const std::size_t generate = body.find("generateAuthToken()", existing);
-  const std::size_t save = body.find("saveDeviceAuthToken(token)", generate);
-  const std::size_t reply = body.find("emitSerialPairing(token)", save);
+  const std::size_t existing = body.find("if (!deviceAuthConfigured())", identity);
+  const std::size_t supplied = body.find("doc[\"token\"]", existing);
+  const std::size_t save = body.find("StoreProvidedPairingToken(token, saveDeviceAuthToken)", supplied);
+  const std::size_t reply = body.find("emitSerialPairing(deviceAuthToken)", save);
   return expect(
       pair != std::string::npos && identity != std::string::npos &&
-          existing != std::string::npos && generate != std::string::npos &&
+          existing != std::string::npos && supplied != std::string::npos &&
           save != std::string::npos && reply != std::string::npos &&
-          pair < identity && identity < existing && existing < generate &&
-          generate < save && save < reply,
+          pair < identity && identity < existing && existing < supplied &&
+          supplied < save && save < reply && mainSource.find("generateAuthToken") == std::string::npos &&
+          mainSource.find("ESP.random") == std::string::npos,
       "Cable pairing must verify identity, reuse an existing token, and persist a new token before returning it");
 }
 
@@ -507,20 +508,18 @@ bool testWifiFirmwareUpdatesOnlyOnLegacyWifi(const char* mainPath) {
       "firmware may only be written over the paired USB cable, or by a paired legacy WiFi VibeTV");
 }
 
-bool testPairingTokenUsesHardwareRandom(const char* mainPath) {
+bool testPairingTokenComesOnlyFromComputer(const char* mainPath) {
   const std::string mainSource = readFile(mainPath);
-  const std::size_t start = mainSource.find("String generateAuthToken()");
-  const std::size_t end = mainSource.find("bool loadDeviceAuthToken()", start);
-  if (start == std::string::npos || end == std::string::npos) {
-    return false;
-  }
-  const std::string body = mainSource.substr(start, end - start);
+  const std::string wifi = functionBody(mainSource, "void handlePairingAPI()");
   return expect(
-      body.find("uint8_t bytes[16];") != std::string::npos &&
-          body.find("ESP.random(bytes, sizeof(bytes));") != std::string::npos &&
-          body.find("randomSeed") == std::string::npos &&
-          body.find("random(0x") == std::string::npos,
-      "pairing token must be 128 bits from the hardware random number generator");
+      mainSource.find("generateAuthToken") == std::string::npos &&
+          mainSource.find("ESP.random") == std::string::npos &&
+          mainSource.find("os_random") == std::string::npos &&
+          mainSource.find("RANDOM_REG32") == std::string::npos &&
+          mainSource.find("esp_random") == std::string::npos &&
+          wifi.find("webServer.arg(\"token\")") != std::string::npos &&
+          wifi.find("StoreProvidedPairingToken(token.c_str(), saveDeviceAuthToken)") != std::string::npos,
+      "USB and legacy WiFi pairing must store the computer key without a firmware RNG fallback");
 }
 
 bool testFactoryResetIsCableOnlyAndErasesCustomerData(const char* mainPath) {
@@ -1442,7 +1441,7 @@ int main(int argc, char** argv) {
   if (!testWifiFirmwareUpdatesOnlyOnLegacyWifi(argv[3])) {
     return 1;
   }
-  if (!testPairingTokenUsesHardwareRandom(argv[3])) {
+  if (!testPairingTokenComesOnlyFromComputer(argv[3])) {
     return 1;
   }
   if (!testFactoryResetIsCableOnlyAndErasesCustomerData(argv[3])) {

@@ -2,6 +2,7 @@ package usb
 
 import (
 	"errors"
+	"io"
 	"time"
 
 	"github.com/DreamyTalesPAN/CodexBar-Display/companion/internal/errcode"
@@ -42,15 +43,20 @@ func writeWithTimeout(port SerialPort, payload []byte, timeout time.Duration) er
 	if port == nil {
 		return errors.New("serial port is nil")
 	}
-	if timeout <= 0 {
-		_, err := port.Write(payload)
+	write := func() error {
+		n, err := port.Write(payload)
+		if err == nil && n != len(payload) {
+			return io.ErrShortWrite
+		}
 		return err
+	}
+	if timeout <= 0 {
+		return write()
 	}
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := port.Write(payload)
-		done <- err
+		done <- write()
 	}()
 
 	timer := time.NewTimer(timeout)
