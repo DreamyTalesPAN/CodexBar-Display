@@ -29,6 +29,17 @@ func TestMain(m *testing.M) {
 		time.Sleep(2100 * time.Millisecond)
 		fmt.Print(`[{"provider":"codex","source":"local","updatedAt":"2026-07-28T09:00:00Z","sessionTokens":120,"last30DaysTokens":240,"totals":{"totalTokens":240}}]`)
 		os.Exit(0)
+	case "claude-oauth-token":
+		// Says whether the token arrived, never the token.
+		switch token, set := os.LookupEnv(claudeOAuthTokenEnv); {
+		case !set:
+			fmt.Print("unset")
+		case token == os.Getenv("CODEXBAR_TEST_EXPECTED_TOKEN"):
+			fmt.Print("match")
+		default:
+			fmt.Print("other")
+		}
+		os.Exit(0)
 	}
 	// Tests give one CLI file a different answer per test, which Windows
 	// would otherwise carry from one test into the next (reuseEngineAnswers).

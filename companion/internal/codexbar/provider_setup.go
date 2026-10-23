@@ -504,12 +504,22 @@ func probeProviderSetup(ctx context.Context, home, exactProvider string) Provide
 			result.Providers = []ProviderReadiness{providerResult(exactProvider, ProviderNotConfigured)}
 			return result
 		}
-		out, commandErr = runUsageCommandFn(probeCtx, exactProviderProbeTimeout, bin,
-			"usage", "--json",
-			"--provider", exactProvider,
-			"--source", "auto",
-			"--web-timeout", "8",
-		)
+		// Claude on the Mac: the Claude Code sign-in first, Auto only when
+		// that gives no reading (#834, claude_oauth_first.go). A Mac with
+		// Claude Code only no longer waits for the slow CLI path (#786).
+		if exactProvider == "claude" && claudeOAuthFirst {
+			if item, _, ok := claudeOAuthUsage(probeCtx, bin, true); ok {
+				out = claudeOAuthAnswer(item)
+			}
+		}
+		if out == nil {
+			out, commandErr = runUsageCommandFn(probeCtx, exactProviderProbeTimeout, bin,
+				"usage", "--json",
+				"--provider", exactProvider,
+				"--source", "auto",
+				"--web-timeout", "8",
+			)
+		}
 	} else {
 		out, commandErr = runUsageAllEnabled(aggregateCtx, perProviderProbeTimeout, bin, "--web-timeout", "8")
 	}

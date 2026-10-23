@@ -133,7 +133,7 @@ func FetchAllProviders(ctx context.Context) ([]ParsedFrame, error) {
 		allParsed[i].Frame = allParsed[i].Frame.Normalize()
 	}
 
-	return allParsed, nil
+	return withClaudeOAuth(ctx, allParsed, nil), nil
 }
 
 // FetchFirstFrame returns one selected frame for one-shot calls (doctor/setup).
@@ -225,6 +225,9 @@ func runUsageCommand(parent context.Context, timeout time.Duration, bin string, 
 	env, err := commandEnvironment(configPathFromContext(parent))
 	if err != nil {
 		return nil, err
+	}
+	if token := claudeOAuthTokenFromContext(parent); token != "" {
+		env = append(env, claudeOAuthTokenEnv+"="+token)
 	}
 	cmd.Env = env
 	out, err := cmd.Output()

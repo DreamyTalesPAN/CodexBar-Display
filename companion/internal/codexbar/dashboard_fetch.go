@@ -202,6 +202,7 @@ func FetchDashboardProviders(ctx context.Context, info DashboardServeInfo, now t
 			readings[id] = item
 		}
 	}
+	out = withClaudeOAuth(ctx, out, readings)
 	serveUsage.mu.Lock()
 	if serveUsage.forgotten == forgotten {
 		// Round(0) drops the monotonic reading: the age must count the time
