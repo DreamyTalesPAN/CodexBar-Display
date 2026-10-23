@@ -179,7 +179,7 @@ it("shows the screensaver-off notice, with a link to Settings, only under Screen
   expect(onOpenScreensaverSettings).toHaveBeenCalledTimes(1);
 });
 
-it("keeps the Active marker off the preview picture, in the title row", () => {
+it("pins the Active marker to the top right of the card picture, outside the title row", () => {
   render(
     <Page
       device={{ connected: true, paired: true, ready: true, activeTheme: "clippy" }}
@@ -189,15 +189,17 @@ it("keeps the Active marker off the preview picture, in the title row", () => {
   );
   const pill = within(document.getElementById("catalog-theme-clippy")!).getByTestId("theme-status-pill");
   expect(pill.textContent).toBe("Active");
-  // The picture is the preview's own area: a marker inside it covers the preview's title.
-  expect(pill.closest('[data-slot="item-media"]')).toBeNull();
-  expect(pill.closest('[data-slot="item-title"]')).not.toBeNull();
+  const picture = pill.closest('[data-slot="item-media"]');
+  expect(picture).not.toBeNull();
+  expect(picture?.classList).toContain("relative");
+  expect(pill.parentElement?.classList).toContain("absolute");
+  expect(pill.parentElement?.classList).toContain("top-2");
+  expect(pill.parentElement?.classList).toContain("right-2");
+  expect(pill.closest('[data-slot="item-title"]')).toBeNull();
 });
 
-// jsdom has no layout, so this pins the rule that makes the rows line up: the Active pill is taller than the title
-// text, and a card whose title row only grew for the pill pushed its "Theme" label ≈3 px and "Edit" ≈1 px below the
-// neighbours' (B7 of the 7216 review). Every card's title row is as tall as the pill, so the pill changes nothing.
-it("gives every card a title row as tall as the Active pill, so the cards of a row line up", () => {
+// Keep the established title-row height and alignment when the pill moves back to the picture.
+it("keeps every title row at the established height so the cards line up", () => {
   render(
     <Page
       device={{ connected: true, paired: true, ready: true, activeTheme: "clippy" }}

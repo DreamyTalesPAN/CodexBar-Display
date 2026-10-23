@@ -22,8 +22,6 @@ type SetupLogProps = {
 
 /** A step that is still running after this long gets a "Still …" line. */
 const STILL_INTERVAL_MS = 8000;
-/** Most "Still …" lines one step gets; after that the log stops growing. */
-const STILL_MAX_LINES = 5;
 
 /**
  * Terminal-style progress log for the setup wizard.
@@ -34,8 +32,8 @@ const STILL_MAX_LINES = 5;
  * The lines themselves are ProcessSteps (Theme Studio and Updates use the same).
  *
  * While the last step runs for longer than STILL_INTERVAL_MS, a "Still …" line
- * is added under it every interval. This is the only display timer: a real
- * failure arrives from the companion as its own line or error.
+ * is added once, unless the step reports percentage progress. This is the only
+ * display timer: a real failure arrives from the companion as its own line or error.
  */
 export function SetupLog({
   className,
@@ -47,15 +45,16 @@ export function SetupLog({
   const lastLine = lines.length ? lines[lines.length - 1] : undefined;
   const lastKey = lastLine ? stepKey(lastLine) : undefined;
   // A step that already says it is finished is not running, whatever the screen says.
-  const active = running && lastLine !== undefined && !isFinished(lastLine);
-  // How many "Still …" lines each step has got, keyed by stepKey.
-  const [stillCounts, setStillCounts] = useState<Record<string, number>>({});
-  // A retry reuses the step's id: a step that starts running again counts from zero.
+  const active =
+    running && lastLine !== undefined && !isFinished(lastLine) && !hasPercentage(lastLine);
+  // Each step gets at most one hint, keyed by stepKey.
+  const [stillShown, setStillShown] = useState<Record<string, boolean>>({});
+  // A retry reuses the step's id: a step that starts running again gets a fresh hint.
   const [prevRun, setPrevRun] = useState({ key: lastKey, active });
   if (prevRun.key !== lastKey || prevRun.active !== active) {
     setPrevRun({ key: lastKey, active });
     if (active && lastKey !== undefined) {
-      setStillCounts((counts) => ({ ...counts, [lastKey]: 0 }));
+      setStillShown((shown) => ({ ...shown, [lastKey]: false }));
     }
   }
 
@@ -63,31 +62,28 @@ export function SetupLog({
     if (!stillLines || !active || lastKey === undefined) {
       return;
     }
-    const timer = window.setInterval(() => {
-      // At the cap the same object comes back, so nothing re-renders or scrolls.
-      setStillCounts((counts) =>
-        (counts[lastKey] ?? 0) >= STILL_MAX_LINES
-          ? counts
-          : { ...counts, [lastKey]: (counts[lastKey] ?? 0) + 1 },
-      );
+    const timer = window.setTimeout(() => {
+      setStillShown((shown) => ({ ...shown, [lastKey]: true }));
     }, STILL_INTERVAL_MS);
-    return () => window.clearInterval(timer);
+    return () => window.clearTimeout(timer);
   }, [stillLines, active, lastKey]);
 
-  const rows: SetupLogLine[] = lines.flatMap((line) => [
-    line,
-    ...Array.from({ length: stillCounts[stepKey(line)] ?? 0 }, (_, index) => ({
-      id: `${line.id}-still-${index + 1}`,
-      text: stillText(line.text),
-    })),
-  ]);
+  const rows: SetupLogLine[] = lines
+    .flatMap((line) => [
+      line,
+      ...(stillShown[stepKey(line)] && !hasPercentage(line)
+        ? [{ id: `${line.id}-still`, text: stillText(line.text) }]
+        : []),
+    ])
+    // Keep the newest copy, including its current tone.
+    .filter((line, index, all) => line.text !== all[index + 1]?.text);
 
   useEffect(() => {
     const node = scrollRef.current;
     if (node) {
       node.scrollTop = node.scrollHeight;
     }
-  }, [lines, running, stillCounts]);
+  }, [lines, running, stillShown]);
 
   return (
     <div
@@ -126,13 +122,18 @@ function stepWording(text: string): string {
   return sentences[sentences.length - 1].split(/: | · | — /)[0];
 }
 
+/** A percentage is already a sign of progress, including 100% before restart. */
+function hasPercentage(line: SetupLogLine): boolean {
+  return /\d+(?:[.,]\d+)?\s*%/.test(line.text);
+}
+
 /** Completion wording from setup-connect-log.ts: the step is over, not running. */
 function isFinished(line: SetupLogLine): boolean {
   return /^(update complete|firmware is up to date)$/.test(stepWording(line.text));
 }
 
 /**
- * Identifies one step for counting its Still lines. The id alone is not
+ * Identifies one step for its Still hint. The id alone is not
  * enough: a restored log numbers its lines by position, so a new step can
  * take an old id. The wording stays put while a percentage changes.
  */

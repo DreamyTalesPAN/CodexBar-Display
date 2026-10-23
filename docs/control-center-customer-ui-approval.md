@@ -20479,3 +20479,17 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: On Pixel Battery the footer "Session reset 47m" keeps the limit's name at every minute count and no longer touches the frame line; where the full-size sentence would come within 3 px of the line (10m to 59m and 10h to 23h) it is drawn at font 4 size 1, 18 px tall against 20 px of the normal footer (90 %, A drew 10 px), 205 px wide, centred on the same vertical centre, with at least 10 px to the line on both sides. 1m to 9m, 1h to 9h, days and the Weekly footer stay at today's size. No other text of any theme is smaller or changes.
 - Scope: Pixel Battery 1.17.10 (spec rev 26: footer box 197 + 32 px, same place as before) with its built zip, render revision and catalog, the font 4 size 1 draw of a kept-name footer in firmware_shared/theme_spec_renderer_core.h and themeKeptNameFooter in the live preview and in the text-ink guard model, their tests, and the guard: the smaller footer keeps at least 75 % of the cap height and the vertical centre of the normal footer at every reset value in One and Two.
 - What's new: none — theme layout only
+
+## 2026-10-23 — #7218: Restore the Active pill to the top right of the Appearance card
+
+- User approval: approved by Paul, 2026-10-23 09:35
+- Approved customer-visible result: the lime Active pill returns to the top right on the theme picture inside its card, instead of sitting beside the theme name; the existing card height and row alignment stay unchanged. This restores the position in “2026-10-20 — #802: Appearance "Installed" is a pill on the theme picture (7197 review, point 7)”, with the lime styling approved in “2026-10-20 — #802: Appearance install on the button, bigger lime Active pill (7198 review, Paul's pictures)”.
+- Scope: theme-library-screen.tsx and its Appearance markup/layout guard; regression introduced by 15c7751a, not the later 7216 alignment fix.
+- What's new: none — restoration of the approved pill position
+
+## 2026-10-23 — #7218: Progress percentages need no repeated waiting hints
+
+- User approval: approved by Paul, 2026-10-23 09:30
+- Approved customer-visible result: a setup step showing its own percentage, including 100% before restart, gets no “Still … – hang tight.” hint; other long steps get one hint, and identical consecutive log lines collapse to one. The newest copy keeps its current error styling.
+- Scope: the central SetupLog producer and its percentage, retry, deduplication and provider-loading tests; no separate firmware-only rule.
+- What's new: none — quieter progress logs with the same real update status

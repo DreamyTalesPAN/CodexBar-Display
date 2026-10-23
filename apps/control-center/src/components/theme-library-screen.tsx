@@ -1525,18 +1525,15 @@ function ThemeListItem({
         >
           <ThemePreview onPack={setPublishedPack} theme={item} />
         </Button>
-        {/* Installed (light) for the others on VibeTV sits on the picture. Active is in the title row: a pill on the picture would cover the preview's title. */}
-        {statusPill === "Installed" ? (
+        {pill ? (
           <span className="pointer-events-none absolute top-2 right-2 flex">{pill}</span>
         ) : null}
       </ItemMedia>
       <ItemContent className="basis-full gap-0.5 px-0.5">
         <div className="flex min-w-0 flex-col">
-          {/* As tall as the Active pill (h-6), so the pill does not move this card's "Theme" and "Edit" off its neighbours'. */}
           <ItemTitle className="min-h-6 min-w-0 text-[13px] font-semibold">
             <span className={THEME_CARD_TITLE_CLASS}>{item.title}</span>
             {isCustom ? <Badge variant="secondary">Custom</Badge> : null}
-            {statusPill === "Active" ? pill : null}
           </ItemTitle>
           <span className="shrink-0 text-[12px] font-normal text-muted-foreground">
             {item.usage === "screensaver" ? "Screensaver" : "Theme"}

@@ -45,7 +45,7 @@ describe("SetupLog while a step runs long", () => {
     expect(stillRows(container)).toEqual([]);
   });
 
-  it("adds one line at 8 seconds and one more every 8 seconds", () => {
+  it("adds one hint at 8 seconds without repeating it", () => {
     const { container } = render(<SetupLog lines={running} running />);
 
     advance(8000);
@@ -54,7 +54,7 @@ describe("SetupLog while a step runs long", () => {
     ]);
 
     advance(8000);
-    expect(stillRows(container)).toHaveLength(2);
+    expect(stillRows(container)).toHaveLength(1);
   });
 
   it("stops adding lines once the step finishes or fails", () => {
@@ -70,17 +70,17 @@ describe("SetupLog while a step runs long", () => {
     expect(stillRows(container)).toHaveLength(1);
   });
 
-  it("caps the lines of one step at five and keeps the log short", () => {
+  it("keeps only one hint even after a long wait", () => {
     const { container } = render(<SetupLog lines={running} running />);
 
     advance(50000);
-    expect(stillRows(container)).toHaveLength(5);
+    expect(stillRows(container)).toHaveLength(1);
 
     advance(200000);
-    expect(stillRows(container)).toHaveLength(5);
+    expect(stillRows(container)).toHaveLength(1);
   });
 
-  it("starts the count again for a new step and keeps the old step's lines", () => {
+  it("gives a new step its own hint and keeps the old step's hint", () => {
     const { container, rerender } = render(
       <SetupLog lines={running} running />,
     );
@@ -95,17 +95,16 @@ describe("SetupLog while a step runs long", () => {
     expect(logText(container)).toEqual([
       "> Refreshing display stream.",
       "> Still refreshing display stream – hang tight.",
-      "> Still refreshing display stream – hang tight.",
       "> Display stream refreshed.",
     ]);
 
     advance(7999);
-    expect(stillRows(container)).toHaveLength(2);
+    expect(stillRows(container)).toHaveLength(1);
     advance(1);
-    expect(stillRows(container)).toHaveLength(3);
+    expect(stillRows(container)).toHaveLength(2);
   });
 
-  it("drops a changing number from the Still line", () => {
+  it("never hints for a step with percentage progress", () => {
     const { container } = render(
       <SetupLog
         lines={[
@@ -117,9 +116,7 @@ describe("SetupLog while a step runs long", () => {
 
     advance(8000);
 
-    expect(stillRows(container)).toEqual([
-      "> Still updating firmware – hang tight.",
-    ]);
+    expect(stillRows(container)).toEqual([]);
   });
 
   it("keeps the last sentence, and a dot inside a number", () => {
@@ -192,12 +189,12 @@ describe("SetupLog while a step runs long", () => {
 
     expect(stillRows(container)).toEqual([]);
   });
-  it("counts a retried step from zero, not from the failed attempt", () => {
+  it("starts a retried step without the failed attempt's hint", () => {
     const { container, rerender } = render(
       <SetupLog lines={running} running />,
     );
     advance(16000);
-    expect(stillRows(container)).toHaveLength(2);
+    expect(stillRows(container)).toHaveLength(1);
 
     rerender(<SetupLog lines={running} running={false} />);
     rerender(<SetupLog lines={running} running />);
@@ -207,7 +204,7 @@ describe("SetupLog while a step runs long", () => {
     expect(stillRows(container)).toHaveLength(1);
   });
 
-  it("drops the percentage of a colon-style progress text", () => {
+  it("never hints for colon-style percentage progress", () => {
     const { container } = render(
       <SetupLog
         lines={[{ id: "fw", text: "Updating VibeTV: 40%." }]}
@@ -217,9 +214,7 @@ describe("SetupLog while a step runs long", () => {
 
     advance(8000);
 
-    expect(stillRows(container)).toEqual([
-      "> Still updating VibeTV – hang tight.",
-    ]);
+    expect(stillRows(container)).toEqual([]);
   });
   it("does not take a past-participle word inside the step for a finished step", () => {
     const { container } = render(
@@ -234,7 +229,7 @@ describe("SetupLog while a step runs long", () => {
     ]);
   });
 
-  it("starts counting again when a restored log reuses the id for a new step", () => {
+  it("gives a restored log a fresh hint when a new step reuses the id", () => {
     const { container, rerender } = render(
       <SetupLog
         lines={[{ id: "11", text: "Uploading theme files." }]}
@@ -242,7 +237,7 @@ describe("SetupLog while a step runs long", () => {
       />,
     );
     advance(16000);
-    expect(stillRows(container)).toHaveLength(2);
+    expect(stillRows(container)).toHaveLength(1);
 
     rerender(
       <SetupLog
@@ -258,7 +253,7 @@ describe("SetupLog while a step runs long", () => {
     ]);
   });
 
-  it("keeps counting while a percentage in the same step changes", () => {
+  it("never hints as percentage progress advances", () => {
     const { container, rerender } = render(
       <SetupLog
         lines={[{ id: "fw", text: "updating firmware · 40% — keep VibeTV powered on" }]}
@@ -275,13 +270,45 @@ describe("SetupLog while a step runs long", () => {
     );
     advance(8000);
 
-    expect(stillRows(container)).toHaveLength(3);
+    expect(stillRows(container)).toHaveLength(0);
   });
 
-  it("stops touching the log once the cap is reached, so a scrolled-up customer is not pulled down", () => {
+  it("has no hint at 100% while waiting for the restart", () => {
+    const updating = [{ id: "fw", text: "Updating VibeTV: 100%." }];
+    const { container, rerender } = render(<SetupLog lines={updating} running />);
+    advance(24000);
+    expect(logText(container)).toEqual(["> Updating VibeTV: 100%."]);
+    rerender(<SetupLog lines={[...updating, { id: "restart", text: "Restarting VibeTV." }]} running />);
+    expect(logText(container)).toEqual(["> Updating VibeTV: 100%.", "> Restarting VibeTV."]);
+    advance(8000);
+    expect(stillRows(container)).toEqual(["> Still restarting VibeTV – hang tight."]);
+  });
+
+  it("removes an earlier hint when the same step starts reporting a percentage", () => {
+    const { container, rerender } = render(<SetupLog lines={[{ id: "fw", text: "Updating VibeTV." }]} running />);
+    advance(8000);
+    expect(stillRows(container)).toHaveLength(1);
+    rerender(<SetupLog lines={[{ id: "fw", text: "Updating VibeTV: 1%." }]} running />);
+    advance(24000);
+    expect(logText(container)).toEqual(["> Updating VibeTV: 1%."]);
+  });
+
+  it("collapses identical consecutive input lines and retains the latest error tone", () => {
+    const { container } = render(<SetupLog lines={[
+      { id: "a", text: "Waiting." },
+      { id: "b", text: "Waiting." },
+      { id: "c", text: "Waiting.", tone: "error" },
+      { id: "d", text: "Retrying." },
+      { id: "e", text: "Waiting." },
+    ]} />);
+    expect(logText(container)).toEqual(["> Waiting.", "> Retrying.", "> Waiting."]);
+    expect(container.querySelectorAll(".text-destructive")).toHaveLength(1);
+  });
+
+  it("stops touching the log after the hint, so a scrolled-up customer is not pulled down", () => {
     const scrollSet = vi.spyOn(Element.prototype, "scrollTop", "set");
     render(<SetupLog lines={running} running />);
-    advance(8000 * 5);
+    advance(8000);
 
     scrollSet.mockClear();
     advance(8000 * 3);

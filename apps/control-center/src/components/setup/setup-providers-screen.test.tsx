@@ -272,7 +272,7 @@ describe("SetupProvidersScreen", () => {
     expect(html).not.toContain("No AI providers match your search.");
   });
 
-  it("adds another still-checking line every twenty seconds", () => {
+  it("collapses repeated still-checking lines from the provider timer", () => {
     vi.useFakeTimers();
     const props = {
       usage,
@@ -291,7 +291,7 @@ describe("SetupProvidersScreen", () => {
     expect(screen.getAllByText(/still checking, hang tight/)).toHaveLength(1);
 
     act(() => vi.advanceTimersByTime(PROVIDER_LOADING_LOG_INTERVAL_MS));
-    expect(screen.getAllByText(/still checking, hang tight/)).toHaveLength(2);
+    expect(screen.getAllByText(/still checking, hang tight/)).toHaveLength(1);
 
     rerender(
       <SetupProvidersScreen {...props} loading={false} providers={[claude]} />,
