@@ -38,8 +38,9 @@ if [[ -n "$foreign" ]]; then
 fi
 
 say "== Runtime"
-listeners="$(lsof -nP -a -iTCP@127.0.0.1:47832 -sTCP:LISTEN -Fp 2>/dev/null | sed -nE 's/^p([0-9]+)$/\1/p' | sort -u | tr '\n' ' ')"
-say "  listeners on 47832: ${listeners:-none}"
+api_port="$(bench::api_port "$API")"
+listeners="$(lsof -nP -a -iTCP@127.0.0.1:"$api_port" -sTCP:LISTEN -Fp 2>/dev/null | sed -nE 's/^p([0-9]+)$/\1/p' | sort -u | tr '\n' ' ')"
+say "  listeners on $api_port: ${listeners:-none}"
 [[ "$(printf '%s' "$listeners" | wc -w | tr -d ' ')" -gt 1 ]] && warn "more than one listener: a restart raced its predecessor"
 if ! launchctl print "gui/$(id -u)/${BUNDLE_ID}.runtime" >/dev/null 2>&1; then
   warn "the runtime LaunchAgent is not registered."
