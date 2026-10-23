@@ -125,3 +125,27 @@ func TestCLIFixtures(t *testing.T) {
 		})
 	}
 }
+
+// This fixture is derived from the bundled fork source, not a live capture;
+// see testdata/win-codexbar-0.60.3-vibetv.12-README.md.
+func TestParseWindowsUsageExtraWindows(t *testing.T) {
+	raw, err := os.ReadFile("testdata/win-codexbar-0.60.3-vibetv.12-usage.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	frames, err := parseAllProviders(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(frames) != 1 {
+		t.Fatalf("expected one provider, got %d", len(frames))
+	}
+	windows := frames[0].Meta.Windows
+	if len(windows) != 3 {
+		t.Fatalf("expected primary, secondary and named extra, got %+v", windows)
+	}
+	extra := windows[2]
+	if extra.ID != "claude-weekly-scoped-fable" || extra.Label != "Fable only" || extra.UsedPercent != 0 || extra.WindowMinutes != 10080 {
+		t.Fatalf("expected the named zero-percent weekly window unchanged, got %+v", extra)
+	}
+}
