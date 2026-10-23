@@ -205,11 +205,8 @@ type Server struct {
 	repairFlights          map[string]*deviceRepairFlight
 	deviceSelectionMu      sync.Mutex
 	ambiguousDeviceSeen    bool
-	probeMu                sync.Mutex
-	helloProbeCache        map[string]helloProbeSnapshot
-	helloProbeFlights      map[string]*helloProbeFlight
-	healthProbeCache       map[string]healthProbeSnapshot
-	healthProbeFlights     map[string]*healthProbeFlight
+	helloProbes            *probeCache[protocol.DeviceHello]
+	healthProbes           *probeCache[deviceHealth]
 	probeCacheTime         time.Duration
 	weakWiFiMu             sync.Mutex
 	weakWiFi               weakWiFiRun
@@ -385,10 +382,8 @@ func New(opts Options) (*Server, error) {
 		pairAttemptTimeout:   defaultPairAttemptTimeout,
 		pairRetryGap:         defaultPairRetryGap,
 		repairFlights:        make(map[string]*deviceRepairFlight),
-		helloProbeCache:      make(map[string]helloProbeSnapshot),
-		helloProbeFlights:    make(map[string]*helloProbeFlight),
-		healthProbeCache:     make(map[string]healthProbeSnapshot),
-		healthProbeFlights:   make(map[string]*healthProbeFlight),
+		helloProbes:          newProbeCache[protocol.DeviceHello](),
+		healthProbes:         newProbeCache[deviceHealth](),
 		probeCacheTime:       deviceProbeCacheTime,
 		connectionStates:     make(map[string]*configuredDeviceConnection),
 		now:                  time.Now,
