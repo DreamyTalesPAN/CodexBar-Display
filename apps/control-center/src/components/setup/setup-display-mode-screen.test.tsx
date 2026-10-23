@@ -590,3 +590,11 @@ describe("SetupDisplayModeScreen", () => {
     });
   });
 });
+
+it("greys out Two at once for the theme on the setup display step", () => {
+  themePack = { status: "ready", pack: { themeId: "token-counter", name: "Token Counter", spec: { p: [], maxProviders: 1 } } };
+  const html = render({ mode: "pair", theme: { id: "token-counter" }, onSelectPair: vi.fn(), pairProviderIds: ["codex", "cursor"] });
+  expect(html).toContain("Token Counter shows one provider at a time. Provider 1 is shown.");
+  const pair = (html.match(/<button[^>]*>[\s\S]*?<\/button>/g) ?? []).find((button) => button.includes("Two at once"));
+  expect(pair?.slice(0, pair.indexOf(">") + 1)).toContain('disabled=""');
+});

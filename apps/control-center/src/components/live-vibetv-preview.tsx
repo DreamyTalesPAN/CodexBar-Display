@@ -119,6 +119,7 @@ type LocalDisplayFrameRequestInit = RequestInit & {
 };
 
 export type ThemeSpec = {
+  maxProviders?: 1;
   id?: string;
   themeId?: string;
   bg?: string;
@@ -1810,9 +1811,16 @@ export function themeRenderPackMatchesActiveRevision(
 /** What the active theme has room for, as Settings explains it. */
 export type ActiveThemeLimits = {
   name: string;
+  maxProviders?: 1;
   /** How many of the customer's ticked limits the theme shows. */
   limits: number;
 };
+
+export function themePairNote(theme: ActiveThemeLimits | null, mode: string): string | null {
+  return theme?.maxProviders === 1
+    ? `${theme.name} shows one provider at a time.${mode === "pair" ? " Provider 1 is shown." : ""}`
+    : null;
+}
 
 export function themeLimitsFromPack(
   pack: Pick<ThemeRenderPack, "name" | "spec" | "themeId">,
@@ -1825,6 +1833,7 @@ export function themeLimitsFromPack(
     return {
       name: pack.name || pack.themeId || "Your theme",
       limits: themeStudioSpecUsageLimitCount(spec),
+      ...(spec.maxProviders === 1 ? { maxProviders: 1 as const } : {}),
     };
   } catch {
     return null;

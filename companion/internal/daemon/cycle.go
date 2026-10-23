@@ -230,7 +230,7 @@ func invalidateLastGoodOutsideProviderDisplay(state *runtimeState, deps runtimeD
 	if state == nil {
 		return
 	}
-	cfg, ok := loadRuntimeConfig(deps)
+	cfg, ok := loadRuntimeDisplayConfig(deps)
 	if !ok || cfg.ProviderDisplay == nil || cfg.ProviderDisplay.Mode == "automatic" {
 		// Leaving Manual ends its fallback: a later Manual choice of the same
 		// provider is a new choice and must not inherit the fallback frame.

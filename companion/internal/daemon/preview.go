@@ -32,7 +32,7 @@ type ProviderPreview struct {
 // device fields and wire-budget trimming use the same steps as sending.
 // hiddenWindows, when set, stands in for the stored limits: the customer's
 // unsaved choice, shown the way saving it would show it.
-func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time, updates *FirmwareUpdateCache, cliTheme string, inventory []codexbar.ProviderSetting, hiddenWindows map[string][]string) []ProviderPreview {
+func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protocol.DeviceCapabilities, now time.Time, updates *FirmwareUpdateCache, cliTheme string, inventory []codexbar.ProviderSetting, hiddenWindows map[string][]string, singleProviderTheme bool) []ProviderPreview {
 	_, enabledProviders := enabledProviderInventory(inventory)
 	providerEnabled := func(provider string) (bool, bool) {
 		_, enabled := enabledProviders[normalizeProviderKey(provider)]
@@ -71,7 +71,8 @@ func PreviewFrames(usage PersistedUsage, showUsed, systemBusy bool, caps protoco
 	cfg.ProviderDisplay = &display
 	cfg.DisplayRotateSeconds = 3600
 	deps := runtimeDeps{
-		homeDir: func() (string, error) { return "preview", nil },
+		singleProviderTheme: func() bool { return singleProviderTheme },
+		homeDir:             func() (string, error) { return "preview", nil },
 		loadConfig: func(string) (runtimeconfig.Config, error) {
 			return cfg, nil
 		},

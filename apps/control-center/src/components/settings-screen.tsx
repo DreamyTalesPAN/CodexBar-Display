@@ -42,7 +42,7 @@ import {
   withOnlyWindowShown,
   type DisplayLimitsChange,
 } from "./display-limits-settings";
-import { useActiveThemeLimits } from "./live-vibetv-preview";
+import { themePairNote, useActiveThemeLimits } from "./live-vibetv-preview";
 import {
   ProviderList,
   setupProviderCanDisplay,
@@ -239,6 +239,7 @@ export function SettingsScreen({
     pairChoices,
   );
   const activeTheme = useActiveThemeLimits(device);
+  const themeNote = themePairNote(activeTheme, displayMode);
   const providerError =
     providerPicker.preferencesError || providerPicker.displayError;
   const usageMode = displayPreferences.find(
@@ -367,9 +368,9 @@ export function SettingsScreen({
           ) : null}
           <RadioRow
             description={
-              pairLacks ? UPDATE_NEEDED_NOTE : "VibeTV shows two providers together, one limit each."
+              themeNote ?? (pairLacks ? UPDATE_NEEDED_NOTE : "VibeTV shows two providers together, one limit each.")
             }
-            disabled={pairLacks || (displayMode !== "pair" && pairChoices.length < 2)}
+            disabled={themeNote !== null || pairLacks || (displayMode !== "pair" && pairChoices.length < 2)}
             label="Two at once"
             onSelect={() => selectMode("pair")}
             selected={displayMode === "pair"}

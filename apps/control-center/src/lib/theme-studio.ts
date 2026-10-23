@@ -85,6 +85,8 @@ export type ThemeStudioSpec = {
   themeSpecVersion: 1;
   themeId: string;
   themeRev: number;
+  /** Omitted for themes that can combine providers. */
+  maxProviders?: 1;
   bgColor?: string;
   primitives: ThemeStudioPrimitive[];
 };
@@ -456,6 +458,7 @@ export function importThemeSpec(value: unknown): ThemeStudioSpec {
         colorStringValue(value.background) ??
         colorStringValue(value.bg),
     ),
+    ...(value.maxProviders === 1 ? { maxProviders: 1 as const } : {}),
     primitives: primitives.map(importPrimitive),
   };
   return normalizeThemeSpec(spec);
@@ -1332,6 +1335,7 @@ function buildDeviceThemeSpec(spec: ThemeStudioSpec): Record<string, unknown> {
     v: normalized.themeSpecVersion,
     id: normalized.themeId,
     rev: normalized.themeRev,
+    ...(normalized.maxProviders === 1 ? { maxProviders: 1 } : {}),
     p: normalized.primitives.map(buildDevicePrimitive),
   };
   if (normalized.bgColor) {

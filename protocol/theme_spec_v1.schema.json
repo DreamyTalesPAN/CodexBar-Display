@@ -562,6 +562,11 @@
       "items": {
         "$ref": "#/properties/primitives/items"
       }
+    },
+    "maxProviders": {
+      "type": "integer",
+      "const": 1,
+      "description": "One provider at a time; a saved pair displays its first provider. Omit for themes that can combine providers."
     }
   },
   "additionalProperties": false,

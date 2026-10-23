@@ -20506,3 +20506,10 @@ issue scope, or release permission never implies UI permission.
 - Approved customer-visible result: With one provider the limit names in Pace Meter and Synthwave ("Session", "Weekly", "Fable only") stand alone at their full size, and "remaining" or "used" stands small at the right end of the same row, above the reset line in Pace Meter and above the percentage in Synthwave, 3 px or more from every other text. The title, the update notice, the bars, the percentages, the pace sentences and every other theme look the same; Two at once looks the same except that Pace Meter's long name "Claude Fable only" now stands at its full size too (it was drawn at half the height). No text gets smaller.
 - Scope: the theme packs Pace Meter 1.0.3 (spec rev 5, the limit name and the mode word are two texts per limit, the word is the new text {usageModeStandalone} at x 150, 12 px under the name's top) and Synthwave 1.2.10 (spec rev 16, the same split, the word in the limit's colour at x 177 above the percentage), the layout guard test animation-layout.test.ts (the mode word keeps 3 px from every other text in every state of one provider; the Codex limit names scenario is removed because the Companion carries the provider in a limit name in Two at once only; Synthwave's shrink entry is dropped, Pace Meter's narrowed to Two at once with "Antigravity Weekly" and "Perplexity Session") and pace-themes.test.ts (the rendered text no longer holds a space between name and mode word).
 - What's new: none — theme layouts only
+
+## 2026-10-23 — Token Counter uses one provider (Paul question 15 B)
+
+- User approval: approved by Paul, 2026-10-23 09:09
+- Approved customer-visible result: While Token Counter is active, Two at once is greyed out with a short explanation. A saved pair shows Provider 1 with its own token count; switching to a theme that supports two providers restores the pair without changing the saved preference.
+- Scope: ThemeSpec maxProviders capability, Token Counter pack, Settings display mode, and the shared Companion frame selection used by the device and previews.
+- What's new: none — part of the unreleased Paul test-line corrections.
